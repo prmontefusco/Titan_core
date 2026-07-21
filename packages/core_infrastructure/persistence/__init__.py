@@ -1,6 +1,7 @@
 """Conexão e migrations do PostgreSQL autoritativo."""
 
 from packages.core_infrastructure.persistence.authorization import AuthorizationRepository
+from packages.core_infrastructure.persistence.checkpoints import IntegrityCheckpointRepository
 from packages.core_infrastructure.persistence.database import (
     DatabaseConfigurationError,
     DatabaseSettings,
@@ -28,6 +29,7 @@ __all__ = [
     "AuthorizationRepository",
     "DatabaseSettings",
     "ExternalIdentityRepository",
+    "IntegrityCheckpointRepository",
     "DomainEventRepository",
     "EventAppendConflict",
     "EventIntegrityUnavailable",

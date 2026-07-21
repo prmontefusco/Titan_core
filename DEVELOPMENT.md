@@ -163,6 +163,7 @@ Todos os comandos são executados a partir da raiz do repositório.
 | Core Identity — Organization protegida por RLS | Passo 3.1 | Disponível e aprovado |
 | Core Audit — registro append-only de eventos | Passo 4.1 | Disponível e aprovado |
 | Core Integrity — cadeia de hashes de eventos | Passo 4.2 | Disponível e aprovado |
+| Core Integrity — checkpoint verificável | Passo 4.3 | Disponível e aprovado |
 | Interface técnica de validação | Passo próprio autorizado | Condicionada à necessidade de teste |
 | Frontend de produto | Marco próprio aprovado | Indisponível |
 

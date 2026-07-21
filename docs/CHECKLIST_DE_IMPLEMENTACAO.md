@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.3 — Checkpoint verificável
+**Próximo passo planejado:** Passo 4.4 — TimestampProvider
 
 ## Como manter este checklist
 
@@ -901,6 +901,47 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: 25 testes sem banco e dois testes PostgreSQL aprovados; banco em `20260721_0009 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. Os testes independentes confirmam determinismo, adulteração na posição exata e perfil não suportado como indeterminado.
+
+### Passo 4.3 — Checkpoint verificável
+
+- [x] Checkpoint ancora a cabeça completa de uma cadeia desde a sequência 1.
+- [x] RecordOwnerOrganization e agregado do escopo são explícitos.
+- [x] IDs, sequências e hashes dos eventos cobertos são preservados em ordem.
+- [x] Primeira e última sequência, contagem, hash inicial e final são protegidos.
+- [x] Perfil `titan-integrity-checkpoint` versão `1` é explícito.
+- [x] Digest `SHA-256` cobre escopo, conjunto, algoritmos, versões, produtor e instante observado.
+- [x] Application constrói e persiste o checkpoint uma única vez.
+- [x] Verificador funciona sem banco, segredo ou estado mutável do Titan.
+- [x] Verificador detecta omissão, alteração de digest, escopo divergente e perfil incompatível.
+- [x] Prova inicial utiliza a cadeia completa; Merkle não foi antecipada.
+- [x] Checkpoint não cria timestamp nem prova temporal externa.
+- [x] Tabelas de checkpoint são `PROTECTED`, com RLS e `FORCE RLS`.
+- [x] Papel de runtime não pode alterar, apagar ou truncar checkpoints.
+- [x] Migration `20260721_0010` possui downgrade validado.
+- [x] Banco terminou em `20260721_0010 (head)` e `alembic check` não encontrou divergências.
+- [x] 16 testes relacionados, Ruff e Mypy aprovados.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/core_integrity/checkpoint.py`, `packages/core_application/integrity_checkpoint.py`, `packages/core_infrastructure/persistence/checkpoints.py`, migration `20260721_0010` e testes relacionados.
+- **Riscos residuais:** a prova de inclusão inicial exige fornecer a cadeia completa; Merkle depende de volume e decisão futura; o instante observado não é prova temporal independente; TSA e TemporalAnchor pertencem ao Passo 4.4.
+
+## Como validar o Passo 4.3
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/core_integrity/test_checkpoint.py tests/core_integrity/test_event_chain.py tests/application/test_integrity_checkpoint_service.py tests/infrastructure/test_checkpoint_persistence_contract.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_checkpoints_postgresql.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_integrity packages/core_application packages/core_infrastructure/persistence/checkpoints.py tests/core_integrity/test_checkpoint.py tests/application/test_integrity_checkpoint_service.py tests/infrastructure/test_checkpoint_persistence_contract.py tests/integration/test_checkpoints_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_integrity packages/core_application packages/core_infrastructure/persistence/checkpoints.py tests/core_integrity/test_checkpoint.py tests/application/test_integrity_checkpoint_service.py tests/infrastructure/test_checkpoint_persistence_contract.py tests/integration/test_checkpoints_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_integrity packages/core_application packages/core_infrastructure/persistence/checkpoints.py tests/core_integrity/test_checkpoint.py tests/application/test_integrity_checkpoint_service.py tests/infrastructure/test_checkpoint_persistence_contract.py tests/integration/test_checkpoints_postgresql.py
+```
+
+Resultado esperado: 15 testes sem banco e um teste PostgreSQL aprovados; banco em `20260721_0010 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. Os testes confirmam cobertura exata, omissão detectada, digest adulterado, escopo divergente e perfil incompatível como indeterminado.
 
 ## Comandos para testar o Passo 1.4D
 

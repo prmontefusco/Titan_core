@@ -11,6 +11,7 @@ from packages.core_infrastructure.persistence import (
     DatabaseSettings,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.checkpoints import integrity_checkpoints_table
 from packages.core_infrastructure.persistence.events import (
     CORE_AUDIT_SCHEMA,
     domain_events_table,
@@ -32,6 +33,7 @@ target_metadata = external_identities_table.metadata
 assert bootstrap_receipts_table.metadata is target_metadata
 assert domain_events_table.metadata is target_metadata
 assert event_integrity_table.metadata is target_metadata
+assert integrity_checkpoints_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 
