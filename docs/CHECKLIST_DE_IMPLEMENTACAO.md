@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 3.2 — User
+**Próximo passo planejado:** Passo 3.3 — Membership
 
 ## Como manter este checklist
 
@@ -39,7 +39,7 @@ Estados utilizados:
 | 1.5 | Configurar migrations e conexão PostgreSQL | CONCLUÍDO | Aprovada |
 | 1.6 | Configurar CI mínimo | IMPLEMENTADO | Pendente no GitHub |
 | 2.1–2.4 | Primitivas técnicas do Core | NÃO INICIADO | Pendente |
-| 3.1–3.7 | Identidade, autorização e isolamento | NÃO INICIADO | Pendente |
+| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 e 3.2 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | NÃO INICIADO | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | NÃO INICIADO | Pendente |
@@ -582,6 +582,44 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: seis testes de domínio/contrato e um teste PostgreSQL aprovados; migration retorna a `20260721_0002 (head)` após downgrade/upgrade; Ruff e Mypy não apresentam problemas. O teste PostgreSQL reverte a role e as Organizations temporárias.
+
+### Passo 3.2 — User
+
+- [x] ADR 0030 registra a Organization operadora como owner do `User` global.
+- [x] Modelo `User` imutável criado com identidade tipada e owner obrigatório.
+- [x] Senha, token, segredo, credencial e Permission direta não integram o modelo nem a persistência.
+- [x] Tabela `core_identity.users` classificada como `PROTECTED`.
+- [x] Chave estrangeira exige uma Organization owner existente.
+- [x] RLS e `FORCE ROW LEVEL SECURITY` habilitados com negação por padrão.
+- [x] Repository cria e consulta User somente em transação ativa.
+- [x] Duplicidade, owner inexistente e contexto divergente são rejeitados pelos testes.
+- [x] Migration aditiva `20260721_0003` possui downgrade validado.
+- [x] Banco terminou em `20260721_0003 (head)` e `alembic check` não encontrou divergências.
+- [x] 11 testes sem banco e um teste PostgreSQL aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** ADR 0030, `packages/core_domain/users.py`, `packages/core_infrastructure/persistence/users.py`, migration `20260721_0003` e testes de domínio, contrato e integração.
+- **Riscos residuais:** a seleção segura da Organization operadora será responsabilidade do futuro caso de uso e de configuração confiável; Membership, identidade OIDC e API permanecem fora deste incremento.
+
+## Como validar o Passo 3.2
+
+```powershell
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_user.py tests/infrastructure/test_user_persistence_contract.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_user_postgresql.py
+.venv\Scripts\python.exe -m alembic downgrade 20260721_0002
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_domain/users.py packages/core_infrastructure/persistence/users.py tests/core_domain/test_user.py tests/infrastructure/test_user_persistence_contract.py tests/integration/test_user_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_domain/users.py packages/core_infrastructure/persistence/users.py tests/core_domain/test_user.py tests/infrastructure/test_user_persistence_contract.py tests/integration/test_user_postgresql.py
+```
+
+Resultado esperado: oito testes de domínio/contrato e um teste PostgreSQL aprovados; migration retorna a `20260721_0003 (head)` após downgrade/upgrade; Ruff e Mypy não apresentam problemas. O teste PostgreSQL reverte a role, a Organization e o User temporários.
 
 ## Comandos para testar o Passo 1.4D
 

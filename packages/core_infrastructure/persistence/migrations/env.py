@@ -12,15 +12,15 @@ from packages.core_infrastructure.persistence import (
 )
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
-    organization_metadata,
 )
+from packages.core_infrastructure.persistence.users import users_table
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = organization_metadata
+target_metadata = users_table.metadata
 
 
 def include_managed_schema(

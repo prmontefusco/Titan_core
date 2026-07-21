@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 3.1 estão concluídos e aprovados. O próximo incremento é o Passo 3.2 — User.
+Os Passos 1.4A a 3.2 estão concluídos e aprovados. O próximo incremento é o Passo 3.3 — Membership.
 
 ## Executar a API
 

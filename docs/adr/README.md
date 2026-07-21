@@ -4,7 +4,7 @@ As ADRs registram decisões arquiteturais, alternativas, consequências e condi�
 
 ## Processo atual
 
-As ADRs 0001 a 0029 foram avaliadas e aceitas pelo fundador e decisor único do Titan durante a fase pré-MVP. `Aceita` significa direção vinculante para a implementação vigente; não significa revisão independente, consenso de equipe ou validação em produção.
+As ADRs 0001 a 0030 foram avaliadas e aceitas pelo fundador e decisor único do Titan durante a fase pré-MVP. `Aceita` significa direção vinculante para a implementação vigente; não significa revisão independente, consenso de equipe ou validação em produção.
 
 ## Reabertura durante o MVP
 

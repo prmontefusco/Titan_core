@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 3.1 concluído e aprovado; próximo incremento: Passo 3.2
+**Status:** em execução — Passo 3.2 concluído e aprovado; próximo incremento: Passo 3.3
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -268,6 +268,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** identidade do usuário sem armazenamento de senha em claro e sem associação direta de permissão.
 
 **Validação manual:** criar usuário válido, rejeitar duplicidade/inválidos e inspecionar persistência para confirmar ausência de credencial sensível.
+
+**Resultado:** concluído e aprovado. A ADR 0030 define o `User` global como registro owned pela Organization operadora; o modelo e a tabela preservam somente `user_id` e `record_owner_organization_id`, sem credenciais ou permissões diretas. A migration `20260721_0003`, RLS, chave estrangeira e testes comprovam isolamento, duplicidade e owner obrigatório.
 
 #### Passo 3.3 — Membership
 
@@ -696,4 +698,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 3.1 estão concluídos e aprovados. O próximo incremento é o **Passo 3.2 — User**.
+Os Passos 0.1 a 3.2 estão concluídos e aprovados. O próximo incremento é o **Passo 3.3 — Membership**.
