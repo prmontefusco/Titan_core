@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** validar o Passo 1.6 no GitHub Actions
+**Próximo passo planejado:** Passo 2.1 — identificadores tipados e referências
 
 ## Como manter este checklist
 
@@ -387,13 +387,14 @@ Resultado esperado: `current` mostra `20260721_0001 (head)` após upgrade, fica 
 - [x] Suíte completa aprovada: 25 testes.
 - [x] Ruff lint e formatação aprovados.
 - [x] Mypy aprovado em 15 arquivos.
-- [ ] Execução bem-sucedida observada no GitHub Actions.
-- [ ] Falha intencional controlada observada em branch de teste.
-- [ ] Validação manual do responsável.
+- [x] Execução bem-sucedida observada no GitHub Actions.
+- [x] Falha intencional controlada observada em branch de teste.
+- [x] Validação manual do responsável.
 - **Data da implementação:** 21 de julho de 2026.
-- **Estado:** IMPLEMENTADO.
+- **Estado:** CONCLUÍDO E APROVADO.
 - **Evidências locais:** `.github/workflows/quality.yml`, `tests/infrastructure/test_ci_workflow.py` e `DEVELOPMENT.md`.
-- **Riscos residuais:** o repositório local não possui remoto GitHub operacional verificável; compatibilidade do runner e funcionamento dos gatilhos ainda precisam ser comprovados na plataforma aprovada.
+- **Evidências remotas:** execução bem-sucedida `29865934822`; falha controlada `29866081574` na etapa de testes; branch temporária removida após a validação.
+- **Riscos residuais:** o teste controlado comprovou o bloqueio no `pytest`, mas não exercitou falhas isoladas de Ruff ou Mypy.
 
 ## Como validar o Passo 1.6
 

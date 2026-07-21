@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 1.5 estão concluídos e aprovados. O Passo 1.6 está implementado e aguarda validação remota no GitHub Actions.
+Os Passos 1.4A a 1.6 estão concluídos e aprovados. O próximo incremento é o Passo 2.1 — identificadores tipados e referências.
 
 ## Executar a API
 

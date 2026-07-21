@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 1.6 implementado e pendente de validação remota  
+**Status:** em execução — Passo 1.6 concluído e aprovado; próximo incremento: Passo 2.1
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -9,7 +9,7 @@ O estado operacional, as evidências e a validação manual de cada passo são m
 
 ## Checkpoint de progresso — 21 de julho de 2026
 
-Os Passos 0.1 a 1.5 foram concluídos e aprovados. O Passo 1.6 adicionou um workflow GitHub Actions com permissões mínimas e verificações locais; execuções remotas de sucesso e falha controlada permanecem pendentes.
+Os Passos 0.1 a 1.6 foram concluídos e aprovados. O Passo 1.6 adicionou um workflow GitHub Actions com permissões mínimas, teve execução remota bem-sucedida e bloqueou uma falha controlada em branch temporária.
 
 Concluído e aprovado:
 
@@ -686,4 +686,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 1.5 estão concluídos e aprovados. O Passo 1.6 está **implementado e pendente de validação remota no GitHub Actions**.
+Os Passos 0.1 a 1.6 estão concluídos e aprovados. O próximo incremento é o **Passo 2.1 — identificadores tipados e referências**.
