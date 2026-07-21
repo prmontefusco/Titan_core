@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 3.1 — Organization
+**Próximo passo planejado:** Passo 3.2 — User
 
 ## Como manter este checklist
 
@@ -537,6 +537,51 @@ Resultado esperado: 14 testes de serialização e 36 testes relacionados aprovad
 ```
 
 Resultado esperado: 14 testes do contrato e 51 testes relacionados aprovados, Ruff sem erros, 12 arquivos já formatados e Mypy sem problemas.
+
+### Passo 3.1 — Organization
+
+- [x] Modelo `Organization` imutável criado no Core Domain.
+- [x] Modelo contém somente identidade estável aprovada, sem atributos inventados.
+- [x] Identificador diferente de `OrganizationId` é rejeitado.
+- [x] Schema modular `core_identity` criado por migration.
+- [x] Tabela `organizations` classificada como `PROTECTED` e atribuída ao módulo owner.
+- [x] `organization_id` e `record_owner_organization_id` usam UUID e são obrigatórios.
+- [x] Constraint garante que o registro inicial da Organization é auto-owned.
+- [x] RLS e `FORCE ROW LEVEL SECURITY` habilitados.
+- [x] Policies independentes de `SELECT` e `INSERT` negam contexto ausente ou divergente.
+- [x] Acesso público ao schema e à tabela é revogado.
+- [x] Contexto usa `set_config(..., true)` e exige transação ativa.
+- [x] Repository cria e consulta Organization sem expor SQL ao Domain.
+- [x] Migration aditiva `20260721_0002` possui downgrade validado.
+- [x] Teste PostgreSQL com role temporária sem `BYPASSRLS` comprovou isolamento.
+- [x] Upgrade, downgrade e reaplicação concluídos; banco terminou em `20260721_0002 (head)`.
+- [x] `alembic check` confirmou metadata e schema sem operações pendentes.
+- [x] Catálogo confirmou RLS, FORCE RLS, classificação, policies e zero linhas residuais.
+- [x] 23 testes sem banco e um teste PostgreSQL relacionados aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/core_domain/organizations.py`, `packages/core_infrastructure/persistence/organizations.py`, migration `20260721_0002`, testes de domínio, contrato e integração.
+- **Riscos residuais:** a role de runtime produtiva e seus grants serão provisionados por configuração operacional própria; o teste usa role transacional temporária. Organization ainda não possui Application use case nem API, que pertencem a passos posteriores.
+
+## Como validar o Passo 3.1
+
+```powershell
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_organization.py tests/infrastructure/test_organization_persistence_contract.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_organization_postgresql.py
+.venv\Scripts\python.exe -m alembic downgrade 20260721_0001
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_domain packages/core_infrastructure/persistence tests/core_domain tests/infrastructure/test_organization_persistence_contract.py tests/integration/test_organization_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_domain packages/core_infrastructure/persistence tests/core_domain tests/infrastructure/test_organization_persistence_contract.py tests/integration/test_organization_postgresql.py
+```
+
+Resultado esperado: seis testes de domínio/contrato e um teste PostgreSQL aprovados; migration retorna a `20260721_0002 (head)` após downgrade/upgrade; Ruff e Mypy não apresentam problemas. O teste PostgreSQL reverte a role e as Organizations temporárias.
 
 ## Comandos para testar o Passo 1.4D
 

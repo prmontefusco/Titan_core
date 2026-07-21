@@ -160,6 +160,7 @@ Todos os comandos são executados a partir da raiz do repositório.
 | Shared Kernel — relógio e datas UTC | Passo 2.2 | Disponível e aprovado |
 | Shared Kernel — serialização canônica | Passo 2.3 | Disponível e aprovado |
 | Core Domain — contrato de evento | Passo 2.4 | Disponível e aprovado |
+| Core Identity — Organization protegida por RLS | Passo 3.1 | Disponível e aprovado |
 | Interface técnica de validação | Passo próprio autorizado | Condicionada à necessidade de teste |
 | Frontend de produto | Marco próprio aprovado | Indisponível |
 
