@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 2.3 — serialização canônica
+**Próximo passo planejado:** Passo 2.4 — contrato de evento de domínio
 
 ## Como manter este checklist
 
@@ -467,6 +467,41 @@ Resultado esperado: 15 testes aprovados, Ruff sem erros, quatro arquivos já for
 ```
 
 Resultado esperado: 7 testes temporais e 22 testes relacionados aprovados, Ruff sem erros, seis arquivos já formatados e Mypy sem problemas.
+
+### Passo 2.3 — Serialização canônica
+
+- [x] `CanonicalSerializer` versionado como `titan-json-v1`.
+- [x] Envelope inclui explicitamente a versão da serialização.
+- [x] Ordem de mapas não altera os bytes produzidos.
+- [x] Ordem de listas permanece semanticamente significativa.
+- [x] Texto e chaves são normalizados em Unicode NFC.
+- [x] Colisão de chaves após normalização é rejeitada.
+- [x] Inteiros, decimais, booleanos, nulos, textos e timestamps possuem representação tipada.
+- [x] Decimais equivalentes produzem a mesma representação.
+- [x] Timestamps exigem representação UTC explícita.
+- [x] Floats, decimais não finitos, chaves não textuais, ciclos e tipos desconhecidos são rejeitados.
+- [x] Hashes calculados sobre bytes equivalentes são idênticos.
+- [x] Nenhuma cadeia de hashes ou assinatura foi antecipada.
+- [x] 36 testes relacionados aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/shared_kernel/serialization.py` e `tests/shared_kernel/test_serialization.py`.
+- **Riscos residuais:** `titan-json-v1` suporta somente o subconjunto tipado aprovado; novos tipos exigem evolução deliberada e não podem alterar o significado da versão existente.
+
+## Como validar o Passo 2.3
+
+```text
+.venv\Scripts\python.exe -m pytest -q tests/shared_kernel/test_serialization.py
+.venv\Scripts\python.exe -m pytest -q tests/shared_kernel tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m ruff check packages/shared_kernel tests/shared_kernel
+.venv\Scripts\python.exe -m ruff format --check packages/shared_kernel tests/shared_kernel
+.venv\Scripts\python.exe -m mypy packages/shared_kernel tests/shared_kernel
+```
+
+Resultado esperado: 14 testes de serialização e 36 testes relacionados aprovados, Ruff sem erros, oito arquivos já formatados e Mypy sem problemas.
 
 ## Comandos para testar o Passo 1.4D
 

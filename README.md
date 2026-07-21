@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 2.2 estão concluídos e aprovados. O próximo incremento é o Passo 2.3 — serialização canônica.
+Os Passos 1.4A a 2.3 estão concluídos e aprovados. O próximo incremento é o Passo 2.4 — contrato de evento de domínio.
 
 ## Executar a API
 
