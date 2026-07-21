@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.5 — Correção sem sobrescrita
+**Ponto de retomada:** Passo 4.6 — Idempotência
 
 ## Como manter este checklist
 
@@ -973,6 +973,34 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: 11 testes aprovados; banco em `20260721_0011 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados.
+
+### Passo 4.5 — Correção sem sobrescrita
+
+- [x] `Correction` é um novo `DomainEvent` imutável no agregado original.
+- [x] Evento corrigido é referenciado por `causation_id` e pelo payload canônico.
+- [x] Justificativa, `ChangeKind`, versão original e novo conteúdo são preservados.
+- [x] Correção exige versão posterior e nunca altera o payload original.
+- [x] Application coordena construção e append sem conhecer PostgreSQL.
+- [x] Event store preserva timeline ordenada e encadeamento de integridade.
+- [x] PostgreSQL retorna original e correção como dois registros distintos.
+- [x] Idempotência, projeção corrente e concorrência adicional não foram antecipadas.
+- [x] 8 testes focados, Ruff e Mypy aprovados.
+- [x] Validação manual do responsável: todos os testes aprovados.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Riscos residuais:** a resolução da versão corrente, idempotência e concorrência pertencem aos passos seguintes; neste incremento, a timeline preserva e explica a correção sem escolher automaticamente seus efeitos downstream.
+
+## Como validar o Passo 4.5
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_correction.py tests/application/test_correction_service.py tests/integration/test_correction_postgresql.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m ruff check packages/core_domain/corrections.py packages/core_application/corrections.py packages/core_domain/__init__.py packages/core_application/__init__.py tests/core_domain/test_correction.py tests/application/test_correction_service.py tests/integration/test_correction_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_domain/corrections.py packages/core_application/corrections.py packages/core_domain/__init__.py packages/core_application/__init__.py tests/core_domain/test_correction.py tests/application/test_correction_service.py tests/integration/test_correction_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_domain/corrections.py packages/core_application/corrections.py tests/core_domain/test_correction.py tests/application/test_correction_service.py tests/integration/test_correction_postgresql.py
+```
+
+Resultado esperado: 8 testes aprovados; Ruff e Mypy aprovados. O teste PostgreSQL confirma a timeline `registro_criado → registro_corrigido`, a preservação do original e o encadeamento dos hashes.
 
 ## Comandos para testar o Passo 1.4D
 

@@ -7,6 +7,7 @@ from packages.core_domain.authorization import (
     Permission,
     Role,
 )
+from packages.core_domain.corrections import ChangeKind, Correction, build_correction
 from packages.core_domain.events import CanonicalPayload, DomainEvent
 from packages.core_domain.memberships import Membership, MembershipStatus
 from packages.core_domain.organization_context import (
@@ -19,6 +20,8 @@ from packages.core_domain.users import User
 
 __all__ = [
     "CanonicalPayload",
+    "ChangeKind",
+    "Correction",
     "AuthenticatedPrincipal",
     "DomainEvent",
     "ExternalIdentity",
@@ -33,4 +36,5 @@ __all__ = [
     "PrincipalType",
     "Role",
     "User",
+    "build_correction",
 ]

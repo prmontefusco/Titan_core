@@ -1,5 +1,6 @@
 """Casos de uso e coordenação do Titan Core."""
 
+from packages.core_application.corrections import CorrectionService
 from packages.core_application.event_log import DomainEventLog, DomainEventLogService
 from packages.core_application.integrity_checkpoint import (
     IntegrityCheckpointService,
@@ -26,6 +27,7 @@ from packages.core_application.timestamping import (
 )
 
 __all__ = [
+    "CorrectionService",
     "DomainEventLog",
     "DomainEventLogService",
     "IdentityAndAccessReader",
