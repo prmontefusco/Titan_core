@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 3.3 — Membership
+**Próximo passo planejado:** Passo 3.4 — Role e Permission
 
 ## Como manter este checklist
 
@@ -39,7 +39,7 @@ Estados utilizados:
 | 1.5 | Configurar migrations e conexão PostgreSQL | CONCLUÍDO | Aprovada |
 | 1.6 | Configurar CI mínimo | IMPLEMENTADO | Pendente no GitHub |
 | 2.1–2.4 | Primitivas técnicas do Core | NÃO INICIADO | Pendente |
-| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 e 3.2 aprovados | Pendente |
+| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.3 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | NÃO INICIADO | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | NÃO INICIADO | Pendente |
@@ -620,6 +620,48 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: oito testes de domínio/contrato e um teste PostgreSQL aprovados; migration retorna a `20260721_0003 (head)` após downgrade/upgrade; Ruff e Mypy não apresentam problemas. O teste PostgreSQL reverte a role, a Organization e o User temporários.
+
+### Passo 3.3 — Membership
+
+- [x] Modelo `Membership` imutável criado como vínculo humano temporal.
+- [x] Owner do registro é obrigatoriamente a própria Organization vinculada.
+- [x] Status utiliza vocabulário controlado em português.
+- [x] Intervalo temporal UTC é semiaberto e rejeita término anterior ou igual ao início.
+- [x] Origem e Actor concedente são preservados por referências tipadas.
+- [x] Roles e Permissions não foram antecipadas neste incremento.
+- [x] Tabela `core_identity.memberships` classificada como `PROTECTED`.
+- [x] Chaves estrangeiras exigem User e Organizations existentes.
+- [x] Constraints protegem owner, intervalo e status.
+- [x] RLS e `FORCE ROW LEVEL SECURITY` habilitados com negação por padrão.
+- [x] Repository cria, consulta e lista vínculos válidos sob contexto transacional.
+- [x] Mesmo User foi associado a duas Organizations sem permitir leitura cruzada.
+- [x] Migration aditiva `20260721_0004` possui downgrade validado.
+- [x] Banco terminou em `20260721_0004 (head)` e `alembic check` não encontrou divergências.
+- [x] 12 testes sem banco e um teste PostgreSQL aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/core_domain/memberships.py`, `packages/core_infrastructure/persistence/memberships.py`, migration `20260721_0004` e testes de domínio, contrato e integração.
+- **Riscos residuais:** transições de estado, substituição histórica e atribuição temporal de Roles exigem casos de uso próprios; a presença de Membership válido não constitui Authorization isoladamente.
+
+## Como validar o Passo 3.3
+
+```powershell
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_membership.py tests/infrastructure/test_membership_persistence_contract.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_membership_postgresql.py
+.venv\Scripts\python.exe -m alembic downgrade 20260721_0003
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_domain/memberships.py packages/core_infrastructure/persistence/memberships.py tests/core_domain/test_membership.py tests/infrastructure/test_membership_persistence_contract.py tests/integration/test_membership_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_domain/memberships.py packages/core_infrastructure/persistence/memberships.py tests/core_domain/test_membership.py tests/infrastructure/test_membership_persistence_contract.py tests/integration/test_membership_postgresql.py
+```
+
+Resultado esperado: nove testes de domínio/contrato e um teste PostgreSQL aprovados; migration retorna a `20260721_0004 (head)` após downgrade/upgrade; Ruff e Mypy não apresentam problemas. O teste PostgreSQL reverte todos os registros e a role temporária.
 
 ## Comandos para testar o Passo 1.4D
 

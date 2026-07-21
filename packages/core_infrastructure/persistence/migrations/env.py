@@ -10,17 +10,17 @@ from packages.core_infrastructure.persistence import (
     DatabaseSettings,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.memberships import memberships_table
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
 )
-from packages.core_infrastructure.persistence.users import users_table
 
 config = context.config
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = users_table.metadata
+target_metadata = memberships_table.metadata
 
 
 def include_managed_schema(

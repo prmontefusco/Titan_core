@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 3.2 concluído e aprovado; próximo incremento: Passo 3.3
+**Status:** em execução — Passo 3.3 concluído e aprovado; próximo incremento: Passo 3.4
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -276,6 +276,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** vínculo temporal entre User e Organization.
 
 **Validação manual:** associar um usuário a duas organizações, selecionar organização ativa e impedir operação sem vínculo.
+
+**Resultado:** concluído e aprovado. O vínculo temporal imutável preserva User, Organization, owner, intervalo UTC, status controlado, origem e Actor concedente. A migration `20260721_0004`, constraints, RLS e testes PostgreSQL comprovam duas Memberships isoladas para o mesmo User e negação sem contexto válido. Roles permanecem no Passo 3.4.
 
 #### Passo 3.4 — Role e Permission
 
@@ -698,4 +700,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 3.2 estão concluídos e aprovados. O próximo incremento é o **Passo 3.3 — Membership**.
+Os Passos 0.1 a 3.3 estão concluídos e aprovados. O próximo incremento é o **Passo 3.4 — Role e Permission**.
