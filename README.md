@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 4.3 estão concluídos e aprovados. O próximo incremento é o Passo 4.4 — TimestampProvider.
+Os Passos 1.4A a 4.4 estão concluídos e aprovados. O próximo incremento é o Passo 4.5 — Correção sem sobrescrita.
 
 ## Executar a API
 

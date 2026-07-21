@@ -21,6 +21,7 @@ from packages.core_infrastructure.persistence.external_identities import externa
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
 )
+from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
 
 config = context.config
 
@@ -34,6 +35,7 @@ assert bootstrap_receipts_table.metadata is target_metadata
 assert domain_events_table.metadata is target_metadata
 assert event_integrity_table.metadata is target_metadata
 assert integrity_checkpoints_table.metadata is target_metadata
+assert timestamp_attempts_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.4 — TimestampProvider
+**Próximo passo planejado:** Passo 4.5 — Correção sem sobrescrita
 
 ## Como manter este checklist
 
@@ -942,6 +942,37 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: 15 testes sem banco e um teste PostgreSQL aprovados; banco em `20260721_0010 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. Os testes confirmam cobertura exata, omissão detectada, digest adulterado, escopo divergente e perfil incompatível como indeterminado.
+
+### Passo 4.4 — TimestampProvider
+
+- [x] Porta substituível definida na Application.
+- [x] Tentativa, validação e âncora temporal são registros append-only distintos.
+- [x] Indisponibilidade e resultado desconhecido permanecem explícitos e recuperáveis.
+- [x] Provider falso é identificado como sintético e restrito ao desenvolvimento.
+- [x] Assinatura, imprint, policy, nonce, autoridade, cadeia e validade são validados.
+- [x] Token inválido, indeterminado ou de outro checkpoint nunca cria `TemporalAnchor`.
+- [x] Tabelas são `PROTECTED`, com RLS e `FORCE RLS`.
+- [x] Migration `20260721_0011` aplicada e `alembic check` sem divergências.
+- [x] 11 testes relacionados, Ruff e Mypy aprovados.
+- [x] Validação manual do responsável: 11 testes, Alembic, Ruff e Mypy aprovados.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Riscos residuais:** o provider falso não implementa RFC 3161, não possui confiança pública e não produz efeito jurídico; TSA real e seu perfil exigem decisão posterior aprovada.
+
+## Como validar o Passo 4.4
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/application/test_timestamping_service.py tests/infrastructure/test_timestamp_persistence_contract.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_application/timestamping.py packages/core_infrastructure/fake_timestamp.py packages/core_infrastructure/persistence/timestamping.py tests/application/test_timestamping_service.py tests/infrastructure/test_timestamp_persistence_contract.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application/timestamping.py packages/core_infrastructure/fake_timestamp.py packages/core_infrastructure/persistence/timestamping.py tests/application/test_timestamping_service.py tests/infrastructure/test_timestamp_persistence_contract.py
+.venv\Scripts\python.exe -m mypy packages/core_application/timestamping.py packages/core_infrastructure/fake_timestamp.py packages/core_infrastructure/persistence/timestamping.py tests/application/test_timestamping_service.py tests/infrastructure/test_timestamp_persistence_contract.py
+```
+
+Resultado esperado: 11 testes aprovados; banco em `20260721_0011 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados.
 
 ## Comandos para testar o Passo 1.4D
 

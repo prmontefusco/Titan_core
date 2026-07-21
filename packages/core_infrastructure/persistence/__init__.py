@@ -22,6 +22,7 @@ from packages.core_infrastructure.persistence.organizations import (
     OrganizationRepository,
     set_local_organization_context,
 )
+from packages.core_infrastructure.persistence.timestamping import TimestampAuditRepository
 from packages.core_infrastructure.persistence.users import UserRepository
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "MembershipRepository",
     "OrganizationRepository",
     "StoredDomainEvent",
+    "TimestampAuditRepository",
     "UserRepository",
     "check_database_connection",
     "create_database_engine",
