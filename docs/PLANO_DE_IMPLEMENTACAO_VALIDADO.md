@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 2.1 concluído e aprovado; próximo incremento: Passo 2.2
+**Status:** em execução — Passo 2.2 concluído e aprovado; próximo incremento: Passo 2.3
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -234,6 +234,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** relógio injetável e regra única para timestamps/timezone.
 
 **Validação manual:** congelar o tempo em teste e confirmar distinção entre momento do fato e momento do registro.
+
+**Resultado:** concluído e aprovado no Shared Kernel com contrato `Clock`, `SystemClock`, `FixedClock`, validação obrigatória de UTC e `RecordTimestamps` imutável distinguindo ocorrência de registro.
 
 #### Passo 2.3 — Serialização canônica
 
@@ -688,4 +690,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 2.1 estão concluídos e aprovados. O próximo incremento é o **Passo 2.2 — relógio e datas**.
+Os Passos 0.1 a 2.2 estão concluídos e aprovados. O próximo incremento é o **Passo 2.3 — serialização canônica**.
