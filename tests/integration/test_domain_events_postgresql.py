@@ -90,7 +90,8 @@ def test_event_store_orders_versions_rejects_gaps_and_isolates_organizations() -
                 connection.execute(
                     text(
                         f"GRANT SELECT, INSERT ON core_identity.organizations, "
-                        f"core_audit.domain_events TO {quoted_role}"
+                        f"core_audit.domain_events, core_audit.domain_event_integrity "
+                        f"TO {quoted_role}"
                     )
                 )
                 connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
@@ -123,6 +124,10 @@ def test_event_store_orders_versions_rejects_gaps_and_isolates_organizations() -
                 assert [
                     item.aggregate_version for item in events.list_for_aggregate(first_aggregate)
                 ] == [1, 2]
+                stored_chain = events.list_for_aggregate(first_aggregate)
+                assert stored_chain[0].previous_hash is None
+                assert stored_chain[0].current_hash == stored_chain[1].previous_hash
+                assert stored_chain[1].current_hash is not None
 
                 set_local_organization_context(connection, second_organization.organization_id)
                 organizations.add(second_organization)
@@ -165,7 +170,10 @@ def test_runtime_role_cannot_update_delete_or_truncate_events() -> None:
                 )
                 connection.execute(text(f"GRANT USAGE ON SCHEMA core_audit TO {quoted_role}"))
                 connection.execute(
-                    text(f"GRANT SELECT, INSERT ON core_audit.domain_events TO {quoted_role}")
+                    text(
+                        f"GRANT SELECT, INSERT ON core_audit.domain_events, "
+                        f"core_audit.domain_event_integrity TO {quoted_role}"
+                    )
                 )
                 connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
                 DomainEventRepository(connection).append(
@@ -179,6 +187,9 @@ def test_runtime_role_cannot_update_delete_or_truncate_events() -> None:
                     "UPDATE core_audit.domain_events SET event_version = 2",
                     "DELETE FROM core_audit.domain_events",
                     "TRUNCATE core_audit.domain_events",
+                    "UPDATE core_audit.domain_event_integrity SET hash_profile_version = 2",
+                    "DELETE FROM core_audit.domain_event_integrity",
+                    "TRUNCATE core_audit.domain_event_integrity",
                 ):
                     savepoint = connection.begin_nested()
                     with pytest.raises(ProgrammingError):

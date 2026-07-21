@@ -11,7 +11,11 @@ from packages.core_infrastructure.persistence import (
     DatabaseSettings,
     create_database_engine,
 )
-from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA, domain_events_table
+from packages.core_infrastructure.persistence.events import (
+    CORE_AUDIT_SCHEMA,
+    domain_events_table,
+    event_integrity_table,
+)
 from packages.core_infrastructure.persistence.external_identities import external_identities_table
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
@@ -27,6 +31,7 @@ target_metadata = external_identities_table.metadata
 # O import registra a tabela no mesmo MetaData compartilhado usado pelo Alembic.
 assert bootstrap_receipts_table.metadata is target_metadata
 assert domain_events_table.metadata is target_metadata
+assert event_integrity_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

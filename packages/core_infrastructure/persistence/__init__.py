@@ -10,6 +10,7 @@ from packages.core_infrastructure.persistence.database import (
 from packages.core_infrastructure.persistence.events import (
     DomainEventRepository,
     EventAppendConflict,
+    EventIntegrityUnavailable,
     StoredDomainEvent,
 )
 from packages.core_infrastructure.persistence.external_identities import (
@@ -29,6 +30,7 @@ __all__ = [
     "ExternalIdentityRepository",
     "DomainEventRepository",
     "EventAppendConflict",
+    "EventIntegrityUnavailable",
     "MembershipRepository",
     "OrganizationRepository",
     "StoredDomainEvent",

@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 4.1 estão concluídos e aprovados. O próximo incremento é o Passo 4.2 — Cadeia de hashes.
+Os Passos 1.4A a 4.2 estão concluídos e aprovados. O próximo incremento é o Passo 4.3 — Checkpoint verificável.
 
 ## Executar a API
 

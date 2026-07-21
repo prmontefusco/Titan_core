@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.2 — Cadeia de hashes
+**Próximo passo planejado:** Passo 4.3 — Checkpoint verificável
 
 ## Como manter este checklist
 
@@ -860,6 +860,47 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: 21 testes sem banco e dois testes PostgreSQL aprovados; banco em `20260721_0008 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. O segundo teste PostgreSQL tenta e confirma a recusa de `UPDATE`, `DELETE` e `TRUNCATE` sob papel de runtime restrito.
+
+### Passo 4.2 — Cadeia de hashes
+
+- [x] Cadeia possui escopo por agregado e não atravessa Organizations.
+- [x] Perfil `titan-event-chain` e versão `1` são explícitos.
+- [x] Algoritmo `SHA-256` e serialização `titan-json-v1` são explícitos.
+- [x] Hash cobre bytes canônicos completos do evento e hash anterior.
+- [x] Primeiro elo exige hash anterior ausente; elos posteriores exigem 32 bytes.
+- [x] Evento e elo de integridade são persistidos na mesma transação.
+- [x] Elo anterior ausente produz `ELO_ANTERIOR_INDISPONIVEL`, nunca validade presumida.
+- [x] Verificador funciona sem banco, segredo ou provider externo.
+- [x] Verificador distingue `VALIDA`, `INVALIDA` e `INDETERMINADA`.
+- [x] Adulteração identifica exatamente a posição divergente.
+- [x] Perfil não suportado produz `PERFIL_NAO_SUPORTADO`.
+- [x] Tabela `core_audit.domain_event_integrity` é `PROTECTED`, com RLS e `FORCE RLS`.
+- [x] Papel de runtime não pode alterar, apagar ou truncar elos.
+- [x] Migration `20260721_0009` possui downgrade validado.
+- [x] Banco terminou em `20260721_0009 (head)` e `alembic check` não encontrou divergências.
+- [x] 27 testes relacionados, Ruff e Mypy aprovados.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/core_integrity/event_chain.py`, `packages/core_infrastructure/persistence/events.py`, migration `20260721_0009` e testes relacionados.
+- **Riscos residuais:** a cadeia interna detecta divergências, mas ainda não possui checkpoint ou âncora externa; um administrador capaz de reescrever toda a cadeia só será confrontado por prova preservada fora dela nos Passos 4.3 e 4.4; eventos anteriores sem elo permanecem material insuficiente.
+
+## Como validar o Passo 4.2
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/core_integrity/test_event_chain.py tests/core_domain/test_domain_event.py tests/infrastructure/test_event_persistence_contract.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_domain_events_postgresql.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_integrity packages/core_infrastructure/persistence/events.py tests/core_integrity/test_event_chain.py tests/infrastructure/test_event_persistence_contract.py tests/integration/test_domain_events_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_integrity packages/core_infrastructure/persistence/events.py tests/core_integrity/test_event_chain.py tests/infrastructure/test_event_persistence_contract.py tests/integration/test_domain_events_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_integrity packages/core_infrastructure/persistence/events.py tests/core_integrity/test_event_chain.py tests/infrastructure/test_event_persistence_contract.py tests/integration/test_domain_events_postgresql.py
+```
+
+Resultado esperado: 25 testes sem banco e dois testes PostgreSQL aprovados; banco em `20260721_0009 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. Os testes independentes confirmam determinismo, adulteração na posição exata e perfil não suportado como indeterminado.
 
 ## Comandos para testar o Passo 1.4D
 

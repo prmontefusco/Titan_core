@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 4.1 concluído e aprovado; próximo incremento: Passo 4.2
+**Status:** em execução — Passo 4.2 concluído e aprovado; próximo incremento: Passo 4.3
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -328,6 +328,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** hash anterior/atual com algoritmo versionado e verificador independente.
 
 **Validação manual:** verificar cadeia íntegra, adulterar uma cópia em ambiente de teste e confirmar detecção exata do ponto de quebra.
+
+**Resultado:** concluído e aprovado. Cada agregado possui cadeia `SHA-256` sob perfil e serialização versionados; evento e elo são atômicos, e o verificador independente distingue cadeia válida, inválida e indeterminada sem consultar banco ou segredo.
 
 #### Passo 4.3 — Checkpoint verificável
 
@@ -710,4 +712,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 4.1 estão concluídos e aprovados. O próximo incremento é o **Passo 4.2 — Cadeia de hashes**.
+Os Passos 0.1 a 4.2 estão concluídos e aprovados. O próximo incremento é o **Passo 4.3 — Checkpoint verificável**.

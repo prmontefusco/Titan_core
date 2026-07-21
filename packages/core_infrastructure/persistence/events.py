@@ -10,6 +10,7 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     LargeBinary,
     String,
@@ -25,6 +26,7 @@ from sqlalchemy.engine import Row
 
 from packages.core_domain import DomainEvent
 from packages.core_infrastructure.persistence.organizations import organization_metadata
+from packages.core_integrity import build_event_chain_entry
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 CORE_AUDIT_SCHEMA = "core_audit"
@@ -80,9 +82,54 @@ domain_events_table = Table(
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
 )
 
+event_integrity_table = Table(
+    "domain_event_integrity",
+    organization_metadata,
+    Column("event_id", UUID(as_uuid=True), primary_key=True),
+    Column("record_owner_organization_id", UUID(as_uuid=True), nullable=False),
+    Column("aggregate_type", String(100), nullable=False),
+    Column("aggregate_id", UUID(as_uuid=True), nullable=False),
+    Column("aggregate_version", Integer, nullable=False),
+    Column("previous_hash", LargeBinary, nullable=True),
+    Column("current_hash", LargeBinary, nullable=False),
+    Column("event_canonical_bytes", LargeBinary, nullable=False),
+    Column("hash_algorithm", String(30), nullable=False),
+    Column("hash_profile", String(100), nullable=False),
+    Column("hash_profile_version", Integer, nullable=False),
+    Column("canonical_serialization_version", String(50), nullable=False),
+    CheckConstraint("octet_length(current_hash) = 32", name="ck_integrity_current_hash_size"),
+    CheckConstraint(
+        "previous_hash IS NULL OR octet_length(previous_hash) = 32",
+        name="ck_integrity_previous_hash_size",
+    ),
+    CheckConstraint(
+        "(aggregate_version = 1 AND previous_hash IS NULL) OR "
+        "(aggregate_version > 1 AND previous_hash IS NOT NULL)",
+        name="ck_integrity_previous_hash_position",
+    ),
+    ForeignKeyConstraint(
+        ["event_id"],
+        ["core_audit.domain_events.event_id"],
+        name="fk_event_integrity_event",
+    ),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "aggregate_type",
+        "aggregate_id",
+        "aggregate_version",
+        name="uq_event_integrity_aggregate_version",
+    ),
+    schema=CORE_AUDIT_SCHEMA,
+    comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
+)
+
 
 class EventAppendConflict(RuntimeError):
     """Indica versão inesperada sem revelar dados de outro contexto."""
+
+
+class EventIntegrityUnavailable(RuntimeError):
+    """Indica cadeia anterior ausente sem converter lacuna em integridade válida."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +151,13 @@ class StoredDomainEvent:
     payload_schema: str
     payload_version: int
     payload_canonical_bytes: bytes
+    previous_hash: bytes | None
+    current_hash: bytes | None
+    event_canonical_bytes: bytes | None
+    hash_algorithm: str | None
+    hash_profile: str | None
+    hash_profile_version: int | None
+    canonical_serialization_version: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +190,22 @@ class DomainEventRepository:
         if event.aggregate_version != expected_version:
             raise EventAppendConflict("VERSAO_DE_AGREGADO_CONFLITANTE")
 
+        previous_hash: bytes | None = None
+        if current_version is not None:
+            previous_hash = self.connection.execute(
+                select(event_integrity_table.c.current_hash).where(
+                    event_integrity_table.c.record_owner_organization_id
+                    == event.organization_id.value,
+                    event_integrity_table.c.aggregate_type == aggregate.target_id.entity_type,
+                    event_integrity_table.c.aggregate_id == aggregate.target_id.value,
+                    event_integrity_table.c.aggregate_version == current_version,
+                )
+            ).scalar_one_or_none()
+            if previous_hash is None:
+                raise EventIntegrityUnavailable("ELO_ANTERIOR_INDISPONIVEL")
+
+        integrity = build_event_chain_entry(event, previous_hash)
+
         self.connection.execute(
             insert(domain_events_table).values(
                 event_id=event.event_id.value,
@@ -163,6 +233,22 @@ class DomainEventRepository:
                 payload_canonical_bytes=event.payload.canonical_bytes,
             )
         )
+        self.connection.execute(
+            insert(event_integrity_table).values(
+                event_id=event.event_id.value,
+                record_owner_organization_id=event.organization_id.value,
+                aggregate_type=aggregate.target_id.entity_type,
+                aggregate_id=aggregate.target_id.value,
+                aggregate_version=event.aggregate_version,
+                previous_hash=integrity.previous_hash,
+                current_hash=integrity.current_hash,
+                event_canonical_bytes=integrity.event_canonical_bytes,
+                hash_algorithm=integrity.hash_algorithm,
+                hash_profile=integrity.hash_profile,
+                hash_profile_version=integrity.hash_profile_version,
+                canonical_serialization_version=integrity.canonical_serialization_version,
+            )
+        )
 
     def list_for_aggregate(
         self, aggregate_reference: UniversalReference
@@ -172,7 +258,13 @@ class DomainEventRepository:
         if aggregate_reference.organization_id is None:
             raise ValueError("O agregado persistido deve possuir Organization.")
         rows = self.connection.execute(
-            select(domain_events_table)
+            select(domain_events_table, event_integrity_table)
+            .select_from(
+                domain_events_table.outerjoin(
+                    event_integrity_table,
+                    domain_events_table.c.event_id == event_integrity_table.c.event_id,
+                )
+            )
             .where(
                 domain_events_table.c.record_owner_organization_id
                 == aggregate_reference.organization_id.value,
@@ -240,4 +332,13 @@ def _from_row(row: Row[Any]) -> StoredDomainEvent:
         payload_schema=row.payload_schema,
         payload_version=row.payload_version,
         payload_canonical_bytes=bytes(row.payload_canonical_bytes),
+        previous_hash=None if row.previous_hash is None else bytes(row.previous_hash),
+        current_hash=None if row.current_hash is None else bytes(row.current_hash),
+        event_canonical_bytes=(
+            None if row.event_canonical_bytes is None else bytes(row.event_canonical_bytes)
+        ),
+        hash_algorithm=row.hash_algorithm,
+        hash_profile=row.hash_profile,
+        hash_profile_version=row.hash_profile_version,
+        canonical_serialization_version=row.canonical_serialization_version,
     )
