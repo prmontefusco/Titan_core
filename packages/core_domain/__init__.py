@@ -1,5 +1,6 @@
 """Contratos e invariantes universais do domínio Titan."""
 
+from packages.core_domain.authentication import AuthenticatedPrincipal, PrincipalType
 from packages.core_domain.authorization import (
     MembershipRoleAssignment,
     MembershipRoleRevocation,
@@ -13,6 +14,7 @@ from packages.core_domain.users import User
 
 __all__ = [
     "CanonicalPayload",
+    "AuthenticatedPrincipal",
     "DomainEvent",
     "Membership",
     "MembershipRoleAssignment",
@@ -20,6 +22,7 @@ __all__ = [
     "MembershipStatus",
     "Organization",
     "Permission",
+    "PrincipalType",
     "Role",
     "User",
 ]

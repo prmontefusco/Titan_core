@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -116,7 +117,7 @@ def test_keycloak_is_pinned_and_locally_scoped() -> None:
     keycloak = config["services"]["keycloak"]
 
     assert keycloak["image"] == KEYCLOAK_IMAGE
-    assert keycloak["command"] == ["start-dev"]
+    assert keycloak["command"] == ["start-dev", "--import-realm"]
     assert keycloak["ports"] == [
         {
             "mode": "ingress",
@@ -128,6 +129,15 @@ def test_keycloak_is_pinned_and_locally_scoped() -> None:
     ]
     assert keycloak["environment"]["KC_DB"] == "postgres"
     assert "keycloak-postgres:5432" in keycloak["environment"]["KC_DB_URL"]
+    assert keycloak["volumes"] == [
+        {
+            "type": "bind",
+            "source": str(Path("config/keycloak/titan-realm.json").resolve()),
+            "target": "/opt/keycloak/data/import/titan-realm.json",
+            "read_only": True,
+            "bind": {},
+        }
+    ]
 
 
 def test_keycloak_waits_for_its_dedicated_database_and_has_readiness() -> None:
@@ -159,6 +169,25 @@ def test_keycloak_database_is_private_persistent_and_pinned() -> None:
         "CMD-SHELL",
         "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB",
     ]
+
+
+def test_keycloak_local_realm_separates_api_and_swagger_with_pkce() -> None:
+    realm = json.loads(Path("config/keycloak/titan-realm.json").read_text(encoding="utf-8"))
+    clients = {client["clientId"]: client for client in realm["clients"]}
+    api = clients["titan-api"]
+    swagger = clients["titan-swagger"]
+    assert api["bearerOnly"] is True
+    assert swagger["publicClient"] is True
+    assert swagger["standardFlowEnabled"] is True
+    assert swagger["implicitFlowEnabled"] is False
+    assert swagger["directAccessGrantsEnabled"] is False
+    assert swagger["attributes"]["pkce.code.challenge.method"] == "S256"
+    mappers = {mapper["name"]: mapper for mapper in swagger["protocolMappers"]}
+    assert mappers["titan-api-audience"]["config"]["id.token.claim"] == "false"
+    purpose = mappers["titan-access-token-purpose"]["config"]
+    assert purpose["claim.value"] == "access"
+    assert purpose["id.token.claim"] == "false"
+    assert purpose["access.token.claim"] == "true"
 
 
 def test_rabbitmq_is_pinned_persistent_and_locally_scoped() -> None:

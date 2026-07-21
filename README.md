@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 3.4 estão concluídos e aprovados. O próximo incremento é o Passo 3.5 — Autenticação com OIDC Provider.
+Os Passos 1.4A a 3.5 estão concluídos e aprovados. O próximo incremento é o Passo 3.6 — Isolamento por Organization.
 
 ## Executar a API
 
@@ -96,13 +96,12 @@ docker compose down
 ## Executar o OIDC Provider local
 
 ```text
-docker compose up --detach keycloak
+docker compose up --detach --wait keycloak
 docker compose ps
-curl.exe http://localhost:8080/realms/master/.well-known/openid-configuration
-docker compose down
+curl.exe http://localhost:8080/realms/titan/.well-known/openid-configuration
 ```
 
-O modo `start-dev` e as credenciais padrão do Compose são exclusivos do ambiente local. Realm, clientes, PKCE, MFA e integração com a API pertencem ao Passo 3.5.
+O realm `titan` contém clientes separados para API e Swagger. O Swagger usa Authorization Code com PKCE S256. Antes de iniciar a API protegida, configure `TITAN_OIDC_ISSUER=http://localhost:8080/realms/titan` e `TITAN_OIDC_AUDIENCE=titan-api`. O modo `start-dev` e as credenciais padrão do Compose são exclusivos do ambiente local.
 
 Os requisitos e separações previstos para um futuro servidor estão inventariados em `docs/REQUISITOS_DE_PRODUCAO.md`.
 

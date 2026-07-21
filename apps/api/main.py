@@ -1,16 +1,77 @@
-from typing import Literal
+import os
+from functools import lru_cache
+from typing import Annotated, Literal
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from packages.core_domain import AuthenticatedPrincipal
+from packages.core_infrastructure.authentication import (
+    AccessTokenValidationError,
+    AccessTokenValidator,
+    OidcJwtSettings,
+)
 
 
 class HealthResponse(BaseModel):
     status: Literal["ok"]
 
 
-app = FastAPI(title="Titan API", version="0.0.0")
+class AuthenticationResponse(BaseModel):
+    issuer: str
+    subject: str
+    scopes: list[str]
+
+
+_local_issuer = os.environ.get("TITAN_OIDC_ISSUER", "http://localhost:8080/realms/titan").rstrip(
+    "/"
+)
+oauth2_scheme = OAuth2AuthorizationCodeBearer(
+    authorizationUrl=os.environ.get(
+        "TITAN_OIDC_AUTHORIZATION_URL",
+        f"{_local_issuer}/protocol/openid-connect/auth",
+    ),
+    tokenUrl=os.environ.get(
+        "TITAN_OIDC_TOKEN_URL",
+        f"{_local_issuer}/protocol/openid-connect/token",
+    ),
+    scopes={"openid": "Identificar o principal autenticado"},
+)
+
+app = FastAPI(
+    title="Titan API",
+    version="0.0.0",
+    swagger_ui_init_oauth={
+        "clientId": os.environ.get("TITAN_OIDC_SWAGGER_CLIENT_ID", "titan-swagger"),
+        "usePkceWithAuthorizationCodeGrant": True,
+    },
+)
+
+
+@lru_cache(maxsize=1)
+def get_access_token_validator() -> AccessTokenValidator:
+    return AccessTokenValidator(OidcJwtSettings.from_environment())
+
+
+def require_authenticated_principal(
+    token: Annotated[str, Depends(oauth2_scheme)],
+) -> AuthenticatedPrincipal:
+    try:
+        return get_access_token_validator().validate(token)
+    except (AccessTokenValidationError, RuntimeError) as error:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Access Token ausente ou inválido.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from error
+
+
+AuthenticatedPrincipalDependency = Annotated[
+    AuthenticatedPrincipal, Depends(require_authenticated_principal)
+]
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -42,6 +103,7 @@ async def http_exception_handler(
         },
         media_type="application/problem+json",
         status_code=exception.status_code,
+        headers=exception.headers,
     )
 
 
@@ -53,3 +115,19 @@ async def http_exception_handler(
 )
 async def health() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+@app.get(
+    "/technical/authentication",
+    response_model=AuthenticationResponse,
+    summary="Validar autenticação técnica",
+    tags=["técnico"],
+)
+async def technical_authentication(
+    principal: AuthenticatedPrincipalDependency,
+) -> AuthenticationResponse:
+    return AuthenticationResponse(
+        issuer=principal.issuer,
+        subject=principal.subject,
+        scopes=sorted(principal.technical_scopes),
+    )

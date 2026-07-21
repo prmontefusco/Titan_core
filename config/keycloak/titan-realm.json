@@ -1,0 +1,67 @@
+{
+  "realm": "titan",
+  "enabled": true,
+  "displayName": "Titan Local",
+  "registrationAllowed": false,
+  "resetPasswordAllowed": true,
+  "rememberMe": false,
+  "sslRequired": "external",
+  "clients": [
+    {
+      "clientId": "titan-api",
+      "name": "Titan API Resource Server",
+      "enabled": true,
+      "bearerOnly": true,
+      "protocol": "openid-connect"
+    },
+    {
+      "clientId": "titan-swagger",
+      "name": "Titan Swagger Local",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "implicitFlowEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://127.0.0.1:8000/docs/oauth2-redirect",
+        "http://localhost:8000/docs/oauth2-redirect"
+      ],
+      "webOrigins": [
+        "http://127.0.0.1:8000",
+        "http://localhost:8000"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "protocolMappers": [
+        {
+          "name": "titan-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "titan-api",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "titan-access-token-purpose",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "token_use",
+            "claim.value": "access",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "false",
+            "access.tokenResponse.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

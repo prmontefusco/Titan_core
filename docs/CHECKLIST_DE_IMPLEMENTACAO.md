@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 3.5 — Autenticação com OIDC Provider
+**Próximo passo planejado:** Passo 3.6 — Isolamento por Organization
 
 ## Como manter este checklist
 
@@ -39,7 +39,7 @@ Estados utilizados:
 | 1.5 | Configurar migrations e conexão PostgreSQL | CONCLUÍDO | Aprovada |
 | 1.6 | Configurar CI mínimo | IMPLEMENTADO | Pendente no GitHub |
 | 2.1–2.4 | Primitivas técnicas do Core | NÃO INICIADO | Pendente |
-| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.4 aprovados | Pendente |
+| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.5 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | NÃO INICIADO | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | NÃO INICIADO | Pendente |
@@ -700,6 +700,47 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: oito testes de domínio/contrato e um teste PostgreSQL aprovados; banco em `20260721_0005 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados.
+
+### Passo 3.5 — Autenticação com OIDC Provider
+
+- [x] PyJWT com suporte criptográfico adicionado e fixado no lockfile.
+- [x] Realm local `titan` importável sem User ou segredo real.
+- [x] Resource Server `titan-api` separado do cliente público `titan-swagger`.
+- [x] Swagger configurado com Authorization Code e PKCE S256.
+- [x] Implicit Flow e Password Grant desabilitados no cliente Swagger.
+- [x] Audience `titan-api` emitida somente no Access Token.
+- [x] Claim de finalidade `token_use=access` ausente no ID Token.
+- [x] Validador usa issuer e audience exatos e allowlist `RS256`.
+- [x] Assinatura, expiração, issued-at, subject, tipo e finalidade são validados.
+- [x] ID Token, token adulterado, expirado ou destinado a outro recurso são rejeitados.
+- [x] Infrastructure produz `AuthenticatedPrincipal` sem token bruto.
+- [x] Rota `/technical/authentication` exige Bearer Access Token.
+- [x] Token ausente retorna `401` com `WWW-Authenticate: Bearer`.
+- [x] Discovery e JWKS do Keycloak real foram consultados com sucesso.
+- [x] Credencial inválida foi rejeitada pelo token endpoint com `401`.
+- [x] 25 testes relacionados aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** ADRs 0005 e 0028, `config/keycloak/titan-realm.json`, `packages/core_infrastructure/authentication.py`, `apps/api/main.py` e testes de autenticação/configuração.
+- **Riscos residuais:** `start-dev` e HTTP são exclusivamente locais; User de teste deve ser criado manualmente no Keycloak e nunca versionado; vínculo persistente de ExternalIdentity e Authorization por Organization pertencem aos próximos incrementos; indisponibilidade, rotação e cache JWKS exigem testes operacionais adicionais antes de produção.
+
+## Como validar o Passo 3.5
+
+```powershell
+docker compose up --detach --wait keycloak
+curl.exe http://127.0.0.1:8080/realms/titan/.well-known/openid-configuration
+curl.exe http://127.0.0.1:8080/realms/titan/protocol/openid-connect/certs
+$env:TITAN_OIDC_ISSUER = "http://localhost:8080/realms/titan"
+$env:TITAN_OIDC_AUDIENCE = "titan-api"
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_authentication.py tests/infrastructure/test_oidc_access_token.py tests/api/test_oidc_authentication.py tests/api/test_health.py tests/infrastructure/test_compose_config.py
+.venv\Scripts\python.exe -m ruff check apps/api/main.py packages/core_domain/authentication.py packages/core_infrastructure/authentication.py tests/core_domain/test_authentication.py tests/infrastructure/test_oidc_access_token.py tests/api/test_oidc_authentication.py tests/infrastructure/test_compose_config.py
+.venv\Scripts\python.exe -m mypy apps/api/main.py packages/core_domain/authentication.py packages/core_infrastructure/authentication.py tests/core_domain/test_authentication.py tests/infrastructure/test_oidc_access_token.py tests/api/test_oidc_authentication.py tests/infrastructure/test_compose_config.py
+```
+
+Resultado esperado: Keycloak saudável; discovery do issuer `http://localhost:8080/realms/titan`; JWKS com chaves; 26 testes relacionados aprovados; Ruff e Mypy sem problemas.
 
 ## Comandos para testar o Passo 1.4D
 

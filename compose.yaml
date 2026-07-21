@@ -18,7 +18,7 @@ services:
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.7.0@sha256:2eb3cd316835c990e69e26ade292ffa78f6fb0db7d5fc6377463c162e1979ac0
-    command: ["start-dev"]
+    command: ["start-dev", "--import-realm"]
     depends_on:
       keycloak-postgres:
         condition: service_healthy
@@ -34,6 +34,8 @@ services:
       KC_METRICS_ENABLED: "true"
     ports:
       - "127.0.0.1:${TITAN_OIDC_PORT:-8080}:8080"
+    volumes:
+      - ./config/keycloak/titan-realm.json:/opt/keycloak/data/import/titan-realm.json:ro
     healthcheck:
       test:
         - CMD-SHELL

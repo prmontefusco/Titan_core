@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 3.4 concluído e aprovado; próximo incremento: Passo 3.5
+**Status:** em execução — Passo 3.5 concluído e aprovado; próximo incremento: Passo 3.6
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -292,6 +292,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** OIDC Provider auto-hospedado, cliente OIDC, Authorization Code com PKCE para eventual cliente web, validação de token na API e proteção de uma rota de teste. O OIDC Provider autentica; Titan mantém User, Organization, Membership, Role e Permission.
 
 **Validação manual:** testar credencial válida, ausente, expirada e adulterada; confirmar que logs não contêm segredos.
+
+**Resultado:** concluído e aprovado. O realm local separa API e Swagger, exige Authorization Code com PKCE S256 e emite audience/finalidade somente no Access Token. O adapter independente valida assinatura, algoritmo, issuer, audience, temporalidade, subject, tipo e finalidade, produz `AuthenticatedPrincipal` normalizado e protege rota técnica sem armazenar token.
 
 #### Passo 3.6 — Isolamento por Organization
 
@@ -702,4 +704,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 3.4 estão concluídos e aprovados. O próximo incremento é o **Passo 3.5 — Autenticação com OIDC Provider**.
+Os Passos 0.1 a 3.5 estão concluídos e aprovados. O próximo incremento é o **Passo 3.6 — Isolamento por Organization**.

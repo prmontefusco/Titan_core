@@ -256,14 +256,21 @@ docker compose down
 OIDC Provider local:
 
 ```text
-docker compose up --detach keycloak
+docker compose up --detach --wait keycloak
 docker compose ps
-curl.exe http://localhost:8080/realms/master/.well-known/openid-configuration
+curl.exe http://localhost:8080/realms/titan/.well-known/openid-configuration
 docker compose exec --no-TTY keycloak /opt/keycloak/bin/kc.sh --version
-docker compose down
 ```
 
-O serviço `keycloak` inicia também `keycloak-postgres`. O banco do provider não publica porta no host. `start-dev`, HTTP e credenciais padrão são permitidos somente para desenvolvimento local; não constituem configuração de produção.
+O realm local `titan` é importado com clientes separados `titan-api` e `titan-swagger`. O Swagger usa Authorization Code com PKCE S256. Para executar a API protegida:
+
+```powershell
+$env:TITAN_OIDC_ISSUER = "http://localhost:8080/realms/titan"
+$env:TITAN_OIDC_AUDIENCE = "titan-api"
+python -m uv run --locked uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+```
+
+O serviço `keycloak` inicia também `keycloak-postgres`. O banco do provider não publica porta no host. `start-dev`, HTTP e credenciais padrão são permitidos somente para desenvolvimento local; não constituem configuração de produção. Nunca versionar User real, senha, token ou client secret.
 
 Message Broker local:
 
