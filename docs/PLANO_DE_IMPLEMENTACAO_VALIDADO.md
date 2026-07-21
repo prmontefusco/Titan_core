@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 1.6 concluído e aprovado; próximo incremento: Passo 2.1
+**Status:** em execução — Passo 2.1 concluído e aprovado; próximo incremento: Passo 2.2
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -226,6 +226,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** IDs tipados e referências universais aprovadas, sempre associadas à `Organization` quando aplicável, sem termos pecuários.
 
 **Validação manual:** criar referências válidas e rejeitar tipo, ID ou Organization inválidos; revisar a ausência de conceitos de vertical.
+
+**Resultado:** concluído e aprovado em `packages/shared_kernel` com `TypedId`, `OrganizationId` e `UniversalReference` imutáveis, validação de UUID, tipo lógico, Organization e versão de contrato, sem dependências externas ou conceitos de vertical.
 
 #### Passo 2.2 — Relógio e datas
 
@@ -686,4 +688,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 1.6 estão concluídos e aprovados. O próximo incremento é o **Passo 2.1 — identificadores tipados e referências**.
+Os Passos 0.1 a 2.1 estão concluídos e aprovados. O próximo incremento é o **Passo 2.2 — relógio e datas**.

@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 2.1 — identificadores tipados e referências
+**Próximo passo planejado:** Passo 2.2 — relógio e datas
 
 ## Como manter este checklist
 
@@ -405,6 +405,37 @@ Resultado esperado: `current` mostra `20260721_0001 (head)` após upgrade, fica 
 5. confirmar que o job falha no pytest;
 6. remover a falha, reenviar e confirmar retorno ao estado verde;
 7. não incorporar a falha controlada à branch principal.
+
+### Passo 2.1 — Identificadores tipados e referências
+
+- [x] Pacote real `packages/shared_kernel` criado sem camadas vazias.
+- [x] `TypedId` opaco, imutável e associado a tipo lógico canônico.
+- [x] `OrganizationId` distinto dos demais identificadores.
+- [x] UUID nulo, texto inválido e tipo lógico não canônico rejeitados.
+- [x] `UniversalReference` imutável com ID tipado, Organization opcional e versão do contrato.
+- [x] Organization sem tipo específico rejeitada em runtime.
+- [x] Versão do contrato inválida rejeitada.
+- [x] Nenhuma dependência de framework, persistência, app ou vertical adicionada.
+- [x] 15 testes relacionados aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/shared_kernel/` e `tests/shared_kernel/test_identifiers_and_references.py`.
+- **Riscos residuais:** tipos lógicos ainda não possuem catálogo central; ele deve surgir apenas quando consumidores reais exigirem vocabulário controlado adicional.
+
+## Como validar o Passo 2.1
+
+```text
+.venv\Scripts\python.exe -m pytest -q tests/shared_kernel/test_identifiers_and_references.py
+.venv\Scripts\python.exe -m pytest -q tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m ruff check packages/shared_kernel tests/shared_kernel
+.venv\Scripts\python.exe -m ruff format --check packages/shared_kernel tests/shared_kernel
+.venv\Scripts\python.exe -m mypy packages/shared_kernel tests/shared_kernel
+```
+
+Resultado esperado: 15 testes aprovados, Ruff sem erros, quatro arquivos já formatados e Mypy sem problemas.
 
 ## Comandos para testar o Passo 1.4D
 

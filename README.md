@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 1.6 estão concluídos e aprovados. O próximo incremento é o Passo 2.1 — identificadores tipados e referências.
+Os Passos 1.4A a 2.1 estão concluídos e aprovados. O próximo incremento é o Passo 2.2 — relógio e datas.
 
 ## Executar a API
 
