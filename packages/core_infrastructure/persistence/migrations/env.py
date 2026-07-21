@@ -6,6 +6,7 @@ from typing import Literal
 
 from alembic import context
 
+from packages.core_infrastructure.bootstrap import bootstrap_receipts_table
 from packages.core_infrastructure.persistence import (
     DatabaseSettings,
     create_database_engine,
@@ -21,6 +22,9 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 target_metadata = external_identities_table.metadata
+
+# O import registra a tabela no mesmo MetaData compartilhado usado pelo Alembic.
+assert bootstrap_receipts_table.metadata is target_metadata
 
 
 def include_managed_schema(

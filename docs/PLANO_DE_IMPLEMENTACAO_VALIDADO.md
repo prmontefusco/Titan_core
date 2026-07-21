@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 3.6 concluído e aprovado; próximo incremento: Passo 3.7
+**Status:** em execução — Passo 3.7 concluído e aprovado; próximo incremento: Passo 4.1
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -310,6 +310,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Validação manual:** inicializar ambiente vazio, comprovar que operações protegidas falham antes do bootstrap, aplicar o conjunto mínimo autorizado de forma idempotente e confirmar que perfis ausentes continuam produzindo negação ou resultado indeterminado conforme a Policy.
 
 **Portão:** o conjunto concreto de perfis nasce dos casos de uso aprovados até este passo; este plano não antecipa valores, permissões ou políticas de domínio.
+
+**Resultado:** concluído e aprovado. A ADR-0032 aprovou somente o perfil `ORGANIZATION_OPERADORA_MINIMA` versão `1`; o comando administrativo cria a Organization operadora e recibo auditável idempotente, sem criar ou conceder User, Membership, Role, Permission ou outro perfil.
 
 ### Marco 4 — Auditoria e integridade
 
@@ -706,4 +708,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 3.6 estão concluídos e aprovados. O próximo incremento é o **Passo 3.7 — Perfis mínimos de bootstrap**.
+Os Passos 0.1 a 3.7 estão concluídos e aprovados. O próximo incremento é o **Passo 4.1 — Registro append-only**.

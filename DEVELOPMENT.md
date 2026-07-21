@@ -307,6 +307,17 @@ python -m uv run --locked alembic upgrade head
 python -m uv run --locked alembic current
 ```
 
+Bootstrap mínimo da Organization operadora, após `alembic upgrade head`:
+
+```powershell
+$env:TITAN_OPERATOR_ORGANIZATION_ID="<uuid-estavel-da-organization-operadora>"
+$env:TITAN_BOOTSTRAP_AUTHORITY_ACTOR_ID="<uuid-do-ator-administrativo>"
+$env:TITAN_ENVIRONMENT="DESENVOLVIMENTO"
+python -m uv run --locked python -m apps.bootstrap
+```
+
+Ambientes permitidos: `DESENVOLVIMENTO`, `TESTE`, `HOMOLOGACAO` e `PRODUCAO`. O comando não cria User, Membership, Role ou Permission. A primeira aplicação retorna `APLICADO`; repetições compatíveis retornam `JA_APLICADO`.
+
 Teste reversível enquanto somente a revisão técnica inicial existir:
 
 ```powershell

@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 3.7 — Perfis mínimos de bootstrap
+**Próximo passo planejado:** Passo 4.1 — Registro append-only
 
 ## Como manter este checklist
 
@@ -780,6 +780,48 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: dez testes sem banco e um teste PostgreSQL aprovados; banco em `20260721_0006 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados.
+
+### Passo 3.7 — Perfis mínimos de bootstrap
+
+- [x] ADR-0032 limita o bootstrap à Organization operadora.
+- [x] Identifiers da Organization e da autoridade são configuração explícita.
+- [x] Ambiente usa vocabulário controlado em português.
+- [x] Perfil e versão são estáveis e registrados.
+- [x] Recibo imutável registra origem, autoridade, ambiente, instante e resultado.
+- [x] Execução repetida retorna `JA_APLICADO` sem duplicar registros.
+- [x] Bootstrap não cria User, ExternalIdentity, Membership, Role ou Permission.
+- [x] Configuração divergente falha fechada.
+- [x] Tabela `bootstrap_receipts` é `PROTECTED`, com RLS e `FORCE RLS`.
+- [x] Migration `20260721_0007` possui downgrade validado.
+- [x] Banco terminou em `20260721_0007 (head)` e `alembic check` não encontrou divergências.
+- [x] Testes relacionados, Ruff e Mypy aprovados.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** ADR-0032, `apps/bootstrap`, `packages/core_infrastructure/bootstrap.py`, migration `20260721_0007` e testes relacionados.
+- **Riscos residuais:** o comando exige credencial administrativa; provisionamento de User, Membership, Role, Permission e demais perfis permanece negado até casos de uso próprios; o recibo comprova a aplicação registrada, não a guarda operacional da credencial usada.
+
+## Como validar o Passo 3.7
+
+Use Identifiers fictícios e estáveis exclusivos do seu ambiente local:
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+$env:TITAN_OPERATOR_ORGANIZATION_ID = "20000000-0000-4000-8000-000000000001"
+$env:TITAN_BOOTSTRAP_AUTHORITY_ACTOR_ID = "20000000-0000-4000-8000-000000000002"
+$env:TITAN_ENVIRONMENT = "DESENVOLVIMENTO"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m apps.bootstrap
+.venv\Scripts\python.exe -m apps.bootstrap
+.venv\Scripts\python.exe -m pytest -q tests/infrastructure/test_bootstrap.py tests/integration/test_bootstrap_postgresql.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check apps/bootstrap packages/core_infrastructure/bootstrap.py tests/infrastructure/test_bootstrap.py tests/integration/test_bootstrap_postgresql.py
+.venv\Scripts\python.exe -m mypy apps/bootstrap packages/core_infrastructure/bootstrap.py tests/infrastructure/test_bootstrap.py tests/integration/test_bootstrap_postgresql.py
+```
+
+Resultado esperado: a primeira execução do comando retorna `APLICADO`; a segunda retorna `JA_APLICADO`; seis testes passam; o banco está em `20260721_0007 (head)`; Alembic, Ruff e Mypy não apresentam problemas. Se esse ambiente já tiver sido inicializado com os mesmos valores, ambas as execuções podem retornar `JA_APLICADO`.
 
 ## Comandos para testar o Passo 1.4D
 

@@ -9,7 +9,7 @@ O Titan Core é independente das verticais. A primeira vertical planejada é o T
 O projeto está na fundação documental.
 
 - Passos 0.1 a 0.4 concluídos;
-- ADRs 0001 a 0029 aceitas em `docs/adr/`;
+- ADRs 0001 a 0032 aceitas em `docs/adr/`;
 - workspace Python mínimo criado, com API técnica, infraestrutura local incremental, conexão PostgreSQL e migration técnica inicial, ainda sem pacote de domínio;
 - pytest, Ruff e Mypy configurados, com teste de sanidade e verificação arquitetural inicial;
 - aplicação FastAPI mínima implementada com health check técnico e erros em Problem Details;
@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 3.6 estão concluídos e aprovados. O próximo incremento é o Passo 3.7 — Perfis mínimos de bootstrap.
+Os Passos 1.4A a 3.7 estão concluídos e aprovados. O próximo incremento é o Passo 4.1 — Registro append-only.
 
 ## Executar a API
 
