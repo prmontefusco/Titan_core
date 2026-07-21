@@ -53,6 +53,18 @@ def test_core_domain_does_not_import_framework_or_infrastructure() -> None:
     assert not violations, "Core Domain possui dependência proibida:\n" + "\n".join(violations)
 
 
+def test_core_application_does_not_import_apps_or_infrastructure() -> None:
+    application_root = PACKAGES_ROOT / "core_application"
+    forbidden = ("apps", "packages.core_infrastructure")
+    violations = [
+        f"{module.relative_to(PROJECT_ROOT)} -> {dependency}"
+        for module in python_modules(application_root)
+        for dependency in imported_modules(module)
+        if any(dependency == prefix or dependency.startswith(f"{prefix}.") for prefix in forbidden)
+    ]
+    assert not violations, "Core Application possui dependência proibida:\n" + "\n".join(violations)
+
+
 def test_core_does_not_import_verticals() -> None:
     core_root = PACKAGES_ROOT / "core"
     violations = [

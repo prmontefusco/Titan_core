@@ -7,6 +7,9 @@ from packages.core_infrastructure.persistence.database import (
     check_database_connection,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.external_identities import (
+    ExternalIdentityRepository,
+)
 from packages.core_infrastructure.persistence.memberships import MembershipRepository
 from packages.core_infrastructure.persistence.organizations import (
     OrganizationRepository,
@@ -18,6 +21,7 @@ __all__ = [
     "DatabaseConfigurationError",
     "AuthorizationRepository",
     "DatabaseSettings",
+    "ExternalIdentityRepository",
     "MembershipRepository",
     "OrganizationRepository",
     "UserRepository",

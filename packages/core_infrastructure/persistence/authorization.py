@@ -243,3 +243,25 @@ class AuthorizationRepository:
             )
         ).scalars()
         return frozenset(rows)
+
+    def effective_role_ids(self, membership_id: TypedId, instant: datetime) -> tuple[TypedId, ...]:
+        revoked = exists(
+            select(revocations_table.c.revocation_id).where(
+                revocations_table.c.assignment_id == assignments_table.c.assignment_id,
+                revocations_table.c.revoked_at <= instant,
+            )
+        )
+        rows = self.connection.execute(
+            select(assignments_table.c.role_id)
+            .where(
+                assignments_table.c.membership_id == membership_id.value,
+                assignments_table.c.valid_from <= instant,
+                or_(
+                    assignments_table.c.valid_until.is_(None),
+                    assignments_table.c.valid_until > instant,
+                ),
+                ~revoked,
+            )
+            .order_by(assignments_table.c.role_id)
+        ).scalars()
+        return tuple(TypedId(entity_type="role", value=value) for value in rows)

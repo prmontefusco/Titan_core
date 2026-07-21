@@ -10,7 +10,7 @@ from packages.core_infrastructure.persistence import (
     DatabaseSettings,
     create_database_engine,
 )
-from packages.core_infrastructure.persistence.authorization import revocations_table
+from packages.core_infrastructure.persistence.external_identities import external_identities_table
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
 )
@@ -20,7 +20,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = revocations_table.metadata
+target_metadata = external_identities_table.metadata
 
 
 def include_managed_schema(

@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 3.5 concluído e aprovado; próximo incremento: Passo 3.6
+**Status:** em execução — Passo 3.6 concluído e aprovado; próximo incremento: Passo 3.7
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -300,6 +300,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** enforcement na aplicação e infraestrutura, sem consulta cruzada implícita.
 
 **Validação manual:** repetir consultas e mutações com duas organizações e tentar enumeração de IDs; nenhum dado deve atravessar fronteiras.
+
+**Resultado:** concluído e aprovado. O fluxo resolve ExternalIdentity por `(issuer, subject)`, exige Membership humana válida, calcula Roles e Permissions efetivas e só então constrói OrganizationContext imutável. O adapter PostgreSQL aplica contextos RLS internamente; subject desconhecido, Organization sem vínculo e IDs invisíveis falham fechados sem distinção externa.
 
 #### Passo 3.7 — Perfis mínimos de bootstrap
 
@@ -704,4 +706,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 3.5 estão concluídos e aprovados. O próximo incremento é o **Passo 3.6 — Isolamento por Organization**.
+Os Passos 0.1 a 3.6 estão concluídos e aprovados. O próximo incremento é o **Passo 3.7 — Perfis mínimos de bootstrap**.

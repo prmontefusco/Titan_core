@@ -9,6 +9,11 @@ from packages.core_domain.authorization import (
 )
 from packages.core_domain.events import CanonicalPayload, DomainEvent
 from packages.core_domain.memberships import Membership, MembershipStatus
+from packages.core_domain.organization_context import (
+    ExternalIdentity,
+    ExternalIdentityStatus,
+    OrganizationContext,
+)
 from packages.core_domain.organizations import Organization
 from packages.core_domain.users import User
 
@@ -16,11 +21,14 @@ __all__ = [
     "CanonicalPayload",
     "AuthenticatedPrincipal",
     "DomainEvent",
+    "ExternalIdentity",
+    "ExternalIdentityStatus",
     "Membership",
     "MembershipRoleAssignment",
     "MembershipRoleRevocation",
     "MembershipStatus",
     "Organization",
+    "OrganizationContext",
     "Permission",
     "PrincipalType",
     "Role",

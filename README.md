@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 3.5 estão concluídos e aprovados. O próximo incremento é o Passo 3.6 — Isolamento por Organization.
+Os Passos 1.4A a 3.6 estão concluídos e aprovados. O próximo incremento é o Passo 3.7 — Perfis mínimos de bootstrap.
 
 ## Executar a API
 

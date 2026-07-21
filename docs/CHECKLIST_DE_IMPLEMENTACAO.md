@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 3.6 — Isolamento por Organization
+**Próximo passo planejado:** Passo 3.7 — Perfis mínimos de bootstrap
 
 ## Como manter este checklist
 
@@ -39,7 +39,7 @@ Estados utilizados:
 | 1.5 | Configurar migrations e conexão PostgreSQL | CONCLUÍDO | Aprovada |
 | 1.6 | Configurar CI mínimo | IMPLEMENTADO | Pendente no GitHub |
 | 2.1–2.4 | Primitivas técnicas do Core | NÃO INICIADO | Pendente |
-| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.5 aprovados | Pendente |
+| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.6 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | NÃO INICIADO | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | NÃO INICIADO | Pendente |
@@ -741,6 +741,45 @@ $env:TITAN_OIDC_AUDIENCE = "titan-api"
 ```
 
 Resultado esperado: Keycloak saudável; discovery do issuer `http://localhost:8080/realms/titan`; JWKS com chaves; 26 testes relacionados aprovados; Ruff e Mypy sem problemas.
+
+### Passo 3.6 — Isolamento por Organization
+
+- [x] `ExternalIdentity` canônica usa `(issuer, subject)` e referencia User interno.
+- [x] Email, nome, username, token e senha não integram o vínculo externo.
+- [x] `OrganizationContext` é imutável e não contém token bruto.
+- [x] Organization solicitada é tratada como entrada não confiável.
+- [x] Application resolve identidade externa antes de consultar Membership.
+- [x] Exatamente uma Membership válida é exigida para o contexto humano.
+- [x] Roles e Permissions efetivas são calculadas após validar Membership.
+- [x] Subject desconhecido e Organization sem vínculo falham com negação indistinguível.
+- [x] Adapter PostgreSQL define internamente o contexto RLS da operadora e da Organization solicitada.
+- [x] Tabela `external_identities` é `PROTECTED`, com RLS e `FORCE RLS`.
+- [x] `(issuer, subject)` possui unicidade estrutural.
+- [x] Migration `20260721_0006` possui downgrade validado.
+- [x] Banco terminou em `20260721_0006 (head)` e `alembic check` não encontrou divergências.
+- [x] Teste PostgreSQL comprovou acesso permitido e negação em outra Organization.
+- [x] Teste arquitetural protege Application contra dependência de Infrastructure e apps.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/core_domain/organization_context.py`, `packages/core_application/organization_context.py`, `packages/core_infrastructure/organization_context.py`, migration `20260721_0006` e testes relacionados.
+- **Riscos residuais:** suspensão/relink de ExternalIdentity exige caso de uso append-only próprio; ServiceIdentity e AuthorizationGrant ainda não integram este fluxo; finalidade e recurso serão adicionados quando existir caso de uso protegido concreto.
+
+## Como validar o Passo 3.6
+
+```powershell
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_organization_context.py tests/application/test_organization_context_service.py tests/infrastructure/test_organization_context_persistence_contract.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_organization_context_postgresql.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_domain/organization_context.py packages/core_application packages/core_infrastructure/organization_context.py packages/core_infrastructure/persistence/external_identities.py
+.venv\Scripts\python.exe -m mypy packages/core_domain/organization_context.py packages/core_application packages/core_infrastructure/organization_context.py packages/core_infrastructure/persistence/external_identities.py
+```
+
+Resultado esperado: dez testes sem banco e um teste PostgreSQL aprovados; banco em `20260721_0006 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados.
 
 ## Comandos para testar o Passo 1.4D
 
