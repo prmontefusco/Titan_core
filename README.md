@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 3.7 estão concluídos e aprovados. O próximo incremento é o Passo 4.1 — Registro append-only.
+Os Passos 1.4A a 4.1 estão concluídos e aprovados. O próximo incremento é o Passo 4.2 — Cadeia de hashes.
 
 ## Executar a API
 

@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.1 — Registro append-only
+**Próximo passo planejado:** Passo 4.2 — Cadeia de hashes
 
 ## Como manter este checklist
 
@@ -822,6 +822,44 @@ $env:TITAN_ENVIRONMENT = "DESENVOLVIMENTO"
 ```
 
 Resultado esperado: a primeira execução do comando retorna `APLICADO`; a segunda retorna `JA_APLICADO`; seis testes passam; o banco está em `20260721_0007 (head)`; Alembic, Ruff e Mypy não apresentam problemas. Se esse ambiente já tiver sido inicializado com os mesmos valores, ambas as execuções podem retornar `JA_APLICADO`.
+
+### Passo 4.1 — Registro append-only
+
+- [x] Application expõe somente registro append e consulta de versões.
+- [x] `DomainEvent` preserva Organization, agregado, autoria, Source, correlação e payload canônico.
+- [x] PostgreSQL mantém sequência contínua por agregado.
+- [x] Lacuna ou versão repetida produz `VERSAO_DE_AGREGADO_CONFLITANTE`.
+- [x] Consulta retorna eventos em ordem de versão do agregado.
+- [x] Tabela `core_audit.domain_events` é `PROTECTED`, com RLS e `FORCE RLS`.
+- [x] Papel de runtime sem `BYPASSRLS` não atravessa Organizations.
+- [x] Papel de runtime possui somente `SELECT` e `INSERT` no teste controlado.
+- [x] `UPDATE`, `DELETE` e `TRUNCATE` são recusados pelo PostgreSQL.
+- [x] Hash anterior/atual não foi antecipado e permanece no Passo 4.2.
+- [x] Migration `20260721_0008` possui downgrade validado.
+- [x] Banco terminou em `20260721_0008 (head)` e `alembic check` não encontrou divergências.
+- [x] 23 testes relacionados, Ruff e Mypy aprovados.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/core_application/event_log.py`, `packages/core_infrastructure/persistence/events.py`, migration `20260721_0008` e testes relacionados.
+- **Riscos residuais:** cadeia criptográfica pertence ao Passo 4.2; correção, idempotência e concorrência simultânea pertencem respectivamente aos Passos 4.5, 4.6 e 4.7; privilégios definitivos do papel de produção ainda dependem do provisionamento operacional desse papel.
+
+## Como validar o Passo 4.1
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_domain_event.py tests/application/test_event_log_service.py tests/infrastructure/test_event_persistence_contract.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_domain_events_postgresql.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_application packages/core_infrastructure/persistence/events.py tests/application/test_event_log_service.py tests/infrastructure/test_event_persistence_contract.py tests/integration/test_domain_events_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application packages/core_infrastructure/persistence/events.py tests/application/test_event_log_service.py tests/infrastructure/test_event_persistence_contract.py tests/integration/test_domain_events_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_application packages/core_infrastructure/persistence/events.py tests/application/test_event_log_service.py tests/infrastructure/test_event_persistence_contract.py tests/integration/test_domain_events_postgresql.py
+```
+
+Resultado esperado: 21 testes sem banco e dois testes PostgreSQL aprovados; banco em `20260721_0008 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. O segundo teste PostgreSQL tenta e confirma a recusa de `UPDATE`, `DELETE` e `TRUNCATE` sob papel de runtime restrito.
 
 ## Comandos para testar o Passo 1.4D
 

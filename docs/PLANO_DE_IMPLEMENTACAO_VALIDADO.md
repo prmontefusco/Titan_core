@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 3.7 concluído e aprovado; próximo incremento: Passo 4.1
+**Status:** em execução — Passo 4.1 concluído e aprovado; próximo incremento: Passo 4.2
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -320,6 +320,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** armazenamento imutável de eventos com sequência por agregado e autoria.
 
 **Validação manual:** registrar eventos, consultar a ordem e tentar update/delete pelas interfaces da aplicação; ambos devem ser recusados.
+
+**Resultado:** concluído e aprovado. A Application oferece somente append e consulta ordenada; o PostgreSQL preserva sequência por agregado, autoria, payload canônico, RLS por Organization e nega `UPDATE`, `DELETE` e `TRUNCATE` ao papel de runtime. Encadeamento criptográfico permanece no Passo 4.2.
 
 #### Passo 4.2 — Cadeia de hashes
 
@@ -708,4 +710,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 3.7 estão concluídos e aprovados. O próximo incremento é o **Passo 4.1 — Registro append-only**.
+Os Passos 0.1 a 4.1 estão concluídos e aprovados. O próximo incremento é o **Passo 4.2 — Cadeia de hashes**.

@@ -7,6 +7,11 @@ from packages.core_infrastructure.persistence.database import (
     check_database_connection,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.events import (
+    DomainEventRepository,
+    EventAppendConflict,
+    StoredDomainEvent,
+)
 from packages.core_infrastructure.persistence.external_identities import (
     ExternalIdentityRepository,
 )
@@ -22,8 +27,11 @@ __all__ = [
     "AuthorizationRepository",
     "DatabaseSettings",
     "ExternalIdentityRepository",
+    "DomainEventRepository",
+    "EventAppendConflict",
     "MembershipRepository",
     "OrganizationRepository",
+    "StoredDomainEvent",
     "UserRepository",
     "check_database_connection",
     "create_database_engine",
