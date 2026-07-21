@@ -1,0 +1,144 @@
+name: titan
+
+services:
+  keycloak-postgres:
+    image: postgres:18.4@sha256:3a82e1f56c8f0f5616a11103ac3d47e632c3938698946a7ad26da0df1334744a
+    environment:
+      POSTGRES_DB: ${TITAN_OIDC_DB:-keycloak}
+      POSTGRES_PASSWORD: ${TITAN_OIDC_DB_PASSWORD:-titan_oidc_local_dev_password}
+      POSTGRES_USER: ${TITAN_OIDC_DB_USER:-keycloak}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    volumes:
+      - keycloak_postgres_data:/var/lib/postgresql
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.7.0@sha256:2eb3cd316835c990e69e26ade292ffa78f6fb0db7d5fc6377463c162e1979ac0
+    command: ["start-dev"]
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+    environment:
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${TITAN_OIDC_ADMIN_PASSWORD:-titan_oidc_local_admin_password}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${TITAN_OIDC_ADMIN_USERNAME:-titan_admin}
+      KC_DB: postgres
+      KC_DB_PASSWORD: ${TITAN_OIDC_DB_PASSWORD:-titan_oidc_local_dev_password}
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${TITAN_OIDC_DB:-keycloak}
+      KC_DB_USERNAME: ${TITAN_OIDC_DB_USER:-keycloak}
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://localhost:${TITAN_OIDC_PORT:-8080}
+      KC_METRICS_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${TITAN_OIDC_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          { printf 'HEAD /health/ready HTTP/1.0\r\n\r\n' >&0;
+          grep 'HTTP/1.0 200'; } 0<>/dev/tcp/127.0.0.1/9000
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    mem_limit: 1g
+
+  mongo:
+    image: mongo:8.0.26-noble@sha256:b49841837cd7688885d7479d14a71733bacae4c99faaae615622384eaee045a0
+    environment:
+      MONGO_INITDB_DATABASE: ${TITAN_MONGO_DATABASE:-titan_documents}
+      MONGO_INITDB_ROOT_PASSWORD: ${TITAN_MONGO_ROOT_PASSWORD:-titan_local_dev_password}
+      MONGO_INITDB_ROOT_USERNAME: ${TITAN_MONGO_ROOT_USERNAME:-titan_root}
+    ports:
+      - "127.0.0.1:${TITAN_MONGO_PORT:-27017}:27017"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          mongosh --quiet
+          --username "$$MONGO_INITDB_ROOT_USERNAME"
+          --password "$$MONGO_INITDB_ROOT_PASSWORD"
+          --authenticationDatabase admin
+          --eval "quit(db.adminCommand('ping').ok ? 0 : 1)"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    volumes:
+      - mongo_data:/data/db
+
+  postgres:
+    image: postgis/postgis:18-3.6@sha256:b410052c6f0d7d37b83cac1369df144e1c843971155dea3317961001704d0a9d
+    environment:
+      POSTGRES_DB: ${TITAN_POSTGRES_DB:-titan}
+      POSTGRES_PASSWORD: ${TITAN_POSTGRES_PASSWORD:-titan_local_dev_password}
+      POSTGRES_USER: ${TITAN_POSTGRES_USER:-titan}
+    ports:
+      - "127.0.0.1:${TITAN_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql
+
+  rabbitmq:
+    image: rabbitmq:4.3.3-management@sha256:2ddd1887437c46349a2f4830fff217a069ad4e462d99313afeac076f407258fa
+    hostname: titan-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_PASS: ${TITAN_RABBITMQ_PASSWORD:-titan_rabbitmq_local_dev_password}
+      RABBITMQ_DEFAULT_USER: ${TITAN_RABBITMQ_USER:-titan}
+      RABBITMQ_DEFAULT_VHOST: ${TITAN_RABBITMQ_VHOST:-titan}
+    ports:
+      - "127.0.0.1:${TITAN_RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "127.0.0.1:${TITAN_RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          rabbitmq-diagnostics -q check_running &&
+          rabbitmq-diagnostics -q check_local_alarms
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  valkey:
+    image: valkey/valkey:9.1.0@sha256:8e8d64b405ce18f41b8e5ee20aa4687a8ed0022d1298f2ce31cdcf3a76e09411
+    command:
+      - valkey-server
+      - --requirepass
+      - ${TITAN_VALKEY_PASSWORD:-titan_valkey_local_dev_password}
+      - --maxmemory
+      - ${TITAN_VALKEY_MAXMEMORY:-128mb}
+      - --maxmemory-policy
+      - allkeys-lfu
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    environment:
+      VALKEY_PASSWORD: ${TITAN_VALKEY_PASSWORD:-titan_valkey_local_dev_password}
+    ports:
+      - "127.0.0.1:${TITAN_VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - VALKEYCLI_AUTH="$$VALKEY_PASSWORD" valkey-cli ping | grep PONG
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+volumes:
+  keycloak_postgres_data:
+  mongo_data:
+  postgres_data:
+  rabbitmq_data:

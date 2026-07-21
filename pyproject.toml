@@ -1,0 +1,53 @@
+[project]
+name = "titan"
+version = "0.0.0"
+description = "Plataforma de confiança para decisões auditáveis em cadeias reguladas."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic==1.18.5",
+    "fastapi==0.139.2",
+    "psycopg[binary]==3.3.4",
+    "sqlalchemy==2.0.51",
+    "uvicorn==0.51.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2==2.7.0",
+    "mypy==2.3.0",
+    "pytest==9.1.1",
+    "ruff==0.15.22",
+]
+
+[tool.uv]
+package = false
+required-version = "==0.11.30"
+
+[tool.pytest.ini_options]
+addopts = ["--strict-config", "--strict-markers", "-p", "no:cacheprovider"]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "UP"]
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_incomplete_defs = true
+disallow_untyped_defs = true
+files = ["apps", "packages", "tests"]
+no_implicit_optional = true
+python_version = "3.12"
+show_error_codes = true
+strict_equality = true
+warn_redundant_casts = true
+warn_return_any = true
+warn_unreachable = true
+warn_unused_configs = true
+warn_unused_ignores = true

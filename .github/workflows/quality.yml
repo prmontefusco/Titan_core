@@ -1,0 +1,54 @@
+name: Qualidade
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Testes e análise estática
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Obter código
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Configurar Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version-file: .python-version
+
+      - name: Configurar uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: 0.11.30
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Verificar lockfile
+        run: uv lock --check
+
+      - name: Sincronizar ambiente
+        run: uv sync --locked
+
+      - name: Executar testes e verificações arquiteturais
+        run: uv run --locked pytest
+
+      - name: Executar Ruff lint
+        run: uv run --locked ruff check .
+
+      - name: Verificar formatação Ruff
+        run: uv run --locked ruff format --check .
+
+      - name: Executar Mypy
+        run: uv run --locked mypy
