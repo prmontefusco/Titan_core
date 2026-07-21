@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 3.3 estão concluídos e aprovados. O próximo incremento é o Passo 3.4 — Role e Permission.
+Os Passos 1.4A a 3.4 estão concluídos e aprovados. O próximo incremento é o Passo 3.5 — Autenticação com OIDC Provider.
 
 ## Executar a API
 

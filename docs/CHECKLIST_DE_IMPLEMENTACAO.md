@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 3.4 — Role e Permission
+**Próximo passo planejado:** Passo 3.5 — Autenticação com OIDC Provider
 
 ## Como manter este checklist
 
@@ -39,7 +39,7 @@ Estados utilizados:
 | 1.5 | Configurar migrations e conexão PostgreSQL | CONCLUÍDO | Aprovada |
 | 1.6 | Configurar CI mínimo | IMPLEMENTADO | Pendente no GitHub |
 | 2.1–2.4 | Primitivas técnicas do Core | NÃO INICIADO | Pendente |
-| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.3 aprovados | Pendente |
+| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.4 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | NÃO INICIADO | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | NÃO INICIADO | Pendente |
@@ -662,6 +662,44 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: nove testes de domínio/contrato e um teste PostgreSQL aprovados; migration retorna a `20260721_0004 (head)` após downgrade/upgrade; Ruff e Mypy não apresentam problemas. O teste PostgreSQL reverte todos os registros e a role temporária.
+
+### Passo 3.4 — Role e Permission
+
+- [x] ADR 0031 registra ownership e atribuição de papéis.
+- [x] Permission canônica pertence ao `REFERENCE_CATALOG` da Organization operadora.
+- [x] Role imutável pertence à Organization que a define.
+- [x] Role referencia somente Permissions canônicas existentes.
+- [x] MembershipRoleAssignment vincula Membership e Role da mesma Organization.
+- [x] MembershipRoleRevocation remove efeito de forma append-only.
+- [x] Nenhum contrato ou tabela atribui Permission diretamente ao User.
+- [x] Resolução temporal exclui atribuições futuras, expiradas ou revogadas.
+- [x] Tabelas organizacionais são `PROTECTED` com RLS e `FORCE RLS`.
+- [x] Atribuição entre Organizations é rejeitada por constraint estrutural.
+- [x] Migration `20260721_0005` possui downgrade validado.
+- [x] Banco terminou em `20260721_0005 (head)` e `alembic check` não encontrou divergências.
+- [x] 11 testes sem banco e um teste PostgreSQL aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** ADR 0031, `packages/core_domain/authorization.py`, `packages/core_infrastructure/persistence/authorization.py`, migration `20260721_0005` e testes relacionados.
+- **Riscos residuais:** o bootstrap dos códigos canônicos e perfis mínimos pertence ao Passo 3.7; autoridade dos Actors concedente e revogador será validada na Application; Role não substitui Authorization por operação.
+
+## Como validar o Passo 3.4
+
+```powershell
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_authorization.py tests/infrastructure/test_authorization_persistence_contract.py
+.venv\Scripts\python.exe -m pytest -q tests/integration/test_authorization_postgresql.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_domain/authorization.py packages/core_infrastructure/persistence/authorization.py tests/core_domain/test_authorization.py tests/infrastructure/test_authorization_persistence_contract.py tests/integration/test_authorization_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_domain/authorization.py packages/core_infrastructure/persistence/authorization.py tests/core_domain/test_authorization.py tests/infrastructure/test_authorization_persistence_contract.py tests/integration/test_authorization_postgresql.py
+```
+
+Resultado esperado: oito testes de domínio/contrato e um teste PostgreSQL aprovados; banco em `20260721_0005 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados.
 
 ## Comandos para testar o Passo 1.4D
 

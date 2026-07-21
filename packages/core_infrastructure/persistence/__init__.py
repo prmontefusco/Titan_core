@@ -1,5 +1,6 @@
 """Conexão e migrations do PostgreSQL autoritativo."""
 
+from packages.core_infrastructure.persistence.authorization import AuthorizationRepository
 from packages.core_infrastructure.persistence.database import (
     DatabaseConfigurationError,
     DatabaseSettings,
@@ -15,6 +16,7 @@ from packages.core_infrastructure.persistence.users import UserRepository
 
 __all__ = [
     "DatabaseConfigurationError",
+    "AuthorizationRepository",
     "DatabaseSettings",
     "MembershipRepository",
     "OrganizationRepository",

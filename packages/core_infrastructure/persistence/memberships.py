@@ -12,6 +12,7 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Table,
+    UniqueConstraint,
     insert,
     or_,
     select,
@@ -64,6 +65,7 @@ memberships_table = Table(
         "record_owner_organization_id = organization_id",
         name="ck_memberships_owner_is_linked_organization",
     ),
+    UniqueConstraint("membership_id", "organization_id", name="uq_memberships_id_organization"),
     CheckConstraint(
         "valid_until IS NULL OR valid_until > valid_from",
         name="ck_memberships_valid_interval",

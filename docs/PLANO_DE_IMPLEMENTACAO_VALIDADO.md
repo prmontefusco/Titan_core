@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 3.3 concluído e aprovado; próximo incremento: Passo 3.4
+**Status:** em execução — Passo 3.4 concluído e aprovado; próximo incremento: Passo 3.5
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -284,6 +284,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** permissões atribuídas exclusivamente por papéis, nunca diretamente ao User.
 
 **Validação manual:** conceder/remover papel e confirmar mudança de acesso; tentar atribuição direta e confirmar rejeição.
+
+**Resultado:** concluído e aprovado. A ADR 0031 define Permission canônica no catálogo da Organization operadora, Role por Organization, atribuição temporal à Membership e revogação append-only. Constraints, RLS e testes comprovam resolução efetiva, remoção sem apagar histórico, isolamento e ausência de Permission direta ao User.
 
 #### Passo 3.5 — Autenticação com OIDC Provider
 
@@ -700,4 +702,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 3.3 estão concluídos e aprovados. O próximo incremento é o **Passo 3.4 — Role e Permission**.
+Os Passos 0.1 a 3.4 estão concluídos e aprovados. O próximo incremento é o **Passo 3.5 — Autenticação com OIDC Provider**.
