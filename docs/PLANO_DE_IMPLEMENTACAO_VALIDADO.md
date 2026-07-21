@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 2.3 concluído e aprovado; próximo incremento: Passo 2.4
+**Status:** em execução — Passo 2.4 concluído e aprovado; próximo incremento: Passo 3.1
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -250,6 +250,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Entrega:** evento imutável com identidade, Organization, agregado, versão, ocorrido/registrado, ator, origem, correlação, causação e payload versionado.
 
 **Validação manual:** construir evento válido, tentar mutá-lo, validar schema e confirmar ausência de dependências de FastAPI/SQLAlchemy.
+
+**Resultado:** concluído e aprovado em `packages/core_domain` com identidade e referências tipadas, coerência de Organization, temporalidade UTC, correlação e causação, versões positivas e payload obrigatório capturado em bytes canônicos versionados. Teste arquitetural protege a independência de frameworks e infraestrutura.
 
 ### Marco 3 — Identity & Access
 
@@ -692,4 +694,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 2.3 estão concluídos e aprovados. O próximo incremento é o **Passo 2.4 — contrato de evento de domínio**.
+Os Passos 0.1 a 2.4 estão concluídos e aprovados. O próximo incremento é o **Passo 3.1 — Organization**.

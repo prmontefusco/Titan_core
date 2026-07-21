@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 2.4 — contrato de evento de domínio
+**Próximo passo planejado:** Passo 3.1 — Organization
 
 ## Como manter este checklist
 
@@ -502,6 +502,41 @@ Resultado esperado: 7 testes temporais e 22 testes relacionados aprovados, Ruff 
 ```
 
 Resultado esperado: 14 testes de serialização e 36 testes relacionados aprovados, Ruff sem erros, oito arquivos já formatados e Mypy sem problemas.
+
+### Passo 2.4 — Contrato de evento de domínio
+
+- [x] Pacote real `packages/core_domain` criado sem camadas vazias.
+- [x] `DomainEvent` imutável com identidade tipada.
+- [x] Organization obrigatória e coerente com a referência do agregado.
+- [x] Versões do agregado, evento, contrato e payload validadas.
+- [x] Ocorrência e registro preservados separadamente em UTC.
+- [x] Actor e Source preservados como referências tipadas.
+- [x] Correlação obrigatória e causação opcional tipadas.
+- [x] Payload mínimo convertido obrigatoriamente em bytes canônicos versionados.
+- [x] Payload original mutável não altera o snapshot capturado.
+- [x] Chaves evidentes de secrets e credenciais são rejeitadas.
+- [x] Construção de payload diretamente por bytes arbitrários é impedida.
+- [x] Teste arquitetural impede framework, app, infraestrutura e vertical no Core Domain.
+- [x] 14 testes do contrato e 51 testes relacionados aprovados.
+- [x] Ruff lint e formatação aprovados.
+- [x] Mypy aprovado no incremento.
+- [x] Validação manual do responsável.
+- **Data da implementação:** 21 de julho de 2026.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Evidências:** `packages/core_domain/events.py`, `tests/core_domain/test_domain_event.py` e `tests/architecture/test_dependency_boundaries.py`.
+- **Riscos residuais:** minimização semântica e detecção de dados pessoais dependem dos schemas e Policies futuros; a lista defensiva de chaves proibidas não substitui classificação de dados.
+
+## Como validar o Passo 2.4
+
+```text
+.venv\Scripts\python.exe -m pytest -q tests/core_domain/test_domain_event.py
+.venv\Scripts\python.exe -m pytest -q tests/core_domain tests/shared_kernel tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m ruff check packages/core_domain packages/shared_kernel tests/core_domain tests/shared_kernel tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_domain packages/shared_kernel tests/core_domain tests/shared_kernel tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m mypy packages/core_domain packages/shared_kernel tests/core_domain tests/shared_kernel tests/architecture/test_dependency_boundaries.py
+```
+
+Resultado esperado: 14 testes do contrato e 51 testes relacionados aprovados, Ruff sem erros, 12 arquivos já formatados e Mypy sem problemas.
 
 ## Comandos para testar o Passo 1.4D
 
