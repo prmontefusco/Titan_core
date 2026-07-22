@@ -1097,6 +1097,36 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 
 Resultado esperado: 9 testes aprovados; banco em `20260722_0013 (head)`; Alembic, Ruff e Mypy aprovados. O teste de falha confirma que não permanece Event sem OutboxMessage.
 
+### Passo 4.8B — Publisher da Outbox
+
+- [x] Dependência `pika` adicionada ao manifesto e ao lockfile após aprovação.
+- [x] Application define contrato broker-neutral para publisher.
+- [x] Publisher registra aceite do broker separadamente de consumo.
+- [x] Resultado desconhecido permanece recuperável e republicável com o mesmo `message_id`.
+- [x] Estado operacional de publicação fica em tabelas separadas da `OutboxMessage` original.
+- [x] Claim de publicação possui lease recuperável.
+- [x] Adapter RabbitMQ fica restrito à Infrastructure.
+- [x] Validação manual do responsável: aprovado.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Fora deste incremento:** consumer/worker, Inbox, DLQ/quarentena funcional, replay operacional e topologia definitiva de filas de negócio.
+- **Riscos residuais:** a confirmação positiva prova aceite pelo broker conforme configuração local, não recebimento ou processamento por consumidor; falhas de transporte podem deixar resultado desconhecido e exigir retry/reconciliação.
+
+## Como validar o Passo 4.8B
+
+```powershell
+docker compose up --detach --wait postgres rabbitmq
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/infrastructure/test_rabbitmq_publisher.py tests/integration/test_outbox_postgresql.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_application/outbox.py packages/core_application/__init__.py packages/core_infrastructure/persistence/outbox.py packages/core_infrastructure/persistence/__init__.py packages/core_infrastructure/persistence/migrations/env.py packages/core_infrastructure/rabbitmq.py tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/infrastructure/test_rabbitmq_publisher.py tests/integration/test_outbox_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application/outbox.py packages/core_application/__init__.py packages/core_infrastructure/persistence/outbox.py packages/core_infrastructure/persistence/__init__.py packages/core_infrastructure/persistence/migrations/env.py packages/core_infrastructure/rabbitmq.py tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/infrastructure/test_rabbitmq_publisher.py tests/integration/test_outbox_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_application/outbox.py packages/core_application/__init__.py packages/core_infrastructure/persistence/outbox.py packages/core_infrastructure/persistence/__init__.py packages/core_infrastructure/persistence/migrations/env.py packages/core_infrastructure/rabbitmq.py tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/infrastructure/test_rabbitmq_publisher.py tests/integration/test_outbox_postgresql.py
+```
+
+Resultado esperado: testes aprovados; banco em `20260722_0014 (head)`; Alembic, Ruff e Mypy aprovados. O teste de integração confirma retry após `RESULTADO_DESCONHECIDO` com o mesmo `message_id`.
+
 ## Comandos para testar o Passo 1.4D
 
 ```text

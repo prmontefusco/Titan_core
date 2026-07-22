@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 4.8A concluído e aprovado; próximo incremento: Passo 4.8B
+**Status:** em execução — Passo 4.8B concluído e aprovado; próximo incremento a definir
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -372,6 +372,8 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 **Validação manual:** simular falha após a transação, reiniciar e confirmar que a mensagem permanece disponível sem duplicar o evento.
 
 **Portão:** publicação exige a ADR do produto concreto de Message Broker; consumo exige ADR própria do executor de workers. A ADR-0006 define a semântica e as garantias, mas não escolhe esses produtos.
+
+**Resultado parcial:** 4.8A concluído e aprovado com gravação transacional de Event e OutboxMessage. 4.8B concluído e aprovado com publisher broker-neutral, adapter RabbitMQ em Infrastructure, claim/lease recuperável, registro de aceite do broker e preservação de `RESULTADO_DESCONHECIDO` para retry com o mesmo `message_id`. Consumer, Inbox, DLQ/quarentena funcional e executor de workers permanecem fora deste incremento.
 
 ### Marco 5 — Evidência e proveniência
 

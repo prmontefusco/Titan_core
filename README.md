@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 4.8A estão concluídos e aprovados. O próximo incremento é o Passo 4.8B — Publisher da Outbox.
+Os Passos 1.4A a 4.8A estão concluídos e aprovados. O Passo 4.8B — Publisher da Outbox está implementado localmente e aguarda validação manual.
 
 ## Executar a API
 
@@ -115,7 +115,7 @@ curl.exe --user titan:titan_rabbitmq_local_dev_password http://127.0.0.1:15672/a
 docker compose down
 ```
 
-A interface de administração e as credenciais padrão são exclusivamente locais. Publisher, Outbox, filas funcionais e executor de workers não foram implementados nesta subtarefa.
+A interface de administração e as credenciais padrão são exclusivamente locais. O publisher da Outbox publica mensagens confirmadas pelo broker, mas consumer, Inbox, filas funcionais de negócio e executor de workers continuam fora desta subtarefa.
 
 ## Executar o cache efêmero local
 

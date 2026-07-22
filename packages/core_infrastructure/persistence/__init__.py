@@ -23,7 +23,10 @@ from packages.core_infrastructure.persistence.organizations import (
     OrganizationRepository,
     set_local_organization_context,
 )
-from packages.core_infrastructure.persistence.outbox import TransactionalEventOutboxRepository
+from packages.core_infrastructure.persistence.outbox import (
+    OutboxPublicationStateRepository,
+    TransactionalEventOutboxRepository,
+)
 from packages.core_infrastructure.persistence.timestamping import TimestampAuditRepository
 from packages.core_infrastructure.persistence.users import UserRepository
 
@@ -39,6 +42,7 @@ __all__ = [
     "EventIntegrityUnavailable",
     "MembershipRepository",
     "OrganizationRepository",
+    "OutboxPublicationStateRepository",
     "StoredDomainEvent",
     "TimestampAuditRepository",
     "TransactionalEventOutboxRepository",

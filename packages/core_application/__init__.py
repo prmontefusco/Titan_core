@@ -19,7 +19,15 @@ from packages.core_application.organization_context import (
     OrganizationContextDenied,
     OrganizationContextService,
 )
-from packages.core_application.outbox import EventOutboxService, MessageKind, OutboxMessage
+from packages.core_application.outbox import (
+    BrokerPublicationResult,
+    BrokerPublicationStatus,
+    ClaimedOutboxMessage,
+    EventOutboxService,
+    MessageKind,
+    OutboxMessage,
+    OutboxPublisherService,
+)
 from packages.core_application.timestamping import (
     TemporalAnchor,
     TimestampAttempt,
@@ -51,8 +59,12 @@ __all__ = [
     "OrganizationContextDenied",
     "OrganizationContextService",
     "EventOutboxService",
+    "BrokerPublicationResult",
+    "BrokerPublicationStatus",
+    "ClaimedOutboxMessage",
     "MessageKind",
     "OutboxMessage",
+    "OutboxPublisherService",
     "TemporalAnchor",
     "TimestampAttempt",
     "TimestampAttemptStatus",

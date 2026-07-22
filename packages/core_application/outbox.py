@@ -18,6 +18,12 @@ class MessageKind(StrEnum):
     JOB = "JOB"
 
 
+class BrokerPublicationStatus(StrEnum):
+    ACEITA_PELO_BROKER = "ACEITA_PELO_BROKER"
+    RESULTADO_DESCONHECIDO = "RESULTADO_DESCONHECIDO"
+    REJEITADA_PELO_BROKER = "REJEITADA_PELO_BROKER"
+
+
 @dataclass(frozen=True, slots=True)
 class OutboxMessage:
     message_id: TypedId
@@ -60,6 +66,48 @@ class EventAndOutboxWriter(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class ClaimedOutboxMessage:
+    message: OutboxMessage
+    claim_token: TypedId
+
+    def __post_init__(self) -> None:
+        if self.claim_token.entity_type != "outbox_publication_claim":
+            raise ValueError("claim_token deve possuir tipo outbox_publication_claim.")
+
+
+@dataclass(frozen=True, slots=True)
+class BrokerPublicationResult:
+    status: BrokerPublicationStatus
+    reason: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, BrokerPublicationStatus):
+            raise TypeError("status deve ser BrokerPublicationStatus.")
+        if self.status is BrokerPublicationStatus.ACEITA_PELO_BROKER and self.reason:
+            raise ValueError("Aceitacao pelo broker nao registra motivo de falha.")
+
+
+class OutboxPublicationRepository(Protocol):
+    def claim_next(self, *, publisher_id: str) -> ClaimedOutboxMessage | None: ...
+
+    def mark_broker_accepted(
+        self, claimed_message: ClaimedOutboxMessage, result: BrokerPublicationResult
+    ) -> None: ...
+
+    def mark_unknown(
+        self, claimed_message: ClaimedOutboxMessage, result: BrokerPublicationResult
+    ) -> None: ...
+
+    def mark_rejected(
+        self, claimed_message: ClaimedOutboxMessage, result: BrokerPublicationResult
+    ) -> None: ...
+
+
+class MessageBrokerPublisher(Protocol):
+    def publish(self, claimed_message: ClaimedOutboxMessage) -> BrokerPublicationResult: ...
+
+
+@dataclass(frozen=True, slots=True)
 class EventOutboxService:
     writer: EventAndOutboxWriter
 
@@ -69,3 +117,24 @@ class EventOutboxService:
         if message.causation_id != event.event_id:
             raise ValueError("OutboxMessage deve ser causada pelo Event da transação.")
         self.writer.append(event, message)
+
+
+@dataclass(frozen=True, slots=True)
+class OutboxPublisherService:
+    repository: OutboxPublicationRepository
+    publisher: MessageBrokerPublisher
+    publisher_id: str
+
+    def publish_once(self) -> BrokerPublicationResult | None:
+        claimed_message = self.repository.claim_next(publisher_id=self.publisher_id)
+        if claimed_message is None:
+            return None
+
+        result = self.publisher.publish(claimed_message)
+        if result.status is BrokerPublicationStatus.ACEITA_PELO_BROKER:
+            self.repository.mark_broker_accepted(claimed_message, result)
+        elif result.status is BrokerPublicationStatus.RESULTADO_DESCONHECIDO:
+            self.repository.mark_unknown(claimed_message, result)
+        else:
+            self.repository.mark_rejected(claimed_message, result)
+        return result

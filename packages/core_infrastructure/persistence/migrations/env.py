@@ -22,7 +22,11 @@ from packages.core_infrastructure.persistence.idempotency import idempotency_rec
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
 )
-from packages.core_infrastructure.persistence.outbox import outbox_messages_table
+from packages.core_infrastructure.persistence.outbox import (
+    outbox_messages_table,
+    outbox_publication_attempts_table,
+    outbox_publication_state_table,
+)
 from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
 
 config = context.config
@@ -39,6 +43,8 @@ assert event_integrity_table.metadata is target_metadata
 assert integrity_checkpoints_table.metadata is target_metadata
 assert idempotency_records_table.metadata is target_metadata
 assert outbox_messages_table.metadata is target_metadata
+assert outbox_publication_attempts_table.metadata is target_metadata
+assert outbox_publication_state_table.metadata is target_metadata
 assert timestamp_attempts_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
