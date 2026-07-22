@@ -55,7 +55,7 @@ As ADRs registram as decisões e suas consequências. Documentos históricos em 
 
 ## Próximo passo
 
-Os Passos 1.4A a 4.6 estão concluídos e aprovados. O próximo incremento é o Passo 4.7 — Concorrência otimista.
+Os Passos 1.4A a 4.7 estão concluídos e aprovados. O próximo incremento é o Passo 4.8 — Outbox.
 
 ## Executar a API
 

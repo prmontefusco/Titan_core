@@ -1,5 +1,6 @@
 """Casos de uso e coordenação do Titan Core."""
 
+from packages.core_application.concurrency import OptimisticConcurrencyConflict
 from packages.core_application.corrections import CorrectionService
 from packages.core_application.event_log import DomainEventLog, DomainEventLogService
 from packages.core_application.idempotency import (
@@ -34,6 +35,7 @@ from packages.core_application.timestamping import (
 )
 
 __all__ = [
+    "OptimisticConcurrencyConflict",
     "CorrectionService",
     "DomainEventLog",
     "DomainEventLogService",

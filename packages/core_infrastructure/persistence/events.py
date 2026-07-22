@@ -24,6 +24,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.engine import Row
 
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.core_domain import DomainEvent
 from packages.core_infrastructure.persistence.organizations import organization_metadata
 from packages.core_integrity import build_event_chain_entry
@@ -124,8 +125,8 @@ event_integrity_table = Table(
 )
 
 
-class EventAppendConflict(RuntimeError):
-    """Indica versão inesperada sem revelar dados de outro contexto."""
+class EventAppendConflict(OptimisticConcurrencyConflict):
+    """Compatibilidade para conflito de append sem revelar a versão corrente."""
 
 
 class EventIntegrityUnavailable(RuntimeError):
@@ -188,7 +189,7 @@ class DomainEventRepository:
         ).scalar_one()
         expected_version = 1 if current_version is None else current_version + 1
         if event.aggregate_version != expected_version:
-            raise EventAppendConflict("VERSAO_DE_AGREGADO_CONFLITANTE")
+            raise EventAppendConflict
 
         previous_hash: bytes | None = None
         if current_version is not None:

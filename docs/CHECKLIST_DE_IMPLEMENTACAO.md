@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.7 — Concorrência otimista
+**Próximo passo planejado:** Passo 4.8 — Outbox
 
 ## Como manter este checklist
 
@@ -1034,6 +1034,35 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: 10 testes aprovados; banco em `20260722_0012 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. A repetição equivalente executa o efeito uma vez e a intenção divergente produz conflito.
+
+### Passo 4.7 — Concorrência otimista
+
+- [x] `aggregate_version` permanece a versão forte e sequencial do agregado.
+- [x] Conflito possui contrato estável na Application e código público em português.
+- [x] Infrastructure preserva compatibilidade com `EventAppendConflict`.
+- [x] Lock transacional serializa concorrentes do mesmo agregado.
+- [x] Constraint única impede versões duplicadas como defesa adicional.
+- [x] Duas transações concorrentes partindo da mesma versão aceitam somente uma alteração.
+- [x] Alteração obsoleta falha explicitamente sem last-write-wins.
+- [x] Timeline final contém somente as versões `[1, 2]`, sem perda silenciosa.
+- [x] Nenhuma migration ou API HTTP foi antecipada.
+- [x] 8 testes relacionados, Ruff e Mypy aprovados.
+- [x] Validação manual do responsável.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Riscos residuais:** ETag e `If-Match` serão adicionados somente quando existir endpoint mutável correspondente; retry automático não resolve conflito de negócio e exige nova leitura e reavaliação.
+
+## Como validar o Passo 4.7
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m pytest -q tests/application/test_optimistic_concurrency.py tests/integration/test_optimistic_concurrency_postgresql.py tests/integration/test_domain_events_postgresql.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m ruff check packages/core_application/concurrency.py packages/core_application/__init__.py packages/core_infrastructure/persistence/events.py tests/application/test_optimistic_concurrency.py tests/integration/test_optimistic_concurrency_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application/concurrency.py packages/core_application/__init__.py packages/core_infrastructure/persistence/events.py tests/application/test_optimistic_concurrency.py tests/integration/test_optimistic_concurrency_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_application/concurrency.py packages/core_infrastructure/persistence/events.py tests/application/test_optimistic_concurrency.py tests/integration/test_optimistic_concurrency_postgresql.py
+```
+
+Resultado esperado: 8 testes aprovados; Ruff e Mypy aprovados. O teste concorrente retorna exatamente uma `ACEITA` e um conflito, mantendo apenas uma versão 2.
 
 ## Comandos para testar o Passo 1.4D
 
