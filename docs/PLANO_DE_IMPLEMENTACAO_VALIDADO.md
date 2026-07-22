@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em pausa — Passo 4.5 concluído e aprovado; retomar no Passo 4.6
+**Status:** em execução — Passo 4.6 concluído e aprovado; próximo incremento: Passo 4.7
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -714,4 +714,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 4.5 estão concluídos e aprovados. A implementação será retomada no **Passo 4.6 — Idempotência**.
+Os Passos 0.1 a 4.6 estão concluídos e aprovados. O próximo incremento é o **Passo 4.7 — Concorrência otimista**.

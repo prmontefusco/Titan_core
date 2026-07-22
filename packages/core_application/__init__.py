@@ -2,6 +2,13 @@
 
 from packages.core_application.corrections import CorrectionService
 from packages.core_application.event_log import DomainEventLog, DomainEventLogService
+from packages.core_application.idempotency import (
+    IdempotencyConflict,
+    IdempotencyExecution,
+    IdempotencyRequest,
+    IdempotencyResultUnknown,
+    IdempotencyService,
+)
 from packages.core_application.integrity_checkpoint import (
     IntegrityCheckpointService,
     IntegrityCheckpointWriter,
@@ -33,6 +40,11 @@ __all__ = [
     "IdentityAndAccessReader",
     "IntegrityCheckpointService",
     "IntegrityCheckpointWriter",
+    "IdempotencyConflict",
+    "IdempotencyExecution",
+    "IdempotencyRequest",
+    "IdempotencyResultUnknown",
+    "IdempotencyService",
     "OrganizationContextDenied",
     "OrganizationContextService",
     "TemporalAnchor",

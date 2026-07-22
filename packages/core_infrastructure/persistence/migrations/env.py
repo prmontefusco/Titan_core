@@ -18,6 +18,7 @@ from packages.core_infrastructure.persistence.events import (
     event_integrity_table,
 )
 from packages.core_infrastructure.persistence.external_identities import external_identities_table
+from packages.core_infrastructure.persistence.idempotency import idempotency_records_table
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
 )
@@ -35,6 +36,7 @@ assert bootstrap_receipts_table.metadata is target_metadata
 assert domain_events_table.metadata is target_metadata
 assert event_integrity_table.metadata is target_metadata
 assert integrity_checkpoints_table.metadata is target_metadata
+assert idempotency_records_table.metadata is target_metadata
 assert timestamp_attempts_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})

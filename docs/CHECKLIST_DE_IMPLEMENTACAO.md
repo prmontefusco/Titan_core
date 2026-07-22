@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Ponto de retomada:** Passo 4.6 — Idempotência
+**Próximo passo planejado:** Passo 4.7 — Concorrência otimista
 
 ## Como manter este checklist
 
@@ -1001,6 +1001,39 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: 8 testes aprovados; Ruff e Mypy aprovados. O teste PostgreSQL confirma a timeline `registro_criado → registro_corrigido`, a preservação do original e o encadeamento dos hashes.
+
+### Passo 4.6 — Idempotência
+
+- [x] Identidade semântica inclui principal, Organization, Purpose, operação e Digest da intenção.
+- [x] Primeira execução adquire o registro e compromete efeito e resultado na mesma transação.
+- [x] Retry equivalente recupera exatamente o resultado canônico sem repetir o handler.
+- [x] Mesma chave com intenção diferente produz conflito estável em português.
+- [x] Operação sem resultado recuperável permanece desconhecida e não é reexecutada automaticamente.
+- [x] PostgreSQL é autoritativo; Valkey não participa da garantia.
+- [x] Registro é `PROTECTED`, possui RLS e escopo único por identidade semântica.
+- [x] Transição no banco permite somente `EM_PROCESSAMENTO → CONCLUIDA` sem mudar identidade.
+- [x] Migration `20260722_0012` possui downgrade.
+- [x] 9 testes sem banco, Ruff e Mypy aprovados.
+- [x] Migration, integração PostgreSQL e `alembic check`: 10 testes aprovados; downgrade/upgrade validado; banco em `20260722_0012 (head)`.
+- [x] Validação manual do responsável.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Riscos residuais:** retenção operacional ainda será definida por perfil futuro; resultado desconhecido exige reconciliação, não repetição automática; concorrência otimista de agregados pertence ao Passo 4.7.
+
+## Como validar o Passo 4.6
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/application/test_idempotency_service.py tests/infrastructure/test_idempotency_persistence_contract.py tests/integration/test_idempotency_postgresql.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_application/idempotency.py packages/core_infrastructure/persistence/idempotency.py packages/core_application/__init__.py packages/core_infrastructure/persistence/__init__.py packages/core_infrastructure/persistence/migrations/env.py tests/application/test_idempotency_service.py tests/infrastructure/test_idempotency_persistence_contract.py tests/integration/test_idempotency_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application/idempotency.py packages/core_infrastructure/persistence/idempotency.py packages/core_application/__init__.py packages/core_infrastructure/persistence/__init__.py packages/core_infrastructure/persistence/migrations/env.py tests/application/test_idempotency_service.py tests/infrastructure/test_idempotency_persistence_contract.py tests/integration/test_idempotency_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_application/idempotency.py packages/core_infrastructure/persistence/idempotency.py tests/application/test_idempotency_service.py tests/infrastructure/test_idempotency_persistence_contract.py tests/integration/test_idempotency_postgresql.py
+```
+
+Resultado esperado: 10 testes aprovados; banco em `20260722_0012 (head)`; nenhuma operação Alembic pendente; Ruff e Mypy aprovados. A repetição equivalente executa o efeito uma vez e a intenção divergente produz conflito.
 
 ## Comandos para testar o Passo 1.4D
 

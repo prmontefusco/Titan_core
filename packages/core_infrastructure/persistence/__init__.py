@@ -17,6 +17,7 @@ from packages.core_infrastructure.persistence.events import (
 from packages.core_infrastructure.persistence.external_identities import (
     ExternalIdentityRepository,
 )
+from packages.core_infrastructure.persistence.idempotency import IdempotencyRepository
 from packages.core_infrastructure.persistence.memberships import MembershipRepository
 from packages.core_infrastructure.persistence.organizations import (
     OrganizationRepository,
@@ -31,6 +32,7 @@ __all__ = [
     "DatabaseSettings",
     "ExternalIdentityRepository",
     "IntegrityCheckpointRepository",
+    "IdempotencyRepository",
     "DomainEventRepository",
     "EventAppendConflict",
     "EventIntegrityUnavailable",
