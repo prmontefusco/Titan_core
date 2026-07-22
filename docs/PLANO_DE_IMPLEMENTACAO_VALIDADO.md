@@ -1,6 +1,6 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 4.7 concluído e aprovado; próximo incremento: Passo 4.8
+**Status:** em execução — Passo 4.8A concluído e aprovado; próximo incremento: Passo 4.8B
 **Data:** 21 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
@@ -714,4 +714,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 4.7 estão concluídos e aprovados. O próximo incremento é o **Passo 4.8 — Outbox**.
+Os Passos 0.1 a 4.8A estão concluídos e aprovados. O próximo incremento é o **Passo 4.8B — Publisher da Outbox**.

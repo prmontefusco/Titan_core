@@ -79,6 +79,11 @@ domain_events_table = Table(
         "aggregate_version",
         name="uq_domain_events_aggregate_version",
     ),
+    UniqueConstraint(
+        "event_id",
+        "record_owner_organization_id",
+        name="uq_domain_events_event_owner",
+    ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
 )

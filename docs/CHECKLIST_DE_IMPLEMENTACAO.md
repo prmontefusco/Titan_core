@@ -2,7 +2,7 @@
 
 **Atualizado em:** 21 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.8 — Outbox
+**Próximo passo planejado:** Passo 4.8B — Publisher da Outbox
 
 ## Como manter este checklist
 
@@ -1063,6 +1063,39 @@ $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@1
 ```
 
 Resultado esperado: 8 testes aprovados; Ruff e Mypy aprovados. O teste concorrente retorna exatamente uma `ACEITA` e um conflito, mantendo apenas uma versão 2.
+
+### Passo 4.8A — Transactional Outbox
+
+- [x] `OutboxMessage` é contrato técnico de Application e não substitui `DomainEvent`.
+- [x] Semântica distingue Domain Event, Integration Event, Command e Job.
+- [x] Envelope preserva contrato, versão, Organization, Actor, produtor, correlação e causação.
+- [x] Payload é canônico, versionado e classificado; credenciais continuam proibidas.
+- [x] Event e OutboxMessage são gravados na mesma transação PostgreSQL.
+- [x] Falha na Outbox reverte o Event da mesma operação.
+- [x] Mensagem nasce `PENDENTE` e permanece imutável neste incremento.
+- [x] Tabela é `PROTECTED`, com RLS e sem políticas de update ou delete.
+- [x] Migration `20260722_0013` possui downgrade validado.
+- [x] 9 testes relacionados, Ruff, Mypy e `alembic check` aprovados.
+- [x] Validação manual do responsável: todos os testes aprovados.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Fora deste incremento:** publisher, claim/lease, confirmação RabbitMQ, resultado desconhecido, consumer/worker, Inbox e replay.
+- **Riscos residuais:** mensagem pendente ainda não é publicada; estados operacionais de publicação serão registros separados para não alterar o envelope original.
+
+## Como validar o Passo 4.8A
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/integration/test_outbox_postgresql.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_application/outbox.py packages/core_application/__init__.py packages/core_infrastructure/persistence/outbox.py packages/core_infrastructure/persistence/__init__.py packages/core_infrastructure/persistence/migrations/env.py tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/integration/test_outbox_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application/outbox.py packages/core_application/__init__.py packages/core_infrastructure/persistence/outbox.py packages/core_infrastructure/persistence/__init__.py packages/core_infrastructure/persistence/migrations/env.py tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/integration/test_outbox_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_application/outbox.py packages/core_infrastructure/persistence/outbox.py tests/application/test_outbox.py tests/infrastructure/test_outbox_persistence_contract.py tests/integration/test_outbox_postgresql.py
+```
+
+Resultado esperado: 9 testes aprovados; banco em `20260722_0013 (head)`; Alembic, Ruff e Mypy aprovados. O teste de falha confirma que não permanece Event sem OutboxMessage.
 
 ## Comandos para testar o Passo 1.4D
 
