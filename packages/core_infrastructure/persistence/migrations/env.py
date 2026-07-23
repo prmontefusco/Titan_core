@@ -36,6 +36,7 @@ from packages.core_infrastructure.persistence.outbox import (
     outbox_publication_state_table,
 )
 from packages.core_infrastructure.persistence.policy import policies_table
+from packages.core_infrastructure.persistence.relations import relations_table
 from packages.core_infrastructure.persistence.rule import rules_table
 from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
 
@@ -64,6 +65,7 @@ assert policies_table.metadata is target_metadata
 assert rules_table.metadata is target_metadata
 assert evaluations_table.metadata is target_metadata
 assert decisions_table.metadata is target_metadata
+assert relations_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

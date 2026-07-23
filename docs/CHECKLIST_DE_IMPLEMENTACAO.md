@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | NÃO INICIADO | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 implementado | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1655,6 +1655,30 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 295 testes aprovados; banco em `20260722_0026 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.1 — Relação universal e temporal
+
+- [x] `UniversalRelation` imutável criada em `packages/core_domain/relations.py` com origem, destino, tipo, período, Organization, Event criador, evidências, confiança, quantidade opcional com unidade e metadados versionados.
+- [x] `relation_type` é nome canônico livre validado por padrão, não enum: o Core não conhece os vínculos de nenhuma vertical e não precisa mudar quando uma vertical adiciona um vínculo novo.
+- [x] Relação recusa origem ou destino pertencente a outra Organization, e `RelationService` bloqueia travessia entre Organizations com `CrossOrganizationTraversalDenied` antes de consultar o repositório.
+- [x] Encerrar relação declara fim de vigência sem apagar o vínculo: consultas em instantes anteriores continuam respondendo, preservando a genealogia.
+- [x] Quantidade usa `Decimal` (rejeita `float`), nunca negativa e sempre com unidade declarada.
+- [x] Tabela `core_audit.relations` com RLS por `Organization`, índices por origem e destino e migration `20260722_0027` criadas em `packages/core_infrastructure/persistence/relations.py`.
+- [x] Testes unitários (`test_relations_domain.py`), de aplicação (`test_relation_service.py`) e de integração PostgreSQL com RLS (`test_relations_postgresql.py`) aprovados, com grafo fictício genérico consultado em datas diferentes (309 testes no total).
+
+## Comandos para testar o Passo 7.1
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 309 testes aprovados; banco em `20260722_0027 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 

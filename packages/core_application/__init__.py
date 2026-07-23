@@ -76,6 +76,11 @@ from packages.core_application.provenance_service import (
     EvidenceLookupPort,
     ProvenanceService,
 )
+from packages.core_application.relation_service import (
+    CrossOrganizationTraversalDenied,
+    RelationRepositoryPort,
+    RelationService,
+)
 from packages.core_application.rule_service import RuleRepositoryPort, RuleService
 from packages.core_application.timestamping import (
     TemporalAnchor,
@@ -117,6 +122,9 @@ __all__ = [
     "EvaluationRepositoryPort",
     "DecisionService",
     "DecisionRepositoryPort",
+    "RelationService",
+    "RelationRepositoryPort",
+    "CrossOrganizationTraversalDenied",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",

@@ -471,9 +471,17 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 ### Marco 7 — Genealogia, não conformidades, recall, dossiê e sincronização
 
-#### Passo 7.1 — Relação universal e temporal
+#### Passo 7.1 — Relação universal e temporal [x] CONCLUÍDO E TESTADO
 
-**Entrega:** contrato genérico de relação entre referências, com origem, destino, tipo, período, evento, evidências, Organization, confiança e quantidade opcional.
+**Entrega:** `UniversalRelation` imutável em `packages/core_domain/relations.py` com origem, destino, tipo, período de validade, Organization responsável, Event criador, evidências, `ConfidenceLevel`, quantidade `Decimal` opcional com unidade e metadados versionados. `RelationService` e `RelationRepositoryPort` em `packages/core_application/relation_service.py`. Tabela `core_audit.relations` com RLS por `Organization` e índices por origem e destino (migration `20260722_0027`). 309 testes automatizados aprovados.
+
+**Genericidade:** `relation_type` é nome canônico livre, validado por padrão, e **não** um enum. Um conjunto fechado obrigaria o Core a mudar toda vez que uma vertical precisasse de um vínculo novo, que é exatamente o acoplamento que o Core evita.
+
+**Isolamento:** a relação recusa origem ou destino de outra Organization, e a travessia da genealogia é bloqueada por `CrossOrganizationTraversalDenied` antes de tocar o repositório. Seguir arestas é uma leitura poderosa: sem fronteira explícita, viraria caminho de vazamento entre tenants.
+
+**Temporalidade:** relação sem início vale desde sempre e sem fim vale indefinidamente. Encerrar uma relação declara o fim da vigência sem apagar o vínculo, que continua respondendo consultas em instantes anteriores — genealogia nunca é perdida.
+
+**Quantidade:** `Decimal` obrigatório (`float` é recusado, conforme o kernel de serialização), nunca negativa e sempre com unidade declarada.
 
 **Validação manual:** construir grafo fictício sem termos de vertical, consultar relações em datas diferentes e rejeitar travessia não autorizada entre Organizations.
 
