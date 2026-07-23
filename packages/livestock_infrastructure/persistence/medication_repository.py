@@ -10,7 +10,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Integer,
-    MetaData,
     String,
     Table,
     Text,
@@ -28,9 +27,8 @@ from packages.livestock_application.medication_service import (
 )
 from packages.livestock_domain.medication import Medication
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
+from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
-
-livestock_metadata = MetaData(schema=CORE_AUDIT_SCHEMA)
 
 medications_table = Table(
     "medications",

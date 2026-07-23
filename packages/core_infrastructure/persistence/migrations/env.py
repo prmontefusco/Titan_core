@@ -48,6 +48,20 @@ from packages.core_infrastructure.persistence.synchronization import (
     synchronization_results_table,
 )
 from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
+from packages.livestock_infrastructure.persistence import (
+    animal_identifiers_table,
+    animal_movement_items_table,
+    animal_movements_table,
+    animals_table,
+    livestock_lots_table,
+    lot_memberships_table,
+    medications_table,
+    prescription_targets_table,
+    prescriptions_table,
+    property_stays_table,
+    rural_properties_table,
+    veterinarians_table,
+)
 
 config = context.config
 
@@ -82,6 +96,23 @@ assert dossiers_table.metadata is target_metadata
 assert offline_operations_table.metadata is target_metadata
 assert synchronization_results_table.metadata is target_metadata
 assert synchronization_batches_table.metadata is target_metadata
+
+# A vertical Livestock reusa a MetaData do Core (ver livestock .../metadata.py):
+# suas tabelas têm FK para core_identity.organizations, e o SQLAlchemy só resolve
+# a FK quando as duas tabelas estão na mesma MetaData. Importá-las aqui basta para
+# registrá-las; o schema core_audit é declarado tabela a tabela.
+assert rural_properties_table.metadata is target_metadata
+assert animals_table.metadata is target_metadata
+assert animal_identifiers_table.metadata is target_metadata
+assert animal_movements_table.metadata is target_metadata
+assert animal_movement_items_table.metadata is target_metadata
+assert property_stays_table.metadata is target_metadata
+assert livestock_lots_table.metadata is target_metadata
+assert lot_memberships_table.metadata is target_metadata
+assert veterinarians_table.metadata is target_metadata
+assert medications_table.metadata is target_metadata
+assert prescriptions_table.metadata is target_metadata
+assert prescription_targets_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

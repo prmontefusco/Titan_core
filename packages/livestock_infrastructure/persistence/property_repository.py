@@ -10,8 +10,8 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKeyConstraint,
+    Index,
     Integer,
-    MetaData,
     String,
     Table,
     UniqueConstraint,
@@ -24,9 +24,8 @@ from sqlalchemy.engine import Row
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_domain.property import RuralProperty
+from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
-
-livestock_metadata = MetaData(schema=CORE_AUDIT_SCHEMA)
 
 rural_properties_table = Table(
     "rural_properties",
@@ -52,6 +51,7 @@ rural_properties_table = Table(
         ["core_identity.organizations.organization_id"],
         name="fk_rural_properties_organization",
     ),
+    Index("ix_rural_properties_org_code", "record_owner_organization_id", "code"),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",
 )

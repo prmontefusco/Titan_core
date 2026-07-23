@@ -10,8 +10,8 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
-    MetaData,
     String,
     Table,
     delete,
@@ -32,9 +32,8 @@ from packages.livestock_domain.animal import (
     IdentifierType,
     VerificationStatus,
 )
+from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
-
-livestock_metadata = MetaData(schema=CORE_AUDIT_SCHEMA)
 
 animals_table = Table(
     "animals",
@@ -57,6 +56,7 @@ animals_table = Table(
         ["core_audit.rural_properties.property_id"],
         name="fk_animals_birth_property",
     ),
+    Index("ix_animals_org_birth_prop", "record_owner_organization_id", "birth_property_id"),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",
 )
@@ -86,6 +86,13 @@ animal_identifiers_table = Table(
         ["animal_id"],
         ["core_audit.animals.animal_id"],
         name="fk_animal_identifiers_animal",
+    ),
+    Index(
+        "ix_animal_identifiers_search",
+        "record_owner_organization_id",
+        "identifier_type",
+        "identifier_value",
+        "state",
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",

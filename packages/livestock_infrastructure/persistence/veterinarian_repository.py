@@ -9,7 +9,6 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKeyConstraint,
-    MetaData,
     String,
     Table,
     UniqueConstraint,
@@ -24,9 +23,8 @@ from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.livestock_application.veterinarian_service import VeterinarianRepositoryPort
 from packages.livestock_domain.animal import VerificationStatus
 from packages.livestock_domain.veterinarian import Veterinarian
+from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
-
-livestock_metadata = MetaData(schema=CORE_AUDIT_SCHEMA)
 
 veterinarians_table = Table(
     "veterinarians",

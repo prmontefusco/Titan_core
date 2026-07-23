@@ -9,7 +9,7 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKeyConstraint,
-    MetaData,
+    Index,
     String,
     Table,
     UniqueConstraint,
@@ -31,9 +31,8 @@ from packages.livestock_domain.lot import (
     LotStatus,
     LotType,
 )
+from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
-
-livestock_metadata = MetaData(schema=CORE_AUDIT_SCHEMA)
 
 livestock_lots_table = Table(
     "livestock_lots",
@@ -89,6 +88,12 @@ lot_memberships_table = Table(
         ["animal_id"],
         ["core_audit.animals.animal_id"],
         name="fk_lot_memberships_animal",
+    ),
+    Index(
+        "ix_lot_memberships_animal_active",
+        "record_owner_organization_id",
+        "animal_id",
+        "valid_until",
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",

@@ -9,7 +9,7 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKeyConstraint,
-    MetaData,
+    Index,
     String,
     Table,
     delete,
@@ -30,9 +30,8 @@ from packages.livestock_domain.movement import (
     PropertyStay,
     StayStatus,
 )
+from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
-
-livestock_metadata = MetaData(schema=CORE_AUDIT_SCHEMA)
 
 animal_movements_table = Table(
     "animal_movements",
@@ -127,6 +126,12 @@ property_stays_table = Table(
         ["source_movement_id"],
         ["core_audit.animal_movements.movement_id"],
         name="fk_property_stays_source_movement",
+    ),
+    Index(
+        "ix_property_stays_animal_status",
+        "record_owner_organization_id",
+        "animal_id",
+        "status",
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",

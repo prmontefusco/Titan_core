@@ -11,6 +11,18 @@ PACKAGES_ROOT = PROJECT_ROOT / "packages"
 # existiu. `require_existing_root` existe para que isso não se repita em silêncio.
 CORE_PACKAGES = ("core_domain", "core_application", "core_infrastructure", "core_integrity")
 
+# O env.py do Alembic é o ponto de composição das migrations de TODO o banco. As
+# tabelas de uma vertical que compartilham o schema core_audit precisam ser
+# registradas na mesma MetaData do Core para o `alembic check` resolver as FKs e
+# não propor removê-las; isso obriga o ambiente de migrations a importar as
+# tabelas da vertical. Ele é a única exceção — infraestrutura de composição, não
+# lógica reutilizável do Core. Todo o resto do Core permanece proibido de conhecer
+# verticais. O caminho mais limpo a prazo é a vertical possuir o próprio ambiente
+# de migrations; enquanto elas viverem sob o Core, esta exceção é necessária.
+MIGRATIONS_COMPOSITION_ROOT = (
+    PACKAGES_ROOT / "core_infrastructure" / "persistence" / "migrations" / "env.py"
+)
+
 
 def require_existing_root(root: Path) -> Path:
     """Falha alto quando o alvo da fronteira não existe.
@@ -124,9 +136,28 @@ def test_core_does_not_import_verticals() -> None:
         "packages.livestock_infrastructure",
     )
     violations = [
-        violation
+        f"{module.relative_to(PROJECT_ROOT)} -> {dependency}"
         for package in CORE_PACKAGES
-        for violation in violations_for(PACKAGES_ROOT / package, forbidden_verticals)
+        for module in python_modules(PACKAGES_ROOT / package)
+        if module != MIGRATIONS_COMPOSITION_ROOT
+        for dependency in imported_modules(module)
+        if any(
+            dependency == prefix or dependency.startswith(f"{prefix}.")
+            for prefix in forbidden_verticals
+        )
     ]
 
     assert not violations, "Titan Core importa módulos de verticais:\n" + "\n".join(violations)
+
+
+def test_migrations_composition_root_exists() -> None:
+    """A exceção acima só é segura enquanto o alvo existir.
+
+    Se o env.py for movido ou renomeado, a exceção viraria letra morta e o teste
+    de fronteira voltaria a valer para ele sem ninguém perceber — a mesma classe
+    de falha silenciosa que `require_existing_root` evita.
+    """
+    assert MIGRATIONS_COMPOSITION_ROOT.exists(), (
+        "O ponto de composição das migrations não está no caminho esperado; "
+        "a exceção de fronteira em test_core_does_not_import_verticals está obsoleta."
+    )
