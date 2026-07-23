@@ -31,6 +31,10 @@ from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
     rural_properties_table,
 )
+from packages.livestock_infrastructure.persistence.treatment_repository import (
+    TransactionalTreatmentApplicationRepository,
+    treatment_applications_table,
+)
 from packages.livestock_infrastructure.persistence.veterinarian_repository import (
     TransactionalVeterinarianRepository,
     veterinarians_table,
@@ -46,6 +50,7 @@ __all__ = [
     "TransactionalPrescriptionRepository",
     "TransactionalPropertyStayRepository",
     "TransactionalRuralPropertyRepository",
+    "TransactionalTreatmentApplicationRepository",
     "TransactionalVeterinarianRepository",
     "animal_identifiers_table",
     "animal_movement_items_table",
@@ -59,5 +64,6 @@ __all__ = [
     "prescriptions_table",
     "property_stays_table",
     "rural_properties_table",
+    "treatment_applications_table",
     "veterinarians_table",
 ]

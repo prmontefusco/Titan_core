@@ -61,6 +61,7 @@ from packages.livestock_infrastructure.persistence import (
     prescriptions_table,
     property_stays_table,
     rural_properties_table,
+    treatment_applications_table,
     veterinarians_table,
 )
 
@@ -115,6 +116,7 @@ assert medications_table.metadata is target_metadata
 assert medication_batches_table.metadata is target_metadata
 assert prescriptions_table.metadata is target_metadata
 assert prescription_targets_table.metadata is target_metadata
+assert treatment_applications_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

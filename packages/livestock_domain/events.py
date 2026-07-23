@@ -108,3 +108,12 @@ class PrescriptionIssuedEvent(DomainEvent):
     prescribed_date: datetime
     target_type: str
     target_ids: tuple[TypedId, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TreatmentAppliedEvent(DomainEvent):
+    application_id: TypedId
+    animal_id: TypedId
+    medication_batch_id: TypedId
+    applied_at: datetime
+    corrects_application_id: TypedId | None
