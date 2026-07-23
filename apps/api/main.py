@@ -1,13 +1,15 @@
 import os
 from functools import lru_cache
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from apps.api.verification import public_contract_schemas
 from apps.api.verification import router as verification_router
 from packages.core_domain import AuthenticatedPrincipal
 from packages.core_infrastructure.authentication import (
@@ -55,6 +57,29 @@ app = FastAPI(
 # Verificação externa é deliberadamente anônima: verifica apenas o material que o
 # próprio chamador enviou e não consulta registro algum do Titan.
 app.include_router(verification_router)
+
+
+def _openapi_com_contrato_publico() -> dict[str, Any]:
+    """Publica no OpenAPI os schemas que o FastAPI não consegue inferir.
+
+    O endpoint de verificação lê o corpo cru para controlar os códigos de erro,
+    e sem esta injeção o `$ref` do seu `requestBody` ficaria pendurado — o
+    contrato existiria na ADR e não na documentação que o integrador consulta.
+    """
+    if app.openapi_schema is not None:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        routes=app.routes,
+    )
+    schema.setdefault("components", {}).setdefault("schemas", {}).update(public_contract_schemas())
+    app.openapi_schema = schema
+    return schema
+
+
+app.openapi = _openapi_com_contrato_publico  # type: ignore[method-assign]
 
 
 @lru_cache(maxsize=1)
@@ -128,6 +153,9 @@ async def health() -> HealthResponse:
     response_model=AuthenticationResponse,
     summary="Validar autenticação técnica",
     tags=["técnico"],
+    # A negação faz parte do contrato: rota protegida cujo 401 não é declarado
+    # deixa o consumidor descobrir o comportamento por tentativa e erro.
+    responses={401: {"description": "Token ausente, inválido, expirado ou de outro recurso"}},
 )
 async def technical_authentication(
     principal: AuthenticatedPrincipalDependency,

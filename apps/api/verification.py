@@ -127,14 +127,56 @@ def _limitations(report: ValidationReport) -> list[dict[str, str]]:
     return [{"code": c} for c in codigos]
 
 
+# A ADR-0039 exige textualmente que este aviso conste "também da documentação
+# pública". Quem integra com a API lê o Swagger, não a ADR: deixá-lo apenas no
+# documento de decisão não cumpre o requisito.
+_AVISO_MATERIAL_SENSIVEL = (
+    "**Pacotes sensíveis não devem ser enviados a uma instância pública não "
+    "confiável. Nesses casos, utilize o verificador local.**\n\n"
+    "O endpoint não consulta nem revela registros adicionais mantidos pelo Titan, "
+    "mas o material submetido é disponibilizado à instância verificadora, que pode "
+    "observar conteúdo do dossiê, dados pessoais, informações comerciais, "
+    "identificadores, documentos, endereços, âncoras fornecidas, endereço IP e "
+    "horário da consulta.\n\n"
+    "A resposta nunca é um booleano: cada dimensão responde separadamente e o "
+    "agregado é calculado por regra pública. Assinatura válida significa apenas "
+    "que confere contra a âncora que o próprio chamador forneceu — não prova "
+    "identidade, propriedade nem autorização da chave. O estado atual de revogação "
+    "e de publicação não é consultado e aparece como `NAO_EXECUTADA`."
+)
+
+
+def public_contract_schemas() -> dict[str, Any]:
+    """Schemas do contrato público, prontos para `components.schemas`.
+
+    O handler recebe o corpo cru para poder distinguir `400` de `422` e recusar
+    chave duplicada, e por isso o FastAPI não infere o schema sozinho. Publicá-lo
+    aqui evita que o contrato exista apenas na ADR: a ADR-0010 exigia schemas
+    públicos, e quem integra pelo Swagger precisa encontrá-los.
+    """
+    schema = VerificationRequest.model_json_schema(ref_template="#/components/schemas/{model}")
+    definicoes = schema.pop("$defs", {})
+    return {"VerificationRequest": schema, **definicoes}
+
+
 @router.post(
     "/v1/verification/bundles",
     summary="Verificar um pacote de verificação submetido",
+    description=_AVISO_MATERIAL_SENSIVEL,
     tags=["verificação"],
     responses={
+        200: {"description": "Relatório dimensional, inclusive quando `INVALIDA`"},
         400: {"description": "JSON sintaticamente inválido"},
         413: {"description": "Corpo acima do limite"},
         422: {"description": "Estrutura inválida"},
+    },
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {"schema": {"$ref": "#/components/schemas/VerificationRequest"}}
+            },
+        }
     },
 )
 async def verify_bundle(request: Request) -> Response:

@@ -6,6 +6,8 @@ para que endpoint de domínio não apareça por acidente antes daquele passo: um
 endpoint novo aqui é uma decisão, não um efeito colateral.
 """
 
+from typing import Any
+
 from fastapi.testclient import TestClient
 
 from apps.api.main import app
@@ -20,8 +22,13 @@ SUPERFICIE_ESPERADA = {
 }
 
 
+def _esquema() -> dict[str, Any]:
+    esquema: dict[str, Any] = client.get("/openapi.json").json()
+    return esquema
+
+
 def _operacoes() -> set[tuple[str, str]]:
-    esquema = client.get("/openapi.json").json()
+    esquema = _esquema()
     return {
         (caminho, metodo) for caminho, operacoes in esquema["paths"].items() for metodo in operacoes
     }
@@ -29,6 +36,41 @@ def _operacoes() -> set[tuple[str, str]]:
 
 def test_superficie_publica_do_core_esta_congelada() -> None:
     assert _operacoes() == SUPERFICIE_ESPERADA
+
+
+class TestContratoPublicado:
+    """O contrato precisa estar na documentação que o integrador consulta.
+
+    Estas três lacunas passaram despercebidas pelo portão automático e só
+    apareceram na validação manual: os testes cobriam o **comportamento** do
+    endpoint, e ninguém verificava o que o OpenAPI **publica** sobre ele.
+    """
+
+    def test_aviso_de_material_sensivel_consta_da_documentacao_publica(self) -> None:
+        """Requisito textual da ADR-0039, que exige o aviso na documentação pública."""
+        descricao = _esquema()["paths"]["/v1/verification/bundles"]["post"]["description"]
+
+        assert "verificador local" in descricao
+        assert "sensíveis" in descricao
+
+    def test_schema_do_corpo_e_publicado_e_resolvivel(self) -> None:
+        """A ADR-0010 exigia schemas públicos; o handler lê o corpo cru e o
+        FastAPI não os infere sozinho."""
+        esquema = _esquema()
+        operacao = esquema["paths"]["/v1/verification/bundles"]["post"]
+        referencia = operacao["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+        nome = referencia.rsplit("/", 1)[-1]
+        componentes = esquema["components"]["schemas"]
+
+        assert nome in componentes, "O $ref do corpo aponta para componente inexistente."
+        # A referência aninhada também precisa resolver, senão o Swagger quebra.
+        aninhado = componentes[nome]["properties"]["trust_anchors"]["items"]["$ref"]
+        assert aninhado.rsplit("/", 1)[-1] in componentes
+
+    def test_rota_protegida_declara_a_negacao(self) -> None:
+        respostas = _esquema()["paths"]["/technical/authentication"]["get"]["responses"]
+
+        assert "401" in respostas
 
 
 def test_swagger_descreve_a_superficie_para_validacao_manual() -> None:
