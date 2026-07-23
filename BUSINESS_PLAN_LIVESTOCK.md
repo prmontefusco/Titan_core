@@ -154,10 +154,13 @@ semáforo verde/vermelho. O Titan entrega verde/vermelho **mais o mapa exato do 
 sabe**. Para um diretor de compliance que assina declaração de due diligence sob
 responsabilidade pessoal, saber onde está o buraco vale mais que um verde otimista.
 
-**(c) Dossiê verificável por terceiro, sem depender do Titan.** `Dossier` + `VerificationBundle`
-+ verificação externa (ADR-0010). O auditor, o comprador europeu ou a autoridade competente
-validam o dossiê offline, sem conta, sem API, sem confiar em você. Isso reduz auditoria de
-semanas para horas e é o único argumento de ROI defensável tecnicamente.
+**(c) Dossiê autônomo verificável por terceiro, sem depender do Titan.** `Dossier` + `SingleFileVerificationBundle` (ADR-0010, ADR-0034). O dossiê é gerado em um único arquivo HTML estático com verificador WebAssembly embutido. O auditor europeu ou autoridade valida a integridade e o mapa de proveniência offline, em qualquer computador, sem precisar de conta ou API ativa.
+
+**(d) Conformidade de fornecedores indiretos com preservação de sigilo (ZKP).** `ZeroKnowledgeProof` + `ZkCircuitReference` (ADR-0033). Permite provar que o gado de cria/recria de fornecedores indiretos é 100% não-desmatado e em conformidade ambiental, **sem revelar o Cadastro Ambiental Rural (CAR) ou localização GPS exata das fazendas intermediárias**, respeitando o segredo comercial da cadeia.
+
+**(e) Motor de Detecção de Incoerências Biológicas e Físicas.** `ContradictionAssessment` + `InconsistencyRule` (ADR-0035). O Titan valida regras de consistência biológica e espacial (lotação de cabeças/hectare, tempo de gestação, ganho de peso plausível por dia). Se detectar esquentamento de gado ou divergência de GTAs, classifica o resultado como `INDETERMINADA (Suspeita de Incoerência Física)`.
+
+**(f) Viagem no tempo regulatória determinística.** `WasmPolicySandbox` (ADR-0036). As regras normativas da EUDR, MAPA/PNIB e TACs do MPF são compiladas em bytecode WebAssembly imutável. Um lote exportado há 3 anos é reavaliado com a regra exata vigente na data do fato.
 
 ## 2.3 Posicionamento em uma frase
 

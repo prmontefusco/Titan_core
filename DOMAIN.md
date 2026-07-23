@@ -469,6 +469,23 @@ Resultados iniciais: `AUTORIZAVEL`, `EVIDENCIA_ADICIONAL_NECESSARIA`, `REVISAO_N
 
 Relação imutável, direcional e acíclica entre versões ou registros.
 
+## ContradictionAssessment
+
+Avaliação imutável de incoerências e contradições físicas, lógicas, biológicas ou matemáticas detectadas no grafo de proveniência por InconsistencyRules. Preserva o objeto, as regras violadas, a severidade, o estado `INDETERMINADA` derivado e a justificativa.
+
+## InconsistencyRule
+
+Regra abstrata que define limites de variação, capacidades máximas agregadas e restrições de exclusão mútua sobre atributos e transformações.
+
+## DomainConstraint
+
+Restrição abstrata parametrizada por uma vertical que especifica condições de validade factual e física para um Subject ou Transformation.
+
+## PhysicalBoundAssertion
+
+Asserção abstrata sobre limites físicos, temporais, espaciais ou quantitativos impostos a uma entidade ou transformação.
+
+
 Tipos iniciais: `CORRIGE`, `COMPLEMENTA`, `SUBSTITUI_PARA_NOVOS_EFEITOS`, `REVOGA_PARA_NOVOS_EFEITOS`, `REPUBLICA`, `RECLASSIFICA`.
 
 Preserva origem, destino, finalidade, escopo, efetividade, autoridade, Evidence, códigos e limitações. Não transfere ownership, Visibility ou declara falsidade automática.
@@ -1033,6 +1050,18 @@ Relação temporal entre Subject e Batch.
 
 Registra início, fim, quantidade, Event de inclusão, Event de remoção, Evidences e Organization, quando aplicável.
 
+## ZkCircuitReference
+
+Referência versionada ao circuito criptográfico registrado e aprovado para geração e verificação de Provas de Conhecimento Zero.
+
+## ZeroKnowledgeProof
+
+Prova criptográfica imutável de conhecimento zero (ex: zk-SNARK/zk-STARK) que atesta a satisfação de restrições em nós ou caminhos de proveniência sem expor os identificadores, atributos ou payloads originais.
+
+## PrivateProofConstraint
+
+Restrição abstrata declarada sobre nós de proveniência mascarados ou privados que deve ser validada por uma ZeroKnowledgeProof.
+
 ---
 
 # 10. Políticas, regras e avaliações
@@ -1054,6 +1083,14 @@ Critério versionado e determinístico aplicado a Facts, Claims, Evidences ou re
 Deve indicar código, versão, descrição, condição, vigência, severidade, Evidences requeridas, NormativeBasis ou NormativeReferences quando aplicáveis, justificativa, ação corretiva recomendada e resultados possíveis.
 
 Rule publicada é imutável.
+
+## WasmPolicySandbox
+
+Ambiente isolado, determinístico e imutável para execução de regras normativas compiladas em bytecode WebAssembly.
+
+## NormativeExecutionReceipt
+
+Registro imutável da execução de uma Policy dentro do WasmPolicySandbox, contendo o digest do bytecode, entradas, saídas, determinação e instantes envolvidos.
 
 ## NormativeBasis
 
@@ -1476,6 +1513,14 @@ Dossier não incorpora automaticamente atributos pessoais apenas porque referenc
 Deve permitir compreender e verificar a Decision sem depender de consultas posteriores ao banco, quando tecnicamente viável.
 
 PDF é representação do Dossier, não sua fonte primária.
+
+## SingleFileVerificationBundle
+
+Artefato autônomo exportável empacotado como um único arquivo HTML contendo os dados do dossiê, a árvore de hashes, as chaves públicas e o kernel de verificação compilado em WebAssembly para auditoria e validação criptográfica offline sem dependência de servidores ou redes ativas.
+
+## TitanEvidenceProtocolSpec
+
+Especificação aberta (TEP) para serialização canônica determinística, árvores de merkle, encadeamento de hash SHA-256 e verificação independente de evidências auditáveis.
 
 ---
 
