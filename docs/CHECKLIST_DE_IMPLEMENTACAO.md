@@ -1899,6 +1899,35 @@ Resultado esperado: 438 testes aprovados; banco em `20260722_0032 (head)`; Alemb
 
 **Portão do Marco 7:** contratos, testes arquiteturais e critérios do Core aprovados automaticamente. O Titan Livestock (Marco 8) permanece bloqueado até a validação manual do responsável.
 
+#### Validação manual executada em 23 de julho de 2026
+
+Roteiro executado pelo responsável, com os resultados observados:
+
+- [x] Cinco testes da prova completa, nomeados um por critério do plano.
+- [x] Sete testes arquiteturais e 34 testes de API/arquitetura.
+- [x] Catálogo do PostgreSQL: **27 tabelas** em `core_audit`, todas com `relrowsecurity = t` e `relforcerowsecurity = t`, sem exceção.
+- [x] Swagger inspecionado: apenas os três endpoints previstos, e apenas dois schemas.
+- [x] `400` com `application/problem+json`, `reason_code: MALFORMED_JSON`, `cache-control: no-store` e `pragma: no-cache` observados no header real.
+- [x] `detail` sanitizado, sem caminho de arquivo nem stack trace.
+- [x] `401` com `www-authenticate: Bearer` na rota protegida sem token.
+- [x] Portão completo: 449 testes.
+
+**Três não conformidades encontradas pela inspeção manual, que o portão automático não detectava.** Os testes cobriam o *comportamento* do endpoint; ninguém verificava o que o OpenAPI *publica* sobre ele.
+
+1. **Requisito textual da ADR-0039 não cumprido.** A ADR exige que o aviso "Pacotes sensíveis não devem ser enviados a uma instância pública não confiável. Nesses casos, utilize o verificador local" conste **também da documentação pública**. O `openapi.json` não o continha: o endpoint tinha `summary` e `description` nula. O aviso existia apenas na ADR e no guia de integração, e quem integra com a API lê o Swagger.
+2. **Schema do corpo não publicado.** `requestBody` ausente do OpenAPI e resposta `200` com schema vazio. O `VerificationRequest` existia em código, mas o handler recebe `Request` cru — para controlar `400` versus `422` e recusar chave duplicada — e o FastAPI não o inferia. A ADR-0010 exigia schemas públicos.
+3. **Rota protegida sem a negação declarada.** `/technical/authentication` não declarava o `401`; o Swagger o exibia como "Undocumented".
+
+**Correção aplicada em 23 de julho de 2026**, sem alterar comportamento algum:
+
+- [x] `description` do endpoint de verificação passa a conter o aviso obrigatório da ADR-0039, mais as limitações da resposta.
+- [x] `public_contract_schemas()` publica `VerificationRequest` e `TrustAnchorInput` em `components.schemas`, e o `requestBody` os referencia; `app.openapi` foi estendido porque o FastAPI não registra componentes de rotas que leem o corpo cru.
+- [x] `401` declarado em `/technical/authentication`.
+- [x] Três testes de regressão criados em `TestContratoPublicado`, que verificam o **contrato publicado** e não apenas o comportamento — a lacuna que permitiu as três passarem despercebidas.
+- [x] Portão completo reexecutado: **452 testes**, Ruff, Mypy e Alembic aprovados.
+
+**Estado da validação manual:** aguardando a manifestação do responsável sobre as correções.
+
 ## Comandos para testar o Passo 7.10
 
 ```text
