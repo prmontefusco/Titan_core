@@ -533,9 +533,15 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** usar grafo fictício, encontrar origem e destinos, explicar cada caminho, impedir acesso indevido e declarar lacunas como resultado inconclusivo.
 
-#### Passo 7.5 — Dossier Core
+#### Passo 7.5 — Dossier Core [x] CONCLUÍDO E TESTADO
 
-**Entrega:** snapshot canônico JSON com sujeito, finalidade, política, regras, fatos, evidências, não conformidades, decisão, ações, versões, timestamps e hash. PDF será uma representação posterior e independente.
+**Entrega:** `Dossier` e `compute_dossier_hash` em `packages/core_domain/dossier.py`; `DossierService` em `packages/core_application/dossier_service.py`. Tabela `core_audit.dossiers` com RLS (migration `20260722_0031`). 358 testes automatizados aprovados.
+
+**Autocontido de verdade:** o documento copia o conteúdo em vez de referenciá-lo — política e versão, regras com suas **condições declarativas**, snapshot completo dos fatos, resultados por regra, decisão com razões e ações corretivas, evidências e não conformidades com histórico. Um dossiê que guardasse apenas identificadores exigiria o banco do Titan para ser compreendido, que é exatamente o que ele existe para evitar.
+
+**Hash em formato aberto:** o digest usa a serialização canônica `titan-json-v1` já adotada pelo Core, e não um formato próprio. Um dossiê que só o Titan consegue verificar não serve para verificação externa.
+
+**Prova não se monta sobre material adulterado:** Evaluation ou Decision não reproduzíveis são recusadas, assim como decisão que não pertence à avaliação ou à política informada.
 
 **Validação manual:** validar schema, recalcular hash e compreender/reproduzir a decisão sem consultar o banco.
 

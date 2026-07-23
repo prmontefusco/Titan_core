@@ -15,6 +15,10 @@ from packages.core_application.document_service import (
     BlobStoragePort,
     DocumentService,
 )
+from packages.core_application.dossier_service import (
+    DossierRepositoryPort,
+    DossierService,
+)
 from packages.core_application.evaluation_service import (
     EvaluationRepositoryPort,
     PolicyEvaluationService,
@@ -147,6 +151,8 @@ __all__ = [
     "RecallService",
     "RecallResultRepositoryPort",
     "AffectedDecisionLookupPort",
+    "DossierService",
+    "DossierRepositoryPort",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",

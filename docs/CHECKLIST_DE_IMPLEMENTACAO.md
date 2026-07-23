@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.4 implementados | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.5 implementados | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1756,6 +1756,29 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 349 testes aprovados; banco em `20260722_0030 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.5 — Dossier Core
+
+- [x] `Dossier` e `compute_dossier_hash` criados em `packages/core_domain/dossier.py`, com verificação offline pelo próprio documento.
+- [x] Documento autocontido: sujeito, finalidade, política e versão, regras com condições declarativas, snapshot completo dos fatos, resultados por regra, decisão com razões e ações, evidências e não conformidades com histórico.
+- [x] Hash calculado sobre a serialização canônica `titan-json-v1` já adotada pelo Core, permitindo recálculo por terceiros sem acesso ao Titan.
+- [x] Evaluation ou Decision não reproduzíveis são recusadas; decisão de outra avaliação ou de outra política também.
+- [x] Tabela `core_audit.dossiers` com RLS, índice por sujeito e migration `20260722_0031`.
+- [x] Testes de aplicação (`test_dossier_service.py`) e de integração PostgreSQL (`test_dossier_postgresql.py`) aprovados, exportando o JSON, recalculando o hash fora do banco e refazendo o raciocínio da decisão apenas com o documento (358 testes no total).
+
+## Comandos para testar o Passo 7.5
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 358 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 

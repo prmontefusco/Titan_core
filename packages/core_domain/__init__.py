@@ -24,6 +24,11 @@ from packages.core_domain.decision import (
     DecisionResult,
     compute_decision_hash,
 )
+from packages.core_domain.dossier import (
+    DOSSIER_DOCUMENT_VERSION,
+    Dossier,
+    compute_dossier_hash,
+)
 from packages.core_domain.evaluation import (
     Evaluation,
     EvaluationOutcome,
@@ -145,6 +150,9 @@ __all__ = [
     "RecallResult",
     "RecallStatus",
     "RecallStep",
+    "Dossier",
+    "DOSSIER_DOCUMENT_VERSION",
+    "compute_dossier_hash",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",

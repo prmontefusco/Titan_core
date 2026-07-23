@@ -14,6 +14,7 @@ from packages.core_infrastructure.persistence import (
 from packages.core_infrastructure.persistence.checkpoints import integrity_checkpoints_table
 from packages.core_infrastructure.persistence.crypto import key_registry_table
 from packages.core_infrastructure.persistence.decision import decisions_table
+from packages.core_infrastructure.persistence.dossier import dossiers_table
 from packages.core_infrastructure.persistence.evaluation import evaluations_table
 from packages.core_infrastructure.persistence.events import (
     CORE_AUDIT_SCHEMA,
@@ -72,6 +73,7 @@ assert relations_table.metadata is target_metadata
 assert reference_projection_table.metadata is target_metadata
 assert nonconformities_table.metadata is target_metadata
 assert recalls_table.metadata is target_metadata
+assert dossiers_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 
