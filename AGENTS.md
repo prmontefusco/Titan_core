@@ -123,11 +123,11 @@ Regras de coordenação:
 
 # Depois
 
-Executar somente testes relacionados.
+Executar a suíte completa de verificações e testes:
 
-Executar Ruff.
+`python -m uv run --locked pytest; python -m uv run --locked ruff check .; python -m uv run --locked ruff format --check .; python -m uv run --locked mypy; python -m uv run --locked alembic check`
 
-Executar Mypy.
+Após os testes manuais e a aprovação da funcionalidade, realizar obrigatoriamente o commit no Git das alterações finalizadas.
 
 Revisar o Diff.
 
@@ -136,6 +136,7 @@ Listar riscos.
 O Codex deve executar essas verificações autonomamente quando as ferramentas estiverem disponíveis. Pode corrigir falhas relacionadas ao incremento sem solicitar nova confirmação. Falha preexistente, não relacionada ou que exija ampliar o escopo deve ser relatada separadamente.
 
 ---
+
 
 # Em caso de dúvida
 
