@@ -17,6 +17,28 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
+    # Mesma imagem fixada do compose.yaml, de propósito: divergência entre o banco
+    # do CI e o local reintroduziria a classe de falha que só aparece em um dos dois.
+    # As credenciais abaixo são de banco descartável de CI, iguais às do ambiente
+    # local público, e não são segredo.
+    services:
+      postgres:
+        image: postgis/postgis:18-3.6@sha256:b410052c6f0d7d37b83cac1369df144e1c843971155dea3317961001704d0a9d
+        env:
+          POSTGRES_DB: titan
+          POSTGRES_USER: titan
+          POSTGRES_PASSWORD: titan_local_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U titan -d titan"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TITAN_DATABASE_URL: postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan
+
     steps:
       - name: Obter código
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -41,6 +63,9 @@ jobs:
       - name: Sincronizar ambiente
         run: uv sync --locked
 
+      - name: Aplicar migrations
+        run: uv run --locked alembic upgrade head
+
       - name: Executar testes e verificações arquiteturais
         run: uv run --locked pytest
 
@@ -52,3 +77,6 @@ jobs:
 
       - name: Executar Mypy
         run: uv run --locked mypy
+
+      - name: Verificar paridade do schema com as migrations
+        run: uv run --locked alembic check
