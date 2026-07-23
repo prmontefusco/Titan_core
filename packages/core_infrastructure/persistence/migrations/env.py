@@ -38,6 +38,7 @@ from packages.core_infrastructure.persistence.outbox import (
 )
 from packages.core_infrastructure.persistence.policy import policies_table
 from packages.core_infrastructure.persistence.projections import reference_projection_table
+from packages.core_infrastructure.persistence.recall import recalls_table
 from packages.core_infrastructure.persistence.relations import relations_table
 from packages.core_infrastructure.persistence.rule import rules_table
 from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
@@ -70,6 +71,7 @@ assert decisions_table.metadata is target_metadata
 assert relations_table.metadata is target_metadata
 assert reference_projection_table.metadata is target_metadata
 assert nonconformities_table.metadata is target_metadata
+assert recalls_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

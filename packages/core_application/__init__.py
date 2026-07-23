@@ -85,6 +85,11 @@ from packages.core_application.provenance_service import (
     EvidenceLookupPort,
     ProvenanceService,
 )
+from packages.core_application.recall_service import (
+    AffectedDecisionLookupPort,
+    RecallResultRepositoryPort,
+    RecallService,
+)
 from packages.core_application.relation_service import (
     CrossOrganizationTraversalDenied,
     RelationRepositoryPort,
@@ -139,6 +144,9 @@ __all__ = [
     "ProjectionSourcePort",
     "NonConformityService",
     "NonConformityRepositoryPort",
+    "RecallService",
+    "RecallResultRepositoryPort",
+    "AffectedDecisionLookupPort",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",

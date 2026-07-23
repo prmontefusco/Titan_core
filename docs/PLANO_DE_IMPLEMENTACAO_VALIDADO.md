@@ -517,9 +517,19 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** abrir por falha de regra, corrigir, reavaliar e encerrar; navegar até todos os fatos, eventos e evidências justificadores.
 
-#### Passo 7.4 — Recall Core
+#### Passo 7.4 — Recall Core [x] CONCLUÍDO E TESTADO
 
-**Entrega:** navegação retrospectiva e prospectiva, janela temporal, controle de ciclos/profundidade, simulação/incidente e localização de decisões afetadas.
+**Entrega:** `RecallRequest`, `RecallResult`, `RecallPath`, `RecallGap` e enums de direção, modo, status e razão de limite em `packages/core_domain/recall.py`; `RecallService` em `packages/core_application/recall_service.py`. Tabela `core_audit.recalls` com RLS (migration `20260722_0030`). 349 testes automatizados aprovados.
+
+**Lacuna nunca vira silêncio:** qualquer limite atingido — profundidade, número de nós ou ciclo — gera `RecallGap` explícita e o resultado inteiro passa a `INCONCLUSIVO`. Omitir a lacuna transformaria desconhecimento em falsa cobertura, que é o pior erro possível num recall.
+
+**Resultado localiza, não julga:** sujeitos alcançados são POTENCIALMENTE afetados. O resultado não declara invalidade, culpa, fraude, obrigatoriedade nem extensão final de recall, e não modifica Decision, Dossier, assinatura ou Evidence alguma.
+
+**Travessia em largura:** o caminho mais curto até um sujeito é o mais fácil de explicar, e explicar cada caminho é requisito do passo. A ordem de expansão é determinística, então o mesmo grafo produz sempre os mesmos caminhos.
+
+**Simulação e incidente têm efeito distinto:** simulação é hipótese e não deixa rastro; incidente é ato auditável e **não executa sem repositório de registro**. O resultado gravado preserva caminhos, lacunas e decisões afetadas para explicar a análise depois.
+
+**Isolamento:** o Subject inicial de outra Organization é recusado na construção do pedido, e a travessia só enxerga o grafo da própria Organization.
 
 **Validação manual:** usar grafo fictício, encontrar origem e destinos, explicar cada caminho, impedir acesso indevido e declarar lacunas como resultado inconclusivo.
 

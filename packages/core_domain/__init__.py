@@ -75,6 +75,17 @@ from packages.core_domain.provenance import (
     ProvenanceNodeType,
     ProvenanceTrace,
 )
+from packages.core_domain.recall import (
+    RecallDirection,
+    RecallGap,
+    RecallLimitReason,
+    RecallMode,
+    RecallPath,
+    RecallRequest,
+    RecallResult,
+    RecallStatus,
+    RecallStep,
+)
 from packages.core_domain.relations import UniversalRelation
 from packages.core_domain.rule import (
     ComparisonOperator,
@@ -125,6 +136,15 @@ __all__ = [
     "NonConformityOrigin",
     "NonConformityStatus",
     "NonConformityTransition",
+    "RecallDirection",
+    "RecallGap",
+    "RecallLimitReason",
+    "RecallMode",
+    "RecallPath",
+    "RecallRequest",
+    "RecallResult",
+    "RecallStatus",
+    "RecallStep",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",
