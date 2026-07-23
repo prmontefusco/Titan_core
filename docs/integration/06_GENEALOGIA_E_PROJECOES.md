@@ -2,7 +2,7 @@
 
 Este documento especifica como o **Titan Core** registra vínculos entre sujeitos ao longo do tempo e como monta estruturas de leitura descartáveis a partir dos registros imutáveis.
 
-> **Estado:** o Marco 7 está em andamento. Este documento cobre os passos **7.1** e **7.2**. Não conformidades, recall, dossiê, pacote de verificação e sincronização serão acrescentados conforme forem entregues.
+> **Estado:** o Marco 7 está em andamento. Este documento cobre os passos **7.1** e **7.2**. Não conformidades, recall e dossiê estão em **[07_NAO_CONFORMIDADE_RECALL_E_DOSSIE.md](07_NAO_CONFORMIDADE_RECALL_E_DOSSIE.md)**. Pacote de verificação, API de verificação externa, PDF e sincronização serão acrescentados conforme forem entregues.
 
 ---
 

@@ -47,6 +47,13 @@ Este diretório contém a documentação técnica oficial do **Titan Core**, det
    - Encerramento que preserva o histórico
    - Projeções reconstruíveis e referências reversas
 
+7. **[07_NAO_CONFORMIDADE_RECALL_E_DOSSIE.md](07_NAO_CONFORMIDADE_RECALL_E_DOSSIE.md)**
+   - Ciclo de vida da não conformidade, com reavaliação que pode reprovar
+   - Recall com janela temporal, controle de ciclos e profundidade
+   - Lacuna declarada como resultado inconclusivo
+   - Simulação e incidente
+   - Dossiê autocontido e verificação offline por `titan-json-v1`
+
 ---
 
 ## 🚀 Visão Geral Arquitetural de Integração
