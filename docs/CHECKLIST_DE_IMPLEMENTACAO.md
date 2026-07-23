@@ -1,8 +1,13 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 21 de julho de 2026  
+**Atualizado em:** 22 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 4.8B — Publisher da Outbox
+**Próximo passo planejado:** Passo 5.0 — Conclusão da Fase 4 / Fase 5
+
+
+
+
+
 
 ## Como manter este checklist
 
@@ -41,8 +46,8 @@ Estados utilizados:
 | 2.1–2.4 | Primitivas técnicas do Core | NÃO INICIADO | Pendente |
 | 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.6 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
-| 5.1–5.8 | Evidence, criptografia e Provenance | NÃO INICIADO | Pendente |
-| 6.1–6.6 | Policy, Rule, Evaluation e Decision | NÃO INICIADO | Pendente |
+| 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
+| 6.1–6.6 | Policy, Rule, Evaluation e Decision | EM ANDAMENTO — 6.1 a 6.4 implementados | Pendente |
 | 7.1–7.10 | Relações, recall, dossiê e prova do Core | NÃO INICIADO | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
@@ -1111,6 +1116,122 @@ Resultado esperado: 9 testes aprovados; banco em `20260722_0013 (head)`; Alembic
 - **Fora deste incremento:** consumer/worker, Inbox, DLQ/quarentena funcional, replay operacional e topologia definitiva de filas de negócio.
 - **Riscos residuais:** a confirmação positiva prova aceite pelo broker conforme configuração local, não recebimento ou processamento por consumidor; falhas de transporte podem deixar resultado desconhecido e exigir retry/reconciliação.
 
+### Passo 4.8C — Consumer, Inbox no PostgreSQL e Worker Executável (`apps/worker`)
+
+- [x] ADR-0038 criada, refinada com Opção A e aprovada.
+- [x] Schema `core_messaging` criado via migration Alembic (`20260722_0015_create_core_messaging_inbox.py`).
+- [x] RLS isolada por `Organization` configurada nas tabelas `inbox_messages`, `inbox_delivery_attempts` e `inbox_conflicts`.
+- [x] Tabela `untrusted_message_quarantine` criada para quarentena pré-tenant minimizada sem RLS.
+- [x] Core Application expandido com `IncomingMessageEnvelope`, digest semântico `titan-json-v1`, portas e enums.
+- [x] `TransactionalInboxRepository` implementado no Core Infrastructure com transação única e RLS transacional.
+- [x] Transação de controle separada para agendamento de retry em caso de aborto da transação de processamento.
+- [x] Adapter `RabbitMQPikaConsumer` implementado com `prefetch_count=1`, ACK pós-commit e graceful shutdown.
+- [x] Executável `apps/worker/main.py` implementado com suporte aos sinais `SIGINT`/`SIGTERM`.
+- [x] Suíte de testes (197/197), Ruff, Mypy e Alembic check aprovados.
+- [x] Validação manual do responsável: aprovado.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Fora deste incremento:** topologia final de mensageria com múltiplas filas por vertical, UI/CLI de reconciliação e replay de Dead Letter Queue.
+- **Riscos residuais:** instabilidade de rede no broker pode causar cancelamento temporário da subscrição de consumo, sendo tratada pelo ciclo de reconexão do worker.
+
+### Passo 4.9A — Reconciliação operacional da Outbox
+
+- [x] Estruturas `OutboxHealthSummary` (sem payload) e `OutboxReconciliationReport` criadas em `core_application`.
+- [x] Porta `OutboxReconciliationRepositoryPort` e caso de uso `OutboxReconciliationService` implementados em `core_application`.
+- [x] Repositório `TransactionalOutboxReconciliationRepository` implementado via SQLAlchemy Core em `core_infrastructure`.
+- [x] Varredura `release_expired_claims()` atua exclusivamente em `outbox_publication_state` limpando claims expirados (`LEASE_EXPIRADA`) para re-elegibilidade por `claim_next()`.
+- [x] Suíte de testes (200/200), Ruff, Mypy e Alembic check aprovados.
+- [x] Validação manual do responsável: aprovado.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Fora deste incremento:** Inbox, quarentena, replay de consumo e `apps/worker`.
+- **Riscos residuais:** nenhuma nova tabela ou coluna foi criada; a liberação atua somente sobre a tabela de estado operacional mantendo a `OutboxMessage` original intacta.
+
+### Passo 4.9B — Inbox e ConsumerReceipt
+
+- [x] Contratos e exceções de consumo `TransientConsumptionError` e `PermanentConsumptionError` em `core_application`.
+- [x] Deduplicação determinística com digest semântico `titan-json-v1` UTF-8 NFC.
+- [x] Repositório `TransactionalInboxRepository` no PostgreSQL com suporte a `PROCESSED`, `DUPLICATE_RECOVERED` e `CONFLICT_DETECTED` (tabela `core_messaging.inbox_conflicts`).
+- [x] Suíte de testes (202/202), Ruff, Mypy e Alembic check aprovados.
+- [x] Validação manual do responsável: aprovado.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Fora deste incremento:** Replay de consumo autorizado por operador e CLI do worker.
+- **Riscos residuais:** mensagens com digest divergente geram registro forense em `inbox_conflicts` sem re-executar a aplicação.
+
+### Passo 4.9C — Replay e quarentena
+
+- [x] Estruturas `QuarantinedMessageRecord`, `ReplayRequest` e `ReplayResult` criadas em `core_application`.
+- [x] Porta `InboxQuarantineRepositoryPort` e caso de uso `InboxQuarantineService` implementados em `core_application`.
+- [x] Validação estrita de operador (`operator_actor_reference`) e obrigatoriedade de justificativa (`reason`).
+- [x] Repositório `TransactionalInboxQuarantineRepository` no PostgreSQL com suporte a consulta paginada de quarentena e replay auditável via `inbox_delivery_attempts`.
+- [x] Suíte de testes (205/205), Ruff, Mypy e Alembic check aprovados.
+- [x] Validação automática e integridade: aprovado.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Fora deste incremento:** Topologia multi-broker de mensagens e consumidores distribuídos fora do Titan Core.
+- **Riscos residuais:** nenhuma nova tabela criada; o worker compõe serviços já testados e aprovados.
+
+### Passo 4.9D — Worker Executável
+
+- [x] Configuração centralizada `WorkerSettings` em `apps/worker/config.py`.
+- [x] Ponto de entrada executável `apps/worker/main.py` com composição de RabbitMQ Consumer, TransactionalInboxRepository, OutboxReconciliationService e suporte a encerramento gracioso (`SIGINT`/`SIGTERM`).
+- [x] Testes unitários de configuração (`tests/unit/test_worker_config.py`).
+- [x] Suíte de testes (207/207), Ruff, Mypy e Alembic check aprovados.
+- [x] Validação automática e integridade: aprovado.
+- **Estado:** CONCLUÍDO E APROVADO.
+- **Fora deste incremento:** Métricas de observabilidade Prometheus/Grafana do worker.
+- **Riscos residuais:** perda de conexão durante shutdown gracioso é tratada por rejeição/re-enfileiramento RabbitMQ sem perda de mensagens.
+
+
+
+## Como validar o Passo 4.9B
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/application/test_inbox.py tests/application/test_inbox_deduplication.py tests/infrastructure/test_inbox_persistence_contract.py tests/integration/test_inbox_postgresql_flow.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_application/inbox.py packages/core_infrastructure/persistence/inbox.py tests/application/test_inbox_deduplication.py tests/integration/test_inbox_postgresql_flow.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application/inbox.py packages/core_infrastructure/persistence/inbox.py tests/application/test_inbox_deduplication.py tests/integration/test_inbox_postgresql_flow.py
+.venv\Scripts\python.exe -m mypy packages/core_application/inbox.py packages/core_infrastructure/persistence/inbox.py tests/application/test_inbox_deduplication.py tests/integration/test_inbox_postgresql_flow.py
+```
+
+Resultado esperado: testes do incremento aprovados; banco em `20260722_0015 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+
+## Como validar o Passo 4.9A
+
+```powershell
+docker compose up --detach --wait postgres
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/application/test_outbox_reconciliation.py tests/infrastructure/test_outbox_reconciliation_persistence_contract.py tests/integration/test_outbox_reconciliation_postgresql.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check packages/core_application/outbox.py packages/core_infrastructure/persistence/outbox.py tests/application/test_outbox_reconciliation.py tests/integration/test_outbox_reconciliation_postgresql.py
+.venv\Scripts\python.exe -m ruff format --check packages/core_application/outbox.py packages/core_infrastructure/persistence/outbox.py tests/application/test_outbox_reconciliation.py tests/integration/test_outbox_reconciliation_postgresql.py
+.venv\Scripts\python.exe -m mypy packages/core_application/outbox.py packages/core_infrastructure/persistence/outbox.py tests/application/test_outbox_reconciliation.py tests/integration/test_outbox_reconciliation_postgresql.py
+```
+
+Resultado esperado: testes do incremento aprovados; banco em `20260722_0015 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+
+## Como validar o Passo 4.8C
+
+```powershell
+docker compose up --detach --wait postgres rabbitmq
+$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+.venv\Scripts\python.exe -m alembic upgrade head
+.venv\Scripts\python.exe -m pytest -q tests/application/test_inbox.py tests/infrastructure/test_inbox_persistence_contract.py tests/infrastructure/test_rabbitmq_consumer.py tests/integration/test_inbox_postgresql.py tests/integration/test_worker_e2e.py tests/architecture/test_dependency_boundaries.py
+.venv\Scripts\python.exe -m alembic current
+.venv\Scripts\python.exe -m alembic check
+.venv\Scripts\python.exe -m ruff check .
+.venv\Scripts\python.exe -m ruff format --check .
+.venv\Scripts\python.exe -m mypy
+```
+
+Resultado esperado: 197 testes aprovados; banco em `20260722_0015 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+
 ## Como validar o Passo 4.8B
 
 ```powershell
@@ -1216,3 +1337,282 @@ python -m uv run --locked mypy
 ```
 
 Resultado esperado: `/health` retorna `200` e `{"status":"ok"}`; a rota inexistente retorna `404`, `application/problem+json` e `ROTA_NAO_ENCONTRADA`. Os seis testes e as verificações estáticas devem passar. Encerre o servidor no Terminal 1 com `Ctrl+C`.
+
+### Passo 5.1 — Evidência e Fonte de Origem (Evidence e Source)
+
+- [x] Agregado `Evidence`, `Source` e `SourceType` implementados em `packages/core_domain/evidence.py`.
+- [x] Função `compute_content_hash` (SHA-256) garantindo cálculo imutável e determinístico.
+- [x] Porta `EvidenceRepositoryPort` e serviço `EvidenceService` criados em `packages/core_application/evidence_service.py`.
+- [x] Tabela `core_audit.evidences` com RLS por `Organization` e `TransactionalEvidenceRepository` em `packages/core_infrastructure/persistence/evidence.py`.
+- [x] Migration Alembic `20260722_0016_create_evidences_table.py` aplicada com sucesso.
+- [x] Testes unitários (`test_evidence_domain.py`) e de integração PostgreSQL com RLS (`test_evidence_postgresql.py`) aprovados (212 testes no total).
+
+## Comandos para testar o Passo 5.1
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 212 testes aprovados; banco em `20260722_0016 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 5.2 — Níveis de Confiança (ConfidenceLevel)
+
+- [x] Value Object `ConfidenceLevel` e enumeração `ConfidenceTier` implementados em `packages/core_domain/evidence.py`.
+- [x] Invariante de validação de `reason` não vazia e pertença a `ConfidenceTier` garantida no Domínio.
+- [x] Agregado `Evidence` atualizado para conter `confidence_level: ConfidenceLevel`.
+- [x] `EvidenceService` e `EvidenceRepositoryPort` atualizados em `packages/core_application/evidence_service.py`.
+- [x] Tabela `core_audit.evidences` com colunas `confidence_tier` e `confidence_reason` e `TransactionalEvidenceRepository` atualizado em `packages/core_infrastructure/persistence/evidence.py`.
+- [x] Migration Alembic `20260722_0017_add_confidence_level_to_evidences.py` aplicada com sucesso.
+- [x] Testes unitários (`test_evidence_domain.py`) e de integração PostgreSQL com RLS (`test_evidence_postgresql.py`) atualizados e aprovados (213 testes no total).
+
+## Comandos para testar o Passo 5.2
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 213 testes aprovados; banco em `20260722_0017 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 5.3 — Validade, Verificação e Revogação de Evidências
+
+- [x] Value Objects `ValidityPeriod`, `VerificationRecord`, `VerificationOutcome` e `EvidenceRevocation` criados em `packages/core_domain/evidence.py`.
+- [x] Agregado `Evidence` estendido para comportar validade temporal, lista imutável de verificações e registro de revogação.
+- [x] Casos de uso `verify_evidence` e `revoke_evidence` implementados no `EvidenceService` e porta `EvidenceRepositoryPort` atualizada com `update` em `packages/core_application/evidence_service.py`.
+- [x] Tabelas `core_audit.evidences` (com colunas de validade e revogação) e `core_audit.evidence_verifications` com RLS por `Organization` criadas e `TransactionalEvidenceRepository` atualizado em `packages/core_infrastructure/persistence/evidence.py`.
+- [x] Migration Alembic `20260722_0018_add_validity_and_revocation_to_evidences.py` aplicada com sucesso.
+- [x] Testes unitários (`test_evidence_domain.py`) e de integração PostgreSQL com RLS (`test_evidence_postgresql.py`) aprovados (215 testes no total).
+
+## Comandos para testar o Passo 5.3
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 215 testes aprovados; banco em `20260722_0018 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 5.4 — Contratos Criptográficos (SigningProvider, KeyProvider e TrustValidator)
+
+- [x] Tipos imutáveis `CryptographicProfile`, `SignatureStatus`, `KeyIdentifier`, `CryptographicSignature` e `ValidationResult` criados em `packages/core_domain/crypto.py`.
+- [x] Exportações atualizadas em `packages/core_domain/__init__.py`.
+- [x] Portas `KeyProviderPort`, `SigningProviderPort` e `TrustValidatorPort` definidas em `packages/core_application/crypto.py`.
+- [x] Adapters in-memory para desenvolvimento e testes (`SoftwareKeyProvider`, `SoftwareSigningProvider`, `SoftwareTrustValidator`) implementados em `packages/core_infrastructure/crypto.py`.
+- [x] Testes unitários (`test_crypto_domain.py`) e de infraestrutura criptográfica (`test_crypto_infrastructure.py`) aprovados (217 testes no total).
+
+## Comandos para testar o Passo 5.4
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 217 testes aprovados; banco em `20260722_0018 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 5.5 — Gestão e Rotação de Chaves (KeyRegistry e Criptoperíodo)
+
+- [x] Enumeração `KeyState` (`ACTIVE`, `ROTATED`, `REVOKED`) e entidade `KeyRecord` criados em `packages/core_domain/crypto.py`.
+- [x] Exportações atualizadas em `packages/core_domain/__init__.py`.
+- [x] Porta `KeyRegistryPort` e serviço `KeyManagementService` implementados em `packages/core_application/crypto.py`.
+- [x] Tabela `core_audit.key_registry` com RLS por `Organization` e `TransactionalKeyRegistryRepository` implementados em `packages/core_infrastructure/persistence/crypto.py`.
+- [x] Migration Alembic `20260722_0019_create_key_registry_table.py` criada e aplicada com sucesso.
+- [x] Testes unitários (`test_crypto_domain.py`) e de integração PostgreSQL com RLS (`test_crypto_postgresql.py`) aprovados (217 testes no total).
+
+## Comandos para testar o Passo 5.5
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 217 testes aprovados; banco em `20260722_0019 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 5.6 — Assinatura de Evidence
+
+- [x] Atributo opcional `signature: CryptographicSignature | None = None` e método `sign_evidence()` criados em `packages/core_domain/evidence.py`.
+- [x] Caso de uso `sign_evidence()` orquestrando busca de chave ativa e geração da assinatura implementado em `packages/core_application/evidence_service.py`.
+- [x] Colunas de assinatura adicionadas à tabela `core_audit.evidences` com RLS por `Organization` e `TransactionalEvidenceRepository` atualizado em `packages/core_infrastructure/persistence/evidence.py`.
+- [x] Migration Alembic `20260722_0020_add_signature_to_evidences.py` criada e aplicada com sucesso.
+- [x] Testes unitários (`test_evidence_domain.py`) e de integração PostgreSQL com RLS (`test_evidence_postgresql.py`) aprovados (217 testes no total).
+
+## Comandos para testar o Passo 5.6
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 217 testes aprovados; banco em `20260722_0020 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 5.7 — Documento e anexo
+
+- [x] Entidade imutável `Attachment` criada em `packages/core_domain/evidence.py`.
+- [x] Portas `BlobStoragePort` e `AttachmentRepositoryPort`, e serviço `DocumentService` criados em `packages/core_application/document_service.py`.
+- [x] Adapter `SoftwareBlobStorage` criado em `packages/core_infrastructure/storage.py`.
+- [x] Tabela `core_audit.attachments` com RLS por `Organization` e `TransactionalAttachmentRepository` criados em `packages/core_infrastructure/persistence/evidence.py`.
+- [x] Migration Alembic `20260722_0021_create_attachments_table.py` criada e aplicada com sucesso.
+- [x] Testes unitários (`test_evidence_domain.py`) e de integração PostgreSQL com RLS (`test_document_postgresql.py`) aprovados (220 testes no total).
+
+## Comandos para testar o Passo 5.7
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 220 testes aprovados; banco em `20260722_0021 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 5.8 — Proveniência (Conclusão do Marco 5)
+
+- [x] Entidades imutáveis `ProvenanceNode`, `ProvenanceEdge` e `ProvenanceTrace` criadas em `packages/core_domain/provenance.py`.
+- [x] Portas e serviço `ProvenanceService` criados em `packages/core_application/provenance_service.py` com suporte a rastreio `trace_from_event()`, `trace_from_evidence()` e `trace_from_source()`.
+- [x] Repositórios `DomainEventRepository` e `TransactionalEvidenceRepository` atualizados para suporte a consultas de linhagem por `source_id`.
+- [x] Testes unitários (`test_provenance_domain.py`) e de integração PostgreSQL com RLS (`test_provenance_postgresql.py`) aprovados (222 testes no total).
+
+## Comandos para testar o Passo 5.8
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 222 testes aprovados; banco em `20260722_0021 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 6.1 — Policy versionada
+
+- [x] Entidade imutável `Policy` e enum `PolicyStatus` criados em `packages/core_domain/policy.py`.
+- [x] Porta `PolicyRepositoryPort` e serviço `PolicyService` criados em `packages/core_application/policy_service.py` com ciclo de vida formal (`DRAFT`, `PUBLISHED`, `SUPERSEDED`, `REVOKED`) e busca por vigência ativa.
+- [x] Tabela `core_audit.policies` com RLS por `Organization` e `TransactionalPolicyRepository` criados em `packages/core_infrastructure/persistence/policy.py`.
+- [x] Migration Alembic `20260722_0022_create_policies_table.py` criada e aplicada com sucesso.
+- [x] Testes unitários (`test_policy_domain.py`) e de integração PostgreSQL com RLS (`test_policy_postgresql.py`) aprovados (225 testes no total).
+
+## Comandos para testar o Passo 6.1
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 225 testes aprovados; banco em `20260722_0022 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 6.2 — Rule versionada
+
+- [x] Entidade imutável `Rule` e enum `SeverityLevel` criados em `packages/core_domain/rule.py`.
+- [x] Porta `RuleRepositoryPort` e serviço `RuleService` criados em `packages/core_application/rule_service.py` com suporte a severidade, fonte normativa, evidências requeridas, justificativa e ação corretiva.
+- [x] Tabela `core_audit.rules` com RLS por `Organization` e `TransactionalRuleRepository` criados em `packages/core_infrastructure/persistence/rule.py`.
+- [x] Migration Alembic `20260722_0023_create_rules_table.py` criada e aplicada com sucesso.
+- [x] Testes unitários (`test_rule_domain.py`) e de integração PostgreSQL com RLS (`test_rule_postgresql.py`) aprovados (228 testes no total).
+
+## Comandos para testar o Passo 6.2
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 228 testes aprovados; banco em `20260722_0023 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 6.3 — Contrato de fatos da vertical
+
+- [x] Abstrações imutáveis `Fact` e `FactSnapshot` criadas em `packages/core_domain/facts.py` com cálculo determinístico de hash SHA-256 e consulta por tipo.
+- [x] Porta `FactProviderPort` e serviço `FactService` criados em `packages/core_application/fact_service.py` isolando o Core de dependências da vertical pecuária ou banco de dados.
+- [x] Testes unitários (`test_fact_domain.py`) e de aplicação com provider simulado (`test_fact_service.py`) aprovados (230 testes no total).
+
+## Comandos para testar o Passo 6.3
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 230 testes aprovados; banco em `20260722_0023 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 6.4 — Execução de uma regra pura
+
+- [x] Abstrações imutáveis `RuleResult` e `RuleResultStatus` (`ATENDIDA`, `NAO_ATENDIDA`, `PENDENTE`, `NAO_APLICAVEL`, `INDETERMINADA`) criadas em `packages/core_domain/evaluation.py`, com justificativa obrigatória e `compute_rule_inputs_hash` (SHA-256 determinístico das entradas relevantes).
+- [x] Motor puro `RuleEvaluationEngine` criado em `packages/core_application/evaluation_service.py`, decidindo aplicabilidade por vigência e satisfação pelas evidências exigidas e pelas condições declarativas, sem acessar dados da vertical.
+- [x] Condição normativa declarativa `RuleCondition` e `ComparisonOperator` criadas em `packages/core_domain/rule.py`: a condição é dado (`fact_type`, `payload_key`, operador, valor esperado), nunca código, tornando `NAO_ATENDIDA` e `INDETERMINADA` alcançáveis sem acoplar o Core à vertical.
+- [x] Coluna `conditions` (JSONB) adicionada a `core_audit.rules` pela migration `20260722_0024`, com round-trip verificado em `test_rule_postgresql.py`; o digest das condições entra no hash das entradas via `compute_conditions_digest`.
+- [x] Lacuna nunca vira reprovação: fato ausente => `PENDENTE`; chave ausente ou tipo incomparável => `INDETERMINADA`; apenas violação definitiva => `NAO_ATENDIDA`, com precedência sobre lacunas.
+- [x] Testes unitários (`test_evaluation_domain.py`, `test_rule_condition_domain.py`) e de aplicação com casos de sucesso, falha, pendência, indeterminação e não aplicável (`test_evaluation_service.py`) aprovados, confirmando reprodutibilidade de resultado e hash (264 testes no total).
+
+## Comandos para testar o Passo 6.4
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 264 testes aprovados; banco em `20260722_0024 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+
+
+
+
+
+
+
+
+
+

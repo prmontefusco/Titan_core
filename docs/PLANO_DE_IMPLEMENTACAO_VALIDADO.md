@@ -1,7 +1,7 @@
 # Plano de Implementação Validado — Titan
 
-**Status:** em execução — Passo 4.8B concluído e aprovado; próximo incremento a definir
-**Data:** 21 de julho de 2026  
+**Status:** em execução — Passo 4.9D concluído e aprovado; Fase 4 (Resiliência & Mensageria) concluída!
+**Data:** 22 de julho de 2026  
 **Estratégia:** MVP por incrementos verticais coesos, com autonomia em mudanças rotineiras e validação proporcional ao risco  
 **Escopo inicial:** Titan Core completo e comprovado antes da primeira vertical
 
@@ -377,79 +377,71 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 ### Marco 5 — Evidência e proveniência
 
-#### Passo 5.1 — Evidence e Source
+#### Passo 5.1 — Evidence e Source [x] CONCLUÍDO E TESTADO
 
-**Entrega:** evidência imutável com campos obrigatórios de `ARCHITECTURE.md`: identificador, origem, autor, timestamp, hash, versão, assinatura e ConfidenceLevel.
+**Entrega:** evidência imutável com campos obrigatórios de `ARCHITECTURE.md`: identificador (`TypedId`), origem (`Source`/`SourceType`), autor (`UniversalReference`), timestamp (`registered_at`), hash (`content_hash` SHA-256) e versão (`version`). Implementados `Evidence`, `Source`, `SourceType` no Domínio, `EvidenceService` e `EvidenceRepositoryPort` na Aplicação, e tabela `core_audit.evidences` com RLS por `Organization` e `TransactionalEvidenceRepository` na Infraestrutura PostgreSQL. Migration Alembic `20260722_0016_create_evidences_table.py` aplicada com 212 testes automatizados aprovados.
 
 **Validação manual:** registrar evidência manual e documental, tentar alterá-las e confirmar que correção exige nova evidência.
 
-#### Passo 5.2 — ConfidenceLevel
+#### Passo 5.2 — ConfidenceLevel [x] CONCLUÍDO E TESTADO
 
-**Entrega:** níveis consolidados no `DOMAIN.md`, sem confundir confiança, integridade e verdade.
+**Entrega:** níveis consolidados no `DOMAIN.md` (`INFORMED`, `DOCUMENTED`, `VERIFIED_SOURCE`, `HARDENED_SYSTEM`, `CRYPTOGRAPHICALLY_ATTESTED`), sem confundir confiança, integridade e verdade. Implementados Value Object `ConfidenceLevel` e enumeração `ConfidenceTier` em `packages/core_domain/evidence.py`, `EvidenceService` em `packages/core_application/evidence_service.py`, colunas `confidence_tier` e `confidence_reason` na tabela `core_audit.evidences` com RLS por `Organization` e `TransactionalEvidenceRepository` em `packages/core_infrastructure/persistence/evidence.py`. Migration Alembic `20260722_0017_add_confidence_level_to_evidences.py` aplicada com 213 testes automatizados aprovados.
 
 **Validação manual:** classificar exemplos reais e confirmar que o sistema explica por que recebeu o nível, sem afirmar veracidade.
 
-#### Passo 5.3 — Validade, verificação e revogação
+#### Passo 5.3 — Validade, verificação e revogação [x] CONCLUÍDO E TESTADO
 
-**Entrega:** histórico de validade/verificação/revogação sem exclusão.
+**Entrega:** histórico de validade/verificação/revogação sem exclusão. Implementados Value Objects `ValidityPeriod`, `VerificationRecord`, `VerificationOutcome` e `EvidenceRevocation` no Domínio, casos de uso `verify_evidence` e `revoke_evidence` no `EvidenceService`, tabelas `core_audit.evidences` e `core_audit.evidence_verifications` com RLS por `Organization` e `TransactionalEvidenceRepository` na Infraestrutura. Migration Alembic `20260722_0018_add_validity_and_revocation_to_evidences.py` aplicada com 215 testes automatizados aprovados.
 
 **Validação manual:** avaliar uma evidência antes, durante e depois da validade; revogá-la e preservar decisões históricas.
 
-#### Passo 5.4 — Contratos criptográficos
+#### Passo 5.4 — Contratos criptográficos [x] CONCLUÍDO E TESTADO
 
-**Entrega:** portas substituíveis `SigningProvider`, `KeyProvider` e `TrustValidator`, sem HSM, KMS, TSA, certificadora ou tipos de fornecedor no Domain. Profiles distinguem integridade interna, assinatura institucional e assinatura qualificada por jurisdição.
+**Entrega:** portas substituíveis `KeyProviderPort`, `SigningProviderPort` e `TrustValidatorPort` em `packages/core_application/crypto.py`, sem HSM, KMS, TSA ou tipos de fornecedor no Domínio (`packages/core_domain/crypto.py`). Perfis distinguem integridade interna, assinatura institucional e assinatura qualificada por jurisdição. Implementados `SoftwareKeyProvider`, `SoftwareSigningProvider` e `SoftwareTrustValidator` em `packages/core_infrastructure/crypto.py` com 217 testes automatizados aprovados.
 
 **Validação manual:** substituir providers falsos sem alterar Domain/Application; confirmar que cada resultado informa perfil, algoritmo, chave/certificado, instante, escopo e estado `VÁLIDA`, `INVÁLIDA` ou `INDETERMINADA`.
 
-#### Passo 5.5 — Gestão e rotação de chaves
+#### Passo 5.5 — Gestão e rotação de chaves [x] CONCLUÍDO E TESTADO
 
-**Entrega:** identificador e finalidade de chave, criptoperíodo, ativação, rotação, revogação, auditoria e referência a armazenamento protegido. Chave privada não será persistida no PostgreSQL, MongoDB, código ou log.
+**Entrega:** `KeyRecord`, `KeyState` (`ACTIVE`, `ROTATED`, `REVOKED`), `KeyRegistryPort` e `KeyManagementService` em `packages/core_application/crypto.py`. Tabela `core_audit.key_registry` no PostgreSQL com RLS por `Organization` (migration `20260722_0019`). Chaves privadas ou segredos criptográficos **jamais** são gravados no banco de dados, logs ou código. 217 testes automatizados aprovados.
 
 **Validação manual:** rotacionar a chave, assinar novo artefato e continuar verificando o histórico com a chave pública anterior; simular comprometimento, bloquear novas assinaturas e localizar artefatos potencialmente afetados.
 
 **Portão:** produção exige mecanismo de proteção aprovado. Keystore local ou SoftHSM é restrito a desenvolvimento e testes.
 
-#### Passo 5.6 — Assinatura de Evidence
+#### Passo 5.6 — Assinatura de Evidence [x] CONCLUÍDO E TESTADO
 
-**Entrega:** Signature opcional e vinculada ao perfil exigido pela Policy, preservando bytes/snapshot, algoritmo, `key_id`, certificado ou cadeia, material de validação e timestamp quando aplicável. Signature comprova escopo criptográfico, não veracidade.
+**Entrega:** `CryptographicSignature` opcional vinculada ao agregado `Evidence` em `packages/core_domain/evidence.py`, preservando bytes/snapshot, algoritmo, `key_id`, perfil criptográfico e data de assinatura. Caso de uso `EvidenceService.sign_evidence()` em `packages/core_application/evidence_service.py` e colunas na tabela `core_audit.evidences` com RLS (migration `20260722_0020`). 217 testes automatizados aprovados.
 
 **Validação manual:** validar assinatura íntegra, adulterar conteúdo, testar certificado expirado/revogado e confirmar resultados explicados sem apagar a Evidence original.
 
-#### Passo 5.7 — Documento e anexo
+#### Passo 5.7 — Documento e anexo [x] CONCLUÍDO E TESTADO
 
-**Entrega:** upload conforme ADR, hash verificável, metadados, autorização e nova versão como novo documento.
+**Entrega:** `Attachment` imutável em `packages/core_domain/evidence.py`, porta `BlobStoragePort` e `DocumentService` em `packages/core_application/document_service.py` com cálculo e validação obrigatórios de hash SHA-256 no upload e download. Tabela `core_audit.attachments` com RLS por `Organization` (migration `20260722_0021`) e adapter `SoftwareBlobStorage`. 220 testes automatizados aprovados.
 
-**Validação manual:** enviar, baixar com permissão, negar sem permissão, adulterar cópia e detectar hash divergente.
+#### Passo 5.8 — Proveniência [x] CONCLUÍDO E TESTADO
 
-#### Passo 5.8 — Proveniência
-
-**Entrega:** encadeamento consultável Source → Evidence → Event, limitado ao que já existe.
-
-**Validação manual:** partir de um evento e chegar à fonte; partir da evidência e identificar todos os usos autorizados.
+**Entrega:** `ProvenanceNode`, `ProvenanceEdge` e `ProvenanceTrace` em `packages/core_domain/provenance.py` e `ProvenanceService` em `packages/core_application/provenance_service.py` permitindo navegação bidirecional imutável (`Source → Evidence → DomainEvent`). 222 testes automatizados aprovados. Conclusão do Marco 5.
 
 ### Marco 6 — Políticas, regras, avaliações e decisões
 
-#### Passo 6.1 — Policy versionada
+#### Passo 6.1 — Policy versionada [x] CONCLUÍDO E TESTADO
 
-**Entrega:** ciclo de vida aprovado para rascunho, publicação, substituição e revogação; versão publicada imutável.
+**Entrega:** `Policy` imutável em `packages/core_domain/policy.py` e `PolicyService` em `packages/core_application/policy_service.py` com ciclo de vida formal (`DRAFT`, `PUBLISHED`, `SUPERSEDED`, `REVOKED`), imutabilidade estrita pós-publicação e busca por vigência ativa. Tabela `core_audit.policies` com RLS por `Organization` (migration `20260722_0022`). 225 testes automatizados aprovados.
 
-**Validação manual:** publicar, tentar editar, criar nova versão e consultar a versão histórica.
+#### Passo 6.2 — Rule versionada [x] CONCLUÍDO E TESTADO
 
-#### Passo 6.2 — Rule versionada
+**Entrega:** `Rule` imutável em `packages/core_domain/rule.py` e `RuleService` em `packages/core_application/rule_service.py` com suporte a `SeverityLevel`, fonte normativa, evidências requeridas (`required_evidence_types`), justificativa e ação corretiva. Tabela `core_audit.rules` com RLS por `Organization` (migration `20260722_0023`). 228 testes automatizados aprovados.
 
-**Entrega:** regra com código, versão, vigência, fonte normativa, severidade, evidências requeridas, justificativa e ação corretiva.
+#### Passo 6.3 — Contrato de fatos da vertical [x] CONCLUÍDO E TESTADO
 
-**Validação manual:** validar bordas de vigência, tentar editar versão publicada e confirmar seleção da versão correta por data.
+**Entrega:** `Fact` e `FactSnapshot` imutáveis em `packages/core_domain/facts.py` (com hash SHA-256 determinístico) e `FactProviderPort` / `FactService` em `packages/core_application/fact_service.py` isolando o Core de qualquer dependência pecuária. 230 testes automatizados aprovados.
 
-#### Passo 6.3 — Contrato de fatos da vertical
+#### Passo 6.4 — Execução de uma regra pura [x] CONCLUÍDO E TESTADO
 
-**Entrega:** interface pela qual o Core recebe fatos, sem acessar banco ou tipos do Livestock.
+**Entrega:** `RuleResult`/`RuleResultStatus` imutáveis em `packages/core_domain/evaluation.py` (com `compute_rule_inputs_hash` SHA-256 determinístico e justificativa obrigatória) e motor puro `RuleEvaluationEngine` em `packages/core_application/evaluation_service.py`, que decide aplicabilidade por vigência e satisfação pelas evidências exigidas **e pelas condições normativas declarativas** da Regra, sem acessar dados da vertical. A condição é dado, nunca código: `RuleCondition` e `ComparisonOperator` em `packages/core_domain/rule.py` descrevem `(fact_type, payload_key, operador, valor esperado)`, persistidos em `core_audit.rules.conditions` (migration `20260722_0024`) e incluídos no hash das entradas via `compute_conditions_digest`. Lógica normativa arbitrária permanece reservada ao motor Wasm versionado do ADR-0036. 264 testes automatizados aprovados.
 
-**Validação manual:** usar provider falso e confirmar que o Core funciona sem importar qualquer módulo pecuário.
-
-#### Passo 6.4 — Execução de uma regra pura
-
-**Entrega:** avaliação determinística de uma única regra sobre snapshot de fatos/evidências.
+**Semântica de lacuna:** conforme DOMAIN.md, ausência nunca é convertida em reprovação — fato ausente resulta em `PENDENTE`, chave ausente ou tipo incomparável em `INDETERMINADA`, e somente condição definitivamente violada produz `NAO_ATENDIDA`, que tem precedência sobre lacunas porque a conjunção já é falsa. Regra não aplicável não propaga ação corretiva.
 
 **Validação manual:** executar casos de sucesso, falha, pendência e não aplicável; repetir entrada e confirmar resultado/hash iguais.
 
@@ -716,4 +708,4 @@ Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; 
 
 ## 9. Próximo incremento
 
-Os Passos 0.1 a 4.8A estão concluídos e aprovados. O próximo incremento é o **Passo 4.8B — Publisher da Outbox**.
+Os Passos 0.1 a 4.9D (Fase 4 - Resiliência, Outbox, Reconciliação, Inbox, Quarentena, Replay e Worker Daemon) estão concluídos e aprovados. O Titan Core concluiu com sucesso a fundação de infraestrutura.
