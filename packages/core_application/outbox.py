@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Protocol
 
@@ -138,3 +139,46 @@ class OutboxPublisherService:
         else:
             self.repository.mark_rejected(claimed_message, result)
         return result
+
+
+@dataclass(frozen=True, slots=True)
+class OutboxHealthSummary:
+    total_pending: int
+    active_claims: int
+    expired_claims: int
+    accepted_by_broker: int
+    unknown_results: int
+    rejected_by_broker: int
+    oldest_pending_age_seconds: float | None
+    oldest_expired_claim_age_seconds: float | None
+    read_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class OutboxReconciliationReport:
+    summary_before: OutboxHealthSummary
+    released_claims_count: int
+    summary_after: OutboxHealthSummary
+    reconciled_at: datetime
+
+
+class OutboxReconciliationRepositoryPort(Protocol):
+    def get_health_summary(self) -> OutboxHealthSummary: ...
+
+    def release_expired_claims(self) -> int: ...
+
+
+@dataclass(frozen=True, slots=True)
+class OutboxReconciliationService:
+    repository: OutboxReconciliationRepositoryPort
+
+    def run(self) -> OutboxReconciliationReport:
+        summary_before = self.repository.get_health_summary()
+        released_count = self.repository.release_expired_claims()
+        summary_after = self.repository.get_health_summary()
+        return OutboxReconciliationReport(
+            summary_before=summary_before,
+            released_claims_count=released_count,
+            summary_after=summary_after,
+            reconciled_at=datetime.now(UTC),
+        )

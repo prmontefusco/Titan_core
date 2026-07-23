@@ -286,6 +286,35 @@ class DomainEventRepository:
             event.aggregate_version for event in self.list_for_aggregate(aggregate_reference)
         )
 
+    def get_by_id(self, event_id: TypedId) -> StoredDomainEvent | None:
+        row = self.connection.execute(
+            select(domain_events_table, event_integrity_table)
+            .select_from(
+                domain_events_table.outerjoin(
+                    event_integrity_table,
+                    domain_events_table.c.event_id == event_integrity_table.c.event_id,
+                )
+            )
+            .where(domain_events_table.c.event_id == event_id.value)
+        ).first()
+        if row is None:
+            return None
+        return _from_row(row)
+
+    def list_by_source_id(self, source_id: TypedId) -> list[StoredDomainEvent]:
+        rows = self.connection.execute(
+            select(domain_events_table, event_integrity_table)
+            .select_from(
+                domain_events_table.outerjoin(
+                    event_integrity_table,
+                    domain_events_table.c.event_id == event_integrity_table.c.event_id,
+                )
+            )
+            .where(domain_events_table.c.source_id == source_id.value)
+            .order_by(domain_events_table.c.occurred_at.asc())
+        ).fetchall()
+        return [_from_row(row) for row in rows]
+
 
 def _organization_value(reference: UniversalReference) -> Any:
     return None if reference.organization_id is None else reference.organization_id.value

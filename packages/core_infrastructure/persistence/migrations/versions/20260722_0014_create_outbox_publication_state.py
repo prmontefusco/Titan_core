@@ -75,8 +75,7 @@ def upgrade() -> None:
         sa.Column("attempted_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("reason", sa.String(200), nullable=True),
         sa.CheckConstraint(
-            "result IN ('ACEITA_PELO_BROKER', 'RESULTADO_DESCONHECIDO', "
-            "'REJEITADA_PELO_BROKER')",
+            "result IN ('ACEITA_PELO_BROKER', 'RESULTADO_DESCONHECIDO', 'REJEITADA_PELO_BROKER')",
             name="ck_outbox_publication_attempt_result",
         ),
         sa.ForeignKeyConstraint(
