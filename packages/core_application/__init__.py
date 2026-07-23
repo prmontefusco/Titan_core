@@ -2,13 +2,51 @@
 
 from packages.core_application.concurrency import OptimisticConcurrencyConflict
 from packages.core_application.corrections import CorrectionService
+from packages.core_application.crypto import (
+    KeyManagementService,
+    KeyProviderPort,
+    KeyRegistryPort,
+    SigningProviderPort,
+    TrustValidatorPort,
+)
+from packages.core_application.decision_service import DecisionRepositoryPort, DecisionService
+from packages.core_application.document_service import (
+    AttachmentRepositoryPort,
+    BlobStoragePort,
+    DocumentService,
+)
+from packages.core_application.evaluation_service import (
+    EvaluationRepositoryPort,
+    PolicyEvaluationService,
+    RuleEvaluationEngine,
+)
 from packages.core_application.event_log import DomainEventLog, DomainEventLogService
+from packages.core_application.evidence_service import EvidenceRepositoryPort, EvidenceService
+from packages.core_application.fact_service import FactProviderPort, FactService
 from packages.core_application.idempotency import (
     IdempotencyConflict,
     IdempotencyExecution,
     IdempotencyRequest,
     IdempotencyResultUnknown,
     IdempotencyService,
+)
+from packages.core_application.inbox import (
+    AuthorizationEvaluationMode,
+    AuthorizationReference,
+    ConsumerReceipt,
+    DeliveryHandlingOutcome,
+    InboxQuarantineRepositoryPort,
+    InboxQuarantineService,
+    InboxStatus,
+    IncomingMessageEnvelope,
+    MessageConsumerPort,
+    MessageHandler,
+    PermanentConsumptionError,
+    ProcessingOutcome,
+    QuarantinedMessageRecord,
+    ReplayRequest,
+    ReplayResult,
+    TransientConsumptionError,
 )
 from packages.core_application.integrity_checkpoint import (
     IntegrityCheckpointService,
@@ -25,9 +63,25 @@ from packages.core_application.outbox import (
     ClaimedOutboxMessage,
     EventOutboxService,
     MessageKind,
+    OutboxHealthSummary,
     OutboxMessage,
     OutboxPublisherService,
+    OutboxReconciliationReport,
+    OutboxReconciliationRepositoryPort,
+    OutboxReconciliationService,
 )
+from packages.core_application.policy_service import PolicyRepositoryPort, PolicyService
+from packages.core_application.provenance_service import (
+    EventLookupPort,
+    EvidenceLookupPort,
+    ProvenanceService,
+)
+from packages.core_application.relation_service import (
+    CrossOrganizationTraversalDenied,
+    RelationRepositoryPort,
+    RelationService,
+)
+from packages.core_application.rule_service import RuleRepositoryPort, RuleService
 from packages.core_application.timestamping import (
     TemporalAnchor,
     TimestampAttempt,
@@ -46,11 +100,38 @@ from packages.core_application.timestamping import (
 __all__ = [
     "OptimisticConcurrencyConflict",
     "CorrectionService",
+    "RuleEvaluationEngine",
     "DomainEventLog",
     "DomainEventLogService",
     "IdentityAndAccessReader",
     "IntegrityCheckpointService",
     "IntegrityCheckpointWriter",
+    "EvidenceRepositoryPort",
+    "EvidenceService",
+    "AttachmentRepositoryPort",
+    "BlobStoragePort",
+    "DocumentService",
+    "EventLookupPort",
+    "EvidenceLookupPort",
+    "ProvenanceService",
+    "PolicyRepositoryPort",
+    "PolicyService",
+    "RuleRepositoryPort",
+    "RuleService",
+    "PolicyEvaluationService",
+    "EvaluationRepositoryPort",
+    "DecisionService",
+    "DecisionRepositoryPort",
+    "RelationService",
+    "RelationRepositoryPort",
+    "CrossOrganizationTraversalDenied",
+    "FactProviderPort",
+    "FactService",
+    "KeyProviderPort",
+    "KeyRegistryPort",
+    "KeyManagementService",
+    "SigningProviderPort",
+    "TrustValidatorPort",
     "IdempotencyConflict",
     "IdempotencyExecution",
     "IdempotencyRequest",
@@ -65,6 +146,26 @@ __all__ = [
     "MessageKind",
     "OutboxMessage",
     "OutboxPublisherService",
+    "OutboxHealthSummary",
+    "OutboxReconciliationReport",
+    "OutboxReconciliationRepositoryPort",
+    "OutboxReconciliationService",
+    "AuthorizationEvaluationMode",
+    "AuthorizationReference",
+    "ConsumerReceipt",
+    "DeliveryHandlingOutcome",
+    "IncomingMessageEnvelope",
+    "InboxStatus",
+    "MessageConsumerPort",
+    "MessageHandler",
+    "ProcessingOutcome",
+    "TransientConsumptionError",
+    "PermanentConsumptionError",
+    "QuarantinedMessageRecord",
+    "ReplayRequest",
+    "ReplayResult",
+    "InboxQuarantineRepositoryPort",
+    "InboxQuarantineService",
     "TemporalAnchor",
     "TimestampAttempt",
     "TimestampAttemptStatus",

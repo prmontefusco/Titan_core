@@ -12,10 +12,18 @@ from packages.core_infrastructure.persistence import (
     create_database_engine,
 )
 from packages.core_infrastructure.persistence.checkpoints import integrity_checkpoints_table
+from packages.core_infrastructure.persistence.crypto import key_registry_table
+from packages.core_infrastructure.persistence.decision import decisions_table
+from packages.core_infrastructure.persistence.evaluation import evaluations_table
 from packages.core_infrastructure.persistence.events import (
     CORE_AUDIT_SCHEMA,
     domain_events_table,
     event_integrity_table,
+)
+from packages.core_infrastructure.persistence.evidence import (
+    attachments_table,
+    evidence_verifications_table,
+    evidences_table,
 )
 from packages.core_infrastructure.persistence.external_identities import external_identities_table
 from packages.core_infrastructure.persistence.idempotency import idempotency_records_table
@@ -27,6 +35,9 @@ from packages.core_infrastructure.persistence.outbox import (
     outbox_publication_attempts_table,
     outbox_publication_state_table,
 )
+from packages.core_infrastructure.persistence.policy import policies_table
+from packages.core_infrastructure.persistence.relations import relations_table
+from packages.core_infrastructure.persistence.rule import rules_table
 from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
 
 config = context.config
@@ -46,6 +57,15 @@ assert outbox_messages_table.metadata is target_metadata
 assert outbox_publication_attempts_table.metadata is target_metadata
 assert outbox_publication_state_table.metadata is target_metadata
 assert timestamp_attempts_table.metadata is target_metadata
+assert evidences_table.metadata is target_metadata
+assert evidence_verifications_table.metadata is target_metadata
+assert key_registry_table.metadata is target_metadata
+assert attachments_table.metadata is target_metadata
+assert policies_table.metadata is target_metadata
+assert rules_table.metadata is target_metadata
+assert evaluations_table.metadata is target_metadata
+assert decisions_table.metadata is target_metadata
+assert relations_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

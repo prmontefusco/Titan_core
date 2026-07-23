@@ -43,6 +43,10 @@ Nunca remova testes.
 
 Nunca utilize atalhos.
 
+Nunca crie abstração para necessidade futura sem uso atual.
+
+Nunca exponha secrets, tokens, senhas, chaves privadas ou dados pessoais em código, log, teste ou documentação.
+
 ---
 
 # Antes de qualquer implementação
@@ -203,6 +207,33 @@ explicando:
 - alternativas
 - decisão
 - justificativa
+
+---
+
+# Comandos
+
+O ambiente local roda em contêineres. Antes de qualquer teste de integração, subir a stack e aplicar as migrations, senão os testes que dependem do PostgreSQL falham por conexão recusada.
+
+```text
+docker compose up -d
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+```
+
+Verificações:
+
+```text
+python -m uv run --locked pytest
+python -m uv run --locked pytest tests/caminho/test_arquivo.py
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Encerrar o ambiente: `docker compose down`.
+
+O `uv` está instalado como módulo do Python, não como executável no PATH: use sempre `python -m uv`, nunca `uv` direto. A flag `--locked` é obrigatória para reproduzir o ambiente travado em `uv.lock`.
 
 ---
 

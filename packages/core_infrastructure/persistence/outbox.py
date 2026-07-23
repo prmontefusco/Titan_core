@@ -1,7 +1,7 @@
 """Persistencia atomica de DomainEvent, OutboxMessage e estado de publicacao."""
 
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, timedelta
 from typing import Any
 
 from sqlalchemy import (
@@ -26,6 +26,7 @@ from packages.core_application import (
     BrokerPublicationResult,
     ClaimedOutboxMessage,
     MessageKind,
+    OutboxHealthSummary,
     OutboxMessage,
 )
 from packages.core_domain import CanonicalPayload, DomainEvent
@@ -417,3 +418,101 @@ def _message_from_row(row: Row[Any]) -> OutboxMessage:
         ),
         classification=row.classification,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalOutboxReconciliationRepository:
+    connection: Connection
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.connection, Connection) or not self.connection.in_transaction():
+            raise RuntimeError("TransactionalOutboxReconciliationRepository exige transacao ativa.")
+
+    def get_health_summary(self) -> OutboxHealthSummary:
+        row = self.connection.execute(
+            text(
+                """
+                SELECT
+                    COUNT(*) FILTER (
+                        WHERE s.status IS NULL OR s.status <> 'ACEITA_PELO_BROKER'
+                    ) AS total_pending,
+                    COUNT(*) FILTER (
+                        WHERE s.status = 'CLAIMED'
+                          AND s.lease_expires_at >= CURRENT_TIMESTAMP
+                    ) AS active_claims,
+                    COUNT(*) FILTER (
+                        WHERE s.status = 'CLAIMED'
+                          AND s.lease_expires_at < CURRENT_TIMESTAMP
+                    ) AS expired_claims,
+                    COUNT(*) FILTER (
+                        WHERE s.status = 'ACEITA_PELO_BROKER'
+                    ) AS accepted_by_broker,
+                    COUNT(*) FILTER (
+                        WHERE s.status = 'RESULTADO_DESCONHECIDO'
+                    ) AS unknown_results,
+                    COUNT(*) FILTER (
+                        WHERE s.status = 'REJEITADA_PELO_BROKER'
+                    ) AS rejected_by_broker,
+                    EXTRACT(
+                        EPOCH FROM (
+                            CURRENT_TIMESTAMP - MIN(m.recorded_at) FILTER (
+                                WHERE s.status IS NULL OR s.status <> 'ACEITA_PELO_BROKER'
+                            )
+                        )
+                    )::float AS oldest_pending_age_seconds,
+                    EXTRACT(
+                        EPOCH FROM (
+                            CURRENT_TIMESTAMP - MIN(s.lease_expires_at) FILTER (
+                                WHERE s.status = 'CLAIMED'
+                                  AND s.lease_expires_at < CURRENT_TIMESTAMP
+                            )
+                        )
+                    )::float AS oldest_expired_claim_age_seconds,
+                    CURRENT_TIMESTAMP AS read_at
+                FROM core_audit.outbox_messages AS m
+                LEFT JOIN core_audit.outbox_publication_state AS s
+                    ON s.message_id = m.message_id
+                WHERE m.record_owner_organization_id =
+                    NULLIF(current_setting('titan.organization_id', true), '')::uuid
+                """
+            )
+        ).one()
+
+        read_at_val = row.read_at.replace(tzinfo=UTC) if row.read_at.tzinfo is None else row.read_at
+
+        return OutboxHealthSummary(
+            total_pending=int(row.total_pending or 0),
+            active_claims=int(row.active_claims or 0),
+            expired_claims=int(row.expired_claims or 0),
+            accepted_by_broker=int(row.accepted_by_broker or 0),
+            unknown_results=int(row.unknown_results or 0),
+            rejected_by_broker=int(row.rejected_by_broker or 0),
+            oldest_pending_age_seconds=(
+                float(row.oldest_pending_age_seconds)
+                if row.oldest_pending_age_seconds is not None
+                else None
+            ),
+            oldest_expired_claim_age_seconds=(
+                float(row.oldest_expired_claim_age_seconds)
+                if row.oldest_expired_claim_age_seconds is not None
+                else None
+            ),
+            read_at=read_at_val,
+        )
+
+    def release_expired_claims(self) -> int:
+        result = self.connection.execute(
+            text(
+                """
+                UPDATE core_audit.outbox_publication_state
+                SET status = 'RESULTADO_DESCONHECIDO',
+                    last_reason = 'LEASE_EXPIRADA',
+                    last_result_at = CURRENT_TIMESTAMP
+                WHERE status = 'CLAIMED'
+                  AND lease_expires_at < CURRENT_TIMESTAMP
+                  AND record_owner_organization_id =
+                      NULLIF(current_setting('titan.organization_id', true), '')::uuid
+                """
+            )
+        )
+        return result.rowcount

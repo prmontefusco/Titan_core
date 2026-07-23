@@ -89,7 +89,10 @@ def test_tampered_signature_is_rejected(
     private_key, public_key = keys
     token = _token(private_key)
     encoded_header, encoded_payload, encoded_signature = token.split(".")
-    replacement = "A" if encoded_signature[-1] != "A" else "B"
-    tampered = f"{encoded_header}.{encoded_payload}.{encoded_signature[:-1]}{replacement}"
+    replacement = "a" if encoded_signature[10] != "a" else "b"
+    tampered = (
+        f"{encoded_header}.{encoded_payload}."
+        f"{encoded_signature[:10]}{replacement}{encoded_signature[11:]}"
+    )
     with pytest.raises(AccessTokenValidationError):
         _validator(public_key).validate(tampered)

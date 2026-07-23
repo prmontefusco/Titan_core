@@ -129,15 +129,16 @@ def test_keycloak_is_pinned_and_locally_scoped() -> None:
     ]
     assert keycloak["environment"]["KC_DB"] == "postgres"
     assert "keycloak-postgres:5432" in keycloak["environment"]["KC_DB_URL"]
-    assert keycloak["volumes"] == [
-        {
-            "type": "bind",
-            "source": str(Path("config/keycloak/titan-realm.json").resolve()),
-            "target": "/opt/keycloak/data/import/titan-realm.json",
-            "read_only": True,
-            "bind": {},
-        }
-    ]
+    # A chave "bind" carrega normalizações que variam com a versão do Docker Compose
+    # (ex.: create_host_path). Afirmar o dicionário inteiro tornaria o teste refém da
+    # versão instalada, então verificamos o que de fato importa: o realm é montado
+    # somente leitura, a partir do arquivo correto, no caminho esperado.
+    assert len(keycloak["volumes"]) == 1
+    realm_volume = keycloak["volumes"][0]
+    assert realm_volume["type"] == "bind"
+    assert realm_volume["source"] == str(Path("config/keycloak/titan-realm.json").resolve())
+    assert realm_volume["target"] == "/opt/keycloak/data/import/titan-realm.json"
+    assert realm_volume["read_only"] is True
 
 
 def test_keycloak_waits_for_its_dedicated_database_and_has_readiness() -> None:
