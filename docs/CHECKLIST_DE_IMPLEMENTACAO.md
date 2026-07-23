@@ -47,7 +47,7 @@ Estados utilizados:
 | 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.6 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
-| 6.1–6.6 | Policy, Rule, Evaluation e Decision | EM ANDAMENTO — 6.1 a 6.5 implementados | Pendente |
+| 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
 | 7.1–7.10 | Relações, recall, dossiê e prova do Core | NÃO INICIADO | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
@@ -1629,6 +1629,32 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 280 testes aprovados; banco em `20260722_0025 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 6.6 — Decision explicável
+
+- [x] `Decision`, `DecisionResult`, `DecisionReason` e `DecisionReasonCode` criados em `packages/core_domain/decision.py`, preservando política/versão, regras/resultados, sujeitos afetados, evidências, motivos e ações corretivas.
+- [x] Invariante de explicabilidade garantida em dois níveis: o domínio recusa Decision sem razão e a tabela impõe `CHECK (jsonb_array_length(reasons) > 0)`, de modo que nem escrita direta em SQL produza conclusão muda.
+- [x] Código da razão é contrato e mensagem humana é separada: `compute_decision_hash` inclui o código e ignora a mensagem, permitindo tradução sem inverter a conclusão.
+- [x] `DecisionService` criado em `packages/core_application/decision_service.py`, derivando a conclusão da Evaluation sem reavaliar nada; descumprimento `BLOCKING`/`CRITICAL` reprova e descumprimento apenas informativo produz `APROVADA_COM_RESTRICOES`.
+- [x] Evaluation adulterada (conteúdo que não confere com o hash registrado) é recusada e não fundamenta Decision alguma.
+- [x] Evidências citadas na Decision são reunidas de `Fact.source_reference`, ligando a conclusão às evidências que sustentam os fatos.
+- [x] `rule_code` adicionado ao `RuleResult` para que a razão identifique a regra de forma legível, sem alterar os hashes já definidos no Passo 6.4.
+- [x] Tabela `core_audit.decisions` com RLS por `Organization` e gravação append-only criada em `packages/core_infrastructure/persistence/decision.py`, com migration `20260722_0026`.
+- [x] Testes unitários (`test_decision_domain.py`), de aplicação (`test_decision_service.py`) e de integração PostgreSQL com RLS (`test_decision_postgresql.py`) aprovados, confirmando reconstrução da decisão a partir da Evaluation persistida (295 testes no total).
+
+## Comandos para testar o Passo 6.6
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 295 testes aprovados; banco em `20260722_0026 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 

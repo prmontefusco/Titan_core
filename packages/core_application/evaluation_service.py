@@ -50,6 +50,7 @@ class RuleEvaluationEngine:
         return RuleResult.create(
             rule_id=rule.rule_id,
             rule_version=rule.version,
+            rule_code=rule.code,
             organization_id=rule.organization_id,
             subject_id=snapshot.target_id,
             status=status,

@@ -17,6 +17,13 @@ from packages.core_domain.crypto import (
     SignatureStatus,
     ValidationResult,
 )
+from packages.core_domain.decision import (
+    Decision,
+    DecisionReason,
+    DecisionReasonCode,
+    DecisionResult,
+    compute_decision_hash,
+)
 from packages.core_domain.evaluation import (
     Evaluation,
     EvaluationOutcome,
@@ -91,6 +98,11 @@ __all__ = [
     "EvaluationOutcome",
     "aggregate_outcome",
     "compute_evaluation_hash",
+    "Decision",
+    "DecisionReason",
+    "DecisionReasonCode",
+    "DecisionResult",
+    "compute_decision_hash",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",

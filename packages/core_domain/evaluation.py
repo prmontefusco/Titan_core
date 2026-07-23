@@ -80,6 +80,7 @@ class RuleResult:
     evaluated_at: datetime
     snapshot_hash: str
     inputs_hash: str
+    rule_code: str = ""
 
     def __post_init__(self) -> None:
         if self.result_id.entity_type != "rule_result":
@@ -120,11 +121,13 @@ class RuleResult:
         inputs_hash: str,
         corrective_action: str = "",
         missing_evidence_types: tuple[str, ...] = (),
+        rule_code: str = "",
     ) -> "RuleResult":
         return cls(
             result_id=TypedId.new("rule_result"),
             rule_id=rule_id,
             rule_version=rule_version,
+            rule_code=rule_code,
             organization_id=organization_id,
             subject_id=subject_id,
             status=status,
@@ -142,6 +145,7 @@ class RuleResult:
             "result_id": str(self.result_id.value),
             "rule_id": str(self.rule_id.value),
             "rule_version": self.rule_version,
+            "rule_code": self.rule_code,
             "organization_id": str(self.organization_id.value),
             "subject_id": {
                 "entity_type": self.subject_id.entity_type,
@@ -164,6 +168,7 @@ class RuleResult:
             result_id=TypedId(entity_type="rule_result", value=UUID(data["result_id"])),
             rule_id=TypedId(entity_type="rule", value=UUID(data["rule_id"])),
             rule_version=data["rule_version"],
+            rule_code=data.get("rule_code", ""),
             organization_id=OrganizationId(UUID(data["organization_id"])),
             subject_id=TypedId(entity_type=subject["entity_type"], value=UUID(subject["value"])),
             status=RuleResultStatus(data["status"]),

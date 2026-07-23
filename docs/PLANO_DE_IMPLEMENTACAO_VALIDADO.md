@@ -455,9 +455,17 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** alterar fatos depois da avaliação e confirmar que a avaliação passada permanece reproduzível.
 
-#### Passo 6.6 — Decision explicável
+#### Passo 6.6 — Decision explicável [x] CONCLUÍDO E TESTADO
 
-**Entrega:** resultado agregado com política/versão, regras/resultados, sujeitos afetados, evidências, motivos e ações corretivas.
+**Entrega:** `Decision`, `DecisionResult` (`APROVADA`, `REJEITADA`, `APROVADA_COM_RESTRICOES`, `INDETERMINADA`), `DecisionReason` e `DecisionReasonCode` em `packages/core_domain/decision.py`; `DecisionService` em `packages/core_application/decision_service.py` deriva a conclusão da Evaluation preservada sem reavaliar nada. Tabela `core_audit.decisions` com RLS por `Organization` (migration `20260722_0026`), append-only, preservando política/versão, regras/resultados, sujeitos afetados, evidências, motivos e ações corretivas. 295 testes automatizados aprovados. Conclusão do Marco 6.
+
+**Explicabilidade:** não existe conclusão sem justificativa — a invariante é garantida no domínio e também por `CHECK (jsonb_array_length(reasons) > 0)`, de modo que nem escrita direta em SQL produza decisão muda. O código da razão é contrato e a mensagem humana é separada: o digest da Decision inclui o código e ignora a mensagem, permitindo tradução sem inverter a conclusão.
+
+**Severidade:** descumprimento `BLOCKING` ou `CRITICAL` reprova; descumprimento apenas `INFO` ou `WARNING` produz `APROVADA_COM_RESTRICOES`, nunca aprovação limpa. Informação insuficiente, evidência conflitante, validação externa pendente e revisão humana resultam em `INDETERMINADA`: revisão necessária é estado do processo, não resultado final.
+
+**Integridade:** uma Evaluation cujo conteúdo não confere com o hash registrado não pode fundamentar Decision alguma. As evidências citadas são reunidas de `Fact.source_reference`, ligando a conclusão às evidências que sustentam os fatos.
+
+**Fora de escopo (Marco 7+):** `DecisionAuthorityProfile`, aprovações, método de emissão, `DecisionProposal`, override, contestação e revisão humana permanecem no ADR-0016 e não são implementados aqui.
 
 **Validação manual:** reconstruir manualmente a decisão usando o snapshot e confirmar igualdade; verificar que não existe resultado sem justificativa.
 
