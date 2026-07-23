@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.5 implementados | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.6 implementados | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1779,6 +1779,32 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 358 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.6 — VerificationBundle
+
+- [x] `BundleManifest`, `BundleComponent`, `SignatureMaterial`, `VerificationBundle`, `BundleVerifier`, `ValidationReport` e `DimensionResult` criados em `packages/core_domain/verification.py`.
+- [x] `VerificationBundleService` criado em `packages/core_application/verification_service.py`, com `export()` e `load()` para o pacote viajar como texto e ser reconstruído fora do Titan.
+- [x] Verificador puro: sem rede, sem segredo e sem banco; sete dimensões independentes em vez de um booleano único.
+- [x] Ausência de material produz `INDETERMINADA`; adulteração produz `INVALIDA` com o ponto exato nomeado em `failure_point`.
+- [x] Componente presente mas não declarado reprova o pacote, impedindo mistura silenciosa.
+- [x] Âncora de confiança incluída no pacote não é aceita por estar nele; sem âncora externa a assinatura é indeterminada.
+- [x] Chave privada, segredo, token, credencial e contexto de organização são recusados na montagem.
+- [x] Dossiê que não confere com o próprio hash não pode ser empacotado.
+- [x] Testes (`test_verification_bundle.py`) aprovados, cobrindo transporte fora do Titan, adulteração de componente e de manifesto, componente intruso, ausência de âncora e lacuna declarada (370 testes no total).
+
+## Comandos para testar o Passo 7.6
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 370 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 

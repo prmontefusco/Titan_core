@@ -545,9 +545,23 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** validar schema, recalcular hash e compreender/reproduzir a decisão sem consultar o banco.
 
-#### Passo 7.6 — VerificationBundle
+#### Passo 7.6 — VerificationBundle [x] CONCLUÍDO E TESTADO
 
-**Entrega:** pacote autossuficiente com snapshot canônico, versão da serialização, hashes, provas de cadeia/checkpoint, assinaturas, timestamps, certificados, material de revogação, manifesto e política de verificação. O pacote não depende de segredo ou acesso ao banco Titan.
+**Entrega:** `BundleManifest`, `BundleComponent`, `SignatureMaterial`, `VerificationBundle`, `BundleVerifier`, `ValidationReport` e `DimensionResult` em `packages/core_domain/verification.py`; `VerificationBundleService` em `packages/core_application/verification_service.py`. 370 testes automatizados aprovados.
+
+**Verificador independente:** o `BundleVerifier` é puro — sem rede, sem segredo, sem banco. O pacote sai do Titan como texto, é reconstruído do outro lado por `load()` e verificado sem qualquer dependência do sistema de origem.
+
+**Resultado nunca é booleano:** sete dimensões respondem separadamente (estrutura, serialização, integridade, assinatura, temporal, revogação, cobertura). O agregado só é `VALIDA` quando nenhuma dimensão falha nem fica indeterminada; violação determinística prevalece sobre indeterminação.
+
+**Ausência é indeterminação, adulteração é invalidez.** Componente obrigatório ausente, âncora de confiança ausente, material temporal ou de revogação ausente e escopo não comprovado produzem `INDETERMINADA`. Digest divergente, manifesto adulterado e componente não declarado produzem `INVALIDA` — sempre com o **ponto exato da falha** nomeado em `failure_point`.
+
+**O que não está listado não integra o escopo:** arquivo presente mas ausente do manifesto reprova o pacote, impedindo mistura silenciosa de componentes.
+
+**Confiança vem de fora:** âncora incluída no pacote não é confiável por estar no pacote. Sem âncora fornecida ao verificador, a assinatura é `INDETERMINADA` e o relatório declara a origem da confiança.
+
+**Material proibido nunca é empacotado:** chave privada, segredo, token, credencial e contexto de organização são recusados na montagem.
+
+**Nota de escopo:** o pacote é artefato de exportação e não recebeu tabela própria. Gerar, publicar, compartilhar e revogar referência online são operações distintas e pertencem ao Passo 7.7.
 
 **Validação manual:** verificar o pacote com ferramenta independente e sem Titan; remover material necessário e confirmar resultado `INDETERMINADA`; adulterar conteúdo e confirmar `INVÁLIDA` com ponto exato da falha.
 

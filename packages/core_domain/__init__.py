@@ -100,6 +100,21 @@ from packages.core_domain.rule import (
     SeverityLevel,
 )
 from packages.core_domain.users import User
+from packages.core_domain.verification import (
+    BUNDLE_FORMAT_VERSION,
+    BundleComponent,
+    BundleManifest,
+    BundleVerifier,
+    ComponentRequirement,
+    DimensionResult,
+    SignatureMaterial,
+    ValidationReport,
+    VerificationBundle,
+    VerificationDimension,
+    VerificationReasonCode,
+    VerificationStatus,
+    build_manifest,
+)
 
 __all__ = [
     "CanonicalPayload",
@@ -153,6 +168,19 @@ __all__ = [
     "Dossier",
     "DOSSIER_DOCUMENT_VERSION",
     "compute_dossier_hash",
+    "BundleComponent",
+    "BundleManifest",
+    "BundleVerifier",
+    "BUNDLE_FORMAT_VERSION",
+    "ComponentRequirement",
+    "DimensionResult",
+    "SignatureMaterial",
+    "ValidationReport",
+    "VerificationBundle",
+    "VerificationDimension",
+    "VerificationReasonCode",
+    "VerificationStatus",
+    "build_manifest",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",

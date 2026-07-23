@@ -114,6 +114,7 @@ from packages.core_application.timestamping import (
     TimestampValidation,
     TimestampValidationStatus,
 )
+from packages.core_application.verification_service import VerificationBundleService
 
 __all__ = [
     "OptimisticConcurrencyConflict",
@@ -153,6 +154,7 @@ __all__ = [
     "AffectedDecisionLookupPort",
     "DossierService",
     "DossierRepositoryPort",
+    "VerificationBundleService",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",
