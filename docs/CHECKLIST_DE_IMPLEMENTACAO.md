@@ -1,8 +1,8 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 22 de julho de 2026  
+**Atualizado em:** 23 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 5.0 — Conclusão da Fase 4 / Fase 5
+**Próximo passo planejado:** Passo 8.1 — RuralProperty (Marco 8 — Titan Livestock)
 
 
 
@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | IMPLEMENTADO — 7.1 a 7.7, 7.9 e 7.10; 7.8 adiado por decisão | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | CONCLUÍDO — 7.1 a 7.7, 7.9 e 7.10; 7.8 adiado por decisão | Aprovada |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1926,7 +1926,20 @@ Roteiro executado pelo responsável, com os resultados observados:
 - [x] Três testes de regressão criados em `TestContratoPublicado`, que verificam o **contrato publicado** e não apenas o comportamento — a lacuna que permitiu as três passarem despercebidas.
 - [x] Portão completo reexecutado: **452 testes**, Ruff, Mypy e Alembic aprovados.
 
-**Estado da validação manual:** aguardando a manifestação do responsável sobre as correções.
+#### Revalidação das correções — 23 de julho de 2026
+
+- [x] Contrato servido pela API inspecionado diretamente, sem intermédio dos testes: aviso da ADR-0039 presente, `requestBody` apontando para `#/components/schemas/VerificationRequest` e respostas `200, 401` na rota protegida.
+- [x] Quatro schemas publicados: `AuthenticationResponse`, `HealthResponse`, `VerificationRequest` e `TrustAnchorInput`.
+- [x] Suspeita de corrupção de acentos investigada e **descartada**: os bytes servidos são UTF-8 válido (`\xc3\xad` para `í`). A exibição incorreta vinha do `Invoke-RestMethod` do Windows PowerShell 5.1, que assume ISO-8859-1 quando o `Content-Type` não traz `charset` — e `application/json` corretamente não traz, conforme a RFC 8259.
+- [x] Portão completo reexecutado **com banco configurado**: 452 aprovados, zero pulados.
+
+**Cuidado registrado para as próximas validações:** uma execução sem `TITAN_DATABASE_URL` produziu "411 passed, 41 skipped". Os 41 pulados eram exatamente os testes de integração, incluindo a prova completa do Core e todos os de isolamento por RLS. Verde com testes pulados não valida o portão; conferir sempre que o total é 452 e que `skipped` é zero.
+
+**Estado da validação manual:** **APROVADA** pelo responsável em 23 de julho de 2026.
+
+**Portão do Marco 7 liberado.** Contratos, testes arquiteturais e critérios do Core aprovados. O Marco 8 — Titan Livestock — está desbloqueado, começando pelo Passo 8.1.
+
+**Lição de processo registrada:** a validação manual encontrou três não conformidades que 449 testes verdes não detectaram, uma delas conflito direto com uma ADR aceita. A causa comum era testar comportamento sem verificar o contrato publicado. `TestContratoPublicado` passa a cobrir essa classe de defeito.
 
 ## Comandos para testar o Passo 7.10
 
