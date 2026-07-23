@@ -499,9 +499,21 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** apagar somente a projeção em ambiente descartável, reconstruí-la e comparar o resultado; a fonte histórica deve permanecer intacta.
 
-#### Passo 7.3 — NonConformity Core
+#### Passo 7.3 — NonConformity Core [x] CONCLUÍDO E TESTADO
 
-**Entrega:** detecção, severidade, sujeitos/período afetados, responsável, prazo, ação corretiva, evidência de correção, reavaliação e encerramento sem apagar histórico.
+**Entrega:** `NonConformity`, `NonConformityStatus`, `NonConformityOrigin` e `NonConformityTransition` em `packages/core_domain/nonconformity.py`; `NonConformityService` em `packages/core_application/nonconformity_service.py`. Tabela `core_audit.nonconformities` com RLS (migration `20260722_0029`). 336 testes automatizados aprovados.
+
+**Ciclo de vida:** `DETECTADA → CLASSIFICADA → ATRIBUIDA → EM_CORRECAO → PRONTA_PARA_REAVALIACAO → ENCERRADA`, com transições validadas — pular etapas é recusado e `ENCERRADA` é terminal.
+
+**Reavaliação pode reprovar:** o único retorno permitido é de `PRONTA_PARA_REAVALIACAO` para `EM_CORRECAO`, e existe porque corrigir nem sempre resolve na primeira tentativa. A ida rejeitada permanece no histórico.
+
+**Histórico só cresce:** cada transição é acrescentada, nunca sobrescrita. O banco reforça com `CHECK (jsonb_array_length(transitions) > 0)` e exige instante de encerramento quando o estado é `encerrada`.
+
+**Correção exige prova:** submeter à reavaliação sem evidência de correção é recusado — seria encerrar por declaração. E encerrar exige a `Evaluation` que reavaliou o caso; reavaliação não reproduzível é rejeitada.
+
+**Abertura seletiva:** apenas resultados `NAO_ATENDIDA`, `PENDENTE` e `INDETERMINADA` abrem não conformidade. Regra atendida ou não aplicável não gera registro — tratar o que não falhou transformaria a lista de pendências em ruído.
+
+**Navegabilidade:** a `origin_reference` aponta para a Evaluation que originou o caso, que por sua vez preserva o snapshot completo dos fatos. É o fio que leva da pendência até os fatos e evidências que a justificam.
 
 **Validação manual:** abrir por falha de regra, corrigir, reavaliar e encerrar; navegar até todos os fatos, eventos e evidências justificadores.
 

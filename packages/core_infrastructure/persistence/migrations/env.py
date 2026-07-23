@@ -27,6 +27,7 @@ from packages.core_infrastructure.persistence.evidence import (
 )
 from packages.core_infrastructure.persistence.external_identities import external_identities_table
 from packages.core_infrastructure.persistence.idempotency import idempotency_records_table
+from packages.core_infrastructure.persistence.nonconformity import nonconformities_table
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
 )
@@ -68,6 +69,7 @@ assert evaluations_table.metadata is target_metadata
 assert decisions_table.metadata is target_metadata
 assert relations_table.metadata is target_metadata
 assert reference_projection_table.metadata is target_metadata
+assert nonconformities_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 

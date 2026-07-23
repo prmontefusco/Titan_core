@@ -52,6 +52,10 @@ from packages.core_application.integrity_checkpoint import (
     IntegrityCheckpointService,
     IntegrityCheckpointWriter,
 )
+from packages.core_application.nonconformity_service import (
+    NonConformityRepositoryPort,
+    NonConformityService,
+)
 from packages.core_application.organization_context import (
     IdentityAndAccessReader,
     OrganizationContextDenied,
@@ -133,6 +137,8 @@ __all__ = [
     "ProjectionRebuildService",
     "ProjectionRepositoryPort",
     "ProjectionSourcePort",
+    "NonConformityService",
+    "NonConformityRepositoryPort",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",

@@ -50,6 +50,12 @@ from packages.core_domain.evidence import (
 )
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.memberships import Membership, MembershipStatus
+from packages.core_domain.nonconformity import (
+    NonConformity,
+    NonConformityOrigin,
+    NonConformityStatus,
+    NonConformityTransition,
+)
 from packages.core_domain.organization_context import (
     ExternalIdentity,
     ExternalIdentityStatus,
@@ -115,6 +121,10 @@ __all__ = [
     "ReferencingKind",
     "ReferenceRole",
     "compute_projection_digest",
+    "NonConformity",
+    "NonConformityOrigin",
+    "NonConformityStatus",
+    "NonConformityTransition",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",
