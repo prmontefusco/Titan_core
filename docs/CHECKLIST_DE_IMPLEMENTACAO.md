@@ -47,7 +47,7 @@ Estados utilizados:
 | 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.6 aprovados | Pendente |
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
-| 6.1–6.6 | Policy, Rule, Evaluation e Decision | EM ANDAMENTO — 6.1 a 6.4 implementados | Pendente |
+| 6.1–6.6 | Policy, Rule, Evaluation e Decision | EM ANDAMENTO — 6.1 a 6.5 implementados | Pendente |
 | 7.1–7.10 | Relações, recall, dossiê e prova do Core | NÃO INICIADO | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
@@ -1605,6 +1605,30 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 264 testes aprovados; banco em `20260722_0024 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 6.5 — Agregação em Evaluation
+
+- [x] Agregado imutável `Evaluation` e `EvaluationOutcome` criados em `packages/core_domain/evaluation.py`, preservando Organization, Subject, finalidade, Policy e versão, regras e versões, snapshot completo, RuleResults, momento, versão do motor e executor.
+- [x] `compute_evaluation_hash` e `aggregate_outcome` criados: o hash descreve o conteúdo avaliado e omite de propósito a identidade das instâncias de RuleResult, tornando a avaliação reproduzível e verificável por `is_reproducible()`.
+- [x] `PolicyEvaluationService` criado em `packages/core_application/evaluation_service.py`, executando as regras em ordem estável para que o resultado não dependa da ordem de leitura do repositório.
+- [x] Ausência de regra aplicável nunca é reportada como conformidade: sem nada verificado, o resultado é `INDETERMINADO`.
+- [x] Apenas políticas publicadas ou substituídas são executáveis; rascunho e revogada são rejeitados.
+- [x] Tabela `core_audit.evaluations` com RLS por `Organization` e gravação append-only criada em `packages/core_infrastructure/persistence/evaluation.py`, com migration `20260722_0025`.
+- [x] Testes unitários (`test_evaluation_aggregate_domain.py`), de aplicação (`test_policy_evaluation_service.py`) e de integração PostgreSQL com RLS (`test_evaluation_postgresql.py`) aprovados, confirmando que alterar os fatos depois da avaliação não afeta a avaliação histórica (280 testes no total).
+
+## Comandos para testar o Passo 6.5
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 280 testes aprovados; banco em `20260722_0025 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 

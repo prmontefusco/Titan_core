@@ -2,12 +2,36 @@
 
 import hashlib
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
+
+
+def reference_to_dict(reference: UniversalReference | None) -> dict[str, Any] | None:
+    if reference is None:
+        return None
+    org = reference.organization_id
+    return {
+        "entity_type": reference.target_id.entity_type,
+        "value": str(reference.target_id.value),
+        "organization_id": str(org.value) if org is not None else None,
+        "contract_version": reference.contract_version,
+    }
+
+
+def reference_from_dict(data: Mapping[str, Any] | None) -> UniversalReference | None:
+    if data is None:
+        return None
+    org_raw = data.get("organization_id")
+    return UniversalReference(
+        target_id=TypedId(entity_type=data["entity_type"], value=UUID(data["value"])),
+        organization_id=OrganizationId(UUID(org_raw)) if org_raw is not None else None,
+        contract_version=data["contract_version"],
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +68,25 @@ class Fact:
             source_reference=source_reference,
         )
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "fact_id": str(self.fact_id.value),
+            "fact_type": self.fact_type,
+            "payload": self.payload,
+            "observed_at": self.observed_at.isoformat(),
+            "source_reference": reference_to_dict(self.source_reference),
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "Fact":
+        return cls(
+            fact_id=TypedId(entity_type="fact", value=UUID(data["fact_id"])),
+            fact_type=data["fact_type"],
+            payload=dict(data["payload"]),
+            observed_at=datetime.fromisoformat(data["observed_at"]),
+            source_reference=reference_from_dict(data.get("source_reference")),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class FactSnapshot:
@@ -66,6 +109,34 @@ class FactSnapshot:
     def get_facts_by_type(self, fact_type: str) -> tuple[Fact, ...]:
         clean_type = fact_type.strip().lower()
         return tuple(f for f in self.facts if f.fact_type == clean_type)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "organization_id": str(self.organization_id.value),
+            "target_id": {
+                "entity_type": self.target_id.entity_type,
+                "value": str(self.target_id.value),
+            },
+            "as_of": self.as_of.isoformat(),
+            "facts": [f.to_dict() for f in self.facts],
+            "snapshot_hash": self.snapshot_hash,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Mapping[str, Any]) -> "FactSnapshot":
+        """Restaura o snapshot preservando o hash original, sem recalculá-lo.
+
+        Recalcular apagaria a evidência de que a avaliação histórica foi feita
+        exatamente sobre estes fatos.
+        """
+        target = data["target_id"]
+        return cls(
+            organization_id=OrganizationId(UUID(data["organization_id"])),
+            target_id=TypedId(entity_type=target["entity_type"], value=UUID(target["value"])),
+            as_of=datetime.fromisoformat(data["as_of"]),
+            facts=tuple(Fact.from_dict(item) for item in data["facts"]),
+            snapshot_hash=data["snapshot_hash"],
+        )
 
     def get_latest_fact_by_type(self, fact_type: str) -> Fact | None:
         matching = self.get_facts_by_type(fact_type)

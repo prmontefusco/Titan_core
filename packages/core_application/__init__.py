@@ -14,7 +14,11 @@ from packages.core_application.document_service import (
     BlobStoragePort,
     DocumentService,
 )
-from packages.core_application.evaluation_service import RuleEvaluationEngine
+from packages.core_application.evaluation_service import (
+    EvaluationRepositoryPort,
+    PolicyEvaluationService,
+    RuleEvaluationEngine,
+)
 from packages.core_application.event_log import DomainEventLog, DomainEventLogService
 from packages.core_application.evidence_service import EvidenceRepositoryPort, EvidenceService
 from packages.core_application.fact_service import FactProviderPort, FactService
@@ -108,7 +112,8 @@ __all__ = [
     "PolicyService",
     "RuleRepositoryPort",
     "RuleService",
-    "RuleEvaluationEngine",
+    "PolicyEvaluationService",
+    "EvaluationRepositoryPort",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",

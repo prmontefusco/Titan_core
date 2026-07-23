@@ -1,15 +1,23 @@
-"""Caso de uso para Execução Determinística de uma Regra Pura (ADR-0036/Passo 6.4)."""
+"""Casos de uso para Execução de Regra Pura e Evaluation (ADR-0036/Passos 6.4 e 6.5)."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Protocol
 
 from packages.core_domain.evaluation import (
+    Evaluation,
     RuleResult,
     RuleResultStatus,
+    aggregate_outcome,
     compute_conditions_digest,
+    compute_evaluation_hash,
     compute_rule_inputs_hash,
 )
 from packages.core_domain.facts import FactSnapshot
+from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ConditionOutcome, Rule, RuleCondition
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 _ACTIONABLE_STATUSES = frozenset({RuleResultStatus.NAO_ATENDIDA, RuleResultStatus.PENDENTE})
 
@@ -159,4 +167,86 @@ class RuleEvaluationEngine:
             RuleResultStatus.ATENDIDA,
             f"Regra '{rule.code}' atendida: todas as evidências exigidas estão presentes.",
             (),
+        )
+
+
+# Rascunho nunca é executável e revogada não produz nova Evaluation; substituída
+# permanece executável para permitir reavaliação histórica fiel.
+_EVALUABLE_POLICY_STATUSES = frozenset({PolicyStatus.PUBLISHED, PolicyStatus.SUPERSEDED})
+
+
+class EvaluationRepositoryPort(Protocol):
+    def save(self, evaluation: Evaluation) -> None: ...
+
+    def get_by_id(self, evaluation_id: TypedId) -> Evaluation | None: ...
+
+    def list_by_subject(
+        self,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+    ) -> list[Evaluation]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyEvaluationService:
+    """Executa uma Policy inteira sobre um snapshot e preserva o resultado.
+
+    A Evaluation guarda o snapshot completo que a originou, e não apenas seu hash:
+    é isso que mantém a avaliação reproduzível depois que os fatos evoluírem.
+    """
+
+    engine: RuleEvaluationEngine
+
+    def evaluate_policy(
+        self,
+        policy: Policy,
+        rules: Sequence[Rule],
+        snapshot: FactSnapshot,
+        purpose: str,
+        executor_reference: UniversalReference | None = None,
+        evaluated_at: datetime | None = None,
+    ) -> Evaluation:
+        if policy.status not in _EVALUABLE_POLICY_STATUSES:
+            raise ValueError(
+                f"Política em '{policy.status.value}' não pode ser avaliada: "
+                "apenas políticas publicadas ou substituídas são executáveis."
+            )
+        if policy.organization_id != snapshot.organization_id:
+            raise ValueError("A política e o snapshot devem pertencer à mesma Organization.")
+
+        foreign = [r for r in rules if r.policy_id != policy.policy_id]
+        if foreign:
+            raise ValueError("Todas as regras avaliadas devem pertencer à política informada.")
+
+        # Ordem de execução estável: o resultado não pode depender da ordem de leitura.
+        ordered_rules = sorted(rules, key=lambda r: (r.code, r.version, str(r.rule_id.value)))
+        rule_results = tuple(self.engine.evaluate(rule, snapshot) for rule in ordered_rules)
+
+        outcome = aggregate_outcome(rule_results)
+        evaluation_hash = compute_evaluation_hash(
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            subject_id=snapshot.target_id,
+            purpose=purpose.strip(),
+            snapshot_hash=snapshot.snapshot_hash,
+            rule_results=rule_results,
+            outcome=outcome,
+            engine_version=self.engine.engine_version,
+        )
+
+        return Evaluation(
+            evaluation_id=TypedId.new("evaluation"),
+            organization_id=policy.organization_id,
+            subject_id=snapshot.target_id,
+            purpose=purpose.strip(),
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            fact_snapshot=snapshot,
+            rule_results=rule_results,
+            outcome=outcome,
+            evaluated_at=evaluated_at or snapshot.as_of,
+            engine_version=self.engine.engine_version,
+            evaluation_hash=evaluation_hash,
+            executor_reference=executor_reference,
+            rule_versions=tuple((r.code, r.version) for r in ordered_rules),
         )

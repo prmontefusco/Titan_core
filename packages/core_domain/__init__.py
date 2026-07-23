@@ -18,9 +18,13 @@ from packages.core_domain.crypto import (
     ValidationResult,
 )
 from packages.core_domain.evaluation import (
+    Evaluation,
+    EvaluationOutcome,
     RuleResult,
     RuleResultStatus,
+    aggregate_outcome,
     compute_conditions_digest,
+    compute_evaluation_hash,
     compute_rule_inputs_hash,
 )
 from packages.core_domain.events import CanonicalPayload, DomainEvent
@@ -83,9 +87,10 @@ __all__ = [
     "compute_conditions_digest",
     "compute_rule_inputs_hash",
     "SeverityLevel",
-    "RuleResult",
-    "RuleResultStatus",
-    "compute_rule_inputs_hash",
+    "Evaluation",
+    "EvaluationOutcome",
+    "aggregate_outcome",
+    "compute_evaluation_hash",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",

@@ -445,9 +445,13 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** executar casos de sucesso, falha, pendência e não aplicável; repetir entrada e confirmar resultado/hash iguais.
 
-#### Passo 6.5 — Agregação em Evaluation
+#### Passo 6.5 — Agregação em Evaluation [x] CONCLUÍDO E TESTADO
 
-**Entrega:** execução de uma Policy e preservação do snapshot completo, sem ainda gerar dossiê.
+**Entrega:** agregado imutável `Evaluation` e `EvaluationOutcome` (`CONDICOES_SATISFEITAS`, `CONDICOES_NAO_SATISFEITAS`, `INFORMACAO_INSUFICIENTE`, `EVIDENCIA_CONFLITANTE`, `VALIDACAO_EXTERNA_PENDENTE`, `REVISAO_HUMANA_NECESSARIA`, `INDETERMINADO`) em `packages/core_domain/evaluation.py`, com `compute_evaluation_hash` reproduzível; `PolicyEvaluationService` em `packages/core_application/evaluation_service.py` executa a Policy inteira em ordem estável. Tabela `core_audit.evaluations` com RLS por `Organization` (migration `20260722_0025`), gravação estritamente append-only, preservando o **snapshot completo dos fatos** — não apenas seu hash. 280 testes automatizados aprovados.
+
+**Agregação:** a precedência espelha a do motor de regras — reprovação definitiva prevalece sobre lacunas, e pendência precede indeterminação. Ausência de regra aplicável nunca é reportada como conformidade: sem nada efetivamente verificado, o resultado é `INDETERMINADO`. Os estados `EVIDENCIA_CONFLITANTE`, `VALIDACAO_EXTERNA_PENDENTE` e `REVISAO_HUMANA_NECESSARIA` estão declarados no contrato mas ainda não são produzidos: dependem do motor de incoerências (ADR-0035) e do fluxo de revisão humana (ADR-0016).
+
+**Ciclo de vida:** apenas políticas publicadas ou substituídas são executáveis. Rascunho nunca é avaliável e revogada não produz nova Evaluation; substituída permanece executável para reavaliação histórica fiel.
 
 **Validação manual:** alterar fatos depois da avaliação e confirmar que a avaliação passada permanece reproduzível.
 
