@@ -1,7 +1,7 @@
 """Repositórios PostgreSQL com RLS para Medication e Prescription (Passo 9.1 - Titan Livestock)."""
 
 from dataclasses import dataclass
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -22,10 +22,11 @@ from sqlalchemy.engine import Row
 
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.livestock_application.medication_service import (
+    MedicationBatchRepositoryPort,
     MedicationRepositoryPort,
     PrescriptionRepositoryPort,
 )
-from packages.livestock_domain.medication import Medication
+from packages.livestock_domain.medication import Medication, MedicationBatch
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
@@ -88,6 +89,36 @@ prescriptions_table = Table(
         ["property_id"],
         ["core_audit.rural_properties.property_id"],
         name="fk_prescriptions_property",
+    ),
+    schema=CORE_AUDIT_SCHEMA,
+    comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",
+)
+
+medication_batches_table = Table(
+    "medication_batches",
+    livestock_metadata,
+    Column("batch_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("medication_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("batch_number", String(100), nullable=False),
+    Column("expiry_date", DateTime(timezone=True), nullable=False),
+    Column("manufacturing_date", DateTime(timezone=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "medication_id",
+        "batch_number",
+        name="uq_medication_batches_org_med_number",
+    ),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id"],
+        ["core_identity.organizations.organization_id"],
+        name="fk_medication_batches_organization",
+    ),
+    ForeignKeyConstraint(
+        ["medication_id"],
+        ["core_audit.medications.medication_id"],
+        name="fk_medication_batches_medication",
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",
@@ -268,4 +299,80 @@ class TransactionalPrescriptionRepository(PrescriptionRepositoryPort):
             target_ids=target_ids,
             reason=row.reason,
             created_at=c_at,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalMedicationBatchRepository(MedicationBatchRepositoryPort):
+    connection: Connection
+
+    def save(self, batch: MedicationBatch) -> None:
+        stmt = insert(medication_batches_table).values(
+            batch_id=batch.batch_id.value,
+            record_owner_organization_id=batch.organization_id.value,
+            medication_id=batch.medication_id.value,
+            batch_number=batch.batch_number,
+            expiry_date=batch.expiry_date,
+            manufacturing_date=batch.manufacturing_date,
+            created_at=batch.created_at,
+        )
+        self.connection.execute(stmt)
+
+    def get_by_id(self, batch_id: TypedId) -> MedicationBatch | None:
+        if batch_id.entity_type != "medication_batch":
+            return None
+        stmt = select(medication_batches_table).where(
+            medication_batches_table.c.batch_id == batch_id.value
+        )
+        row = self.connection.execute(stmt).fetchone()
+        if row is None:
+            return None
+        return self._map_batch(row)
+
+    def get_by_number(
+        self, organization_id: OrganizationId, medication_id: TypedId, batch_number: str
+    ) -> MedicationBatch | None:
+        stmt = select(medication_batches_table).where(
+            medication_batches_table.c.record_owner_organization_id == organization_id.value,
+            medication_batches_table.c.medication_id == medication_id.value,
+            medication_batches_table.c.batch_number == batch_number,
+        )
+        row = self.connection.execute(stmt).fetchone()
+        if row is None:
+            return None
+        return self._map_batch(row)
+
+    def list_by_medication(
+        self, organization_id: OrganizationId, medication_id: TypedId
+    ) -> list[MedicationBatch]:
+        stmt = (
+            select(medication_batches_table)
+            .where(
+                medication_batches_table.c.record_owner_organization_id == organization_id.value,
+                medication_batches_table.c.medication_id == medication_id.value,
+            )
+            .order_by(medication_batches_table.c.expiry_date.asc())
+        )
+        rows = self.connection.execute(stmt).fetchall()
+        return [self._map_batch(row) for row in rows]
+
+    def _map_batch(self, row: Row[Any]) -> MedicationBatch:
+        def _aware(value: datetime | None) -> datetime | None:
+            if value is None:
+                return None
+            return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+        expiry = _aware(row.expiry_date)
+        created = _aware(row.created_at)
+        assert expiry is not None
+        assert created is not None
+
+        return MedicationBatch(
+            batch_id=TypedId(entity_type="medication_batch", value=row.batch_id),
+            organization_id=OrganizationId(row.record_owner_organization_id),
+            medication_id=TypedId(entity_type="medication", value=row.medication_id),
+            batch_number=row.batch_number,
+            expiry_date=expiry,
+            manufacturing_date=_aware(row.manufacturing_date),
+            created_at=created,
         )

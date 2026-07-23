@@ -55,6 +55,7 @@ from packages.livestock_infrastructure.persistence import (
     animals_table,
     livestock_lots_table,
     lot_memberships_table,
+    medication_batches_table,
     medications_table,
     prescription_targets_table,
     prescriptions_table,
@@ -111,6 +112,7 @@ assert livestock_lots_table.metadata is target_metadata
 assert lot_memberships_table.metadata is target_metadata
 assert veterinarians_table.metadata is target_metadata
 assert medications_table.metadata is target_metadata
+assert medication_batches_table.metadata is target_metadata
 assert prescriptions_table.metadata is target_metadata
 assert prescription_targets_table.metadata is target_metadata
 

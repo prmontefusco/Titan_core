@@ -12,8 +12,10 @@ from packages.livestock_infrastructure.persistence.lot_repository import (
     lot_memberships_table,
 )
 from packages.livestock_infrastructure.persistence.medication_repository import (
+    TransactionalMedicationBatchRepository,
     TransactionalMedicationRepository,
     TransactionalPrescriptionRepository,
+    medication_batches_table,
     medications_table,
     prescription_targets_table,
     prescriptions_table,
@@ -39,6 +41,7 @@ __all__ = [
     "TransactionalAnimalRepository",
     "TransactionalLivestockLotRepository",
     "TransactionalLotMembershipRepository",
+    "TransactionalMedicationBatchRepository",
     "TransactionalMedicationRepository",
     "TransactionalPrescriptionRepository",
     "TransactionalPropertyStayRepository",
@@ -50,6 +53,7 @@ __all__ = [
     "animals_table",
     "livestock_lots_table",
     "lot_memberships_table",
+    "medication_batches_table",
     "medications_table",
     "prescription_targets_table",
     "prescriptions_table",

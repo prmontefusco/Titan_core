@@ -2,14 +2,19 @@
 
 import os
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import Connection, create_engine, text
 
-from packages.livestock_application.medication_service import MedicationService
+from packages.livestock_application.medication_service import (
+    MedicationBatchService,
+    MedicationService,
+)
 from packages.livestock_domain.prescription import PrescriptionTargetType
 from packages.livestock_infrastructure.persistence.medication_repository import (
+    TransactionalMedicationBatchRepository,
     TransactionalMedicationRepository,
     TransactionalPrescriptionRepository,
 )
@@ -155,6 +160,78 @@ def test_medication_and_prescription_persistence_and_rls(
 
     assert service_2.medication_repository.get_by_id(med_1.medication_id) is None
     assert service_2.prescription_repository.get_by_id(presc_1.prescription_id) is None
+
+    db_connection.execute(text("RESET ROLE"))
+    db_connection.execute(text(f"DROP OWNED BY {quoted_role}"))
+    db_connection.execute(text(f"DROP ROLE {quoted_role}"))
+
+
+def test_medication_batch_persistence_and_rls(db_connection: Connection) -> None:
+    org_1 = OrganizationId(uuid4())
+    org_2 = OrganizationId(uuid4())
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_identity.organizations (organization_id, record_owner_organization_id)
+            VALUES (:org1, :org1), (:org2, :org2)
+            """
+        ),
+        {"org1": org_1.value, "org2": org_2.value},
+    )
+    db_connection.execute(
+        text("SELECT set_config('titan.organization_id', :org_id, true)"),
+        {"org_id": str(org_1.value)},
+    )
+
+    med_repo = TransactionalMedicationRepository(connection=db_connection)
+    med = MedicationService(
+        medication_repository=med_repo,
+        prescription_repository=TransactionalPrescriptionRepository(connection=db_connection),
+        veterinarian_repository=TransactionalVeterinarianRepository(connection=db_connection),
+        property_repository=TransactionalRuralPropertyRepository(connection=db_connection),
+    ).register_medication(
+        organization_id=org_1,
+        trade_name="Ivomec Gold",
+        active_ingredient="Ivermectina",
+        manufacturer="Boehringer",
+        withdrawal_period_days=122,
+    )
+
+    batch_service = MedicationBatchService(
+        batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
+        medication_repository=med_repo,
+    )
+    batch = batch_service.register_batch(
+        organization_id=org_1,
+        medication_id=med.medication_id,
+        batch_number="LOTE-2026-001",
+        expiry_date=datetime.now(UTC) + timedelta(days=365),
+        manufacturing_date=datetime.now(UTC) - timedelta(days=30),
+    )
+    # Round-trip preserva os dados do lote.
+    recarregado = batch_service.batch_repository.get_by_id(batch.batch_id)
+    assert recarregado is not None
+    assert recarregado.batch_number == "LOTE-2026-001"
+
+    # RLS: role sem BYPASSRLS na outra Organization não enxerga o lote.
+    role_name = f"titan_rls_batch_{uuid4().hex[:12]}"
+    quoted_role = f'"{role_name}"'
+    db_connection.execute(
+        text(
+            f"CREATE ROLE {quoted_role} "
+            "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+        )
+    )
+    db_connection.execute(text(f"GRANT USAGE ON SCHEMA core_audit TO {quoted_role}"))
+    db_connection.execute(text(f"GRANT SELECT ON core_audit.medication_batches TO {quoted_role}"))
+    db_connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
+    db_connection.execute(
+        text("SELECT set_config('titan.organization_id', :org_id, true)"),
+        {"org_id": str(org_2.value)},
+    )
+
+    repo_2 = TransactionalMedicationBatchRepository(connection=db_connection)
+    assert repo_2.get_by_id(batch.batch_id) is None
 
     db_connection.execute(text("RESET ROLE"))
     db_connection.execute(text(f"DROP OWNED BY {quoted_role}"))

@@ -7,7 +7,7 @@ from typing import Protocol
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_application.veterinarian_service import VeterinarianRepositoryPort
 from packages.livestock_domain.animal import VerificationStatus
-from packages.livestock_domain.medication import Medication
+from packages.livestock_domain.medication import Medication, MedicationBatch
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -34,6 +34,63 @@ class PrescriptionRepositoryPort(Protocol):
     def list_by_organization(
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
     ) -> list[Prescription]: ...
+
+
+class MedicationBatchRepositoryPort(Protocol):
+    def save(self, batch: MedicationBatch) -> None: ...
+
+    def get_by_id(self, batch_id: TypedId) -> MedicationBatch | None: ...
+
+    def get_by_number(
+        self, organization_id: OrganizationId, medication_id: TypedId, batch_number: str
+    ) -> MedicationBatch | None: ...
+
+    def list_by_medication(
+        self, organization_id: OrganizationId, medication_id: TypedId
+    ) -> list[MedicationBatch]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MedicationBatchService:
+    """Cadastra lotes de medicamento, recusando duplicidade e validade inválida."""
+
+    batch_repository: MedicationBatchRepositoryPort
+    medication_repository: MedicationRepositoryPort
+
+    def register_batch(
+        self,
+        organization_id: OrganizationId,
+        medication_id: TypedId,
+        batch_number: str,
+        expiry_date: datetime,
+        manufacturing_date: datetime | None = None,
+    ) -> MedicationBatch:
+        medication = self.medication_repository.get_by_id(medication_id)
+        if medication is None or medication.organization_id != organization_id:
+            raise KeyError(
+                f"Medicamento '{medication_id.value}' não encontrado ou pertencente a "
+                "outra organização."
+            )
+
+        number = batch_number.strip()
+        existing = self.batch_repository.get_by_number(organization_id, medication_id, number)
+        if existing is not None:
+            raise ValueError(
+                f"Já existe o lote '{number}' para o medicamento {medication_id.value} na "
+                f"organização {organization_id.value}."
+            )
+
+        batch = MedicationBatch(
+            batch_id=TypedId.new("medication_batch"),
+            organization_id=organization_id,
+            medication_id=medication_id,
+            batch_number=number,
+            expiry_date=expiry_date,
+            manufacturing_date=manufacturing_date,
+            created_at=datetime.now(UTC),
+        )
+        self.batch_repository.save(batch)
+        return batch
 
 
 @dataclass(frozen=True, slots=True)

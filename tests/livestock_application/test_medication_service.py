@@ -1,10 +1,13 @@
 """Testes unitários para MedicationService (Passo 9.1 - Titan Livestock)."""
 
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 
 from packages.livestock_application.medication_service import (
+    MedicationBatchRepositoryPort,
+    MedicationBatchService,
     MedicationRepositoryPort,
     MedicationService,
     PrescriptionRepositoryPort,
@@ -12,7 +15,7 @@ from packages.livestock_application.medication_service import (
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_application.veterinarian_service import VeterinarianRepositoryPort
 from packages.livestock_domain.animal import VerificationStatus
-from packages.livestock_domain.medication import Medication
+from packages.livestock_domain.medication import Medication, MedicationBatch
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.veterinarian import Veterinarian
@@ -103,6 +106,101 @@ class InMemoryPropRepo(RuralPropertyRepositoryPort):
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
     ) -> list[RuralProperty]:
         return list(self.props.values())
+
+
+class InMemoryBatchRepo(MedicationBatchRepositoryPort):
+    def __init__(self) -> None:
+        self.batches: dict[str, MedicationBatch] = {}
+
+    def save(self, batch: MedicationBatch) -> None:
+        self.batches[batch.batch_id.value.hex] = batch
+
+    def get_by_id(self, batch_id: TypedId) -> MedicationBatch | None:
+        return self.batches.get(batch_id.value.hex)
+
+    def get_by_number(
+        self, organization_id: OrganizationId, medication_id: TypedId, batch_number: str
+    ) -> MedicationBatch | None:
+        for b in self.batches.values():
+            if (
+                b.organization_id == organization_id
+                and b.medication_id == medication_id
+                and b.batch_number == batch_number
+            ):
+                return b
+        return None
+
+    def list_by_medication(
+        self, organization_id: OrganizationId, medication_id: TypedId
+    ) -> list[MedicationBatch]:
+        return [
+            b
+            for b in self.batches.values()
+            if b.organization_id == organization_id and b.medication_id == medication_id
+        ]
+
+
+def _batch_scenario() -> tuple[MedicationBatchService, OrganizationId, TypedId]:
+    org_id = OrganizationId(uuid4())
+    med_repo = InMemoryMedicationRepo()
+    batch_repo = InMemoryBatchRepo()
+    med = Medication(
+        medication_id=TypedId.new("medication"),
+        organization_id=org_id,
+        trade_name="Ivomec Gold",
+        active_ingredient="Ivermectina",
+        manufacturer="Boehringer",
+        withdrawal_period_days=122,
+    )
+    med_repo.save(med)
+    service = MedicationBatchService(batch_repository=batch_repo, medication_repository=med_repo)
+    return service, org_id, med.medication_id
+
+
+def test_register_batch_and_rejects_duplicate() -> None:
+    service, org_id, med_id = _batch_scenario()
+
+    batch = service.register_batch(
+        organization_id=org_id,
+        medication_id=med_id,
+        batch_number="LOTE-2026-001",
+        expiry_date=datetime.now(UTC) + timedelta(days=365),
+        manufacturing_date=datetime.now(UTC) - timedelta(days=30),
+    )
+    assert batch.batch_number == "LOTE-2026-001"
+
+    with pytest.raises(ValueError, match="Já existe o lote"):
+        service.register_batch(
+            organization_id=org_id,
+            medication_id=med_id,
+            batch_number="LOTE-2026-001",
+            expiry_date=datetime.now(UTC) + timedelta(days=400),
+        )
+
+
+def test_register_batch_rejects_invalid_validity() -> None:
+    service, org_id, med_id = _batch_scenario()
+
+    with pytest.raises(ValueError, match="expiry_date deve ser estritamente posterior"):
+        service.register_batch(
+            organization_id=org_id,
+            medication_id=med_id,
+            batch_number="LOTE-VENCIDO",
+            expiry_date=datetime.now(UTC) - timedelta(days=10),
+            manufacturing_date=datetime.now(UTC),
+        )
+
+
+def test_register_batch_rejects_unknown_medication() -> None:
+    service, org_id, _ = _batch_scenario()
+
+    with pytest.raises(KeyError, match="não encontrado"):
+        service.register_batch(
+            organization_id=org_id,
+            medication_id=TypedId.new("medication"),
+            batch_number="LOTE-X",
+            expiry_date=datetime.now(UTC) + timedelta(days=100),
+        )
 
 
 def test_prescription_issuance_verification_rules() -> None:
