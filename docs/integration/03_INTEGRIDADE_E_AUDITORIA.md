@@ -73,12 +73,16 @@ from packages.core_infrastructure.persistence.checkpoint import TransactionalChe
 checkpoint_repo = TransactionalCheckpointRepository(connection=db_connection)
 service = IntegrityCheckpointService(writer=checkpoint_repo)
 
-# Registra um checkpoint de integridade para a organizacao
-checkpoint = service.create_checkpoint(
-    organization_id=org_id,
-    module_name="core_messaging",
-    state_digest=current_state_sha256_bytes,
+# Registra um checkpoint de integridade para a organização
+checkpoint = service.create(
+    checkpoint_id=TypedId.new("checkpoint"),
+    entries=(event_chain_entry,),
+    observed_at=agora,
+    producer_reference=producer_ref,
+    correlation_id=correlation_id,
+    causation_id=causation_id,
 )
+
 ```
 
 ---

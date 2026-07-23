@@ -3,10 +3,11 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any, Protocol
 
 from packages.core_domain.evaluation import (
     Evaluation,
+    EvaluationOutcome,
     RuleResult,
     RuleResultStatus,
     aggregate_outcome,
@@ -189,6 +190,34 @@ class EvaluationRepositoryPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class EvidenceInconsistencyDetector:
+    """Detector de incoerências e contradições entre evidências/fatos (ADR-0035).
+
+    Detecta se dois fatos ativos para o mesmo sujeito sobre o mesmo tipo possuem
+    valores conflitantes para as mesmas chaves de payload.
+    """
+
+    def detect(self, snapshot: FactSnapshot) -> tuple[str, ...]:
+        conflicts: list[str] = []
+        observed_values: dict[tuple[str, str], Any] = {}
+
+        for fact in snapshot.facts:
+            for key, val in fact.payload.items():
+                attr_tuple = (fact.fact_type, key)
+                if attr_tuple in observed_values:
+                    prev_val = observed_values[attr_tuple]
+                    if prev_val != val:
+                        conflicts.append(
+                            f"Conflito em '{fact.fact_type}.{key}': valor '{prev_val}' "
+                            f"diverge do novo valor observado '{val}'."
+                        )
+                else:
+                    observed_values[attr_tuple] = val
+
+        return tuple(conflicts)
+
+
+@dataclass(frozen=True, slots=True)
 class PolicyEvaluationService:
     """Executa uma Policy inteira sobre um snapshot e preserva o resultado.
 
@@ -197,6 +226,7 @@ class PolicyEvaluationService:
     """
 
     engine: RuleEvaluationEngine
+    inconsistency_detector: EvidenceInconsistencyDetector = EvidenceInconsistencyDetector()
 
     def evaluate_policy(
         self,
@@ -224,6 +254,14 @@ class PolicyEvaluationService:
         rule_results = tuple(self.engine.evaluate(rule, snapshot) for rule in ordered_rules)
 
         outcome = aggregate_outcome(rule_results)
+
+        # ADR-0035: Se houver evidências/fatos conflitantes no snapshot e as
+        # condições forem satisfeitas, o resultado passa a EVIDENCIA_CONFLITANTE.
+
+        inconsistencies = self.inconsistency_detector.detect(snapshot)
+        if inconsistencies and outcome == EvaluationOutcome.CONDICOES_SATISFEITAS:
+            outcome = EvaluationOutcome.EVIDENCIA_CONFLITANTE
+
         evaluation_hash = compute_evaluation_hash(
             policy_id=policy.policy_id,
             policy_version=policy.version,

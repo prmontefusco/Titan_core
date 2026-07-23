@@ -2,7 +2,8 @@
 
 Este documento especifica como o **Titan Core** trata pendências que exigem correção, navega a genealogia para localizar o que foi potencialmente afetado, e produz o dossiê autocontido que permite verificar uma decisão sem acesso ao banco.
 
-> **Estado:** cobre os passos **7.3**, **7.4** e **7.5**. O pacote de verificação e a API de verificação externa estão em **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**; a sincronização offline, em **[09_SINCRONIZACAO_OFFLINE.md](09_SINCRONIZACAO_OFFLINE.md)**. A representação PDF (passo 7.8) foi adiada por decisão registrada e não existe.
+> **Estado:** cobre os passos **7.3**, **7.4**, **7.5** e **7.8** (PDF Verificável do Dossiê). O pacote de verificação e a API de verificação externa estão em **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**; a sincronização offline, em **[09_SINCRONIZACAO_OFFLINE.md](09_SINCRONIZACAO_OFFLINE.md)**.
+
 
 Dois princípios atravessam o marco:
 
@@ -215,8 +216,36 @@ satisfeita = fato["payload"][condicao["payload_key"]] == condicao["expected_valu
 
 ---
 
-## 4. Notas de integração
+## 4. Representação PDF Verificável do Dossiê (Passo 7.8)
+
+### O que é?
+Representação em PDF A4 autocontida e imprimível do Dossiê, incorporando dados tabulados, QR Code de verificação (`titan://verify?...`) e assinatura digital criptográfica.
+
+### Como funciona?
+O adapter `SoftwareDossierPdfAdapter` compõe a representação usando ReportLab e devolve `DossierPdfRepresentation`, contendo os bytes do PDF, o hash SHA-256 do arquivo gerado e a assinatura digital opcional.
+
+```python
+from packages.core_application.dossier_service import DossierService
+from packages.core_infrastructure.pdf import SoftwareDossierPdfAdapter
+
+adapter = SoftwareDossierPdfAdapter()
+service = DossierService(pdf_port=adapter)
+
+pdf_rep = service.generate_pdf(
+    dossier=dossier,
+    signing_provider=signing_provider,
+    key_id=key_id,
+)
+
+assert pdf_rep.verify_integrity() is True
+print("Hash do PDF:", pdf_rep.pdf_hash)
+```
+
+---
+
+## 5. Notas de integração
 
 - **Isolamento**: `core_audit.nonconformities`, `core_audit.recalls` e `core_audit.dossiers` aplicam RLS por Organization.
-- **O PDF ainda não existe.** Conforme o plano, o PDF será uma representação posterior e independente do dossiê; validar o PDF nunca equivalerá a validar a cadeia Titan.
-- **Verificação externa por terceiros** — pacote autossuficiente com assinaturas, material temporal e de revogação — foi entregue nos passos 7.6 e 7.7. Ver **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**.
+- **Verificação do PDF**: O PDF contém o QR Code e o hash do dossiê canônico `titan-json-v1`. Validar o PDF é complementar e estende a auditabilidade para relatórios físicos impresso.
+- **Verificação externa por terceiros** — pacote autossuficiente com assinaturas, material temporal e de revogação — ver **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**.
+

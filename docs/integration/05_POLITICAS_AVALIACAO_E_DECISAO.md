@@ -247,10 +247,30 @@ for razao in decisao.reasons:
 
 Códigos de razão (`DecisionReasonCode`): `REGRA_ATENDIDA`, `REGRA_NAO_ATENDIDA`, `EVIDENCIA_PENDENTE`, `REGRA_INDETERMINADA`, `REGRA_NAO_APLICAVEL`, `NENHUMA_REGRA_APLICAVEL`.
 
----
+## 7. Governança Humana e Detecção de Incoerências (ADR-0016 / ADR-0035)
 
-## 7. Fora de escopo neste marco
+### Detecção de Incoerências entre Evidências (`EvidenceInconsistencyDetector` - ADR-0035)
+O `PolicyEvaluationService` executa o `EvidenceInconsistencyDetector`. Se forem observados fatos ativos contraditórios para o mesmo sujeito e mesmo tipo, o resultado da avaliação é automaticamente elevado para `EvaluationOutcome.EVIDENCIA_CONFLITANTE`.
 
-Permanecem no ADR-0016, previstos para etapas seguintes: `DecisionAuthorityProfile`, aprovações, método de emissão, `DecisionProposal`, override, contestação e revisão humana.
+### Governança Humana de Decisões (`DecisionGovernanceService` - ADR-0016)
+Intervenções manuais, propostas de decisão e contestações formais são gerenciadas mantendo o registro automatizado original imutável:
 
-Três estados de `EvaluationOutcome` estão declarados no contrato mas **ainda não são produzidos**: `EVIDENCIA_CONFLITANTE` (depende do motor de incoerências do ADR-0035), `VALIDACAO_EXTERNA_PENDENTE` e `REVISAO_HUMANA_NECESSARIA`.
+1. **`DecisionProposal`**: Gerada quando a avaliação exige revisão humana (`REVISAO_HUMANA_NECESSARIA`).
+2. **`DecisionOverride`**: Intervenção manual autorizada por `DecisionAuthorityProfile` credenciado, exigindo justificativa obrigatória não vazia.
+3. **`ContestationRecord`**: Registro formal de contestação emitido por sujeito ou organização afetada.
+
+```python
+from packages.core_application.decision_governance_service import DecisionGovernanceService
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
+
+governance_service = DecisionGovernanceService()
+
+# Intervenção autorizada (Override)
+override = governance_service.apply_override(
+    original_decision=decisao,
+    authority_profile=autoridade_credenciada,
+    new_result=DecisionResult.APROVADA_COM_RESTRICOES,
+    mandatory_reason="Aprovado mediante análise de documento complementar físico.",
+)
+```
+

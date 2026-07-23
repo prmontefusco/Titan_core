@@ -67,14 +67,22 @@ Evita o problema de "duas fases" onde o banco grava o estado mas o broker cai an
 
 ### Como utilizar na aplicação?
 ```python
-from packages.core_application.outbox import OutboxPublisherService
+from packages.core_application.outbox import EventOutboxService, OutboxPublisherService
+from packages.core_infrastructure.persistence.outbox import TransactionalOutboxWriter
 
-# Publica mensagem gravando estado PENDENTE na tabela core_audit.outbox_messages
-publisher_service.publish(
-    connection=db_connection,
-    envelope=envelope,
+# 1. Anexa o evento e a mensagem na mesma transação PostgreSQL
+outbox_service = EventOutboxService(writer=TransactionalOutboxWriter(connection=db_connection))
+outbox_service.append(event=domain_event, message=outbox_message)
+
+# 2. Publicador assíncrono (Worker) busca mensagens PENDENTEs e envia ao RabbitMQ
+publisher_service = OutboxPublisherService(
+    repository=outbox_repo,
+    publisher=rabbitmq_publisher,
+    publisher_id="worker_daemon_01",
 )
+publication_result = publisher_service.publish_once()
 ```
+
 
 ### Reconciliação Operacional da Outbox
 Se um trabalhador cair enquanto segura uma mensagem gravada (`CLAIMED`), o serviço de reconciliação descobre e libera *leases* expiradas:

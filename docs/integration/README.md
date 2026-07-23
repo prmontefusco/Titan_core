@@ -51,8 +51,8 @@ Este diretório contém a documentação técnica oficial do **Titan Core**, det
    - Ciclo de vida da não conformidade, com reavaliação que pode reprovar
    - Recall com janela temporal, controle de ciclos e profundidade
    - Lacuna declarada como resultado inconclusivo
-   - Simulação e incidente
    - Dossiê autocontido e verificação offline por `titan-json-v1`
+   - Representação PDF Verificável do Dossiê via ReportLab (`SoftwareDossierPdfAdapter` - Passo 7.8)
 
 8. **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**
    - `VerificationBundle` autossuficiente, montado para viajar
@@ -67,6 +67,8 @@ Este diretório contém a documentação técnica oficial do **Titan Core**, det
    - Lote, manifesto e detecção de adulteração entre retomadas
    - Sete resultados individuais, idempotência e retomada sem duplicação
    - Conflito explícito, sem last-write-wins
+   - Deep Offline Capability: `OfflineCapabilityProfile`, `OfflineSession`, `DeviceTrustAssessment` e `LocalPreview` (Passo 7.9)
+
 
 10. **[10_PROVA_COMPLETA_DO_CORE.md](10_PROVA_COMPLETA_DO_CORE.md)**
     - A cadeia de ponta a ponta que fecha o Marco 7

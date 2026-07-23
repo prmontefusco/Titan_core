@@ -2,7 +2,8 @@
 
 Este documento especifica como um terceiro verifica uma decisão do **Titan Core** sem depender do Titan: o pacote autossuficiente que viaja (`VerificationBundle`) e a API hospedada que o avalia por conveniência.
 
-> **Estado:** cobre os passos **7.6** e **7.7**. A representação PDF (passo 7.8) foi adiada por decisão registrada e não existe.
+> **Estado:** cobre os passos **7.6**, **7.7** e **7.8** (PDF Verificável do Dossiê).
+
 
 Um princípio governa o marco inteiro:
 
@@ -185,4 +186,5 @@ As `limitations` são parte do contrato, não enfeite. Assinatura válida signif
 
 - **O pacote viaja como texto** e volta na outra ponta sem banco nem rede. Essa é a propriedade que torna a verificação independente.
 - **Rate limiting (`429`), terminação TLS e não captura de corpo por gateway, APM e tracing** são responsabilidades de implantação, declaradas na ADR-0039 e não testáveis no nível da aplicação.
-- **PDF não existe** e, quando existir, validar o PDF **não** equivalerá a validar a cadeia Titan.
+- **Representação PDF (Passo 7.8)**: O PDF verificável foi implementado e incorpora QR Code de verificação (`titan://verify?...`) e hash SHA-256 do dossiê canônico `titan-json-v1`.
+

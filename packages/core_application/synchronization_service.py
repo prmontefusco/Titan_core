@@ -7,12 +7,15 @@ alegado nunca é reescrito pelo conhecimento posterior.
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Protocol
 
 from packages.core_domain.synchronization import (
+    DeviceTrustAssessment,
+    LocalPreview,
     OfflineOperation,
+    OfflineSession,
     SynchronizationBatch,
     SynchronizationBatchResult,
     SynchronizationConflict,
@@ -127,6 +130,33 @@ class AlwaysAdmitsDevice:
         return DeviceAdmission.PERMITIDO
 
 
+@dataclass(frozen=True, slots=True)
+class EvaluatesDeviceTrustAndSession:
+    """Admissão rigorosa baseada em DeviceTrustAssessment e OfflineSession (ADR-0021)."""
+
+    session: OfflineSession | None = None
+    trust_assessment: DeviceTrustAssessment | None = None
+    min_trust_score: float = 0.7
+
+    def admit(
+        self,
+        organization_id: OrganizationId,
+        device_reference: UniversalReference,
+        at: datetime,
+    ) -> DeviceAdmission:
+        if self.trust_assessment is not None:
+            if not self.trust_assessment.meets_trust_threshold(self.min_trust_score):
+                return DeviceAdmission.EM_QUARENTENA
+
+        if self.session is not None:
+            if self.session.organization_id != organization_id:
+                return DeviceAdmission.BLOQUEADO
+            if not self.session.is_valid_at(at):
+                return DeviceAdmission.BLOQUEADO
+
+        return DeviceAdmission.PERMITIDO
+
+
 # O handler aplica o efeito oficial e devolve as referências produzidas.
 OfficialEffectHandler = Callable[[OfflineOperation], tuple[UniversalReference, ...]]
 
@@ -139,6 +169,27 @@ class SynchronizationService:
     dependências declaradas. Conflito nunca é resolvido silenciosamente, e o
     resultado agregado nunca substitui os resultados individuais.
     """
+
+    def generate_local_preview(
+        self,
+        operation: OfflineOperation,
+        preview_generated_at: datetime | None = None,
+    ) -> LocalPreview:
+        """Gera uma prévia de resultado local (LocalPreview) sem gravar efeito no servidor."""
+        now = preview_generated_at or datetime.now(UTC)
+        predicted_outcome = "ACEITA"
+        predicted_changes = {
+            "operation_id": str(operation.operation_id.value),
+            "operation_type": operation.operation_type,
+            "semantic_identity": operation.semantic_identity,
+        }
+
+        return LocalPreview(
+            intent_digest=operation.intent_digest,
+            predicted_outcome=predicted_outcome,
+            predicted_state_changes=predicted_changes,
+            preview_generated_at=now,
+        )
 
     repository: SynchronizationRepositoryPort
     effect_handler: OfficialEffectHandler

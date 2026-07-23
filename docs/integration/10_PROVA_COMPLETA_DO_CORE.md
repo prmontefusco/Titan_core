@@ -134,5 +134,6 @@ O cenário roda em transação revertida ao final: **a prova não deixa resíduo
 ## 7. O que a prova não faz
 
 - **Não aprova o Marco 7.** O portão exige que os critérios sejam *aprovados*, não apenas verdes. A validação manual do responsável é que libera o Marco 8.
-- **Não cobre o passo 7.8** (representação PDF), adiado por decisão registrada.
+- **Passo 7.8** (representação PDF verificável) e **Passo 7.9** (Deep Offline Capability) foram concluídos e validados posteriormente em suítes de testes dedicadas.
 - **Não exercita a API de domínio**, que não existe até o passo 10.4.
+

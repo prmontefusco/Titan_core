@@ -29,6 +29,7 @@ from packages.core_domain.dossier import (
     Dossier,
     compute_dossier_hash,
 )
+from packages.core_domain.dossier_pdf import DossierPdfRepresentation
 from packages.core_domain.evaluation import (
     Evaluation,
     EvaluationOutcome,
@@ -133,6 +134,7 @@ from packages.core_domain.verification import (
 )
 
 __all__ = [
+    "DossierPdfRepresentation",
     "BatchStructuralDefect",
     "DeviceClockReading",
     "OfflineOperation",

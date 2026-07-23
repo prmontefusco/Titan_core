@@ -213,11 +213,38 @@ A segunda captura com a mesma chave e intenção divergente precisa ser **preser
 ### Releitura
 `get_operation` devolve `StoredOfflineOperation`, com o payload em bytes canônicos. A releitura **não** reconstrói `CanonicalPayload`: o contrato do passo 2.4 impede construir payload a partir de bytes arbitrários, e a persistência não é exceção.
 
+## 7. Deep Offline Capability & Admissão de Dispositivos (Passo 7.9 / ADR-0021)
+
+### Capacidades e Sessão Offline
+- **`OfflineCapabilityProfile`**: Declara as operações permitidas offline para um dispositivo e o limite máximo de horas em desconexão.
+- **`OfflineSession`**: Sessão assinada emitida pelo servidor e mantida em cache no dispositivo, validada via `is_valid_at(current_time)`.
+- **`OfflineAuthorizationSnapshot`**: Snapshot assinado das permissões de um usuário para operação offline.
+- **`DeviceTrustAssessment`**: Avaliação de postura e score de segurança de um dispositivo (bloqueando dispositivos com jailbreak/root ou score abaixo do limite).
+- **`LocalPreview`**: Simulação in-memory de efeitos locais no cliente antes do envio ao servidor (`service.generate_local_preview(operation)`).
+
+### Avaliação de Admissão Rigorosa (`EvaluatesDeviceTrustAndSession`)
+A porta `DeviceAdmissionPort` possui a implementação `EvaluatesDeviceTrustAndSession` para revalidar a postura de segurança e a validade da sessão do dispositivo:
+
+```python
+from packages.core_application.synchronization_service import EvaluatesDeviceTrustAndSession, SynchronizationService
+
+evaluator = EvaluatesDeviceTrustAndSession(
+    session=session_offline,
+    trust_assessment=trust_assessment,
+    min_trust_score=0.7,
+)
+
+service = SynchronizationService(
+    repository=sync_repo,
+    effect_handler=aplicar_efeito_oficial,
+    device_admission=evaluator,
+)
+```
+
 ---
 
-## 7. Notas de integração
+## 8. Notas de integração
 
-- **Fora do escopo deste passo, deliberadamente:** `OfflineCapabilityProfile`, `OfflineSession`, `OfflineAuthorizationSnapshot`, `DeviceTrustAssessment` e `LocalPreview` não foram antecipados.
-- **A admissão do Device é uma porta explícita** (`DeviceAdmissionPort`), hoje com implementação permissiva (`AlwaysAdmitsDevice`). Ela existe para que o `DeviceTrustAssessment` futuro entre sem alterar o serviço: quem não avalia Device declara isso, em vez de não ter onde avaliar.
 - **Rejeição não prova fraude** e não apaga a captura. Vínculo encerrado, grant revogado ou Policy alterada podem impedir a aceitação sem eliminar a evidência de que a captura ocorreu.
 - **O Domain não conhece** banco local, sistema operacional, MDM, push, protocolo de transporte ou SDK de plataforma.
+

@@ -18,6 +18,7 @@ def test_workspace_metadata_can_be_loaded() -> None:
         "pika>=1.4.1",
         "psycopg[binary]==3.3.4",
         "pyjwt[crypto]==2.13.0",
+        "reportlab==4.4.10",
         "sqlalchemy==2.0.51",
         "uvicorn==0.51.0",
     }

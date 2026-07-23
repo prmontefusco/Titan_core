@@ -5,12 +5,14 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from packages.core_domain.crypto import KeyIdentifier
 from packages.core_domain.decision import Decision
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
     compute_dossier_hash,
 )
+from packages.core_domain.dossier_pdf import DossierPdfRepresentation
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.nonconformity import NonConformity
 from packages.core_domain.policy import Policy
@@ -29,6 +31,15 @@ class DossierRepositoryPort(Protocol):
     ) -> list[Dossier]: ...
 
 
+class DossierPdfPort(Protocol):
+    def generate_pdf(
+        self,
+        dossier: Dossier,
+        signing_provider: Any | None = None,
+        key_id: KeyIdentifier | None = None,
+    ) -> DossierPdfRepresentation: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DossierService:
     """Monta o dossiê copiando o conteúdo, nunca apenas referenciando.
@@ -38,6 +49,17 @@ class DossierService:
     """
 
     repository: DossierRepositoryPort | None = None
+    pdf_port: DossierPdfPort | None = None
+
+    def generate_pdf(
+        self,
+        dossier: Dossier,
+        signing_provider: Any | None = None,
+        key_id: KeyIdentifier | None = None,
+    ) -> DossierPdfRepresentation:
+        if self.pdf_port is None:
+            raise RuntimeError("Geração de PDF exige porta de PDF (pdf_port) configurada.")
+        return self.pdf_port.generate_pdf(dossier, signing_provider=signing_provider, key_id=key_id)
 
     def build(
         self,

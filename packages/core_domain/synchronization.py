@@ -664,3 +664,138 @@ def _derive_batch_state(
     if accepted + duplicated == total:
         return SynchronizationBatchState.PROCESSADO
     return SynchronizationBatchState.PROCESSADO_PARCIALMENTE
+
+
+# -- Deep Offline Capability & Admissão de Dispositivos (ADR-0021 / Passo 7.9) ---
+
+
+@dataclass(frozen=True, slots=True)
+class OfflineCapabilityProfile:
+    """Perfil de capacidades offline autorizadas para um dispositivo."""
+
+    profile_id: TypedId
+    device_id: TypedId
+    allowed_operations: tuple[str, ...]
+    max_offline_hours: int = 72
+    requires_biometric_auth: bool = False
+
+    def __post_init__(self) -> None:
+        if self.profile_id.entity_type != "capability_profile":
+            raise ValueError("profile_id deve ser do tipo 'capability_profile'.")
+        if self.device_id.entity_type != "device":
+            raise ValueError("device_id deve ser do tipo 'device'.")
+        if not isinstance(self.allowed_operations, tuple):
+            raise TypeError("allowed_operations deve ser uma tupla de strings.")
+        if self.max_offline_hours < 1:
+            raise ValueError("max_offline_hours deve ser >= 1.")
+
+    def is_operation_allowed(self, operation_type: str) -> bool:
+        return operation_type.strip().lower() in {
+            op.strip().lower() for op in self.allowed_operations
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class OfflineSession:
+    """Sessão offline emitida pelo servidor e mantida em cache assinado pelo dispositivo."""
+
+    session_id: TypedId
+    device_id: TypedId
+    organization_id: OrganizationId
+    issued_at: datetime
+    expires_at: datetime
+    session_token_hash: str
+    capability_profile: OfflineCapabilityProfile
+
+    def __post_init__(self) -> None:
+        if self.session_id.entity_type != "offline_session":
+            raise ValueError("session_id deve ser do tipo 'offline_session'.")
+        if self.device_id.entity_type != "device":
+            raise ValueError("device_id deve ser do tipo 'device'.")
+        if not isinstance(self.organization_id, OrganizationId):
+            raise TypeError("organization_id deve ser OrganizationId.")
+        if not isinstance(self.session_token_hash, str) or not self.session_token_hash.strip():
+            raise ValueError("session_token_hash deve ser uma string não vazia.")
+
+        require_utc(self.issued_at, field_name="issued_at")
+        require_utc(self.expires_at, field_name="expires_at")
+        if self.expires_at <= self.issued_at:
+            raise ValueError("expires_at deve ser posterior a issued_at.")
+
+    def is_valid_at(self, current_time: datetime) -> bool:
+        require_utc(current_time, field_name="current_time")
+        return self.issued_at <= current_time < self.expires_at
+
+
+@dataclass(frozen=True, slots=True)
+class OfflineAuthorizationSnapshot:
+    """Snapshot assinado das permissões de um usuário para operação offline."""
+
+    snapshot_id: TypedId
+    session_id: TypedId
+    principal_id: TypedId
+    granted_permissions: tuple[str, ...]
+    as_of: datetime
+    snapshot_signature: str
+
+    def __post_init__(self) -> None:
+        if self.snapshot_id.entity_type != "authorization_snapshot":
+            raise ValueError("snapshot_id deve ser do tipo 'authorization_snapshot'.")
+        if self.session_id.entity_type != "offline_session":
+            raise ValueError("session_id deve ser do tipo 'offline_session'.")
+        if not isinstance(self.granted_permissions, tuple):
+            raise TypeError("granted_permissions deve ser uma tupla.")
+        if not isinstance(self.snapshot_signature, str) or not self.snapshot_signature.strip():
+            raise ValueError("snapshot_signature deve ser não vazia.")
+
+        require_utc(self.as_of, field_name="as_of")
+
+    def has_permission(self, permission: str) -> bool:
+        return permission.strip() in self.granted_permissions
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceTrustAssessment:
+    """Avaliação de integridade e postura de segurança de um dispositivo offline."""
+
+    device_id: TypedId
+    trust_score: float
+    os_version: str
+    is_jailbroken_or_rooted: bool
+    hardware_backed_keystore: bool
+    assessed_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.device_id.entity_type != "device":
+            raise ValueError("device_id deve ser do tipo 'device'.")
+        if not (0.0 <= self.trust_score <= 1.0):
+            raise ValueError("trust_score deve estar no intervalo [0.0, 1.0].")
+        if not isinstance(self.os_version, str) or not self.os_version.strip():
+            raise ValueError("os_version deve ser uma string não vazia.")
+
+        require_utc(self.assessed_at, field_name="assessed_at")
+
+    def meets_trust_threshold(self, min_threshold: float = 0.7) -> bool:
+        if self.is_jailbroken_or_rooted:
+            return False
+        return self.trust_score >= min_threshold
+
+
+@dataclass(frozen=True, slots=True)
+class LocalPreview:
+    """Simulação in-memory de efeito local no cliente para operação offline."""
+
+    intent_digest: str
+    predicted_outcome: str
+    predicted_state_changes: dict[str, Any]
+    preview_generated_at: datetime
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.intent_digest, str) or not self.intent_digest.strip():
+            raise ValueError("intent_digest deve ser não vazio.")
+        if self.predicted_outcome not in {"ACEITA", "CONFLITO_PROVAVEL", "REJEICAO_PROVAVEL"}:
+            raise ValueError("predicted_outcome inválido.")
+        if not isinstance(self.predicted_state_changes, dict):
+            raise TypeError("predicted_state_changes deve ser dicionário.")
+
+        require_utc(self.preview_generated_at, field_name="preview_generated_at")
