@@ -3,6 +3,8 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from packages.livestock_application.animal_service import (
     AnimalRepositoryPort,
     AnimalService,
@@ -199,3 +201,60 @@ def test_register_movement_updates_stays_timeline() -> None:
     assert timeline[0].property_id == p_orig.property_id
     assert timeline[1].status == StayStatus.ACTIVE
     assert timeline[1].property_id == p_dest.property_id
+
+
+def _movement_scenario() -> tuple[MovementService, OrganizationId, TypedId, TypedId, TypedId]:
+    """Duas fazendas e um animal, o mínimo para registrar um movimento."""
+    org_id = OrganizationId(uuid4())
+    prop_repo = InMemoryPropertyRepo()
+    animal_repo = InMemoryAnimalRepo()
+    movement_service = MovementService(
+        movement_repository=InMemoryMovementRepository(),
+        stay_repository=InMemoryPropertyStayRepository(),
+        animal_repository=animal_repo,
+        property_repository=prop_repo,
+    )
+    prop_service = RuralPropertyService(repository=prop_repo)
+    animal_service = AnimalService(repository=animal_repo)
+    origem = prop_service.register_property(
+        organization_id=org_id, code="ORIG-1", name="Origem", municipality="Franca", state_code="SP"
+    )
+    destino = prop_service.register_property(
+        organization_id=org_id,
+        code="DEST-1",
+        name="Destino",
+        municipality="Batatais",
+        state_code="SP",
+    )
+    animal = animal_service.register_animal(
+        organization_id=org_id, birth_property_id=origem.property_id, sex=AnimalSex.FEMALE
+    )
+    return movement_service, org_id, origem.property_id, destino.property_id, animal.animal_id
+
+
+def test_register_movement_rejects_future_time() -> None:
+    """A regra "não pode ser no futuro" vive na Application, com o relógio do servidor."""
+    service, org_id, origem, destino, animal_id = _movement_scenario()
+
+    with pytest.raises(ValueError, match="não pode ser no futuro"):
+        service.register_movement(
+            organization_id=org_id,
+            origin_property_id=origem,
+            destination_property_id=destino,
+            movement_time=datetime.now(UTC) + timedelta(days=1),
+            animal_ids=(animal_id,),
+        )
+
+
+def test_register_movement_rejects_naive_time() -> None:
+    """Horário sem timezone é rejeitado, nunca silenciosamente tratado como UTC."""
+    service, org_id, origem, destino, animal_id = _movement_scenario()
+
+    with pytest.raises(ValueError, match="timezone"):
+        service.register_movement(
+            organization_id=org_id,
+            origin_property_id=origem,
+            destination_property_id=destino,
+            movement_time=datetime(2026, 7, 20, 12, 0),  # noqa: DTZ001 — naive de propósito
+            animal_ids=(animal_id,),
+        )

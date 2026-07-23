@@ -1,10 +1,11 @@
 """Entidade de domínio Prescription (Passo 9.1 - Titan Livestock)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
 from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel.temporal import require_utc
 
 
 class PrescriptionTargetType(StrEnum):
@@ -25,9 +26,11 @@ class Prescription:
     target_type: PrescriptionTargetType
     target_ids: tuple[TypedId, ...]
     reason: str
-    created_at: datetime = datetime.now(UTC)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
+        require_utc(self.prescribed_date, field_name="prescribed_date")
+        require_utc(self.created_at, field_name="created_at")
         if self.prescription_id.entity_type != "prescription":
             raise ValueError(
                 "prescription_id deve ter entity_type 'prescription', recebido "

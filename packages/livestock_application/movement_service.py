@@ -12,6 +12,7 @@ from packages.livestock_domain.movement import (
     StayStatus,
 )
 from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel.temporal import require_utc
 
 
 class MovementRepositoryPort(Protocol):
@@ -78,20 +79,24 @@ class MovementService:
                     f"Animal '{aid.value}' não encontrado ou pertencente a outra organização."
                 )
 
-        m_time = (
-            movement_time.replace(tzinfo=UTC) if movement_time.tzinfo is None else movement_time
-        )
+        # O horário do movimento é alegado pelo chamador: precisa ser UTC explícito
+        # (o domínio rejeita naive) e não pode estar no futuro em relação ao relógio
+        # do servidor, capturado aqui uma única vez.
+        now = datetime.now(UTC)
+        require_utc(movement_time, field_name="movement_time")
+        if movement_time > now:
+            raise ValueError("movement_time não pode ser no futuro.")
 
         movement = AnimalMovement(
             movement_id=TypedId.new("animal_movement"),
             organization_id=organization_id,
             origin_property_id=origin_property_id,
             destination_property_id=destination_property_id,
-            movement_time=m_time,
+            movement_time=movement_time,
             animal_ids=animal_ids,
             reason=reason,
             evidence_reference=evidence_reference,
-            created_at=datetime.now(UTC),
+            created_at=now,
         )
 
         self.movement_repository.save(movement)
@@ -103,7 +108,7 @@ class MovementService:
                 # Fecha a estada anterior
                 closed_stay = replace(
                     active_stay,
-                    end_time=m_time,
+                    end_time=movement_time,
                     status=StayStatus.CLOSED,
                 )
                 self.stay_repository.update(closed_stay)
@@ -114,7 +119,7 @@ class MovementService:
                 organization_id=organization_id,
                 animal_id=aid,
                 property_id=destination_property_id,
-                start_time=m_time,
+                start_time=movement_time,
                 end_time=None,
                 status=StayStatus.ACTIVE,
                 source_movement_id=movement.movement_id,

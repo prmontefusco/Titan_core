@@ -1,10 +1,11 @@
 """Entidades de domínio AnimalMovement e PropertyStay (Passo 8.3 - Titan Livestock)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
 from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel.temporal import require_utc
 
 
 class StayStatus(StrEnum):
@@ -23,9 +24,11 @@ class AnimalMovement:
     animal_ids: tuple[TypedId, ...]
     reason: str | None = None
     evidence_reference: str | None = None
-    created_at: datetime = datetime.now(UTC)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
+        require_utc(self.movement_time, field_name="movement_time")
+        require_utc(self.created_at, field_name="created_at")
         if self.movement_id.entity_type != "animal_movement":
             raise ValueError(
                 "movement_id deve ter entity_type 'animal_movement', recebido "
@@ -52,14 +55,9 @@ class AnimalMovement:
                     f"'{aid.entity_type}'."
                 )
 
-        now_utc = datetime.now(UTC)
-        m_time = (
-            self.movement_time.replace(tzinfo=UTC)
-            if self.movement_time.tzinfo is None
-            else self.movement_time
-        )
-        if m_time > now_utc:
-            raise ValueError("movement_time não pode ser no futuro.")
+        # A regra "não pode ser no futuro" compara com o instante atual e por isso
+        # vive na Application (movement_service), que injeta o relógio. O domínio
+        # não lê o relógio: seria não determinístico e intestável com tempo fixo.
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,16 +95,10 @@ class PropertyStay:
                 f"'{self.source_movement_id.entity_type}'."
             )
 
+        require_utc(self.start_time, field_name="start_time")
         if self.end_time is not None:
-            s_time = (
-                self.start_time.replace(tzinfo=UTC)
-                if self.start_time.tzinfo is None
-                else self.start_time
-            )
-            e_time = (
-                self.end_time.replace(tzinfo=UTC) if self.end_time.tzinfo is None else self.end_time
-            )
-            if e_time <= s_time:
+            require_utc(self.end_time, field_name="end_time")
+            if self.end_time <= self.start_time:
                 raise ValueError("end_time deve ser estritamente posterior a start_time.")
             if self.status == StayStatus.ACTIVE:
                 raise ValueError(

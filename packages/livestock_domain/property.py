@@ -1,9 +1,10 @@
 """Entidade de domínio RuralProperty (Passo 8.1 - Titan Livestock)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel.temporal import require_utc
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,9 +19,10 @@ class RuralProperty:
     total_area_hectares: float | None = None
     status: str = "ACTIVE"
     version: int = 1
-    created_at: datetime = datetime.now(UTC)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
+        require_utc(self.created_at, field_name="created_at")
         if self.property_id.entity_type != "rural_property":
             raise ValueError(
                 "property_id deve ter entity_type 'rural_property', recebido "

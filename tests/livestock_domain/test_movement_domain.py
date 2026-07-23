@@ -36,6 +36,21 @@ def test_animal_movement_creation_success() -> None:
     assert len(movement.animal_ids) == 2
 
 
+def test_animal_movement_rejects_naive_time() -> None:
+    """O domínio rejeita datetime sem timezone; não o trata silenciosamente como UTC."""
+    org_id = OrganizationId(uuid4())
+
+    with pytest.raises(ValueError, match="timezone"):
+        AnimalMovement(
+            movement_id=TypedId.new("animal_movement"),
+            organization_id=org_id,
+            origin_property_id=TypedId.new("rural_property"),
+            destination_property_id=TypedId.new("rural_property"),
+            movement_time=datetime(2026, 7, 20, 12, 0),  # noqa: DTZ001 — naive de propósito
+            animal_ids=(TypedId.new("animal"),),
+        )
+
+
 def test_animal_movement_same_origin_and_destination_fails() -> None:
     org_id = OrganizationId(uuid4())
     prop_id = TypedId.new("rural_property")

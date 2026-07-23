@@ -1,10 +1,11 @@
 """Entidade de domínio Animal e AnimalIdentifier (Passo 8.2 - Titan Livestock)."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from enum import StrEnum
 
 from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel.temporal import require_utc
 
 
 class AnimalSex(StrEnum):
@@ -42,12 +43,18 @@ class AnimalIdentifier:
     issuer_source: str | None = None
     evidence_reference: str | None = None
     verification_status: VerificationStatus = VerificationStatus.DECLARADO
-    valid_from: datetime = datetime.now(UTC)
+    valid_from: datetime = field(default_factory=lambda: datetime.now(UTC))
     valid_until: datetime | None = None
-    attached_at: datetime = datetime.now(UTC)
+    attached_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     deactivated_at: datetime | None = None
 
     def __post_init__(self) -> None:
+        require_utc(self.valid_from, field_name="valid_from")
+        require_utc(self.attached_at, field_name="attached_at")
+        if self.valid_until is not None:
+            require_utc(self.valid_until, field_name="valid_until")
+        if self.deactivated_at is not None:
+            require_utc(self.deactivated_at, field_name="deactivated_at")
         if self.identifier_id.entity_type != "animal_identifier":
             raise ValueError(
                 "identifier_id deve ter entity_type 'animal_identifier', recebido "
@@ -71,9 +78,10 @@ class Animal:
     birth_date: date | None = None
     identifiers: tuple[AnimalIdentifier, ...] = ()
     version: int = 1
-    created_at: datetime = datetime.now(UTC)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
+        require_utc(self.created_at, field_name="created_at")
         if self.animal_id.entity_type != "animal":
             raise ValueError(
                 f"animal_id deve ter entity_type 'animal', recebido '{self.animal_id.entity_type}'."

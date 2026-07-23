@@ -1,11 +1,12 @@
 """Entidade de domínio Veterinarian (Passo 8.5 - Titan Livestock)."""
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from packages.livestock_domain.animal import VerificationStatus
 from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel.temporal import require_utc
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,9 +19,10 @@ class Veterinarian:
     council_state: str
     verification_status: VerificationStatus = VerificationStatus.DECLARADO
     evidence_reference: str | None = None
-    created_at: datetime = datetime.now(UTC)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
+        require_utc(self.created_at, field_name="created_at")
         if self.veterinarian_id.entity_type != "veterinarian":
             raise ValueError(
                 "veterinarian_id deve ter entity_type 'veterinarian', recebido "

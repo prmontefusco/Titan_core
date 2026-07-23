@@ -1,10 +1,11 @@
 """Entidades de domínio LivestockLot e LotMembership (Passo 8.4 - Titan Livestock)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 
 from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel.temporal import require_utc
 
 
 class LotType(StrEnum):
@@ -25,11 +26,12 @@ class LotMembership:
     membership_id: TypedId
     lot_id: TypedId
     animal_id: TypedId
-    valid_from: datetime = datetime.now(UTC)
+    valid_from: datetime = field(default_factory=lambda: datetime.now(UTC))
     valid_until: datetime | None = None
     reason: str | None = None
 
     def __post_init__(self) -> None:
+        require_utc(self.valid_from, field_name="valid_from")
         if self.membership_id.entity_type != "lot_membership":
             raise ValueError(
                 "membership_id deve ter entity_type 'lot_membership', recebido "
@@ -46,17 +48,8 @@ class LotMembership:
             )
 
         if self.valid_until is not None:
-            v_from = (
-                self.valid_from.replace(tzinfo=UTC)
-                if self.valid_from.tzinfo is None
-                else self.valid_from
-            )
-            v_until = (
-                self.valid_until.replace(tzinfo=UTC)
-                if self.valid_until.tzinfo is None
-                else self.valid_until
-            )
-            if v_until <= v_from:
+            require_utc(self.valid_until, field_name="valid_until")
+            if self.valid_until <= self.valid_from:
                 raise ValueError("valid_until deve ser estritamente posterior a valid_from.")
 
 
@@ -69,9 +62,10 @@ class LivestockLot:
     name: str
     lot_type: LotType = LotType.OPERATIONAL
     status: LotStatus = LotStatus.ACTIVE
-    created_at: datetime = datetime.now(UTC)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
+        require_utc(self.created_at, field_name="created_at")
         if self.lot_id.entity_type != "livestock_lot":
             raise ValueError(
                 "lot_id deve ter entity_type 'livestock_lot', recebido "
