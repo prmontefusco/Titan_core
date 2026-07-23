@@ -485,39 +485,103 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** construir grafo fictício sem termos de vertical, consultar relações em datas diferentes e rejeitar travessia não autorizada entre Organizations.
 
-#### Passo 7.2 — Projeções reconstruíveis
+#### Passo 7.2 — Projeções reconstruíveis [x] CONCLUÍDO E TESTADO
 
-**Entrega:** projeção de leitura e referências reversas reconstruíveis a partir dos eventos, sem regras de negócio próprias.
+**Entrega:** `ReverseReference`, `ReferencingKind`, `ReferenceRole` e `compute_projection_digest` em `packages/core_domain/projections.py`; `ProjectionRebuildService` com `ProjectionSourcePort` e `ProjectionRepositoryPort` em `packages/core_application/projection_service.py`. Tabela `core_audit.reference_projection` com RLS (migration `20260722_0028`), derivada de `core_audit.domain_events` e `core_audit.relations`. 323 testes automatizados aprovados.
+
+**Reconstrutibilidade estrutural:** a chave primária é o próprio conteúdo derivado, sem identificador sorteado. Reconstruir produz linhas idênticas, e por isso a comparação entre reconstruções é exata em vez de aproximada. O digest ignora o instante de reconstrução, que descreve a execução e não o conteúdo.
+
+**Ausência de regra própria:** o serviço apenas indexa o que eventos e relações já declararam. Não interpreta, não decide e não é fonte de verdade — é isso que torna descartá-la e reconstruí-la uma operação segura, e não perda de dado.
+
+**Ordem estável:** as entradas são ordenadas por chave total antes de gravar, de modo que o conteúdo derivado não dependa da ordem em que o banco devolveu as linhas.
+
+**Detecção de defasagem:** `is_consistent_with_sources()` compara o gravado com o que as fontes produziriam agora, sem gravar nada.
 
 **Validação manual:** apagar somente a projeção em ambiente descartável, reconstruí-la e comparar o resultado; a fonte histórica deve permanecer intacta.
 
-#### Passo 7.3 — NonConformity Core
+#### Passo 7.3 — NonConformity Core [x] CONCLUÍDO E TESTADO
 
-**Entrega:** detecção, severidade, sujeitos/período afetados, responsável, prazo, ação corretiva, evidência de correção, reavaliação e encerramento sem apagar histórico.
+**Entrega:** `NonConformity`, `NonConformityStatus`, `NonConformityOrigin` e `NonConformityTransition` em `packages/core_domain/nonconformity.py`; `NonConformityService` em `packages/core_application/nonconformity_service.py`. Tabela `core_audit.nonconformities` com RLS (migration `20260722_0029`). 336 testes automatizados aprovados.
+
+**Ciclo de vida:** `DETECTADA → CLASSIFICADA → ATRIBUIDA → EM_CORRECAO → PRONTA_PARA_REAVALIACAO → ENCERRADA`, com transições validadas — pular etapas é recusado e `ENCERRADA` é terminal.
+
+**Reavaliação pode reprovar:** o único retorno permitido é de `PRONTA_PARA_REAVALIACAO` para `EM_CORRECAO`, e existe porque corrigir nem sempre resolve na primeira tentativa. A ida rejeitada permanece no histórico.
+
+**Histórico só cresce:** cada transição é acrescentada, nunca sobrescrita. O banco reforça com `CHECK (jsonb_array_length(transitions) > 0)` e exige instante de encerramento quando o estado é `encerrada`.
+
+**Correção exige prova:** submeter à reavaliação sem evidência de correção é recusado — seria encerrar por declaração. E encerrar exige a `Evaluation` que reavaliou o caso; reavaliação não reproduzível é rejeitada.
+
+**Abertura seletiva:** apenas resultados `NAO_ATENDIDA`, `PENDENTE` e `INDETERMINADA` abrem não conformidade. Regra atendida ou não aplicável não gera registro — tratar o que não falhou transformaria a lista de pendências em ruído.
+
+**Navegabilidade:** a `origin_reference` aponta para a Evaluation que originou o caso, que por sua vez preserva o snapshot completo dos fatos. É o fio que leva da pendência até os fatos e evidências que a justificam.
 
 **Validação manual:** abrir por falha de regra, corrigir, reavaliar e encerrar; navegar até todos os fatos, eventos e evidências justificadores.
 
-#### Passo 7.4 — Recall Core
+#### Passo 7.4 — Recall Core [x] CONCLUÍDO E TESTADO
 
-**Entrega:** navegação retrospectiva e prospectiva, janela temporal, controle de ciclos/profundidade, simulação/incidente e localização de decisões afetadas.
+**Entrega:** `RecallRequest`, `RecallResult`, `RecallPath`, `RecallGap` e enums de direção, modo, status e razão de limite em `packages/core_domain/recall.py`; `RecallService` em `packages/core_application/recall_service.py`. Tabela `core_audit.recalls` com RLS (migration `20260722_0030`). 349 testes automatizados aprovados.
+
+**Lacuna nunca vira silêncio:** qualquer limite atingido — profundidade, número de nós ou ciclo — gera `RecallGap` explícita e o resultado inteiro passa a `INCONCLUSIVO`. Omitir a lacuna transformaria desconhecimento em falsa cobertura, que é o pior erro possível num recall.
+
+**Resultado localiza, não julga:** sujeitos alcançados são POTENCIALMENTE afetados. O resultado não declara invalidade, culpa, fraude, obrigatoriedade nem extensão final de recall, e não modifica Decision, Dossier, assinatura ou Evidence alguma.
+
+**Travessia em largura:** o caminho mais curto até um sujeito é o mais fácil de explicar, e explicar cada caminho é requisito do passo. A ordem de expansão é determinística, então o mesmo grafo produz sempre os mesmos caminhos.
+
+**Simulação e incidente têm efeito distinto:** simulação é hipótese e não deixa rastro; incidente é ato auditável e **não executa sem repositório de registro**. O resultado gravado preserva caminhos, lacunas e decisões afetadas para explicar a análise depois.
+
+**Isolamento:** o Subject inicial de outra Organization é recusado na construção do pedido, e a travessia só enxerga o grafo da própria Organization.
 
 **Validação manual:** usar grafo fictício, encontrar origem e destinos, explicar cada caminho, impedir acesso indevido e declarar lacunas como resultado inconclusivo.
 
-#### Passo 7.5 — Dossier Core
+#### Passo 7.5 — Dossier Core [x] CONCLUÍDO E TESTADO
 
-**Entrega:** snapshot canônico JSON com sujeito, finalidade, política, regras, fatos, evidências, não conformidades, decisão, ações, versões, timestamps e hash. PDF será uma representação posterior e independente.
+**Entrega:** `Dossier` e `compute_dossier_hash` em `packages/core_domain/dossier.py`; `DossierService` em `packages/core_application/dossier_service.py`. Tabela `core_audit.dossiers` com RLS (migration `20260722_0031`). 358 testes automatizados aprovados.
+
+**Autocontido de verdade:** o documento copia o conteúdo em vez de referenciá-lo — política e versão, regras com suas **condições declarativas**, snapshot completo dos fatos, resultados por regra, decisão com razões e ações corretivas, evidências e não conformidades com histórico. Um dossiê que guardasse apenas identificadores exigiria o banco do Titan para ser compreendido, que é exatamente o que ele existe para evitar.
+
+**Hash em formato aberto:** o digest usa a serialização canônica `titan-json-v1` já adotada pelo Core, e não um formato próprio. Um dossiê que só o Titan consegue verificar não serve para verificação externa.
+
+**Prova não se monta sobre material adulterado:** Evaluation ou Decision não reproduzíveis são recusadas, assim como decisão que não pertence à avaliação ou à política informada.
 
 **Validação manual:** validar schema, recalcular hash e compreender/reproduzir a decisão sem consultar o banco.
 
-#### Passo 7.6 — VerificationBundle
+#### Passo 7.6 — VerificationBundle [x] CONCLUÍDO E TESTADO
 
-**Entrega:** pacote autossuficiente com snapshot canônico, versão da serialização, hashes, provas de cadeia/checkpoint, assinaturas, timestamps, certificados, material de revogação, manifesto e política de verificação. O pacote não depende de segredo ou acesso ao banco Titan.
+**Entrega:** `BundleManifest`, `BundleComponent`, `SignatureMaterial`, `VerificationBundle`, `BundleVerifier`, `ValidationReport` e `DimensionResult` em `packages/core_domain/verification.py`; `VerificationBundleService` em `packages/core_application/verification_service.py`. 370 testes automatizados aprovados.
+
+**Verificador independente:** o `BundleVerifier` é puro — sem rede, sem segredo, sem banco. O pacote sai do Titan como texto, é reconstruído do outro lado por `load()` e verificado sem qualquer dependência do sistema de origem.
+
+**Resultado nunca é booleano:** sete dimensões respondem separadamente (estrutura, serialização, integridade, assinatura, temporal, revogação, cobertura). O agregado só é `VALIDA` quando nenhuma dimensão falha nem fica indeterminada; violação determinística prevalece sobre indeterminação.
+
+**Ausência é indeterminação, adulteração é invalidez.** Componente obrigatório ausente, âncora de confiança ausente, material temporal ou de revogação ausente e escopo não comprovado produzem `INDETERMINADA`. Digest divergente, manifesto adulterado e componente não declarado produzem `INVALIDA` — sempre com o **ponto exato da falha** nomeado em `failure_point`.
+
+**O que não está listado não integra o escopo:** arquivo presente mas ausente do manifesto reprova o pacote, impedindo mistura silenciosa de componentes.
+
+**Confiança vem de fora:** âncora incluída no pacote não é confiável por estar no pacote. Sem âncora fornecida ao verificador, a assinatura é `INDETERMINADA` e o relatório declara a origem da confiança.
+
+**Material proibido nunca é empacotado:** chave privada, segredo, token, credencial e contexto de organização são recusados na montagem.
+
+**Nota de escopo:** o pacote é artefato de exportação e não recebeu tabela própria. Gerar, publicar, compartilhar e revogar referência online são operações distintas e pertencem ao Passo 7.7.
 
 **Validação manual:** verificar o pacote com ferramenta independente e sem Titan; remover material necessário e confirmar resultado `INDETERMINADA`; adulterar conteúdo e confirmar `INVÁLIDA` com ponto exato da falha.
 
-#### Passo 7.7 — API de verificação externa
+#### Passo 7.7 — API de verificação externa [x] CONCLUÍDO E TESTADO
 
-**Entrega:** contrato público que separa integridade, cadeia, assinatura, timestamp, revogação, perfil de confiança, lacunas e instante da verificação. Resultado nunca usa um único booleano nem afirma veracidade do conteúdo.
+**Portão cumprido:** a ADR-0010 exigia ADR de contratos antes de implementar URL, métodos e schemas públicos. A **ADR-0039** foi escrita, revisada e aceita antes do código.
+
+**Entrega:** `POST /v1/verification/bundles` em `apps/api/verification.py`, com o domínio estendido em `packages/core_domain/verification.py`. 391 testes automatizados aprovados.
+
+**Nenhuma dimensão obrigatória não avaliada produz agregado válido.** A revisão da ADR flagrou que `NAO_EXECUTADA` numa dimensão obrigatória permitiria declarar um pacote `VALIDA` sem verificar sua assinatura. Corrigido em duas frentes: algoritmo não suportado passou a `INDETERMINADA` (houve tentativa sem capacidade) e a regra do agregado fechou o caminho explicitamente.
+
+**Oito dimensões, cinco estados.** `REVOGACAO_ATUAL` é declarativa e sempre `NAO_EXECUTADA`: existe para tornar visível o que o modo offline não faz. `NAO_APLICAVEL` e `NAO_EXECUTADA` foram acrescentados ao domínio entregue no 7.6.
+
+**Ordem normativa pública:** `first_failure` segue ordem versionada, não a de execução, então paralelização não altera a resposta. `failures` lista somente `INVALIDA` — indeterminação não é classificada artificialmente como falha.
+
+**Honestidade sobre confiança:** a resposta declara `RESULT_DEPENDS_ON_VERIFIER_INSTANCE` e `SIGNATURE_VALID_ONLY_AGAINST_CALLER_SUPPLIED_ANCHOR`. A independência do Titan é propriedade do formato e do verificador local, não da API hospedada.
+
+**Erro de contrato separado de resultado:** `400` para JSON inválido ou chave duplicada, `422` para violação de schema ou pacote irrepresentável, `413` para corpo acima do limite, e `200` inclusive para `INVALIDA`.
+
+**Limites e privacidade:** corpo de 1 MiB, 32 componentes, profundidade 32, 8 âncoras; `Cache-Control: no-store`; âncora devolvida por fingerprint, nunca por valor; `detail` sanitizado sem caminho interno nem stack trace.
 
 **Validação manual:** verificar artefato íntegro, inválido e incompleto; confirmar que a resposta explica escopo, âncora de confiança, material utilizado, warnings e primeira falha detectada.
 

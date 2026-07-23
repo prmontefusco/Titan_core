@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 implementado | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | IMPLEMENTADO — 7.1 a 7.7, 7.9 e 7.10; 7.8 adiado por decisão | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1679,6 +1679,241 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 309 testes aprovados; banco em `20260722_0027 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.2 — Projeções reconstruíveis
+
+- [x] `ReverseReference`, `ReferencingKind`, `ReferenceRole` e `compute_projection_digest` criados em `packages/core_domain/projections.py`.
+- [x] `ProjectionRebuildService` criado em `packages/core_application/projection_service.py`, derivando a projeção de `domain_events` e `relations` sem regra de negócio própria.
+- [x] Chave primária é o próprio conteúdo derivado, sem identificador sorteado: reconstruir produz linhas idênticas e a comparação entre reconstruções é exata.
+- [x] Digest ignora o instante de reconstrução, que descreve a execução e não o conteúdo derivado.
+- [x] Entradas ordenadas por chave total antes de gravar: o conteúdo não depende da ordem de leitura do banco.
+- [x] `is_consistent_with_sources()` detecta projeção defasada sem gravar nada.
+- [x] Tabela `core_audit.reference_projection` com RLS e migration `20260722_0028` criadas em `packages/core_infrastructure/persistence/projections.py`.
+- [x] Testes unitários (`test_projections_domain.py`), de aplicação (`test_projection_service.py`) e de integração PostgreSQL (`test_projections_postgresql.py`) aprovados, confirmando que apagar somente a projeção e reconstruí-la devolve conteúdo idêntico com a fonte histórica intacta (323 testes no total).
+
+## Comandos para testar o Passo 7.2
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 323 testes aprovados; banco em `20260722_0028 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.3 — NonConformity Core
+
+- [x] `NonConformity` criada em `packages/core_domain/nonconformity.py` com origem, severidade, período afetado, responsável, prazo, ação corretiva, evidência de correção, reavaliação e histórico.
+- [x] Ciclo de vida `DETECTADA → CLASSIFICADA → ATRIBUIDA → EM_CORRECAO → PRONTA_PARA_REAVALIACAO → ENCERRADA` com transições validadas; pular etapas é recusado e encerrada é terminal.
+- [x] Reavaliação reprovada devolve o caso a `EM_CORRECAO` sem apagar a tentativa anterior.
+- [x] Histórico só cresce, reforçado no banco por `CHECK (jsonb_array_length(transitions) > 0)` e por exigência de `closed_at` quando encerrada.
+- [x] Submeter à reavaliação exige evidência de correção; encerrar exige a `Evaluation` reavaliadora e recusa avaliação não reproduzível.
+- [x] `NonConformityService.open_from_evaluation` abre casos apenas para resultados que exigem tratamento, ignorando regra atendida e não aplicável.
+- [x] Tabela `core_audit.nonconformities` com RLS, índices por sujeito e por estado, e migration `20260722_0029`.
+- [x] Testes unitários (`test_nonconformity_domain.py`) e de integração PostgreSQL (`test_nonconformity_postgresql.py`) aprovados, percorrendo abrir, corrigir, reavaliar reprovando, corrigir de novo e encerrar (336 testes no total).
+
+## Comandos para testar o Passo 7.3
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 336 testes aprovados; banco em `20260722_0029 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.4 — Recall Core
+
+- [x] `RecallRequest`, `RecallResult`, `RecallPath`, `RecallStep` e `RecallGap` criados em `packages/core_domain/recall.py`, com direção retrospectiva, prospectiva e ambas.
+- [x] `RecallService` criado em `packages/core_application/recall_service.py` com travessia em largura, ordem determinística e explicação de cada caminho.
+- [x] Limites de profundidade, número de nós e detecção de ciclo geram `RecallGap` explícita; qualquer lacuna torna o resultado `INCONCLUSIVO`.
+- [x] Janela temporal filtra as relações vigentes no instante consultado, mudando o grafo alcançável.
+- [x] Filtro por tipo de relação restringe a travessia sem alterar o grafo.
+- [x] Simulação não deixa rastro; incidente exige repositório e é gravado por inteiro para explicação posterior.
+- [x] Decisões afetadas são localizadas a partir dos sujeitos alcançados, via `PostgresAffectedDecisionLookup`.
+- [x] Subject inicial de outra Organization é recusado, e a travessia só enxerga o grafo da própria Organization.
+- [x] Tabela `core_audit.recalls` com RLS, índice por sujeito e migration `20260722_0030`.
+- [x] Testes de aplicação (`test_recall_service.py`) e de integração PostgreSQL (`test_recall_postgresql.py`) aprovados sobre grafo fictício genérico (349 testes no total).
+
+## Comandos para testar o Passo 7.4
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 349 testes aprovados; banco em `20260722_0030 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.5 — Dossier Core
+
+- [x] `Dossier` e `compute_dossier_hash` criados em `packages/core_domain/dossier.py`, com verificação offline pelo próprio documento.
+- [x] Documento autocontido: sujeito, finalidade, política e versão, regras com condições declarativas, snapshot completo dos fatos, resultados por regra, decisão com razões e ações, evidências e não conformidades com histórico.
+- [x] Hash calculado sobre a serialização canônica `titan-json-v1` já adotada pelo Core, permitindo recálculo por terceiros sem acesso ao Titan.
+- [x] Evaluation ou Decision não reproduzíveis são recusadas; decisão de outra avaliação ou de outra política também.
+- [x] Tabela `core_audit.dossiers` com RLS, índice por sujeito e migration `20260722_0031`.
+- [x] Testes de aplicação (`test_dossier_service.py`) e de integração PostgreSQL (`test_dossier_postgresql.py`) aprovados, exportando o JSON, recalculando o hash fora do banco e refazendo o raciocínio da decisão apenas com o documento (358 testes no total).
+
+## Comandos para testar o Passo 7.5
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 358 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.6 — VerificationBundle
+
+- [x] `BundleManifest`, `BundleComponent`, `SignatureMaterial`, `VerificationBundle`, `BundleVerifier`, `ValidationReport` e `DimensionResult` criados em `packages/core_domain/verification.py`.
+- [x] `VerificationBundleService` criado em `packages/core_application/verification_service.py`, com `export()` e `load()` para o pacote viajar como texto e ser reconstruído fora do Titan.
+- [x] Verificador puro: sem rede, sem segredo e sem banco; sete dimensões independentes em vez de um booleano único.
+- [x] Ausência de material produz `INDETERMINADA`; adulteração produz `INVALIDA` com o ponto exato nomeado em `failure_point`.
+- [x] Componente presente mas não declarado reprova o pacote, impedindo mistura silenciosa.
+- [x] Âncora de confiança incluída no pacote não é aceita por estar nele; sem âncora externa a assinatura é indeterminada.
+- [x] Chave privada, segredo, token, credencial e contexto de organização são recusados na montagem.
+- [x] Dossiê que não confere com o próprio hash não pode ser empacotado.
+- [x] Testes (`test_verification_bundle.py`) aprovados, cobrindo transporte fora do Titan, adulteração de componente e de manifesto, componente intruso, ausência de âncora e lacuna declarada (370 testes no total).
+
+## Comandos para testar o Passo 7.6
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 370 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.7 — API de verificação externa
+
+- [x] ADR-0039 escrita, revisada e **aceita antes do código**, cumprindo o portão da ADR-0010 que exigia contrato antes da implementação.
+- [x] Domínio estendido: `NAO_APLICAVEL` e `NAO_EXECUTADA` acrescentados a `VerificationStatus`; dimensão declarativa `REVOGACAO_ATUAL` sempre não executada; `NORMATIVE_DIMENSION_ORDER` e `MANDATORY_DIMENSIONS` criados.
+- [x] Regra do agregado corrigida: dimensão obrigatória `INDETERMINADA`, `NAO_EXECUTADA` ou `NAO_APLICAVEL` sem permissão nunca produz agregado válido.
+- [x] Algoritmo fora da allowlist produz `ASSINATURA = INDETERMINADA`, não erro de contrato e não `NAO_EXECUTADA`.
+- [x] `failures` lista somente dimensões `INVALIDA`; `first_failure` segue a ordem normativa pública.
+- [x] `POST /v1/verification/bundles` criado em `apps/api/verification.py`, hermético e sem consulta ao banco.
+- [x] `400` para JSON inválido e chave duplicada; `422` para schema e pacote irrepresentável; `413` para corpo acima do limite; `200` inclusive para `INVALIDA`.
+- [x] Limites de corpo, componentes, profundidade e âncoras aplicados; `Cache-Control: no-store`; âncora devolvida por fingerprint; `detail` sanitizado.
+- [x] Testes (`test_verification_api.py`, `test_verification_bundle.py`) aprovados, cobrindo íntegro, inválido, incompleto, algoritmo não suportado, âncora duplicada, profundidade excessiva e determinismo do relatório (391 testes no total).
+
+**Fora do escopo da aplicação:** rate limiting (`429`), terminação TLS e não captura de corpo por gateway, APM e tracing são responsabilidades de implantação, declaradas na ADR-0039 e não testáveis no nível do aplicativo.
+
+## Comandos para testar o Passo 7.7
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 391 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.9 — Synchronization Core
+
+- [x] Passo 7.8 (representação PDF) **deliberadamente adiado**, com decisão registrada: o cenário do Passo 7.10 não inclui PDF, e `PLANO_DE_IMPLEMENTACAO_VALIDADO.md` condiciona PAdES-LT/LTA a perfil jurídico aprovado, que não existe.
+- [x] Contratos criados em `packages/core_domain/synchronization.py`: `DeviceClockReading`, `OfflineOperation`, `OperationManifestEntry`, `SynchronizationBatch`, `SynchronizationConflict`, `SynchronizationResult` e `SynchronizationBatchResult`, com os estados públicos em português da ADR-0021.
+- [x] Digest da intenção separado do envelope: `compute_intent_digest` ignora OperationId, sequência local, relógio e tentativa, de modo que a mesma intenção recapturada produz o mesmo digest e o retry não duplica.
+- [x] Relógio do Device permanece alegação: `TimeConfidenceLevel` não converte relógio local em prova temporal, e `precedes` só responde dentro da mesma continuidade monotônica — fora dela devolve `None` em vez de inventar precedência.
+- [x] Manifesto detecta remoção, duplicação, substituição, alteração, Organization e Device divergentes e sequência fora da fronteira; `inspect` devolve todos os defeitos, não apenas o primeiro.
+- [x] Ordem física do lote não cria causalidade: `SynchronizationService` processa por dependência declarada, e a dependente enviada fisicamente antes da origem é aceita depois dela.
+- [x] Ciclo de dependências vira `CONFLITANTE` explícito, nunca pendência indefinida; dependência ausente, rejeitada ou em conflito permanece `DEPENDENCIA_PENDENTE` com o motivo nomeado.
+- [x] IdempotencyKey reutilizada com intenção divergente produz `CONFLITANTE` e **nunca** recupera nem associa o resultado anterior; a mesma intenção sob a mesma chave produz `DUPLICADA` sem repetir o efeito.
+- [x] Retomada é por operação, não por lote: a tentativa é do envelope, e o histórico append-only por tentativa preserva as decisões sucessivas em vez de reescrevê-las.
+- [x] `RESULTADO_DESCONHECIDO` exige prazo de reconciliação e não é reprocessado no reenvio, porque reprocessar poderia repetir um efeito que talvez já exista; o estado não implica ausência, sucesso ou falha.
+- [x] Conflito nunca é resolvido silenciosamente: não há last-write-wins, maior timestamp do Device nem último lote recebido; todo conflito carrega estado observado e alternativas.
+- [x] Rejeição, conflito e quarentena preservam a captura: a OfflineOperation é gravada mesmo sem efeito oficial.
+- [x] Tabelas `core_audit.offline_operations`, `core_audit.synchronization_results` e `core_audit.synchronization_batches` criadas com RLS e `FORCE ROW LEVEL SECURITY` na migration `20260722_0032`, com downgrade validado.
+- [x] Três invariantes repetidas como `CHECK` no banco: `ACEITA` sem efeito, `CONFLITANTE` sem conflito e `RESULTADO_DESCONHECIDO` sem prazo são recusados mesmo por escrita direta em SQL.
+- [x] Ausência deliberada de `UNIQUE (organization, idempotency_key)`: a segunda captura com intenção divergente precisa ser preservada para virar conflito explícito, e a constraint a apagaria em vez de explicá-la.
+- [x] Releitura devolve `StoredOfflineOperation` com o payload em bytes canônicos, sem reconstruir `CanonicalPayload`, respeitando o contrato do Passo 2.4 que impede construir payload a partir de bytes arbitrários.
+- [x] Testes de domínio (`test_synchronization_domain.py`), de aplicação (`test_synchronization_service.py`) e de integração PostgreSQL com RLS (`test_synchronization_postgresql.py`) aprovados, cobrindo a lista de testabilidade da ADR-0021 (438 testes no total).
+
+**Fora do escopo deste passo, deliberadamente:** `OfflineCapabilityProfile`, `OfflineSession`, `OfflineAuthorizationSnapshot`, `DeviceTrustAssessment` e `LocalPreview` não constam da entrega do Passo 7.9 e não foram antecipados. A admissão do Device existe como porta explícita (`DeviceAdmissionPort`) com implementação permissiva, para que o `DeviceTrustAssessment` futuro tenha onde entrar sem alterar o serviço. O estado `VALIDADO_PARCIALMENTE` permanece declarado e não produzido: validação e processamento ocorrem na mesma fronteira transacional.
+
+## Comandos para testar o Passo 7.9
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 438 testes aprovados; banco em `20260722_0032 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.10 — Prova completa do Core
+
+- [x] Cenário fictício e genérico criado em `tests/integration/test_core_proof_postgresql.py`, encadeado contra o PostgreSQL autoritativo: autenticação → Organization → evento → evidência → genealogia → regra → avaliação → decisão → não conformidade → recall → dossiê → sincronização.
+- [x] Vocabulário sem vertical alguma: os sujeitos são `lote`, `insumo` e `remessa`. Escrever a prova com termos de gado esconderia justamente o acoplamento que ela existe para descartar.
+- [x] Cada elo alimenta o seguinte de verdade: a evidência assinada é a fonte do fato avaliado, a avaliação fundamenta a decisão, a decisão abre a não conformidade, a genealogia sustenta o recall e a operação offline sincronizada produz uma relação real do grafo.
+- [x] **Substituir providers falsos sem alterar o Core:** o mesmo `EvidenceService` assina com `SoftwareSigningProvider` e com um segundo provedor de algoritmo diferente, sem uma linha de mudança no Core, e a chave continua sendo a registrada pelo Core.
+- [x] **Adulterar cópias para testar integridade:** inverter a conclusão, trocar o fato que sustenta a reprovação e adulterar os bytes do componente do pacote são todos recusados — o dossiê pelo hash canônico e o `VerificationBundle` pelo verificador offline, sem consultar o Titan.
+- [x] **Repetir operações:** o reenvio do lote recupera o resultado por `OperationId` sem repetir o efeito oficial, com `RESULTADO_RECUPERADO` no resultado.
+- [x] **Isolamento entre duas Organizations:** role temporária `NOBYPASSRLS` percorre as **treze** tabelas do cenário no contexto da outra Organization e não enxerga nenhum registro. Provar uma tabela e presumir as outras seria exatamente a falha que este passo existe para descartar.
+- [x] Recall provado nas duas propriedades: travessia limpa é `CONCLUSIVO`; travessia que reencontra o sujeito declara `CICLO_DETECTADO` e rebaixa o resultado inteiro a `INCONCLUSIVO` — lacuna nunca vira silêncio, mesmo quando o reencontro é inofensivo.
+- [x] `VerificationBundle` só é declarado `VALIDA` com assinatura, política de verificação e âncora de confiança; sem âncora o veredito é `INDETERMINADA`, nunca válido por omissão.
+- [x] O cenário roda em transação revertida ao final: a prova não deixa resíduo no banco.
+
+#### Testes arquiteturais — correção de um teste que não verificava nada
+
+- [x] **Defeito encontrado e corrigido:** `test_core_does_not_import_verticals` varria `packages/core`, diretório que nunca existiu. O teste passava sem examinar um único arquivo desde que foi escrito. Agora percorre os pacotes reais (`core_domain`, `core_application`, `core_infrastructure`, `core_integrity`).
+- [x] `require_existing_root` acrescentada: qualquer teste de fronteira cujo alvo não exista passa a falhar alto. Renomear um pacote não pode transformar a verificação em aprovação automática.
+- [x] Fronteiras novas cobertas: Core Domain não importa Application (a dependência aponta para dentro); Core Application não conhece framework nem ORM; `shared_kernel` não depende de quem depende dele.
+- [x] Sete testes arquiteturais aprovados, sem nenhuma violação escondida pelo teste vazio anterior.
+
+#### Superfície HTTP pública no fechamento do Core
+
+- [x] `tests/api/test_core_public_surface.py` congela a superfície: `/health`, `/technical/authentication` e `POST /v1/verification/bundles`.
+- [x] Guarda explícita contra endpoint de domínio antes do **Passo 10.4**, que é onde o plano prevê a "API mínima do fluxo aprovado". Construir a API REST de domínio agora seria pular um marco e inventar requisito.
+- [x] Swagger respondendo em `/docs`, atendendo à validação por API/Swagger prevista no plano.
+- [x] 449 testes aprovados no total.
+
+**Portão do Marco 7:** contratos, testes arquiteturais e critérios do Core aprovados automaticamente. O Titan Livestock (Marco 8) permanece bloqueado até a validação manual do responsável.
+
+## Comandos para testar o Passo 7.10
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest tests/integration/test_core_proof_postgresql.py -v
+python -m uv run --locked pytest tests/architecture tests/api -v
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 5 testes da prova completa, 7 arquiteturais e 449 no total aprovados; banco em `20260722_0032 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 

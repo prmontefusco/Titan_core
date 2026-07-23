@@ -8,6 +8,7 @@ from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from apps.api.verification import router as verification_router
 from packages.core_domain import AuthenticatedPrincipal
 from packages.core_infrastructure.authentication import (
     AccessTokenValidationError,
@@ -49,6 +50,11 @@ app = FastAPI(
         "usePkceWithAuthorizationCodeGrant": True,
     },
 )
+
+
+# Verificação externa é deliberadamente anônima: verifica apenas o material que o
+# próprio chamador enviou e não consulta registro algum do Titan.
+app.include_router(verification_router)
 
 
 @lru_cache(maxsize=1)

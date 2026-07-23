@@ -15,6 +15,10 @@ from packages.core_application.document_service import (
     BlobStoragePort,
     DocumentService,
 )
+from packages.core_application.dossier_service import (
+    DossierRepositoryPort,
+    DossierService,
+)
 from packages.core_application.evaluation_service import (
     EvaluationRepositoryPort,
     PolicyEvaluationService,
@@ -52,6 +56,10 @@ from packages.core_application.integrity_checkpoint import (
     IntegrityCheckpointService,
     IntegrityCheckpointWriter,
 )
+from packages.core_application.nonconformity_service import (
+    NonConformityRepositoryPort,
+    NonConformityService,
+)
 from packages.core_application.organization_context import (
     IdentityAndAccessReader,
     OrganizationContextDenied,
@@ -71,10 +79,20 @@ from packages.core_application.outbox import (
     OutboxReconciliationService,
 )
 from packages.core_application.policy_service import PolicyRepositoryPort, PolicyService
+from packages.core_application.projection_service import (
+    ProjectionRebuildService,
+    ProjectionRepositoryPort,
+    ProjectionSourcePort,
+)
 from packages.core_application.provenance_service import (
     EventLookupPort,
     EvidenceLookupPort,
     ProvenanceService,
+)
+from packages.core_application.recall_service import (
+    AffectedDecisionLookupPort,
+    RecallResultRepositoryPort,
+    RecallService,
 )
 from packages.core_application.relation_service import (
     CrossOrganizationTraversalDenied,
@@ -96,6 +114,7 @@ from packages.core_application.timestamping import (
     TimestampValidation,
     TimestampValidationStatus,
 )
+from packages.core_application.verification_service import VerificationBundleService
 
 __all__ = [
     "OptimisticConcurrencyConflict",
@@ -125,6 +144,17 @@ __all__ = [
     "RelationService",
     "RelationRepositoryPort",
     "CrossOrganizationTraversalDenied",
+    "ProjectionRebuildService",
+    "ProjectionRepositoryPort",
+    "ProjectionSourcePort",
+    "NonConformityService",
+    "NonConformityRepositoryPort",
+    "RecallService",
+    "RecallResultRepositoryPort",
+    "AffectedDecisionLookupPort",
+    "DossierService",
+    "DossierRepositoryPort",
+    "VerificationBundleService",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",

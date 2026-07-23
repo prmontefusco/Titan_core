@@ -24,6 +24,11 @@ from packages.core_domain.decision import (
     DecisionResult,
     compute_decision_hash,
 )
+from packages.core_domain.dossier import (
+    DOSSIER_DOCUMENT_VERSION,
+    Dossier,
+    compute_dossier_hash,
+)
 from packages.core_domain.evaluation import (
     Evaluation,
     EvaluationOutcome,
@@ -50,6 +55,12 @@ from packages.core_domain.evidence import (
 )
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.memberships import Membership, MembershipStatus
+from packages.core_domain.nonconformity import (
+    NonConformity,
+    NonConformityOrigin,
+    NonConformityStatus,
+    NonConformityTransition,
+)
 from packages.core_domain.organization_context import (
     ExternalIdentity,
     ExternalIdentityStatus,
@@ -57,11 +68,28 @@ from packages.core_domain.organization_context import (
 )
 from packages.core_domain.organizations import Organization
 from packages.core_domain.policy import Policy, PolicyStatus
+from packages.core_domain.projections import (
+    ReferenceRole,
+    ReferencingKind,
+    ReverseReference,
+    compute_projection_digest,
+)
 from packages.core_domain.provenance import (
     ProvenanceEdge,
     ProvenanceNode,
     ProvenanceNodeType,
     ProvenanceTrace,
+)
+from packages.core_domain.recall import (
+    RecallDirection,
+    RecallGap,
+    RecallLimitReason,
+    RecallMode,
+    RecallPath,
+    RecallRequest,
+    RecallResult,
+    RecallStatus,
+    RecallStep,
 )
 from packages.core_domain.relations import UniversalRelation
 from packages.core_domain.rule import (
@@ -71,9 +99,54 @@ from packages.core_domain.rule import (
     RuleCondition,
     SeverityLevel,
 )
+from packages.core_domain.synchronization import (
+    BatchStructuralDefect,
+    DeviceClockReading,
+    OfflineOperation,
+    OperationManifestEntry,
+    SynchronizationBatch,
+    SynchronizationBatchResult,
+    SynchronizationBatchState,
+    SynchronizationConflict,
+    SynchronizationConflictReason,
+    SynchronizationResult,
+    SynchronizationResultStatus,
+    TimeConfidenceLevel,
+    compute_intent_digest,
+    compute_manifest_digest,
+)
 from packages.core_domain.users import User
+from packages.core_domain.verification import (
+    BUNDLE_FORMAT_VERSION,
+    BundleComponent,
+    BundleManifest,
+    BundleVerifier,
+    ComponentRequirement,
+    DimensionResult,
+    SignatureMaterial,
+    ValidationReport,
+    VerificationBundle,
+    VerificationDimension,
+    VerificationReasonCode,
+    VerificationStatus,
+    build_manifest,
+)
 
 __all__ = [
+    "BatchStructuralDefect",
+    "DeviceClockReading",
+    "OfflineOperation",
+    "OperationManifestEntry",
+    "SynchronizationBatch",
+    "SynchronizationBatchResult",
+    "SynchronizationBatchState",
+    "SynchronizationConflict",
+    "SynchronizationConflictReason",
+    "SynchronizationResult",
+    "SynchronizationResultStatus",
+    "TimeConfidenceLevel",
+    "compute_intent_digest",
+    "compute_manifest_digest",
     "CanonicalPayload",
     "ChangeKind",
     "Correction",
@@ -105,6 +178,39 @@ __all__ = [
     "DecisionResult",
     "compute_decision_hash",
     "UniversalRelation",
+    "ReverseReference",
+    "ReferencingKind",
+    "ReferenceRole",
+    "compute_projection_digest",
+    "NonConformity",
+    "NonConformityOrigin",
+    "NonConformityStatus",
+    "NonConformityTransition",
+    "RecallDirection",
+    "RecallGap",
+    "RecallLimitReason",
+    "RecallMode",
+    "RecallPath",
+    "RecallRequest",
+    "RecallResult",
+    "RecallStatus",
+    "RecallStep",
+    "Dossier",
+    "DOSSIER_DOCUMENT_VERSION",
+    "compute_dossier_hash",
+    "BundleComponent",
+    "BundleManifest",
+    "BundleVerifier",
+    "BUNDLE_FORMAT_VERSION",
+    "ComponentRequirement",
+    "DimensionResult",
+    "SignatureMaterial",
+    "ValidationReport",
+    "VerificationBundle",
+    "VerificationDimension",
+    "VerificationReasonCode",
+    "VerificationStatus",
+    "build_manifest",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",
