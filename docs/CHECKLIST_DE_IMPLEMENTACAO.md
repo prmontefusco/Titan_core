@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.7 e 7.9 implementados; 7.8 adiado por decisão | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | IMPLEMENTADO — 7.1 a 7.7, 7.9 e 7.10; 7.8 adiado por decisão | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1869,3 +1869,59 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 438 testes aprovados; banco em `20260722_0032 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.10 — Prova completa do Core
+
+- [x] Cenário fictício e genérico criado em `tests/integration/test_core_proof_postgresql.py`, encadeado contra o PostgreSQL autoritativo: autenticação → Organization → evento → evidência → genealogia → regra → avaliação → decisão → não conformidade → recall → dossiê → sincronização.
+- [x] Vocabulário sem vertical alguma: os sujeitos são `lote`, `insumo` e `remessa`. Escrever a prova com termos de gado esconderia justamente o acoplamento que ela existe para descartar.
+- [x] Cada elo alimenta o seguinte de verdade: a evidência assinada é a fonte do fato avaliado, a avaliação fundamenta a decisão, a decisão abre a não conformidade, a genealogia sustenta o recall e a operação offline sincronizada produz uma relação real do grafo.
+- [x] **Substituir providers falsos sem alterar o Core:** o mesmo `EvidenceService` assina com `SoftwareSigningProvider` e com um segundo provedor de algoritmo diferente, sem uma linha de mudança no Core, e a chave continua sendo a registrada pelo Core.
+- [x] **Adulterar cópias para testar integridade:** inverter a conclusão, trocar o fato que sustenta a reprovação e adulterar os bytes do componente do pacote são todos recusados — o dossiê pelo hash canônico e o `VerificationBundle` pelo verificador offline, sem consultar o Titan.
+- [x] **Repetir operações:** o reenvio do lote recupera o resultado por `OperationId` sem repetir o efeito oficial, com `RESULTADO_RECUPERADO` no resultado.
+- [x] **Isolamento entre duas Organizations:** role temporária `NOBYPASSRLS` percorre as **treze** tabelas do cenário no contexto da outra Organization e não enxerga nenhum registro. Provar uma tabela e presumir as outras seria exatamente a falha que este passo existe para descartar.
+- [x] Recall provado nas duas propriedades: travessia limpa é `CONCLUSIVO`; travessia que reencontra o sujeito declara `CICLO_DETECTADO` e rebaixa o resultado inteiro a `INCONCLUSIVO` — lacuna nunca vira silêncio, mesmo quando o reencontro é inofensivo.
+- [x] `VerificationBundle` só é declarado `VALIDA` com assinatura, política de verificação e âncora de confiança; sem âncora o veredito é `INDETERMINADA`, nunca válido por omissão.
+- [x] O cenário roda em transação revertida ao final: a prova não deixa resíduo no banco.
+
+#### Testes arquiteturais — correção de um teste que não verificava nada
+
+- [x] **Defeito encontrado e corrigido:** `test_core_does_not_import_verticals` varria `packages/core`, diretório que nunca existiu. O teste passava sem examinar um único arquivo desde que foi escrito. Agora percorre os pacotes reais (`core_domain`, `core_application`, `core_infrastructure`, `core_integrity`).
+- [x] `require_existing_root` acrescentada: qualquer teste de fronteira cujo alvo não exista passa a falhar alto. Renomear um pacote não pode transformar a verificação em aprovação automática.
+- [x] Fronteiras novas cobertas: Core Domain não importa Application (a dependência aponta para dentro); Core Application não conhece framework nem ORM; `shared_kernel` não depende de quem depende dele.
+- [x] Sete testes arquiteturais aprovados, sem nenhuma violação escondida pelo teste vazio anterior.
+
+#### Superfície HTTP pública no fechamento do Core
+
+- [x] `tests/api/test_core_public_surface.py` congela a superfície: `/health`, `/technical/authentication` e `POST /v1/verification/bundles`.
+- [x] Guarda explícita contra endpoint de domínio antes do **Passo 10.4**, que é onde o plano prevê a "API mínima do fluxo aprovado". Construir a API REST de domínio agora seria pular um marco e inventar requisito.
+- [x] Swagger respondendo em `/docs`, atendendo à validação por API/Swagger prevista no plano.
+- [x] 449 testes aprovados no total.
+
+**Portão do Marco 7:** contratos, testes arquiteturais e critérios do Core aprovados automaticamente. O Titan Livestock (Marco 8) permanece bloqueado até a validação manual do responsável.
+
+## Comandos para testar o Passo 7.10
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest tests/integration/test_core_proof_postgresql.py -v
+python -m uv run --locked pytest tests/architecture tests/api -v
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 5 testes da prova completa, 7 arquiteturais e 449 no total aprovados; banco em `20260722_0032 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+
+
+
+
+
+
+
+
+
+
