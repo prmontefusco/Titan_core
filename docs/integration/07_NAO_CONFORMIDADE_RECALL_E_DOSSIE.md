@@ -2,7 +2,7 @@
 
 Este documento especifica como o **Titan Core** trata pendências que exigem correção, navega a genealogia para localizar o que foi potencialmente afetado, e produz o dossiê autocontido que permite verificar uma decisão sem acesso ao banco.
 
-> **Estado:** cobre os passos **7.3**, **7.4** e **7.5**. Pacote de verificação, API de verificação externa, representação PDF e sincronização serão acrescentados conforme forem entregues.
+> **Estado:** cobre os passos **7.3**, **7.4** e **7.5**. O pacote de verificação e a API de verificação externa estão em **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**; a sincronização offline, em **[09_SINCRONIZACAO_OFFLINE.md](09_SINCRONIZACAO_OFFLINE.md)**. A representação PDF (passo 7.8) foi adiada por decisão registrada e não existe.
 
 Dois princípios atravessam o marco:
 
@@ -219,4 +219,4 @@ satisfeita = fato["payload"][condicao["payload_key"]] == condicao["expected_valu
 
 - **Isolamento**: `core_audit.nonconformities`, `core_audit.recalls` e `core_audit.dossiers` aplicam RLS por Organization.
 - **O PDF ainda não existe.** Conforme o plano, o PDF será uma representação posterior e independente do dossiê; validar o PDF nunca equivalerá a validar a cadeia Titan.
-- **Verificação externa por terceiros** (pacote autossuficiente com assinaturas, timestamps e material de revogação) é o Passo 7.6 e ainda não foi entregue.
+- **Verificação externa por terceiros** — pacote autossuficiente com assinaturas, material temporal e de revogação — foi entregue nos passos 7.6 e 7.7. Ver **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**.
