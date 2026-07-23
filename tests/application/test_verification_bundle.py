@@ -26,9 +26,12 @@ from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.verification import (
+    NORMATIVE_DIMENSION_ORDER,
     BundleVerifier,
     ComponentRequirement,
+    DimensionResult,
     SignatureMaterial,
+    ValidationReport,
     VerificationBundle,
     VerificationDimension,
     VerificationReasonCode,
@@ -115,9 +118,89 @@ def test_complete_bundle_verifies_as_valid_offline() -> None:
 
     assert relatorio.status is VerificationStatus.VALIDA
     assert relatorio.first_failure is None
+    assert relatorio.failures == ()
     # Nunca um booleano: cada dimensão responde por si.
-    assert len(relatorio.results) == 7
+    assert len(relatorio.results) == len(NORMATIVE_DIMENSION_ORDER)
     assert relatorio.explain()
+
+    # A dimensão declarativa torna visível o que o modo offline não faz, sem
+    # rebaixar o agregado por não ser obrigatória.
+    atual = relatorio.result_for(VerificationDimension.REVOGACAO_ATUAL)
+    assert atual is not None
+    assert atual.status is VerificationStatus.NAO_EXECUTADA
+
+
+def test_unsupported_algorithm_never_yields_a_valid_aggregate() -> None:
+    """A falha lógica que a revisão da ADR-0039 flagrou: um pacote não pode ser
+    declarado válido sem que sua assinatura tenha sido verificada."""
+    bundle = VerificationBundleService().build_from_dossier(
+        dossier=_dossie(),
+        audience="auditoria",
+        created_at=AGORA,
+        signature=SignatureMaterial(
+            key_id="chave-institucional-1",
+            algorithm="ALGORITMO-EXOTICO-2048",
+            profile="INSTITUTIONAL_SIGNATURE",
+            signed_digest="",
+            signature_value="assinatura-de-teste",
+            signed_at=AGORA,
+            revocation_material=("crl",),
+        ),
+        verification_policy={"perfil_minimo": "INSTITUTIONAL_SIGNATURE"},
+    )
+    relatorio = BundleVerifier().verify(bundle, verified_at=AGORA, trust_anchors=ANCORAS)
+
+    assinatura = relatorio.result_for(VerificationDimension.ASSINATURA)
+    assert assinatura is not None
+    # Tentativa sem capacidade é indeterminação, não "não executada".
+    assert assinatura.status is VerificationStatus.INDETERMINADA
+    assert assinatura.reason_code is VerificationReasonCode.ALGORITMO_NAO_SUPORTADO_PELO_VERIFICADOR
+    assert relatorio.status is VerificationStatus.INDETERMINADA
+
+
+def test_mandatory_dimension_not_executed_forces_indeterminate_aggregate() -> None:
+    """Defesa redundante: mesmo que uma obrigatória chegue a NAO_EXECUTADA por
+    outro caminho, o agregado não pode virar válido."""
+    bundle = _pacote_completo()
+    base = BundleVerifier().verify(bundle, verified_at=AGORA, trust_anchors=ANCORAS)
+    assert base.status is VerificationStatus.VALIDA
+
+    forjado = ValidationReport(
+        bundle_id=base.bundle_id,
+        verified_at=base.verified_at,
+        results=tuple(
+            DimensionResult(
+                dimension=r.dimension,
+                status=(
+                    VerificationStatus.NAO_EXECUTADA
+                    if r.dimension is VerificationDimension.ASSINATURA
+                    else r.status
+                ),
+                reason_code=r.reason_code,
+                detail=r.detail,
+                failure_point=r.failure_point,
+            )
+            for r in base.results
+        ),
+    )
+    assert forjado.status is VerificationStatus.INDETERMINADA
+
+
+def test_failures_only_lists_invalid_dimensions() -> None:
+    bundle = _pacote_completo()
+    sem_dossie = {k: v for k, v in bundle.payloads.items() if k != DOSSIER_COMPONENT}
+    relatorio = BundleVerifier().verify(
+        VerificationBundle(
+            manifest=bundle.manifest, payloads=sem_dossie, signature=bundle.signature
+        ),
+        verified_at=AGORA,
+        trust_anchors=ANCORAS,
+    )
+
+    # Agregado indeterminado sem dimensão inválida: failures vazio não é omissão.
+    assert relatorio.status is VerificationStatus.INDETERMINADA
+    assert relatorio.failures == ()
+    assert relatorio.first_failure is None
 
 
 def test_bundle_travels_and_is_verified_without_titan() -> None:

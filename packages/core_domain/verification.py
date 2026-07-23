@@ -29,22 +29,57 @@ _SERIALIZER = CanonicalSerializer()
 
 
 class VerificationStatus(Enum):
-    VALIDA = "valida"
-    INVALIDA = "invalida"
-    INDETERMINADA = "indeterminada"
+    """Cinco estados. `INDETERMINADA` e `NAO_EXECUTADA` não devem ser fundidas:
+    a primeira tentou avaliar e não concluiu; a segunda sequer fazia parte do modo.
+    """
+
+    VALIDA = "VALIDA"
+    INVALIDA = "INVALIDA"
+    INDETERMINADA = "INDETERMINADA"
+    NAO_APLICAVEL = "NAO_APLICAVEL"
+    NAO_EXECUTADA = "NAO_EXECUTADA"
 
 
 class VerificationDimension(Enum):
     """Cada dimensão responde por si; não existe veredito único e opaco."""
 
-    ESTRUTURA = "estrutura"
-    SERIALIZACAO = "serializacao"
-    INTEGRIDADE = "integridade"
-    ASSINATURA = "assinatura"
-    TEMPORAL = "temporal"
-    CADEIA = "cadeia"
-    REVOGACAO = "revogacao"
-    COBERTURA = "cobertura"
+    ESTRUTURA = "ESTRUTURA"
+    SERIALIZACAO = "SERIALIZACAO"
+    INTEGRIDADE = "INTEGRIDADE"
+    ASSINATURA = "ASSINATURA"
+    TEMPORAL = "TEMPORAL"
+    REVOGACAO = "REVOGACAO"
+    COBERTURA = "COBERTURA"
+    # Declarativa: existe para tornar visível o que o modo offline não faz.
+    REVOGACAO_ATUAL = "REVOGACAO_ATUAL"
+
+
+# Ordem normativa pública e versionada. `first_failure` segue esta ordem, e não a
+# ordem interna de execução, para que otimização ou paralelização não alterem a
+# resposta.
+NORMATIVE_DIMENSION_ORDER: tuple[VerificationDimension, ...] = (
+    VerificationDimension.ESTRUTURA,
+    VerificationDimension.SERIALIZACAO,
+    VerificationDimension.INTEGRIDADE,
+    VerificationDimension.ASSINATURA,
+    VerificationDimension.TEMPORAL,
+    VerificationDimension.REVOGACAO,
+    VerificationDimension.COBERTURA,
+    VerificationDimension.REVOGACAO_ATUAL,
+)
+
+# Dimensão obrigatória não avaliada nunca produz agregado válido.
+MANDATORY_DIMENSIONS: frozenset[VerificationDimension] = frozenset(
+    {
+        VerificationDimension.ESTRUTURA,
+        VerificationDimension.SERIALIZACAO,
+        VerificationDimension.INTEGRIDADE,
+        VerificationDimension.ASSINATURA,
+        VerificationDimension.TEMPORAL,
+        VerificationDimension.REVOGACAO,
+        VerificationDimension.COBERTURA,
+    }
+)
 
 
 class ComponentRequirement(Enum):
@@ -67,6 +102,9 @@ class VerificationReasonCode(Enum):
     ASSINATURA_NAO_CONFERE = "assinatura_nao_confere"
     MATERIAL_AUSENTE = "material_ausente"
     ESCOPO_NAO_COMPROVADO = "escopo_nao_comprovado"
+    ALGORITMO_NAO_SUPORTADO_PELO_VERIFICADOR = "algoritmo_nao_suportado_pelo_verificador"
+    MODO_NAO_CONSULTA_FONTES_EXTERNAS = "modo_nao_consulta_fontes_externas"
+    SEM_MECANISMO_DE_REVOGACAO_APLICAVEL = "sem_mecanismo_de_revogacao_aplicavel"
 
 
 def compute_digest(content: bytes) -> str:
@@ -226,18 +264,45 @@ class ValidationReport:
 
     @property
     def status(self) -> VerificationStatus:
-        """Violação determinística prevalece; na dúvida, indeterminada."""
-        estados = {r.status for r in self.results}
+        """Agregado determinístico e versionado sobre as dimensões obrigatórias.
+
+        Nenhuma dimensão obrigatória não avaliada produz agregado válido. Sem essa
+        regra, um pacote poderia ser declarado válido sem que sua assinatura
+        tivesse sido verificada — o pior erro possível neste contrato.
+        """
+        obrigatorias = [r for r in self.results if r.dimension in MANDATORY_DIMENSIONS]
+        estados = {r.status for r in obrigatorias}
+
         if VerificationStatus.INVALIDA in estados:
             return VerificationStatus.INVALIDA
         if VerificationStatus.INDETERMINADA in estados:
             return VerificationStatus.INDETERMINADA
+        if VerificationStatus.NAO_EXECUTADA in estados:
+            return VerificationStatus.INDETERMINADA
+        if VerificationStatus.NAO_APLICAVEL in estados:
+            # Inaplicabilidade de dimensão obrigatória exige permissão do perfil;
+            # sem ela, o resultado não pode ser afirmado como válido.
+            return VerificationStatus.INDETERMINADA
         return VerificationStatus.VALIDA
 
     @property
+    def failures(self) -> tuple[DimensionResult, ...]:
+        """Somente dimensões INVALIDA, na ordem normativa.
+
+        Indeterminação não é falha e não é classificada artificialmente como tal.
+        """
+        por_dimensao = {r.dimension: r for r in self.results}
+        return tuple(
+            por_dimensao[d]
+            for d in NORMATIVE_DIMENSION_ORDER
+            if d in por_dimensao and por_dimensao[d].status is VerificationStatus.INVALIDA
+        )
+
+    @property
     def first_failure(self) -> DimensionResult | None:
-        """Primeira falha determinística, com o ponto exato."""
-        return next((r for r in self.results if r.status is VerificationStatus.INVALIDA), None)
+        """Primeira falha segundo a ordem normativa pública, não a de execução."""
+        falhas = self.failures
+        return falhas[0] if falhas else None
 
     def result_for(self, dimension: VerificationDimension) -> DimensionResult | None:
         return next((r for r in self.results if r.dimension is dimension), None)
@@ -258,6 +323,9 @@ class BundleVerifier:
     """
 
     known_serializations = frozenset({CanonicalSerializer.version})
+    # Allowlist do contrato. O algoritmo efetivo é a interseção entre o declarado
+    # pelo pacote e esta lista: nunca é escolhido por dado que o pacote controla.
+    allowed_algorithms = frozenset({"SHA256", "ED25519", "ECDSA_P256"})
 
     def verify(
         self,
@@ -273,6 +341,7 @@ class BundleVerifier:
             self._check_temporal(bundle),
             self._check_revocation(bundle),
             self._check_coverage(bundle),
+            self._check_current_revocation(),
         ]
         return ValidationReport(
             bundle_id=bundle.manifest.bundle_id,
@@ -406,6 +475,22 @@ class BundleVerifier:
                 ),
             )
 
+        # Motor sem capacidade para o algoritmo não é pacote malformado nem
+        # dimensão fora do modo: houve tentativa de avaliação sem capacidade, que
+        # é exatamente indeterminação. Classificá-la como não executada abriria
+        # caminho para agregado válido sem assinatura verificada.
+        if assinatura.algorithm.strip().upper() not in self.allowed_algorithms:
+            return DimensionResult(
+                dimension=VerificationDimension.ASSINATURA,
+                status=VerificationStatus.INDETERMINADA,
+                reason_code=(VerificationReasonCode.ALGORITMO_NAO_SUPORTADO_PELO_VERIFICADOR),
+                detail=(
+                    f"Algoritmo '{assinatura.algorithm}' não está na allowlist deste "
+                    "verificador; a assinatura não pôde ser avaliada."
+                ),
+                failure_point=assinatura.algorithm,
+            )
+
         # Âncora incluída no pacote não é confiável por estar no pacote: a confiança
         # vem de fora, do verificador.
         if not trust_anchors or assinatura.key_id not in trust_anchors:
@@ -448,6 +533,22 @@ class BundleVerifier:
             detail=(
                 f"Assinatura confere para o perfil '{assinatura.profile}' segundo a "
                 "âncora fornecida ao verificador."
+            ),
+        )
+
+    def _check_current_revocation(self) -> DimensionResult:
+        """Estado atual nunca é consultado no modo offline — e isso é declarado.
+
+        Tornar visível o que não foi feito impede que alguém leia o agregado como
+        se o estado atual tivesse sido confirmado.
+        """
+        return DimensionResult(
+            dimension=VerificationDimension.REVOGACAO_ATUAL,
+            status=VerificationStatus.NAO_EXECUTADA,
+            reason_code=VerificationReasonCode.MODO_NAO_CONSULTA_FONTES_EXTERNAS,
+            detail=(
+                "O modo de verificação é hermético e não consulta fontes externas; "
+                "o estado atual de revogação não foi avaliado."
             ),
         )
 

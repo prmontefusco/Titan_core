@@ -565,9 +565,23 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** verificar o pacote com ferramenta independente e sem Titan; remover material necessário e confirmar resultado `INDETERMINADA`; adulterar conteúdo e confirmar `INVÁLIDA` com ponto exato da falha.
 
-#### Passo 7.7 — API de verificação externa
+#### Passo 7.7 — API de verificação externa [x] CONCLUÍDO E TESTADO
 
-**Entrega:** contrato público que separa integridade, cadeia, assinatura, timestamp, revogação, perfil de confiança, lacunas e instante da verificação. Resultado nunca usa um único booleano nem afirma veracidade do conteúdo.
+**Portão cumprido:** a ADR-0010 exigia ADR de contratos antes de implementar URL, métodos e schemas públicos. A **ADR-0039** foi escrita, revisada e aceita antes do código.
+
+**Entrega:** `POST /v1/verification/bundles` em `apps/api/verification.py`, com o domínio estendido em `packages/core_domain/verification.py`. 391 testes automatizados aprovados.
+
+**Nenhuma dimensão obrigatória não avaliada produz agregado válido.** A revisão da ADR flagrou que `NAO_EXECUTADA` numa dimensão obrigatória permitiria declarar um pacote `VALIDA` sem verificar sua assinatura. Corrigido em duas frentes: algoritmo não suportado passou a `INDETERMINADA` (houve tentativa sem capacidade) e a regra do agregado fechou o caminho explicitamente.
+
+**Oito dimensões, cinco estados.** `REVOGACAO_ATUAL` é declarativa e sempre `NAO_EXECUTADA`: existe para tornar visível o que o modo offline não faz. `NAO_APLICAVEL` e `NAO_EXECUTADA` foram acrescentados ao domínio entregue no 7.6.
+
+**Ordem normativa pública:** `first_failure` segue ordem versionada, não a de execução, então paralelização não altera a resposta. `failures` lista somente `INVALIDA` — indeterminação não é classificada artificialmente como falha.
+
+**Honestidade sobre confiança:** a resposta declara `RESULT_DEPENDS_ON_VERIFIER_INSTANCE` e `SIGNATURE_VALID_ONLY_AGAINST_CALLER_SUPPLIED_ANCHOR`. A independência do Titan é propriedade do formato e do verificador local, não da API hospedada.
+
+**Erro de contrato separado de resultado:** `400` para JSON inválido ou chave duplicada, `422` para violação de schema ou pacote irrepresentável, `413` para corpo acima do limite, e `200` inclusive para `INVALIDA`.
+
+**Limites e privacidade:** corpo de 1 MiB, 32 componentes, profundidade 32, 8 âncoras; `Cache-Control: no-store`; âncora devolvida por fingerprint, nunca por valor; `detail` sanitizado sem caminho interno nem stack trace.
 
 **Validação manual:** verificar artefato íntegro, inválido e incompleto; confirmar que a resposta explica escopo, âncora de confiança, material utilizado, warnings e primeira falha detectada.
 

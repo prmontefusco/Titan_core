@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.6 implementados | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.7 implementados | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1805,6 +1805,34 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 370 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+### Passo 7.7 — API de verificação externa
+
+- [x] ADR-0039 escrita, revisada e **aceita antes do código**, cumprindo o portão da ADR-0010 que exigia contrato antes da implementação.
+- [x] Domínio estendido: `NAO_APLICAVEL` e `NAO_EXECUTADA` acrescentados a `VerificationStatus`; dimensão declarativa `REVOGACAO_ATUAL` sempre não executada; `NORMATIVE_DIMENSION_ORDER` e `MANDATORY_DIMENSIONS` criados.
+- [x] Regra do agregado corrigida: dimensão obrigatória `INDETERMINADA`, `NAO_EXECUTADA` ou `NAO_APLICAVEL` sem permissão nunca produz agregado válido.
+- [x] Algoritmo fora da allowlist produz `ASSINATURA = INDETERMINADA`, não erro de contrato e não `NAO_EXECUTADA`.
+- [x] `failures` lista somente dimensões `INVALIDA`; `first_failure` segue a ordem normativa pública.
+- [x] `POST /v1/verification/bundles` criado em `apps/api/verification.py`, hermético e sem consulta ao banco.
+- [x] `400` para JSON inválido e chave duplicada; `422` para schema e pacote irrepresentável; `413` para corpo acima do limite; `200` inclusive para `INVALIDA`.
+- [x] Limites de corpo, componentes, profundidade e âncoras aplicados; `Cache-Control: no-store`; âncora devolvida por fingerprint; `detail` sanitizado.
+- [x] Testes (`test_verification_api.py`, `test_verification_bundle.py`) aprovados, cobrindo íntegro, inválido, incompleto, algoritmo não suportado, âncora duplicada, profundidade excessiva e determinismo do relatório (391 testes no total).
+
+**Fora do escopo da aplicação:** rate limiting (`429`), terminação TLS e não captura de corpo por gateway, APM e tracing são responsabilidades de implantação, declaradas na ADR-0039 e não testáveis no nível do aplicativo.
+
+## Comandos para testar o Passo 7.7
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 391 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 
