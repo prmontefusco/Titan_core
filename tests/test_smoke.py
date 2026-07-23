@@ -21,4 +21,3 @@ def test_workspace_metadata_can_be_loaded() -> None:
         "sqlalchemy==2.0.51",
         "uvicorn==0.51.0",
     }
-
