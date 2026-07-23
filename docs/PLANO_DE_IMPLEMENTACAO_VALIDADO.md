@@ -485,9 +485,17 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** construir grafo fictício sem termos de vertical, consultar relações em datas diferentes e rejeitar travessia não autorizada entre Organizations.
 
-#### Passo 7.2 — Projeções reconstruíveis
+#### Passo 7.2 — Projeções reconstruíveis [x] CONCLUÍDO E TESTADO
 
-**Entrega:** projeção de leitura e referências reversas reconstruíveis a partir dos eventos, sem regras de negócio próprias.
+**Entrega:** `ReverseReference`, `ReferencingKind`, `ReferenceRole` e `compute_projection_digest` em `packages/core_domain/projections.py`; `ProjectionRebuildService` com `ProjectionSourcePort` e `ProjectionRepositoryPort` em `packages/core_application/projection_service.py`. Tabela `core_audit.reference_projection` com RLS (migration `20260722_0028`), derivada de `core_audit.domain_events` e `core_audit.relations`. 323 testes automatizados aprovados.
+
+**Reconstrutibilidade estrutural:** a chave primária é o próprio conteúdo derivado, sem identificador sorteado. Reconstruir produz linhas idênticas, e por isso a comparação entre reconstruções é exata em vez de aproximada. O digest ignora o instante de reconstrução, que descreve a execução e não o conteúdo.
+
+**Ausência de regra própria:** o serviço apenas indexa o que eventos e relações já declararam. Não interpreta, não decide e não é fonte de verdade — é isso que torna descartá-la e reconstruí-la uma operação segura, e não perda de dado.
+
+**Ordem estável:** as entradas são ordenadas por chave total antes de gravar, de modo que o conteúdo derivado não dependa da ordem em que o banco devolveu as linhas.
+
+**Detecção de defasagem:** `is_consistent_with_sources()` compara o gravado com o que as fontes produziriam agora, sem gravar nada.
 
 **Validação manual:** apagar somente a projeção em ambiente descartável, reconstruí-la e comparar o resultado; a fonte histórica deve permanecer intacta.
 

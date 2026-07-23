@@ -71,6 +71,11 @@ from packages.core_application.outbox import (
     OutboxReconciliationService,
 )
 from packages.core_application.policy_service import PolicyRepositoryPort, PolicyService
+from packages.core_application.projection_service import (
+    ProjectionRebuildService,
+    ProjectionRepositoryPort,
+    ProjectionSourcePort,
+)
 from packages.core_application.provenance_service import (
     EventLookupPort,
     EvidenceLookupPort,
@@ -125,6 +130,9 @@ __all__ = [
     "RelationService",
     "RelationRepositoryPort",
     "CrossOrganizationTraversalDenied",
+    "ProjectionRebuildService",
+    "ProjectionRepositoryPort",
+    "ProjectionSourcePort",
     "FactProviderPort",
     "FactService",
     "KeyProviderPort",

@@ -57,6 +57,12 @@ from packages.core_domain.organization_context import (
 )
 from packages.core_domain.organizations import Organization
 from packages.core_domain.policy import Policy, PolicyStatus
+from packages.core_domain.projections import (
+    ReferenceRole,
+    ReferencingKind,
+    ReverseReference,
+    compute_projection_digest,
+)
 from packages.core_domain.provenance import (
     ProvenanceEdge,
     ProvenanceNode,
@@ -105,6 +111,10 @@ __all__ = [
     "DecisionResult",
     "compute_decision_hash",
     "UniversalRelation",
+    "ReverseReference",
+    "ReferencingKind",
+    "ReferenceRole",
+    "compute_projection_digest",
     "Fact",
     "FactSnapshot",
     "CryptographicProfile",
