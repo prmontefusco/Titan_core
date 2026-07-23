@@ -114,13 +114,19 @@ def test_shared_kernel_does_not_import_core_or_apps() -> None:
 def test_core_does_not_import_verticals() -> None:
     """Nenhum pacote do Core conhece vertical alguma.
 
-    Antes esta verificação apontava para `packages/core`, que não existe, e por
-    isso passava sem examinar nenhum arquivo. Agora percorre os pacotes reais.
+    Examina se os pacotes do Core importam qualquer módulo de verticais
+    (ex: packages.livestock_domain, packages.livestock_application, etc).
     """
+    forbidden_verticals = (
+        "packages.verticals",
+        "packages.livestock_domain",
+        "packages.livestock_application",
+        "packages.livestock_infrastructure",
+    )
     violations = [
         violation
         for package in CORE_PACKAGES
-        for violation in violations_for(PACKAGES_ROOT / package, ("packages.verticals",))
+        for violation in violations_for(PACKAGES_ROOT / package, forbidden_verticals)
     ]
 
     assert not violations, "Titan Core importa módulos de verticais:\n" + "\n".join(violations)

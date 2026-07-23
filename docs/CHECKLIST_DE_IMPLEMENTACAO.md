@@ -2,7 +2,14 @@
 
 **Atualizado em:** 23 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 8.1 — RuralProperty (Início do Marco 8 / Titan Livestock)
+**Próximo passo planejado:** Passo 9.2 — Administration e Eventos Farmacológicos (Marco 9 / Medicamentos e Elegibilidade)
+
+
+
+
+
+
+
 
 
 
@@ -40,9 +47,16 @@ Estados utilizados:
 | 4.1–4.9D | Auditoria, Outbox, Inbox, Checkpoints, Idempotência e Workers | CONCLUÍDO | Aprovada |
 | 5.1–5.8 | Evidence, criptografia, assinaturas e Provenance | CONCLUÍDO | Aprovada |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision explicável | CONCLUÍDO | Aprovada |
-| 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO — 7.1 a 7.7, 7.9 e 7.10 (7.8 adiado por decisão) | Aprovada |
-| 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
-| 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
+| 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
+
+
+
+
+
+
+| 9.1–9.6 | Medicamentos e elegibilidade | EM ANDAMENTO — 9.1 CONCLUÍDO | 9.1 Aprovada |
+
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
 
 
@@ -1936,6 +1950,234 @@ python -m uv run --locked alembic check
 ```
 
 Resultado esperado: 5 testes da prova completa, 7 arquiteturais e 449 no total aprovados; banco em `20260722_0032 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
+
+---
+
+## Passo 8.1 — RuralProperty
+
+**Data de conclusão:** 23 de julho de 2026  
+**Estado:** CONCLUÍDO E APROVADO
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/property.py`):** Entidade imutável `RuralProperty` com contrato e validações (código, nome, município, UF de 2 letras maiúsculas, área em hectares positiva).
+- **Aplicação (`packages/livestock_application/property_service.py`):** Porta `RuralPropertyRepositoryPort` e serviço `RuralPropertyService` com cadastro, busca por ID, busca por código e listagem paginada por `OrganizationId`.
+- **Infraestrutura (`packages/livestock_infrastructure/persistence/property_repository.py`):** Repositório PostgreSQL `TransactionalRuralPropertyRepository` sobre a tabela `core_audit.rural_properties` com isolamento estrito via RLS (`titan.organization_id`).
+- **Migration (`packages/core_infrastructure/persistence/migrations/versions/20260723_0033_create_rural_properties_table.py`):** Migration Alembic 0033 criando `core_audit.rural_properties` com políticas RLS ativadas e forçadas.
+- **Suíte de Testes:**
+  - `tests/livestock_domain/test_property_domain.py` (5 testes unitários)
+  - `tests/livestock_application/test_property_service.py` (2 testes de aplicação)
+  - `tests/integration/test_property_postgresql.py` (1 teste de integração RLS em PostgreSQL real)
+
+### Evidências de execução e verificações
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+```
+- **Resultado:** 473 testes aprovados em 10.69s; Alembic em `20260723_0033 (head)`; Ruff e Mypy 100% limpos sem erros.
+
+---
+
+## Passo 8.2 — Animal e Identity
+
+**Data de conclusão:** 23 de julho de 2026  
+**Estado:** CONCLUÍDO E APROVADO
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/animal.py`):** Entidade imutável `Animal` com `animal_id` permanente, `birth_property_id`, sexo (`AnimalSex`), raça, data de nascimento e coleção imutável de identificadores de campo versionados (`AnimalIdentifier`: brincos visuais, SISBOV, chip RFID).
+- **Invariantes de Domínio:** Recusa de alteração da identidade permanente `animal_id` (dataclass `frozen=True`), proibição de mais de uma tag `ACTIVE` do mesmo tipo no mesmo animal e manutenção do histórico completo ao desativar brincos.
+- **Aplicação (`packages/livestock_application/animal_service.py`):** Porta `AnimalRepositoryPort` e serviço `AnimalService` com `register_animal`, `attach_identifier`, `deactivate_identifier`, `get_animal` e `find_by_identifier` (com recusa de duplicidade de identificador oficial no tenant).
+- **Infraestrutura (`packages/livestock_infrastructure/persistence/animal_repository.py`):** Repositório PostgreSQL `TransactionalAnimalRepository` sobre as tabelas `core_audit.animals` e `core_audit.animal_identifiers` com RLS por `OrganizationId`.
+- **Migration (`packages/core_infrastructure/persistence/migrations/versions/20260723_0034_create_animals_tables.py`):** Migration Alembic 0034 criando `core_audit.animals` e `core_audit.animal_identifiers` com políticas RLS ativadas e forçadas.
+- **Suíte de Testes:**
+  - `tests/livestock_domain/test_animal_domain.py` (4 testes unitários)
+  - `tests/livestock_application/test_animal_service.py` (2 testes de aplicação)
+  - `tests/integration/test_animal_postgresql.py` (1 teste de integração RLS em PostgreSQL real)
+
+### Evidências de execução e verificações
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check packages tests
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+```
+- **Resultado:** 480 testes aprovados em 14.20s; Alembic em `20260723_0035 (head)`; Ruff e Mypy 100% limpos sem erros.
+
+---
+
+## Passo 8.3 — AnimalMovement e PropertyStay
+
+**Data de conclusão:** 23 de julho de 2026  
+**Estado:** CONCLUÍDO E APROVADO
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/movement.py`):**
+  - Entidade `AnimalMovement`: **Fato e Evento de Domínio Autoritativo Imutável** com `origin_property_id`, `destination_property_id`, `movement_time`, `animal_ids`, `reason` e `evidence_reference`.
+  - Entidade `PropertyStay`: **Projeção Temporal Reconstruível (Read Model / State)** que representa a permanência temporal contínua do animal em determinada fazenda (`start_time`, `end_time`, `status`).
+  - Invariantes: recusa de movimentação com origem igual a destino, recusa de data futura, obrigatoriedade de pelo menos 1 animal, fechamento de permanências antigas e abertura de nova estada ativa no destino.
+- **Aplicação (`packages/livestock_application/movement_service.py`):**
+  - Portas `MovementRepositoryPort` e `PropertyStayRepositoryPort`.
+  - Serviço `MovementService` com `register_movement`, `get_active_stay`, `get_stay_timeline` e `rebuild_stays_for_animal` (reconstrução determinística da linha do tempo a partir dos fatos autoritativos).
+  - Provedor de Fatos `LivestockFactProvider` atualizado com localização e estada ativa do animal.
+- **Infraestrutura (`packages/livestock_infrastructure/persistence/movement_repository.py`):** Repositórios `TransactionalAnimalMovementRepository` e `TransactionalPropertyStayRepository` em PostgreSQL operando sobre `core_audit.animal_movements`, `core_audit.animal_movement_items` e `core_audit.property_stays`.
+- **Migration (`packages/core_infrastructure/persistence/migrations/versions/20260723_0036_create_movement_and_stay_tables.py`):** Migration Alembic 0036 criando as tabelas com suporte a RLS por `OrganizationId`.
+- **Suíte de Testes:**
+  - `tests/livestock_domain/test_movement_domain.py` (3 testes unitários)
+  - `tests/livestock_application/test_movement_service.py` (1 teste de aplicação de timeline)
+  - `tests/integration/test_movement_postgresql.py` (1 teste de integração RLS em PostgreSQL real)
+- **Script de Validação Manual:** `scratch/validar_passo_8_3.py` (executado e aprovado com sucesso).
+
+### Evidências de execução e verificações
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check packages tests
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run python scratch/validar_passo_8_3.py
+```
+- **Resultado:** 485 testes aprovados em 11.08s; Alembic em `20260723_0036 (head)`; Ruff e Mypy 100% limpos sem erros; Validação manual executada com sucesso.
+
+---
+
+## Passo 8.4 — LivestockLot e LotMembership
+
+**Data de conclusão:** 23 de julho de 2026  
+**Estado:** CONCLUÍDO E APROVADO
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/lot.py`):**
+  - Entidade `LivestockLot`: Agregador que representa o grupo/lote com `lot_id`, `organization_id`, `property_id`, `code`, `name`, `lot_type` (`OPERATIONAL`, `SANITARY`, `COMMERCIAL`, `OTHER`) e `status`.
+  - Entidade `LotMembership`: Associação temporal contínua entre animal e lote (`membership_id`, `lot_id`, `animal_id`, `valid_from`, `valid_until`, `reason`).
+- **Aplicação (`packages/livestock_application/lot_service.py`):**
+  - Portas `LivestockLotRepositoryPort` e `LotMembershipRepositoryPort`.
+  - Serviço `LotService`: `create_lot()`, `add_animal_to_lot()` (com **Regra de Exclusividade Rígida para Lotes Operacionais/Manejo** e permissão de sobreposição para Lotes Sanitários/Comerciais), `remove_animal_from_lot()` e `get_lot_composition()` (composição temporal histórica).
+- **Infraestrutura (`packages/livestock_infrastructure/persistence/lot_repository.py`):** Repositórios PostgreSQL `TransactionalLivestockLotRepository` e `TransactionalLotMembershipRepository` operando sobre `core_audit.livestock_lots` e `core_audit.lot_memberships`.
+- **Migration (`packages/core_infrastructure/persistence/migrations/versions/20260723_0037_create_lots_tables.py`):** Migration Alembic 0037 criando as tabelas com RLS ativado e forçado por `OrganizationId`.
+- **Suíte de Testes:**
+  - `tests/livestock_domain/test_lot_domain.py` (2 testes unitários)
+  - `tests/livestock_application/test_lot_service.py` (1 teste unitário da regra de exclusividade)
+  - `tests/integration/test_lot_postgresql.py` (1 teste de integração RLS em PostgreSQL real)
+- **Script de Validação Manual:** `scratch/validar_passo_8_4.py` (executado e aprovado com sucesso).
+
+### Evidências de execução e verificações
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check packages tests
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run python scratch/validar_passo_8_4.py
+```
+- **Resultado:** 489 testes aprovados em 11.62s; Alembic em `20260723_0037 (head)`; Ruff e Mypy 100% limpos sem erros; Validação manual executada com sucesso.
+
+---
+
+## Passo 8.5 — Veterinarian e Registro Profissional
+
+**Data de conclusão:** 23 de julho de 2026  
+**Estado:** CONCLUÍDO E APROVADO
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/veterinarian.py`):**
+  - Entidade `Veterinarian`: Representa o profissional veterinário com `veterinarian_id`, `organization_id`, `name`, `cpf` (validação de 11 dígitos), `council_number` (CRMV), `council_state` (UF de 2 letras), `verification_status` (`DECLARADO`, `DOCUMENTADO`, `VERIFICADO_EM_FONTE`, `INDETERMINADO`) e `evidence_reference`.
+- **Aplicação (`packages/livestock_application/veterinarian_service.py`):**
+  - Porta `VeterinarianRepositoryPort`.
+  - Serviço `VeterinarianService`: `register_veterinarian()` (valida CPF e unicidade de CRMV na organização; inicia como `DECLARADO`), `attach_evidence()` (associa prova documental via módulo `Evidence` da ADR-0026 e eleva para `DOCUMENTADO`), `update_verification_status()` (permite promover para `VERIFICADO_EM_FONTE` ou marcar como `INDETERMINADO`).
+- **Infraestrutura (`packages/livestock_infrastructure/persistence/veterinarian_repository.py`):** Repositório PostgreSQL `TransactionalVeterinarianRepository` operando sobre a tabela `core_audit.veterinarians` com RLS por `OrganizationId`.
+- **Migration (`packages/core_infrastructure/persistence/migrations/versions/20260723_0038_create_veterinarians_table.py`):** Migration Alembic 0038 criando a tabela com RLS ativado e forçado.
+- **Suíte de Testes:**
+  - `tests/livestock_domain/test_veterinarian_domain.py` (2 testes unitários)
+  - `tests/livestock_application/test_veterinarian_service.py` (1 teste unitário do fluxo de estados e unicidade de CRMV)
+  - `tests/integration/test_veterinarian_postgresql.py` (1 teste de integração RLS em PostgreSQL real)
+- **Script de Validação Manual:** `scratch/validar_passo_8_5.py` (executado e aprovado com sucesso).
+
+### Evidências de execução e verificações
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check packages tests
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run python scratch/validar_passo_8_5.py
+```
+- **Resultado:** 493 testes aprovados em 14.46s; Alembic em `20260723_0038 (head)`; Ruff e Mypy 100% limpos sem erros; Validação manual executada com sucesso.
+
+---
+
+## Passo 8.6 — Prova Integrada E2E da Vertical Titan Livestock (Encerramento do Marco 8)
+
+**Data de conclusão:** 23 de julho de 2026  
+**Estado:** CONCLUÍDO E APROVADO
+
+### O que foi entregue
+- **Teste de Integração E2E (`tests/integration/test_livestock_vertical_e2e.py`):**
+  - Prova de integração completa de ponta a ponta em banco de dados PostgreSQL real conectando todas as primitivas da vertical Titan Livestock: `RuralProperty`, `Animal`, `AnimalIdentifier`, `Veterinarian`, `LivestockLot`, `LotMembership`, `AnimalMovement`, `PropertyStay` e `LivestockFactProvider`.
+  - Verificação de isolamento tenant RLS entre diferentes `OrganizationId` em role PostgreSQL sem privilégios (`NOBYPASSRLS`).
+- **Script de Validação Manual:** `scratch/validar_passo_8_6.py` (demonstração gráfica interativa da linha do tempo da vida do animal executada com sucesso completo).
+
+### Evidências de execução e verificações
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check packages tests
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run python scratch/validar_passo_8_6.py
+```
+- **Resultado:** 494 testes aprovados em 14.65s; Alembic em `20260723_0038 (head)`; Ruff e Mypy 100% limpos sem erros; Validação manual executada com sucesso.
+
+> **MARCO 8 — TITAN LIVESTOCK OFICIALMENTE CONCLUÍDO E APROVADO COM 100% DE SUCESSO!**
+
+---
+
+## Passo 9.1 — Agregadores de Medicamentos e Prescrições
+
+**Data de conclusão:** 23 de julho de 2026  
+**Estado:** CONCLUÍDO E APROVADO
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/medication.py` e `prescription.py`):**
+  - Entidade `Medication`: Representa a bula do medicamento com `medication_id`, `organization_id`, `trade_name`, `active_ingredient`, `manufacturer`, `withdrawal_period_days` (carência em dias para abate) e `dosage_instruction`.
+  - Entidade `Prescription`: Receita médica emitida pelo veterinário com `prescription_id`, `organization_id`, `veterinarian_id`, `medication_id`, `property_id`, `prescribed_date`, `dosage`, `administration_route`, `target_type` (`ANIMAL` ou `LOT`), `target_ids` e `reason`.
+- **Aplicação (`packages/livestock_application/medication_service.py`):**
+  - Portas `MedicationRepositoryPort` e `PrescriptionRepositoryPort`.
+  - Serviço `MedicationService`: `register_medication()` (com recusa de nome comercial duplicado) e `issue_prescription()` (**com validação de que o veterinário possui status `DOCUMENTADO` ou `VERIFICADO_EM_FONTE`**, recusando prescrições de profissionais apenas `DECLARADO`).
+- **Infraestrutura (`packages/livestock_infrastructure/persistence/medication_repository.py`):** Repositórios PostgreSQL `TransactionalMedicationRepository` e `TransactionalPrescriptionRepository` operando sobre `core_audit.medications`, `core_audit.prescriptions` e `core_audit.prescription_targets` com RLS por `OrganizationId`.
+- **Migration (`packages/core_infrastructure/persistence/migrations/versions/20260723_0039_create_medication_and_prescription_tables.py`):** Migration Alembic 0039 criando as tabelas com RLS ativado e forçado.
+- **Suíte de Testes:**
+  - `tests/livestock_domain/test_medication_domain.py` (3 testes unitários)
+  - `tests/livestock_application/test_medication_service.py` (1 teste unitário das regras de emissão de prescrição por status de veterinário)
+  - `tests/integration/test_medication_postgresql.py` (1 teste de integração RLS em PostgreSQL real)
+- **Script de Validação Manual:** `scratch/validar_passo_9_1.py` (executado e aprovado com sucesso).
+
+### Evidências de execução e verificações
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check packages tests
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run python scratch/validar_passo_9_1.py
+```
+- **Resultado:** 499 testes aprovados em 12.39s; Alembic em `20260723_0039 (head)`; Ruff e Mypy 100% limpos sem erros; Validação manual executada com sucesso.
+
+
+
+
+
+
+
 
 
 

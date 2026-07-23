@@ -605,39 +605,78 @@ Cada item abaixo é um passo independente; não devem ser implementados juntos.
 
 **Validação manual:** substituir providers falsos sem alterar o Core, adulterar cópias para testar integridade, repetir operações e comprovar isolamento entre duas Organizations.
 
-**Portão:** Titan Livestock não começa enquanto todos os contratos, testes arquiteturais e critérios do Core não forem aprovados.
+**Portão:** Titan Livestock não começa enquanto todos os contratos, testes arquiteturais e critérios do Core não forem aprovados. (Passos 0.1 a 7.10 CONCLUÍDOS E APROVADOS em 23/07/2026. Portão satisfeito).
 
-### Marco 8 — Titan Livestock básico
+### Marco 8 — Fundação Titan Livestock (Detalhamento Arquitetural)
+
+#### Passo 8.0 — Fronteira da vertical e contratos com o Core
+
+**Entrega:** especificação formal e teste arquitetural garantindo a direção de dependências (`livestock` → `core`), namespaces dos identificadores (`rural_property`, `animal`, `animal_identifier`, `animal_movement`, `property_stay`, `livestock_lot`, `veterinarian`), tabela e schema PostgreSQL `core_audit`, regras RLS, política de correção por eventos e publicação de fatos pecuários via `FactProviderPort` para o Core.
+
+**Fora de escopo:** GTA oficial/estadual, webservice SISBOV federal, medicamentos (Marco 9), carência farmacológica (Marco 9), leitores RFID físicos/IoT, compliance ambiental com CAR governamental e interface web.
+
+**Validação manual:** executar teste de barreira arquitetural comprovando que `packages/core_*` não possui nenhuma importação ou menção aos módulos de `packages/livestock_*`.
 
 #### Passo 8.1 — RuralProperty
 
-**Entrega:** propriedade rural como conceito da vertical, sempre pertencente a uma Organization.
+**Entrega:** agregado `RuralProperty` com `RuralPropertyId` (`TypedId`) estável e imutável, propriedade por `OrganizationId`, nome/referência operacional, inscrição estadual/código versionado, município, estado e área declarada em hectares. Distinção clara entre a identidade da propriedade (`RuralPropertyId`) e seus atributos mutáveis/documentos (nome, CAR, inscrição estadual), permitindo correções auditáveis sem alterar a identidade permanente.
 
-**Validação manual:** criar, consultar e impedir acesso cruzado; revisar identidade estável.
+**Validação manual:**
+- Duas `Organizations` não enxergam a mesma propriedade via RLS PostgreSQL;
+- Nome ou documentos podem ser corrigidos via evento auditável sem alterar o `RuralPropertyId`;
+- Identificador externo duplicado no mesmo namespace/tenant é recusado;
+- Geolocalização ausente não é inventada;
+- Criação e alteração produzem eventos de domínio auditáveis (`PropertyRegistered`).
 
-#### Passo 8.2 — Animal e Identity
+#### Passo 8.2 — Animal e AnimalIdentity
 
-**Entrega:** animal com identidade permanente e identificadores versionados, sem implementar movimentação.
+**Entrega:** agregado `Animal` com `animal_id` permanente e imutável (`TypedId`), pertencente a uma `OrganizationId`, data de nascimento declarada/estimada, sexo, raça e lista imutável de `AnimalIdentifier` (brinco visual, RFID, SISBOV, etc.). Distinção estrita entre `animal_id` (identidade permanente) e `AnimalIdentifier` (tag de campo). Se um brinco cair ou for substituído, a tag antiga recebe `state = DEACTIVATED` com timestamp e a nova é anexada como `ACTIVE`, mantendo a história auditável completa sem alterar o `animal_id`.
 
-**Validação manual:** cadastrar animal, tentar duplicar identidade e alterar identidade permanente; operações inválidas devem falhar.
+**Validação manual:**
+- Cadastrar animal e verificar `animal_id` imutável;
+- Substituir brinco antigo por novo mantendo histórico de tags (`DEACTIVATED` vs `ACTIVE`);
+- Rejeitar tentativa de alteração direta do `animal_id`;
+- Rejeitar duas tags `ACTIVE` do mesmo tipo no mesmo animal;
+- Rejeitar brinco oficial duplicado na mesma organização.
 
 #### Passo 8.3 — AnimalMovement e PropertyStay
 
-**Entrega:** movimentação que produz permanências temporais sem sobrescrever o histórico.
+**Entrega:** 
+- `AnimalMovement`: **Fato e Evento de Domínio Autoritativo Imutável** (`origin_property_id`, `destination_property_id`, `movement_time`, `animals`).
+- `PropertyStay`: **Projeção Temporal Reconstruível (Read Model / State)** derivada da sequência histórica de `AnimalMovement`.
+Se um movimento for corrigido ou inserido historicamente, as permanências (`PropertyStay`) são reconstruídas deterministicamente. Representação explícita de lacunas históricas como `UNKNOWN` (nunca preenchidas silenciosamente).
 
-**Validação manual:** mover entre propriedades, visualizar timeline e rejeitar intervalos impossíveis.
+**Validação manual:**
+- Registrar movimentação entre fazendas e validar reconstrução determinística de `PropertyStay`;
+- Rejeitar movimentação com destino igual à origem;
+- Rejeitar movimento anterior ao nascimento ou com intervalo invertido;
+- Rejeitar duas permanências ativas simultâneas para o mesmo animal;
+- Confirmar que movimentação por organização não autorizada é bloqueada por RLS.
 
 #### Passo 8.4 — LivestockLot e LotMembership
 
-**Entrega:** lote com identidade própria e composição temporal.
+**Entrega:** agregado `LivestockLot` com `lot_id` próprio e composição temporal `LotMembership` (`valid_from`, `valid_until`, `lot_type`). Exclusividade parametrizada por `lot_type`: lotes operacionais/de manejo são exclusivos (um animal não pode estar em dois lotes operacionais ao mesmo tempo), enquanto lotes sanitários ou comerciais permitem sobreposição com lotes operacionais.
 
-**Validação manual:** incluir/remover animal, consultar composição em datas diferentes e preservar associações antigas.
+**Validação manual:**
+- Incluir e remover animais em lotes operacionais e sanitários;
+- Consultar composição de lotes em datas passadas (histórico temporal);
+- Confirmar que sobreposição de lotes operacionais é recusada, mas sobreposição entre lote sanitário e operacional é permitida.
 
 #### Passo 8.5 — Veterinarian
 
-**Entrega:** identidade profissional mínima necessária ao fluxo farmacológico, sem criar funcionalidades clínicas adicionais.
+**Entrega:** identidade profissional mínima necessária ao fluxo farmacológico com estados explícitos de verificação (`DECLARADO`, `DOCUMENTADO`, `VERIFICADO_EM_FONTE`, `INDETERMINADO`), evitando alegar validação externa junto ao CRMV enquanto não houver integração autorizada.
 
-**Validação manual:** cadastrar e vincular ao ato autorizado; rejeitar registro profissional inválido conforme regra aprovada.
+**Validação manual:**
+- Cadastrar veterinário com CRMV declarada e estado `DECLARADO`;
+- Anexar documento de comprovação alterando estado para `DOCUMENTADO`;
+- Vincular a ato sanitário/autorização sem prometer integração externa fictícia.
+
+#### Passo 8.6 — Prova Integrada do Titan Livestock
+
+**Entrega:** teste E2E e validação integrada da vertical simulando o ciclo completo (Org A cria fazenda, cadastra animal, atribui identidade, movimenta animal, cria lote operacional/sanitário, vincula veterinário declarado, consulta linha do tempo e reconstrói fatos) comprovando emissão de eventos Outbox, criação de evidências e **isolamento 100% estrito contra Org B via PostgreSQL RLS**.
+
+**Validação manual:** executar suíte de testes de integração e script de validação E2E comprovando todos os invariantes do Marco 8.
+
 
 ### Marco 9 — Fluxo farmacológico do MVP
 
