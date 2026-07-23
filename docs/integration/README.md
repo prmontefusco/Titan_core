@@ -54,6 +54,26 @@ Este diretório contém a documentação técnica oficial do **Titan Core**, det
    - Simulação e incidente
    - Dossiê autocontido e verificação offline por `titan-json-v1`
 
+8. **[08_VERIFICACAO_EXTERNA.md](08_VERIFICACAO_EXTERNA.md)**
+   - `VerificationBundle` autossuficiente, montado para viajar
+   - Verificador puro: sem rede, sem segredo e sem banco
+   - Oito dimensões, cinco estados e a regra do agregado
+   - `POST /v1/verification/bundles` e seus limites operacionais (ADR-0039)
+   - Por que a independência é propriedade do formato, não do serviço
+
+9. **[09_SINCRONIZACAO_OFFLINE.md](09_SINCRONIZACAO_OFFLINE.md)**
+   - `OfflineOperation` e o digest da intenção separado do envelope
+   - Relógio do Device como alegação, nunca prova temporal
+   - Lote, manifesto e detecção de adulteração entre retomadas
+   - Sete resultados individuais, idempotência e retomada sem duplicação
+   - Conflito explícito, sem last-write-wins
+
+10. **[10_PROVA_COMPLETA_DO_CORE.md](10_PROVA_COMPLETA_DO_CORE.md)**
+    - A cadeia de ponta a ponta que fecha o Marco 7
+    - Os quatro critérios de validação como testes executáveis
+    - Sete fronteiras arquiteturais verificadas
+    - Superfície HTTP pública congelada até o passo 10.4
+
 ---
 
 ## 🚀 Visão Geral Arquitetural de Integração
