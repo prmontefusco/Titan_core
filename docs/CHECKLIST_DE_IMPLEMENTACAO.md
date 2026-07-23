@@ -48,7 +48,7 @@ Estados utilizados:
 | 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
 | 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.7 implementados | Pendente |
+| 7.1–7.10 | Relações, recall, dossiê e prova do Core | EM ANDAMENTO — 7.1 a 7.7 e 7.9 implementados; 7.8 adiado por decisão | Pendente |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
@@ -1834,13 +1834,38 @@ python -m uv run --locked alembic check
 
 Resultado esperado: 391 testes aprovados; banco em `20260722_0031 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
+### Passo 7.9 — Synchronization Core
 
+- [x] Passo 7.8 (representação PDF) **deliberadamente adiado**, com decisão registrada: o cenário do Passo 7.10 não inclui PDF, e `PLANO_DE_IMPLEMENTACAO_VALIDADO.md` condiciona PAdES-LT/LTA a perfil jurídico aprovado, que não existe.
+- [x] Contratos criados em `packages/core_domain/synchronization.py`: `DeviceClockReading`, `OfflineOperation`, `OperationManifestEntry`, `SynchronizationBatch`, `SynchronizationConflict`, `SynchronizationResult` e `SynchronizationBatchResult`, com os estados públicos em português da ADR-0021.
+- [x] Digest da intenção separado do envelope: `compute_intent_digest` ignora OperationId, sequência local, relógio e tentativa, de modo que a mesma intenção recapturada produz o mesmo digest e o retry não duplica.
+- [x] Relógio do Device permanece alegação: `TimeConfidenceLevel` não converte relógio local em prova temporal, e `precedes` só responde dentro da mesma continuidade monotônica — fora dela devolve `None` em vez de inventar precedência.
+- [x] Manifesto detecta remoção, duplicação, substituição, alteração, Organization e Device divergentes e sequência fora da fronteira; `inspect` devolve todos os defeitos, não apenas o primeiro.
+- [x] Ordem física do lote não cria causalidade: `SynchronizationService` processa por dependência declarada, e a dependente enviada fisicamente antes da origem é aceita depois dela.
+- [x] Ciclo de dependências vira `CONFLITANTE` explícito, nunca pendência indefinida; dependência ausente, rejeitada ou em conflito permanece `DEPENDENCIA_PENDENTE` com o motivo nomeado.
+- [x] IdempotencyKey reutilizada com intenção divergente produz `CONFLITANTE` e **nunca** recupera nem associa o resultado anterior; a mesma intenção sob a mesma chave produz `DUPLICADA` sem repetir o efeito.
+- [x] Retomada é por operação, não por lote: a tentativa é do envelope, e o histórico append-only por tentativa preserva as decisões sucessivas em vez de reescrevê-las.
+- [x] `RESULTADO_DESCONHECIDO` exige prazo de reconciliação e não é reprocessado no reenvio, porque reprocessar poderia repetir um efeito que talvez já exista; o estado não implica ausência, sucesso ou falha.
+- [x] Conflito nunca é resolvido silenciosamente: não há last-write-wins, maior timestamp do Device nem último lote recebido; todo conflito carrega estado observado e alternativas.
+- [x] Rejeição, conflito e quarentena preservam a captura: a OfflineOperation é gravada mesmo sem efeito oficial.
+- [x] Tabelas `core_audit.offline_operations`, `core_audit.synchronization_results` e `core_audit.synchronization_batches` criadas com RLS e `FORCE ROW LEVEL SECURITY` na migration `20260722_0032`, com downgrade validado.
+- [x] Três invariantes repetidas como `CHECK` no banco: `ACEITA` sem efeito, `CONFLITANTE` sem conflito e `RESULTADO_DESCONHECIDO` sem prazo são recusados mesmo por escrita direta em SQL.
+- [x] Ausência deliberada de `UNIQUE (organization, idempotency_key)`: a segunda captura com intenção divergente precisa ser preservada para virar conflito explícito, e a constraint a apagaria em vez de explicá-la.
+- [x] Releitura devolve `StoredOfflineOperation` com o payload em bytes canônicos, sem reconstruir `CanonicalPayload`, respeitando o contrato do Passo 2.4 que impede construir payload a partir de bytes arbitrários.
+- [x] Testes de domínio (`test_synchronization_domain.py`), de aplicação (`test_synchronization_service.py`) e de integração PostgreSQL com RLS (`test_synchronization_postgresql.py`) aprovados, cobrindo a lista de testabilidade da ADR-0021 (438 testes no total).
 
+**Fora do escopo deste passo, deliberadamente:** `OfflineCapabilityProfile`, `OfflineSession`, `OfflineAuthorizationSnapshot`, `DeviceTrustAssessment` e `LocalPreview` não constam da entrega do Passo 7.9 e não foram antecipados. A admissão do Device existe como porta explícita (`DeviceAdmissionPort`) com implementação permissiva, para que o `DeviceTrustAssessment` futuro tenha onde entrar sem alterar o serviço. O estado `VALIDADO_PARCIALMENTE` permanece declarado e não produzido: validação e processamento ocorrem na mesma fronteira transacional.
 
+## Comandos para testar o Passo 7.9
 
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
 
-
-
-
-
-
+Resultado esperado: 438 testes aprovados; banco em `20260722_0032 (head)`; Alembic, Ruff e Mypy aprovados sem erros.

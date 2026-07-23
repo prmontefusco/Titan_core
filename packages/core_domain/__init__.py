@@ -99,6 +99,22 @@ from packages.core_domain.rule import (
     RuleCondition,
     SeverityLevel,
 )
+from packages.core_domain.synchronization import (
+    BatchStructuralDefect,
+    DeviceClockReading,
+    OfflineOperation,
+    OperationManifestEntry,
+    SynchronizationBatch,
+    SynchronizationBatchResult,
+    SynchronizationBatchState,
+    SynchronizationConflict,
+    SynchronizationConflictReason,
+    SynchronizationResult,
+    SynchronizationResultStatus,
+    TimeConfidenceLevel,
+    compute_intent_digest,
+    compute_manifest_digest,
+)
 from packages.core_domain.users import User
 from packages.core_domain.verification import (
     BUNDLE_FORMAT_VERSION,
@@ -117,6 +133,20 @@ from packages.core_domain.verification import (
 )
 
 __all__ = [
+    "BatchStructuralDefect",
+    "DeviceClockReading",
+    "OfflineOperation",
+    "OperationManifestEntry",
+    "SynchronizationBatch",
+    "SynchronizationBatchResult",
+    "SynchronizationBatchState",
+    "SynchronizationConflict",
+    "SynchronizationConflictReason",
+    "SynchronizationResult",
+    "SynchronizationResultStatus",
+    "TimeConfidenceLevel",
+    "compute_intent_digest",
+    "compute_manifest_digest",
     "CanonicalPayload",
     "ChangeKind",
     "Correction",

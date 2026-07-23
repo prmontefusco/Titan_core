@@ -42,6 +42,11 @@ from packages.core_infrastructure.persistence.projections import reference_proje
 from packages.core_infrastructure.persistence.recall import recalls_table
 from packages.core_infrastructure.persistence.relations import relations_table
 from packages.core_infrastructure.persistence.rule import rules_table
+from packages.core_infrastructure.persistence.synchronization import (
+    offline_operations_table,
+    synchronization_batches_table,
+    synchronization_results_table,
+)
 from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
 
 config = context.config
@@ -74,6 +79,9 @@ assert reference_projection_table.metadata is target_metadata
 assert nonconformities_table.metadata is target_metadata
 assert recalls_table.metadata is target_metadata
 assert dossiers_table.metadata is target_metadata
+assert offline_operations_table.metadata is target_metadata
+assert synchronization_results_table.metadata is target_metadata
+assert synchronization_batches_table.metadata is target_metadata
 
 MANAGED_SCHEMAS = frozenset({CORE_IDENTITY_SCHEMA, CORE_AUDIT_SCHEMA})
 
