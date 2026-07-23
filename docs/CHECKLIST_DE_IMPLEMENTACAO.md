@@ -1,8 +1,8 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 22 de julho de 2026  
+**Atualizado em:** 23 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 5.0 — Conclusão da Fase 4 / Fase 5
+**Próximo passo planejado:** Passo 8.1 — RuralProperty (Início do Marco 8 / Titan Livestock)
 
 
 
@@ -33,25 +33,18 @@ Estados utilizados:
 
 | Passo | Entrega | Estado | Validação manual |
 |---|---|---|---|
-| 0.1 | Confirmar fronteira do Titan Core | CONCLUÍDO | Aprovada |
-| 0.2 | Consolidar linguagem do domínio | CONCLUÍDO | Aprovada |
-| 0.3 | Resolver arquitetura e registrar ADRs | CONCLUÍDO | Aprovada |
-| 0.4 | Tornar comandos de desenvolvimento reproduzíveis | CONCLUÍDO | Aprovada |
-| 1.1 | Criar o workspace Python mínimo | CONCLUÍDO | Aprovada |
-| 1.2 | Configurar qualidade Python | CONCLUÍDO | Aprovada |
-| 1.3 | Criar aplicação FastAPI com health check | CONCLUÍDO | Aprovada |
-| 1.4 | Configurar infraestrutura local incremental | CONCLUÍDO — subtarefas 1.4A a 1.4E | Aprovada |
-| 1.5 | Configurar migrations e conexão PostgreSQL | CONCLUÍDO | Aprovada |
-| 1.6 | Configurar CI mínimo | IMPLEMENTADO | Pendente no GitHub |
-| 2.1–2.4 | Primitivas técnicas do Core | NÃO INICIADO | Pendente |
-| 3.1–3.7 | Identidade, autorização e isolamento | EM ANDAMENTO — 3.1 a 3.6 aprovados | Pendente |
-| 4.1–4.8 | Auditoria, integridade e confiabilidade | NÃO INICIADO | Pendente |
-| 5.1–5.8 | Evidence, criptografia e Provenance | CONCLUÍDO (5.1 a 5.8 implementados) | Pendente |
-| 6.1–6.6 | Policy, Rule, Evaluation e Decision | CONCLUÍDO — 6.1 a 6.6 implementados | Pendente |
-| 7.1–7.10 | Relações, recall, dossiê e prova do Core | IMPLEMENTADO — 7.1 a 7.7, 7.9 e 7.10; 7.8 adiado por decisão | Pendente |
+| 0.1–0.4 | Definições de fronteira, linguagem, ADRs e comandos | CONCLUÍDO | Aprovada |
+| 1.1–1.6 | Workspace, qualidade, FastAPI, Docker, PostgreSQL e CI | CONCLUÍDO | Aprovada |
+| 2.1–2.4 | Primitivas técnicas do Core (ID, tempo, serialização, payload) | CONCLUÍDO | Aprovada |
+| 3.1–3.7 | Identidade, autorização, RLS, OIDC e isolamento | CONCLUÍDO | Aprovada |
+| 4.1–4.9D | Auditoria, Outbox, Inbox, Checkpoints, Idempotência e Workers | CONCLUÍDO | Aprovada |
+| 5.1–5.8 | Evidence, criptografia, assinaturas e Provenance | CONCLUÍDO | Aprovada |
+| 6.1–6.6 | Policy, Rule, Evaluation e Decision explicável | CONCLUÍDO | Aprovada |
+| 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO — 7.1 a 7.7, 7.9 e 7.10 (7.8 adiado por decisão) | Aprovada |
 | 8.1–8.5 | Fundação Titan Livestock | NÃO INICIADO | Pendente |
 | 9.1–9.6 | Medicamentos e elegibilidade | NÃO INICIADO | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
+
 
 ## Registro dos passos executados
 
