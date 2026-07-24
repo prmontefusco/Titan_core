@@ -2,7 +2,7 @@
 
 **Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 10.2 — Template Livestock do Dossier JSON
+**Próximo passo planejado:** Passo 10.4 — API mínima do fluxo aprovado
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -54,7 +54,7 @@ Estados utilizados:
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
 | 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 completo (10.1a e 10.1b); 10.2 em diante não iniciados | Pendente |
+| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1, 10.2 e 10.3 completos; 10.4 em diante não iniciados | Pendente |
 
 
 ## Registro dos passos executados
@@ -2346,6 +2346,70 @@ O vínculo de correção viaja em `corrects_application_id` no payload e não em
 ### Validação manual pendente (a cargo do responsável)
 Consultar animal, lote e tratamento e confirmar ordem, correções, autoria e evidências — a validação que o PLANO define para o Passo 10.1.
 
+## Passo 10.2 — Dossiê JSON da decisão farmacológica
+
+**Data de conclusão:** 24 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente).
+
+**Divisão adotada, com aprovação do responsável:** o 10.2 foi dividido porque as evidências da vertical eram texto livre, e um dossiê que citasse `evidence:foto-1` cumpriria a forma da entrega sem cumprir o fundo — a validação manual do PLANO exige entender a decisão, com suas evidências, sem acesso ao banco.
+
+### 10.2a — Evidência tipada na vertical (commit `60f3572`) · CONCLUÍDO
+
+- **Domínio:** `TreatmentApplication.evidence_references` passou de `tuple[str, ...]` para `tuple[UniversalReference, ...]` apontando para `Evidence` do Core, na convenção que `Decision` e `NonConformity` já usavam. Recusa texto livre, referência que não seja `evidence` e evidência de outra Organization.
+- **Campo novo `evidence_notes`:** as strings antigas nunca foram evidência — eram anotação de operador. Separar as duas impede que anotação seja apresentada como prova, e preserva informação operacional útil.
+- **Serviço:** porta `EvidenceLookupPort`. Citar evidência inexistente é recusado (dossiê que aponta para o nada é prova vazia), e o serviço recusa aceitar referência sem ter como conferi-la, em vez de confiar no chamador.
+- **Segurança:** evidência de outra Organization é recusada com a **mesma** mensagem de "não encontrada". Mensagem distinta viraria oráculo — bastaria tentar identificadores para descobrir o que outra organização possui. Mesmo princípio do `OrganizationContextDenied`.
+- **Migration `20260724_0042`, sem perda:** havia 28 linhas com valores. A subida copia para `evidence_notes` antes de esvaziar; a descida devolve antes de remover a coluna. Ambos os sentidos foram executados e conferidos.
+
+### 10.2b — Template do dossiê · CONCLUÍDO
+
+**Fundação:**
+
+- **O fato de carência mostra a conta, não só o resultado.** O payload de `livestock.withdrawal` passou a carregar `contributions`, com aplicação, lote, instante da aplicação, prazo congelado e fim calculado de cada contribuição. Duas consequências: quem tem o fato refaz o cálculo, e o dossiê consegue percorrer fato → aplicação → evidência, cadeia que o 10.2a tornou possível.
+- **Seção de vertical no documento do Core** (`VerticalSection`, documento versão 3). Sob a chave única `vertical`, com `namespace`, `section_version` própria e `content`. O Core valida **apenas o envelope** — namespace canônico, versão inteira positiva, conteúdo não vazio — e não interpreta o conteúdo, porque conhecer vertical lhe é proibido. Ausência é declarada (`null`), não omitida. Há teste de que nenhum campo da vertical vaza para o nível do Core e de que a versão da seção é independente da versão do documento.
+
+**Template (`livestock_application/dossier_template.py`):** `LivestockDossierTemplate` monta a seção `livestock` com quatro blocos.
+
+- **`subject`** — identidade que um fiscal usa: brinco e SISBOV, lidos do fato `livestock.animal` **dentro do snapshot**, não do cadastro atual. O snapshot está congelado no instante da avaliação; o cadastro não. O campo `identity_source` declara essa origem.
+- **`withdrawal`** — a conta da carência, com o prazo congelado de cada contribuição.
+- **`evidence_chain`** — contribuição → aplicação → evidências, com hash de conteúdo e proveniência copiados. As anotações de operador viajam em campo separado, identificadas como tal: informação útil que não é prova.
+- **`timeline`** — a linha do tempo completa do animal (decisão do responsável: inteira por padrão), cortada em `known_until` = instante da decisão.
+
+**Por que o bloco `evidences` do Core fica vazio neste dossiê.** Aquele bloco é alimentado por `Fact.source_reference`, que é **singular** — serve ao fato que veio de um documento. A carência não vem de um documento: vem de um cálculo sobre N aplicações, cada uma com suas evidências. Declarar uma fonte única seria escolher arbitrariamente uma delas. `source_reference` fica nulo, que é a resposta honesta, e a cadeia completa viaja na seção da vertical. Para não haver dois formatos de evidência no mesmo documento, a serialização do conteúdo foi extraída para `evidence_content`, função pública do Core que a vertical reusa.
+
+**Testes (10):** o dossiê é serializado, reconstruído e **verifica-se sem o Titan**; o animal é identificável pelo brinco; a decisão mostra a aritmética; a cadeia alcança a evidência com hash de 64 caracteres; anotação não se passa por prova; a timeline chega inteira até a decisão; **nada registrado depois da decisão entra na prova** — e um tratamento lançado depois aparece no dossiê novo sem invalidar o antigo, que continua conferindo.
+
+### Correção no Core que este passo exigiu (commit `0a00128`, mesclado pelo PR #6)
+
+O `DossierService` declarava copiar conteúdo e nunca apenas referenciar, mas o bloco `evidences` emitia só `{entity_type, id, contract_version}`. Cada entrada passou a poder carregar hash SHA-256, fonte, nível de confiança, validade, verificações e **revogação** — apresentar evidência revogada como válida transformaria o dossiê em prova falsa. Mudança aditiva, com teste de que dossiê da versão 1 continua verificando e não recebe campo novo retroativamente.
+
+## Passo 10.3 — Dossiê PDF
+
+**Data de conclusão:** 24 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente).
+
+### O que foi entregue
+
+- **Porta `VerticalPdfTemplate` e `PdfSection` (`core_application/dossier_pdf_template.py`):** o PLANO exige template **fornecido pela vertical**, e o Core não pode conhecer vertical alguma. A porta troca **dados** — título, colunas e linhas de texto — e não objetos de renderização. A vertical não importa biblioteca de PDF; quem desenha é a Infrastructure do Core.
+- **`SoftwareDossierPdfAdapter` recebe os templates de quem compõe a aplicação** e casa o namespace da seção com o do template. **Seção sem template não é descartada em silêncio:** o PDF declara que ela existe, não foi apresentada, e manda consultar o JSON.
+- **`LivestockPdfTemplate` (`livestock_infrastructure/dossier_pdf_template.py`):** identificação do animal com brinco e SISBOV primeiro; carência com a aritmética visível (aplicação, prazo aplicado, fim calculado); uma seção de evidências por aplicação, com hash SHA-256 do conteúdo e **revogação em destaque**; e a linha do tempo.
+- **Bloco "Como verificar este documento"** no PDF: procedimento em quatro passos para recalcular o hash canônico, com a regra de precedência escrita — havendo divergência entre JSON e PDF, **o JSON prevalece**.
+
+### Decisões
+
+- **Fidelidade antes de brevidade.** A linha do tempo é impressa inteira. Um PDF que resumisse o histórico deixaria de ser representação fiel do snapshot e passaria a ser uma opinião sobre ele. Para animal com histórico longo isso gera muitas páginas; reduzir é decisão de produto, e custa a palavra "fiel" que o PLANO usa.
+- **Anotação de operador aparece marcada `NÃO É PROVA`.** No JSON a separação é estrutural; no papel precisava ser visível, senão alguém lê a anotação como evidência.
+
+### Testes (8)
+
+Todo valor impresso vem do JSON; a aritmética da carência é legível na folha; a anotação sai marcada como não sendo prova; **a linha do tempo é impressa inteira, sem resumo**; o PDF é produzido e carrega o material de verificação; seção sem template é declarada e não descartada; documento sem seção de vertical não imprime nada a mais; e linha que não cabe nas colunas é recusada, porque tabela desalinhada no papel vira dado trocado de coluna.
+
+### Portão de verificação
+
+`618 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (344 arquivos) e `alembic check` sem erros.
+
+### Validação manual pendente
+
+Comparar JSON e PDF campo a campo, verificar legibilidade e recalcular a integridade usando o procedimento impresso.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
@@ -2400,3 +2464,28 @@ O que é raro, e não está nos padrões de rastreabilidade, é **provar por que
 Portanto a pergunta em aberto não é "quem registra", e sim **em que casos a prescrição deixa de ser opcional na aplicação** — hoje `prescription_id` é opcional em `TreatmentApplication`. Torná-la obrigatória para certas classes de produto é decisão de regra de negócio, com portão de aprovação, e afeta diretamente o peso probatório do registro.
 
 Relacionado: `DecisionAuthorityProfile` e o fluxo de aprovações da ADR-0016 permanecem como pendência deliberada do Core.
+
+### NR-5 — Autoria de regras pelo administrador da vertical
+
+**Levantado em 24/07/2026. Precisa de solução, não apenas de registro.**
+
+**O problema.** Regras dependem de lei, e lei muda. Hoje a única regra de negócio da vertical — a de carência — é construída em Python, por `build_eligibility_rule` em `livestock_application/eligibility.py`. Nenhum administrador a edita. Publicar uma norma nova exige alterar código, revisar, testar e implantar, o que é lento demais para acompanhar mudança regulatória e concentra em desenvolvedores uma decisão que é do domínio.
+
+**A dificuldade real, que precisa ser enunciada antes de qualquer solução.** Regra escrita em tempo de execução por um humano precisa continuar **determinística e reproduzível**. Se o administrador puder escrever expressão livre, perde-se a garantia de que a mesma decisão refeita daqui a cinco anos produz o mesmo resultado — que é a tese inteira do produto. Uma regra editável e não reproduzível seria pior do que não ter regra editável.
+
+**Segunda exigência, temporal.** Quando a lei muda, decisões antigas **não** podem ser reavaliadas pela regra nova: foram tomadas sob a norma vigente à época, e o dossiê precisa continuar reproduzível sob aquela versão. `Policy` e `Rule` já são versionadas, com `valid_from`, `valid_to`, `status` e `normative_source`, e o dossiê já copia as condições declarativas de cada regra — a fundação existe. O que falta é o comportamento ficar explícito quando a autoria sair das mãos do desenvolvedor.
+
+**Há um caminho barato que já está estruturalmente pronto, e vale explorá-lo antes do caro.** `RuleCondition` **já é dado declarativo**, não código: `fact_type`, `payload_key`, `operator`, `expected_value`, `description`. Uma regra composta por essas primitivas é determinística por construção, já é versionada, já viaja inteira dentro do dossiê e já é reexecutável. Ou seja, **para regras que caibam nessas primitivas, o problema de execução está resolvido** — o que falta é apenas a *autoria*: interface, validação e fluxo de aprovação para o administrador compor condições, sem tocar em código.
+
+Vale medir quanto da regulação real cabe nessas primitivas antes de construir qualquer coisa maior. A suspeita é que a maior parte caiba: "carência cumprida", "vacinação registrada no prazo", "veterinário habilitado" são todas comparações sobre fatos.
+
+**O caminho caro, para o que não couber.** A **ADR-0036 já está aceita** e decide justamente isso: compilar regras normativas para bytecode Wasm imutável e versionado, executado em sandbox determinístico, recuperando na reavaliação o bytecode exato vigente na data do evento. Ela nomeia `WasmNormativePolicyEvaluator`, `PolicyExecutionSandbox` e `NormativeExecutionReceipt`. Está aceita e **não implementada**.
+
+**Encaminhamento proposto:**
+
+1. Levantar quais regras reais da pecuária são necessárias e classificar cada uma como "cabe nas primitivas declarativas" ou "não cabe".
+2. Se a maioria couber, construir a autoria declarativa primeiro — é incomparavelmente mais barata que o sandbox e resolve o problema prático.
+3. Reservar a implementação da ADR-0036 para o que sobrar, com evidência de que sobrou.
+4. Em qualquer dos caminhos, exigir portão de aprovação para publicar regra: o plano já trata regra de negócio como categoria de aprovação obrigatória, e autoria por administrador não afrouxa isso.
+
+Relacionado: [ADR-0011] fontes normativas, vigência e reavaliação temporal; [ADR-0016] decisões explicáveis e revisão humana; NR-4, sobre quem registra cada fato.
