@@ -2,7 +2,9 @@
 
 **Atualizado em:** 23 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 9.2 — Administration e Eventos Farmacológicos (Marco 9 / Medicamentos e Elegibilidade)
+**Próximo passo planejado:** Marco 10 — Adaptação Livestock, API e prova da vertical (Passo 10.1)
+
+> **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
 
 
@@ -49,14 +51,7 @@ Estados utilizados:
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision explicável | CONCLUÍDO | Aprovada |
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
-
-
-
-
-
-
-| 9.1–9.6 | Medicamentos e elegibilidade | EM ANDAMENTO — 9.1 CONCLUÍDO | 9.1 Aprovada |
-
+| 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
 | 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
 
 
@@ -2171,6 +2166,93 @@ python -m uv run --locked mypy
 python -m uv run python scratch/validar_passo_9_1.py
 ```
 - **Resultado:** 499 testes aprovados em 12.39s; Alembic em `20260723_0039 (head)`; Ruff e Mypy 100% limpos sem erros; Validação manual executada com sucesso.
+- **Ressalva:** o `scratch/validar_passo_9_1.py` foi posteriormente removido do versionamento (scripts descartáveis passaram a ser ignorados pelo `.gitignore`). Além disso, este agregado recebeu depois a correção do contrato temporal (ver seção "Correção — contrato temporal da vertical").
+
+## Correção — contrato temporal da vertical (commit `3846478`)
+
+**Estado:** CONCLUÍDO. Revisão de corretude do Livestock já commitado (Marcos 8 e 9.1) que encontrou três problemas sistêmicos que o portão verde não pegava, todos corrigidos:
+
+1. **datetime naive tratado silenciosamente como UTC** — os agregados coagiam `x.replace(tzinfo=UTC)` em vez de rejeitar; um horário local (ex.: UTC-3) virava UTC errado por 3 horas, sem erro. Corrigido: `require_utc` em todo campo datetime dos 7 agregados **rejeita** naive.
+2. **`created_at = datetime.now(UTC)` como default de campo** — avaliado uma vez na carga do módulo (instância única de import) em 11 campos. Corrigido para `field(default_factory=lambda: datetime.now(UTC))`.
+3. **Domínio lendo o relógio** — a checagem "movimento não pode ser no futuro" saiu do `__post_init__` para o `MovementService`. O domínio ficou determinístico.
+
+**Evidência:** testes novos travando a rejeição de naive (domínio e serviço) e a checagem de futuro no serviço. 503 testes aprovados após a correção.
+
+## Passo 9.1 (complemento) — MedicationBatch (commit `173b3a8`)
+
+**Data de conclusão:** 23 de julho de 2026 · **Estado:** CONCLUÍDO. Preenche o `MedicationBatch` que o PLANO-9.1 previa e a entrega original omitiu.
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/medication.py`):** `MedicationBatch` imutável — `batch_id`, `organization_id`, `medication_id`, `batch_number`, `expiry_date`, `manufacturing_date` opcional. Recusa validade inválida (`expiry_date <= manufacturing_date`) e número vazio; `require_utc` nas datas.
+- **Aplicação (`medication_service.py`):** `MedicationBatchRepositoryPort` e `MedicationBatchService.register_batch` — recusa duplicidade `(org, medicamento, número)` e medicamento inexistente.
+- **Infraestrutura + migration:** tabela `core_audit.medication_batches` com RLS+FORCE, FKs para organização e medicamento, `UNIQUE` de duplicidade; migration `20260723_0040`, registrada no `env.py`.
+- **Testes:** 4 de domínio (inclui rejeição de naive), 3 de aplicação, 1 de integração com RLS.
+
+## Passo 9.2 — VeterinaryPrescription
+
+**Estado:** CONCLUÍDO. Entregue dentro da seção "Passo 9.1 — Agregadores de Medicamentos e Prescrições" acima (entidade `Prescription`, `issue_prescription()` com validação do status do veterinário, tabelas `prescriptions`/`prescription_targets` com RLS). Registrado aqui separadamente para alinhar à numeração do PLANO.
+
+## Passo 9.3 — TreatmentApplication (commit `d04b7c1`)
+
+**Data de conclusão:** 23 de julho de 2026 · **Estado:** CONCLUÍDO.
+
+### O que foi entregue
+- **Domínio (`packages/livestock_domain/treatment.py`):** `TreatmentApplication` imutável (append-only) — animal, lote (`medication_batch_id`), ator, `applied_at`, evidências, `prescription_id` opcional e `corrects_application_id` para a correção. `require_utc` no `applied_at`; recusa autocorreção.
+- **Aplicação (`treatment_service.py`):** `TreatmentApplicationService` com **`register` + `correct`** e **nenhum método de edição**. A correção cria um novo registro que aponta para o original, que permanece imutável.
+- **Infraestrutura + migration:** tabela `core_audit.treatment_applications` com RLS+FORCE, FKs (inclusive auto-FK de correção), índices por animal e por lote (base do recall); migration `20260723_0041`.
+- **Evento:** `TreatmentAppliedEvent` declarado em `events.py`.
+- **Testes:** domínio (imutabilidade, naive, entity_types, autocorreção), aplicação (**cenário do plano: edição recusada → correção por novo registro, original preservado**), integração com RLS + rastreabilidade por lote.
+- **Validação manual (plano):** "registrar aplicação, tentar edição e confirmar correção por novo evento" — coberto por teste (`test_correction_creates_new_record_preserving_original`).
+
+## Passo 9.4 — WithdrawalPeriod (commit `6600c10`)
+
+**Data de conclusão:** 23 de julho de 2026 · **Estado:** CONCLUÍDO. **Portão do plano cumprido:** regra de negócio `titan-livestock-withdrawal-v1` proposta e **aprovada pelo responsável** antes da implementação.
+
+### O que foi entregue
+- **Regra aprovada:** por aplicação `withdrawal_ends_at = applied_at + withdrawal_period_days` (dias corridos, UTC); por animal a carência termina no **maior** prazo entre as aplicações efetivas; elegível quando `instante >= eligible_from`. O cálculo **congela (snapshot)** o prazo usado e a versão da regra.
+- **Domínio (`packages/livestock_domain/withdrawal.py`):** `compute_withdrawal_ends`, `WithdrawalContribution` (prazo congelado + verificação de consistência), `AnimalWithdrawalStatus` (agrega, responde elegibilidade), `WITHDRAWAL_RULE_VERSION`.
+- **Aplicação (`withdrawal_service.py`):** `WithdrawalCalculator.assess_animal` — resolve lote→medicamento, faz o snapshot do prazo e **descarta aplicações corrigidas** (conta a correção, não o original).
+- **Sem migration:** é cálculo, não estado persistido.
+- **Testes:** 10, cobrindo os casos de borda que o plano pede — **timezone** (naive rejeitado), **zero dias**, **sem tratamento** (sempre elegível), **múltiplas aplicações** (maior prazo), **correção** (supersessão).
+- **Validação manual (plano):** "conferir datas-limite, timezone e casos de borda; confirmar preservação da versão da regra" — coberto por teste.
+
+## Passo 9.5 — Regra de elegibilidade farmacológica (commit `4c7bf7e`)
+
+**Data de conclusão:** 23 de julho de 2026 · **Estado:** CONCLUÍDO.
+
+### O que foi entregue
+- **Fato de carência:** `LivestockFactProvider` passa a emitir o fato `livestock.withdrawal` para um animal (`in_withdrawal`, `eligible_from`, `rule_version`, `blocking_batches`), computado pelo cálculo do 9.4.
+- **Regra bloqueante + política (`eligibility.py`):** `build_eligibility_rule` (condição `in_withdrawal == False`, severidade **BLOCKING**, ação corretiva) e `build_eligibility_policy` (publicada). `PharmacologicalEligibilityService.evaluate_animal` delega Evaluation/Decision ao Core.
+- **Sem domínio/tabela novos:** reusa a maquinária Policy/Rule/Evaluation/Decision do Core.
+- **Testes:** animal em carência → **REJEITADA**; fora → **APROVADA**; sem tratamento → **APROVADA**.
+- **Validação manual (plano):** "avaliar animal fora e dentro da carência; confirmar motivo, evidência, versão e sujeito afetado" — coberto por teste (motivo em `decision.reasons`; evidência em `blocking_batches` + snapshot; versão `titan-livestock-withdrawal-v1`; sujeito `decision.subject_id`).
+
+## Passo 9.6 — Avaliação de lote e reavaliação (commit `fa26a18`)
+
+**Data de conclusão:** 23 de julho de 2026 · **Estado:** CONCLUÍDO. **Fecha o Marco 9.**
+
+### O que foi entregue
+- **Fato de lote:** `LivestockFactProvider` emite `livestock.lot_eligibility` para um `livestock_lot` (`has_animal_in_withdrawal`, `blocking_animals`, `member_count`), avaliando os membros ativos no instante.
+- **Regra de lote + serviço:** `build_lot_eligibility_rule` (BLOCKING: qualquer membro em carência reprova) e `PharmacologicalEligibilityService.evaluate_lot`.
+- **Testes:** cenário ponta a ponta do plano — **`REJECTED → remoção do animal em carência → APPROVED`**, com ambas as decisões preservadas e **hashes de snapshot distintos**.
+- **Dois defeitos reais corrigidos no caminho:**
+  1. **Snapshots da vertical sem hash de integridade** — o `LivestockFactProvider` usava o construtor direto de `FactSnapshot` (hash vazio) em vez de `.create()`. Corrigido; agora todo snapshot da vertical é hashável.
+  2. **`remove_animal_from_lot` quebrava no mesmo tick de clock** — no Windows o `datetime.now()` tem resolução grosseira; adicionar e remover rápido fazia `valid_until == valid_from` e a membership recusava, flakando o CI. Corrigido garantindo `valid_until` estritamente posterior.
+- **Validação manual (plano):** "executar ponta a ponta o cenário `REJECTED → remoção → APPROVED` e comparar snapshots/hashes" — coberto por teste.
+
+## Comandos para testar o Marco 9 completo
+
+```text
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked alembic upgrade head
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
+
+Resultado esperado: 535 testes aprovados; banco em `20260723_0041 (head)`; Alembic, Ruff e Mypy aprovados sem erros.
 
 
 
