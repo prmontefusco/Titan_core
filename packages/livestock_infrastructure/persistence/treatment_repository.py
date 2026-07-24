@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.engine import Row
 
+from packages.core_domain.facts import reference_from_dict, reference_to_dict
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.livestock_application.treatment_service import TreatmentApplicationRepositoryPort
 from packages.livestock_domain.treatment import TreatmentApplication
@@ -37,6 +38,7 @@ treatment_applications_table = Table(
     Column("applied_at", DateTime(timezone=True), nullable=False),
     Column("dose", String(255), nullable=True),
     Column("evidence_references", JSONB, nullable=False, server_default="[]"),
+    Column("evidence_notes", JSONB, nullable=False, server_default="[]"),
     Column("prescription_id", PG_UUID(as_uuid=True), nullable=True),
     Column("corrects_application_id", PG_UUID(as_uuid=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -85,7 +87,10 @@ class TransactionalTreatmentApplicationRepository(TreatmentApplicationRepository
             actor_id=application.actor_id.value,
             applied_at=application.applied_at,
             dose=application.dose,
-            evidence_references=json.dumps(list(application.evidence_references)),
+            evidence_references=json.dumps(
+                [reference_to_dict(r) for r in application.evidence_references]
+            ),
+            evidence_notes=json.dumps(list(application.evidence_notes)),
             prescription_id=(
                 application.prescription_id.value if application.prescription_id else None
             ),
@@ -150,8 +155,12 @@ class TransactionalTreatmentApplicationRepository(TreatmentApplicationRepository
         assert applied is not None
         assert created is not None
 
-        raw_evidence = row.evidence_references
-        evidence = json.loads(raw_evidence) if isinstance(raw_evidence, str) else raw_evidence
+        def _json(value: Any) -> list[Any]:
+            loaded = json.loads(value) if isinstance(value, str) else value
+            return list(loaded) if loaded else []
+
+        evidence = _json(row.evidence_references)
+        notes = _json(row.evidence_notes)
 
         return TreatmentApplication(
             application_id=TypedId(entity_type="treatment_application", value=row.application_id),
@@ -163,7 +172,12 @@ class TransactionalTreatmentApplicationRepository(TreatmentApplicationRepository
             actor_id=TypedId(entity_type="actor", value=row.actor_id),
             applied_at=applied,
             dose=row.dose,
-            evidence_references=tuple(evidence),
+            evidence_references=tuple(
+                reference
+                for reference in (reference_from_dict(item) for item in evidence)
+                if reference is not None
+            ),
+            evidence_notes=tuple(notes),
             prescription_id=(
                 TypedId(entity_type="prescription", value=row.prescription_id)
                 if row.prescription_id is not None

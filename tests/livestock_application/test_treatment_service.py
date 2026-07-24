@@ -1,5 +1,6 @@
 """Testes unitários para TreatmentApplicationService (Passo 9.3 - Titan Livestock)."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -22,8 +23,9 @@ from packages.livestock_domain.events import TREATMENT_APPLIED
 from packages.livestock_domain.medication import MedicationBatch
 from packages.livestock_domain.prescription import Prescription
 from packages.livestock_domain.treatment import TreatmentApplication
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from tests.livestock_application.conftest import FakeEventLog
+from tests.livestock_support import FakeEvidenceLookup
 
 
 class InMemoryApplicationRepo(TreatmentApplicationRepositoryPort):
@@ -160,7 +162,7 @@ def test_register_application_success(
         medication_batch_id=batch_id,
         applied_at=datetime.now(UTC) - timedelta(hours=1),
         dose="1 mL",
-        evidence_references=("evidence:foto",),
+        evidence_notes=("foto no celular do João",),
     )
     assert app.corrects_application_id is None
     assert app.animal_id == animal_id
@@ -247,3 +249,185 @@ def test_register_application_rejects_unknown_batch(
         )
 
     assert event_log.events == []
+
+
+# -- Evidência tipada (Passo 10.2a) -------------------------------------------
+
+
+def _com_evidencia(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> tuple[TreatmentApplicationService, TypedId, TypedId, FakeEvidenceLookup]:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    lookup = FakeEvidenceLookup()
+    return replace(service, evidence_lookup=lookup), animal_id, batch_id, lookup
+
+
+def test_typed_evidence_is_recorded_and_reaches_the_event(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    """Referência tipada aponta para `Evidence` do Core, com hash e proveniência."""
+    service, animal_id, batch_id, lookup = _com_evidencia(recorder, context)
+    referencia = lookup.add(context.organization_id)
+
+    application = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=datetime.now(UTC) - timedelta(hours=1),
+        evidence_references=(referencia,),
+    )
+
+    assert application.evidence_references == (referencia,)
+    payload = event_log.only(TREATMENT_APPLIED).payload.canonical_bytes
+    assert str(referencia.target_id.value).encode() in payload
+
+
+def test_citing_evidence_that_does_not_exist_is_refused(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    """Um dossiê que apontasse para o nada seria prova vazia."""
+    service, animal_id, batch_id, _ = _com_evidencia(recorder, context)
+    inexistente = UniversalReference(
+        target_id=TypedId.new("evidence"),
+        organization_id=context.organization_id,
+        contract_version=1,
+    )
+
+    with pytest.raises(KeyError, match="não encontrada"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=datetime.now(UTC) - timedelta(hours=1),
+            evidence_references=(inexistente,),
+        )
+
+    assert event_log.events == []
+
+
+def test_evidence_of_another_organization_is_indistinguishable_from_absent(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    """A recusa não revela que a evidência existe noutra organização.
+
+    Mensagem distinta viraria oráculo: bastaria tentar identificadores para
+    descobrir o que outra organização possui.
+    """
+    service, animal_id, batch_id, lookup = _com_evidencia(recorder, context)
+    alheia = lookup.add(OrganizationId.new())
+
+    with pytest.raises(KeyError, match="não encontrada"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=datetime.now(UTC) - timedelta(hours=1),
+            evidence_references=(alheia,),
+        )
+
+
+def test_domain_refuses_evidence_of_another_organization(
+    context: LivestockOperationContext,
+) -> None:
+    """Segunda linha de defesa: vale mesmo para quem construir a entidade direto."""
+    alheia = UniversalReference(
+        target_id=TypedId.new("evidence"),
+        organization_id=OrganizationId.new(),
+        contract_version=1,
+    )
+
+    with pytest.raises(ValueError, match="outra Organization"):
+        TreatmentApplication(
+            application_id=TypedId.new("treatment_application"),
+            organization_id=context.organization_id,
+            animal_id=TypedId.new("animal"),
+            medication_batch_id=TypedId.new("medication_batch"),
+            actor_id=TypedId.new("actor"),
+            applied_at=datetime.now(UTC),
+            evidence_references=(alheia,),
+        )
+
+
+def test_free_text_cannot_pose_as_evidence(context: LivestockOperationContext) -> None:
+    """Anotação de operador é informação útil e não é prova; o tipo separa as duas."""
+    with pytest.raises(TypeError, match="evidence_notes"):
+        TreatmentApplication(
+            application_id=TypedId.new("treatment_application"),
+            organization_id=context.organization_id,
+            animal_id=TypedId.new("animal"),
+            medication_batch_id=TypedId.new("medication_batch"),
+            actor_id=TypedId.new("actor"),
+            applied_at=datetime.now(UTC),
+            evidence_references=("evidence:foto-1",),  # type: ignore[arg-type]
+        )
+
+
+def test_notes_travel_beside_the_evidence_without_being_it(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, lookup = _com_evidencia(recorder, context)
+    referencia = lookup.add(context.organization_id)
+
+    application = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=datetime.now(UTC) - timedelta(hours=1),
+        evidence_references=(referencia,),
+        evidence_notes=("foto no celular do João",),
+    )
+
+    assert application.evidence_notes == ("foto no celular do João",)
+    payload = event_log.only(TREATMENT_APPLIED).payload.canonical_bytes
+    assert "foto no celular do João".encode() in payload
+
+
+def test_correction_may_bring_the_evidence_the_original_lacked(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    """Corrigir para anexar a prova que faltava é o caso comum em campo."""
+    service, animal_id, batch_id, lookup = _com_evidencia(recorder, context)
+    original = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=datetime.now(UTC) - timedelta(hours=2),
+    )
+    referencia = lookup.add(context.organization_id)
+
+    correction = service.correct_application(
+        context=context,
+        original_application_id=original.application_id,
+        applied_at=datetime.now(UTC) - timedelta(hours=1),
+        evidence_references=(referencia,),
+    )
+
+    assert original.evidence_references == ()
+    assert correction.evidence_references == (referencia,)
+
+
+def test_service_without_lookup_refuses_to_accept_evidence(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    """Aceitar referência sem poder conferi-la seria confiar no chamador."""
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    referencia = UniversalReference(
+        target_id=TypedId.new("evidence"),
+        organization_id=context.organization_id,
+        contract_version=1,
+    )
+
+    with pytest.raises(RuntimeError, match="evidence_lookup"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=datetime.now(UTC) - timedelta(hours=1),
+            evidence_references=(referencia,),
+        )

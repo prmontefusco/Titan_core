@@ -10,6 +10,13 @@ from datetime import datetime
 from packages.core_domain.decision import Decision
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.events import DomainEvent
+from packages.core_domain.evidence import (
+    ConfidenceLevel,
+    ConfidenceTier,
+    Evidence,
+    Source,
+    SourceType,
+)
 from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
@@ -51,6 +58,41 @@ class FakeDecisionRepository:
             for decision in self.saved
             if decision.organization_id == organization_id and decision.subject_id == subject_id
         ]
+
+
+@dataclass
+class FakeEvidenceLookup:
+    """Consulta de evidência em memória, com o mínimo que o serviço confere."""
+
+    registered: dict[str, Evidence] = field(default_factory=dict)
+
+    def add(self, organization_id: OrganizationId) -> UniversalReference:
+        evidence = Evidence.create(
+            organization_id=organization_id,
+            source=Source(
+                source_id=TypedId.new("source"),
+                source_type=SourceType.DOCUMENT,
+                identifier_uri="nfe://35260712345678000199550010000000011000000017",
+            ),
+            author_reference=UniversalReference(
+                target_id=TypedId.new("actor"),
+                organization_id=organization_id,
+                contract_version=1,
+            ),
+            content=b"conteudo-da-nota",
+            confidence_level=ConfidenceLevel(
+                tier=ConfidenceTier.DOCUMENTED, reason="Nota fiscal anexada."
+            ),
+        )
+        self.registered[evidence.evidence_id.value.hex] = evidence
+        return UniversalReference(
+            target_id=evidence.evidence_id,
+            organization_id=organization_id,
+            contract_version=1,
+        )
+
+    def get_by_id(self, evidence_id: TypedId) -> Evidence | None:
+        return self.registered.get(evidence_id.value.hex)
 
 
 @dataclass

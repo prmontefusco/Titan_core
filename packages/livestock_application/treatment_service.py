@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from packages.core_domain.evidence import Evidence
 from packages.livestock_application.animal_service import AnimalRepositoryPort
 from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
@@ -21,8 +22,14 @@ from packages.livestock_application.medication_service import (
 )
 from packages.livestock_domain.events import TREATMENT_APPLIED, treatment_applied_payload
 from packages.livestock_domain.treatment import TreatmentApplication
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
+
+
+class EvidenceLookupPort(Protocol):
+    """Consulta mínima para conferir que a evidência citada existe de verdade."""
+
+    def get_by_id(self, evidence_id: TypedId) -> Evidence | None: ...
 
 
 class TreatmentApplicationRepositoryPort(Protocol):
@@ -46,6 +53,7 @@ class TreatmentApplicationService:
     batch_repository: MedicationBatchRepositoryPort
     prescription_repository: PrescriptionRepositoryPort
     recorder: LivestockEventRecorder
+    evidence_lookup: EvidenceLookupPort | None = None
 
     def register_application(
         self,
@@ -54,11 +62,13 @@ class TreatmentApplicationService:
         medication_batch_id: TypedId,
         applied_at: datetime,
         dose: str | None = None,
-        evidence_references: tuple[str, ...] = (),
+        evidence_references: tuple[UniversalReference, ...] = (),
+        evidence_notes: tuple[str, ...] = (),
         prescription_id: TypedId | None = None,
     ) -> TreatmentApplication:
         organization_id = context.organization_id
         self._validate_references(organization_id, animal_id, medication_batch_id, prescription_id)
+        self._validate_evidences(organization_id, evidence_references)
         self._guard_applied_at(applied_at)
 
         # A autoria vem do contexto, e não de um parâmetro à parte: assim o autor
@@ -72,6 +82,7 @@ class TreatmentApplicationService:
             applied_at=applied_at,
             dose=dose,
             evidence_references=evidence_references,
+            evidence_notes=evidence_notes,
             prescription_id=prescription_id,
             corrects_application_id=None,
             created_at=datetime.now(UTC),
@@ -86,7 +97,8 @@ class TreatmentApplicationService:
         original_application_id: TypedId,
         applied_at: datetime,
         dose: str | None = None,
-        evidence_references: tuple[str, ...] = (),
+        evidence_references: tuple[UniversalReference, ...] = (),
+        evidence_notes: tuple[str, ...] = (),
         prescription_id: TypedId | None = None,
     ) -> TreatmentApplication:
         """Corrige uma aplicação criando um NOVO registro que a supersede.
@@ -106,6 +118,7 @@ class TreatmentApplicationService:
         self._validate_references(
             organization_id, original.animal_id, original.medication_batch_id, prescription_id
         )
+        self._validate_evidences(organization_id, evidence_references)
         self._guard_applied_at(applied_at)
 
         correction = TreatmentApplication(
@@ -117,6 +130,7 @@ class TreatmentApplicationService:
             applied_at=applied_at,
             dose=dose,
             evidence_references=evidence_references,
+            evidence_notes=evidence_notes,
             prescription_id=prescription_id,
             corrects_application_id=original.application_id,
             created_at=datetime.now(UTC),
@@ -147,6 +161,7 @@ class TreatmentApplicationService:
                 dose=application.dose,
                 prescription_id=application.prescription_id,
                 evidence_references=application.evidence_references,
+                evidence_notes=application.evidence_notes,
                 corrects_application_id=application.corrects_application_id,
             ),
             occurred_at=application.applied_at,
@@ -183,3 +198,18 @@ class TreatmentApplicationService:
         require_utc(applied_at, field_name="applied_at")
         if applied_at > datetime.now(UTC):
             raise ValueError("applied_at não pode ser no futuro.")
+
+    def _validate_evidences(
+        self, organization_id: OrganizationId, references: tuple[UniversalReference, ...]
+    ) -> None:
+        """Citar evidência inexistente produziria dossiê que aponta para o nada."""
+        if not references:
+            return
+        if self.evidence_lookup is None:
+            raise RuntimeError(
+                "Registrar evidência exige a porta de consulta (evidence_lookup) configurada."
+            )
+        for reference in references:
+            evidence = self.evidence_lookup.get_by_id(reference.target_id)
+            if evidence is None or evidence.organization_id != organization_id:
+                raise KeyError(f"Evidência '{reference.target_id.value}' não encontrada.")

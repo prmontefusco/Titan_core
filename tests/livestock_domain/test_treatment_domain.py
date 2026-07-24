@@ -26,11 +26,11 @@ def _application(**overrides: object) -> TreatmentApplication:
 def test_treatment_application_creation_success() -> None:
     app = _application(
         dose="1 mL / 50 kg",
-        evidence_references=("evidence:foto-1", "evidence:receita-1"),
+        evidence_notes=("foto no celular do João", "receita arquivada na sede"),
         prescription_id=TypedId.new("prescription"),
     )
     assert app.dose == "1 mL / 50 kg"
-    assert len(app.evidence_references) == 2
+    assert len(app.evidence_notes) == 2
     assert app.corrects_application_id is None
 
 

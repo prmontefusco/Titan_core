@@ -23,7 +23,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from packages.core_domain.events import CanonicalPayload
-from packages.shared_kernel import TypedId
+from packages.shared_kernel import TypedId, UniversalReference
 from packages.shared_kernel.serialization import CanonicalValue
 
 PROPERTY_REGISTERED = "livestock.property_registered"
@@ -360,7 +360,8 @@ def treatment_applied_payload(
     applied_at: datetime,
     dose: str | None,
     prescription_id: TypedId | None,
-    evidence_references: tuple[str, ...],
+    evidence_references: tuple[UniversalReference, ...],
+    evidence_notes: tuple[str, ...],
     corrects_application_id: TypedId | None,
 ) -> CanonicalPayload:
     return _payload(
@@ -373,7 +374,8 @@ def treatment_applied_payload(
                 None if corrects_application_id is None else _id(corrects_application_id)
             ),
             "dose": dose,
-            "evidence_references": list(evidence_references),
+            "evidence_notes": list(evidence_notes),
+            "evidence_references": [_id(r.target_id) for r in evidence_references],
             "medication_batch_id": _id(medication_batch_id),
             "prescription_id": None if prescription_id is None else _id(prescription_id),
         },

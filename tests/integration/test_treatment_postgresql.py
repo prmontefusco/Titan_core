@@ -120,7 +120,7 @@ def test_treatment_application_correction_and_rls(db_connection: Connection) -> 
         medication_batch_id=batch.batch_id,
         applied_at=datetime.now(UTC) - timedelta(hours=2),
         dose="1 mL",
-        evidence_references=("evidence:foto-1",),
+        evidence_notes=("foto no celular do João",),
     )
     correction = service.correct_application(
         context=context_1,
@@ -134,7 +134,7 @@ def test_treatment_application_correction_and_rls(db_connection: Connection) -> 
     recarregado = repo.get_by_id(original.application_id)
     assert recarregado is not None
     assert recarregado.dose == "1 mL"
-    assert recarregado.evidence_references == ("evidence:foto-1",)
+    assert recarregado.evidence_notes == ("foto no celular do João",)
     assert repo.get_by_id(correction.application_id).corrects_application_id == (  # type: ignore[union-attr]
         original.application_id
     )

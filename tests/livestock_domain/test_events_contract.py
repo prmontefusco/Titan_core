@@ -99,6 +99,7 @@ def test_every_event_type_is_namespaced_and_canonical() -> None:
                 "dose": None,
                 "prescription_id": None,
                 "evidence_references": (),
+                "evidence_notes": (),
                 "corrects_application_id": None,
             },
             events.TREATMENT_APPLIED,
