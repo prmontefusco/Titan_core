@@ -10,6 +10,7 @@ verificação externa.
 """
 
 import hashlib
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,9 +26,50 @@ from packages.shared_kernel.serialization import CanonicalSerializer
 # campos são aditivos — um leitor da versão 1 continua encontrando o que
 # esperava. Dossiês já gravados guardam o próprio documento e a própria versão, e
 # seguem verificando contra o hash que carregam.
-DOSSIER_DOCUMENT_VERSION = 2
+#
+# Versão 3: o documento passou a admitir uma seção de vertical, sob a chave
+# `vertical`, isolada e autodescrita. Também aditiva.
+DOSSIER_DOCUMENT_VERSION = 3
 
 _SERIALIZER = CanonicalSerializer()
+
+_NAMESPACE_PATTERN = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+@dataclass(frozen=True, slots=True)
+class VerticalSection:
+    """Conteúdo setorial dentro do dossiê, isolado e autodescrito.
+
+    O Core fornece o envelope e **não interpreta o conteúdo** — não pode, porque
+    conhecer vertical lhe é proibido. Ele confere apenas que o namespace é nome
+    canônico, que a versão é inteiro positivo e que o conteúdo é um mapa.
+
+    A separação é estrutural, não convenção: tudo da vertical vive sob uma chave
+    única, declara de quem é e versiona-se por conta própria. Quem não conhece o
+    namespace ignora a seção inteira sem perder nada do que o Core afirma, e a
+    vertical evolui seu conteúdo sem mexer na versão do documento do Core.
+    """
+
+    namespace: str
+    section_version: int
+    content: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.namespace, str) or not _NAMESPACE_PATTERN.fullmatch(self.namespace):
+            raise ValueError("namespace deve ser um nome canônico em minúsculas.")
+        if isinstance(self.section_version, bool) or not isinstance(self.section_version, int):
+            raise TypeError("section_version deve ser um número inteiro.")
+        if self.section_version < 1:
+            raise ValueError("section_version deve ser maior ou igual a 1.")
+        if not isinstance(self.content, Mapping) or not self.content:
+            raise ValueError("A seção de vertical exige conteúdo não vazio.")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "namespace": self.namespace,
+            "section_version": self.section_version,
+            "content": dict(self.content),
+        }
 
 
 def compute_dossier_hash(document: Mapping[str, Any]) -> str:

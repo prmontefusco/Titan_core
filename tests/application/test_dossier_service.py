@@ -15,6 +15,7 @@ from packages.core_domain.decision import Decision
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
+    VerticalSection,
     compute_dossier_hash,
 )
 from packages.core_domain.evaluation import Evaluation, EvaluationOutcome
@@ -385,4 +386,72 @@ def test_new_documents_declare_the_new_version() -> None:
     )
 
     assert dossier.document["document_version"] == DOSSIER_DOCUMENT_VERSION
-    assert DOSSIER_DOCUMENT_VERSION == 2
+    assert DOSSIER_DOCUMENT_VERSION == 3
+
+
+# -- Seção da vertical no documento (Passo 10.2b) -----------------------------
+
+
+def test_vertical_content_lives_under_one_declared_key() -> None:
+    """A separação é estrutural: nada da vertical se mistura aos campos do Core."""
+    _, _, policy, rule, evaluation, decision = _cenario()
+
+    dossier = DossierService().build(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        rules=[rule],
+        vertical_section=VerticalSection(
+            namespace="livestock",
+            section_version=1,
+            content={"identidade": {"sisbov": "BR5544332211"}},
+        ),
+    )
+
+    secao = dossier.document["vertical"]
+    assert secao["namespace"] == "livestock"
+    assert secao["section_version"] == 1
+    assert secao["content"]["identidade"]["sisbov"] == "BR5544332211"
+    # Nenhum campo da vertical vazou para o nível do Core.
+    assert "identidade" not in dossier.document
+    assert dossier.verify()
+
+
+def test_absent_vertical_section_is_declared_not_omitted() -> None:
+    _, _, policy, rule, evaluation, decision = _cenario()
+
+    dossier = DossierService().build(
+        decision=decision, evaluation=evaluation, policy=policy, rules=[rule]
+    )
+
+    assert dossier.document["vertical"] is None
+
+
+def test_section_version_is_independent_from_the_document_version() -> None:
+    """A vertical evolui o conteúdo dela sem mexer na versão do Core."""
+    _, _, policy, rule, evaluation, decision = _cenario()
+
+    dossier = DossierService().build(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        rules=[rule],
+        vertical_section=VerticalSection(
+            namespace="livestock", section_version=7, content={"x": 1}
+        ),
+    )
+
+    assert dossier.document["vertical"]["section_version"] == 7
+    assert dossier.document["document_version"] == DOSSIER_DOCUMENT_VERSION
+
+
+def test_the_envelope_is_validated_even_though_the_content_is_not() -> None:
+    """O Core confere o envelope; o conteúdo ele não interpreta — nem pode."""
+    with pytest.raises(ValueError, match="namespace"):
+        VerticalSection(namespace="Livestock", section_version=1, content={"x": 1})
+
+    with pytest.raises(ValueError, match="section_version"):
+        VerticalSection(namespace="livestock", section_version=0, content={"x": 1})
+
+    with pytest.raises(ValueError, match="conteúdo não vazio"):
+        VerticalSection(namespace="livestock", section_version=1, content={})

@@ -199,3 +199,50 @@ def test_animal_without_treatment_is_approved(
     fato = evaluation.fact_snapshot.get_latest_fact_by_type(WITHDRAWAL_FACT_TYPE)
     assert fato is not None
     assert fato.payload["in_withdrawal"] is False
+
+
+def test_withdrawal_fact_carries_the_calculation_it_asserts(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    """O fato mostra a conta, não só o resultado.
+
+    Sem as contribuições, o fato afirmaria "em carência" sem dizer com base em
+    qual aplicação e qual prazo — e um dossiê não teria como percorrer
+    fato -> aplicação -> evidência.
+    """
+    org_id = context.organization_id
+    animal_id = TypedId.new("animal")
+    service, _, _ = _service(
+        animal_id, applied_days_ago=10, withdrawal_days=30, recorder=recorder, context=context
+    )
+
+    evaluation, _ = service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
+
+    fato = evaluation.fact_snapshot.get_latest_fact_by_type(WITHDRAWAL_FACT_TYPE)
+    assert fato is not None
+    contribuicoes = fato.payload["contributions"]
+    assert len(contribuicoes) == 1
+    unica = contribuicoes[0]
+    assert unica["withdrawal_period_days"] == 30
+    assert unica["application_id"]
+    assert unica["medication_batch_id"]
+    # A conta confere: fim da carência é a aplicação mais o prazo congelado.
+    aplicado = datetime.fromisoformat(unica["applied_at"])
+    fim = datetime.fromisoformat(unica["withdrawal_ends_at"])
+    assert (fim - aplicado).days == 30
+
+
+def test_animal_without_treatment_has_no_contributions(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    org_id = context.organization_id
+    animal_id = TypedId.new("animal")
+    service, _, _ = _service(
+        animal_id, applied_days_ago=None, withdrawal_days=30, recorder=recorder, context=context
+    )
+
+    evaluation, _ = service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
+
+    fato = evaluation.fact_snapshot.get_latest_fact_by_type(WITHDRAWAL_FACT_TYPE)
+    assert fato is not None
+    assert fato.payload["contributions"] == []

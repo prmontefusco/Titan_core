@@ -27,6 +27,7 @@ from packages.core_domain.decision import (
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
+    VerticalSection,
     compute_dossier_hash,
 )
 from packages.core_domain.dossier_pdf import DossierPdfRepresentation
@@ -199,6 +200,7 @@ __all__ = [
     "RecallStep",
     "Dossier",
     "DOSSIER_DOCUMENT_VERSION",
+    "VerticalSection",
     "compute_dossier_hash",
     "BundleComponent",
     "BundleManifest",

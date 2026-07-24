@@ -100,6 +100,20 @@ class LivestockFactProvider(FactProviderPort):
                         for contribution in status.contributions
                         if contribution.withdrawal_ends_at > at_time
                     ]
+                    # As contribuições viajam no fato, com o prazo congelado em cada
+                    # uma. Sem elas o fato afirmaria a carência sem mostrar a conta,
+                    # e um dossiê não teria como percorrer fato -> aplicação ->
+                    # evidência. Com elas, quem tem o fato refaz o cálculo.
+                    contribuicoes = [
+                        {
+                            "application_id": contribution.application_id.value.hex,
+                            "medication_batch_id": contribution.medication_batch_id.value.hex,
+                            "applied_at": contribution.applied_at.isoformat(),
+                            "withdrawal_period_days": contribution.withdrawal_period_days,
+                            "withdrawal_ends_at": contribution.withdrawal_ends_at.isoformat(),
+                        }
+                        for contribution in status.contributions
+                    ]
                     fact_list.append(
                         Fact.create(
                             fact_type=WITHDRAWAL_FACT_TYPE,
@@ -112,6 +126,7 @@ class LivestockFactProvider(FactProviderPort):
                                 ),
                                 "rule_version": status.rule_version,
                                 "blocking_batches": blocking,
+                                "contributions": contribuicoes,
                             },
                             observed_at=at_time,
                         )

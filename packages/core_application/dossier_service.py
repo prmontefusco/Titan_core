@@ -10,6 +10,7 @@ from packages.core_domain.decision import Decision
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
+    VerticalSection,
     compute_dossier_hash,
 )
 from packages.core_domain.dossier_pdf import DossierPdfRepresentation
@@ -71,6 +72,7 @@ class DossierService:
         nonconformities: Sequence[NonConformity] = (),
         generated_at: datetime | None = None,
         evidences: Sequence[Evidence] = (),
+        vertical_section: VerticalSection | None = None,
     ) -> Dossier:
         """`evidences` são as evidências citadas pela decisão, para terem o conteúdo copiado.
 
@@ -83,7 +85,14 @@ class DossierService:
 
         instante = generated_at or datetime.now(UTC)
         documento = self._build_document(
-            decision, evaluation, policy, rules, nonconformities, instante, evidences
+            decision,
+            evaluation,
+            policy,
+            rules,
+            nonconformities,
+            instante,
+            evidences,
+            vertical_section,
         )
 
         return Dossier(
@@ -133,6 +142,7 @@ class DossierService:
         nonconformities: Sequence[NonConformity],
         generated_at: datetime,
         evidences: Sequence[Evidence] = (),
+        vertical_section: VerticalSection | None = None,
     ) -> dict[str, Any]:
         return {
             "document_version": DOSSIER_DOCUMENT_VERSION,
@@ -209,6 +219,9 @@ class DossierService:
                 self._evidence_entry(reference, evidences)
                 for reference in decision.evidence_references
             ],
+            # O Core entrega o envelope e não olha o conteúdo: conhecer vertical
+            # lhe é proibido. Ausente, o campo é nulo em vez de sumir.
+            "vertical": None if vertical_section is None else vertical_section.to_dict(),
             "nonconformities": [
                 {
                     "nonconformity_id": str(n.nonconformity_id.value),
@@ -257,66 +270,76 @@ class DossierService:
             return entry
 
         entry["content_status"] = "COPIADO"
-        entry["content"] = {
-            "content_hash": found.content_hash.hex(),
-            "hash_algorithm": "SHA-256",
-            "registered_at": found.registered_at.isoformat(),
-            "version": found.version,
-            "author": {
-                "entity_type": found.author_reference.target_id.entity_type,
-                "id": str(found.author_reference.target_id.value),
-            },
-            "source": {
-                "source_id": str(found.source.source_id.value),
-                "source_type": found.source.source_type.value,
-                "identifier_uri": found.source.identifier_uri,
-            },
-            "confidence": {
-                "tier": found.confidence_level.tier.value,
-                "reason": found.confidence_level.reason,
-            },
-            "validity": (
-                None
-                if found.validity_period is None
-                else {
-                    "valid_from": (
-                        found.validity_period.valid_from.isoformat()
-                        if found.validity_period.valid_from is not None
-                        else None
-                    ),
-                    "valid_until": (
-                        found.validity_period.valid_until.isoformat()
-                        if found.validity_period.valid_until is not None
-                        else None
-                    ),
-                }
-            ),
-            # Revogação viaja junto: apresentar evidência revogada como se valesse
-            # transformaria o dossiê em prova falsa.
-            "revocation": (
-                None
-                if found.revocation is None
-                else {
-                    "revoked_at": found.revocation.revoked_at.isoformat(),
-                    "reason": found.revocation.reason,
-                    "revoking_actor": {
-                        "entity_type": found.revocation.revoking_actor.target_id.entity_type,
-                        "id": str(found.revocation.revoking_actor.target_id.value),
-                    },
-                }
-            ),
-            "verifications": [
-                {
-                    "verification_id": str(v.verification_id.value),
-                    "verified_at": v.verified_at.isoformat(),
-                    "outcome": v.outcome.value,
-                    "notes": v.notes,
-                    "verifier": {
-                        "entity_type": v.verifier_reference.target_id.entity_type,
-                        "id": str(v.verifier_reference.target_id.value),
-                    },
-                }
-                for v in found.verifications
-            ],
-        }
+        entry["content"] = evidence_content(found)
         return entry
+
+
+def evidence_content(found: Evidence) -> dict[str, Any]:
+    """Forma canônica do conteúdo de uma evidência dentro de um dossiê.
+
+    Pública porque a seção de vertical também precisa dela: uma vertical que
+    montasse o próprio formato faria o mesmo dado aparecer de duas maneiras no
+    mesmo documento, e quem lê teria de aprender as duas.
+    """
+    return {
+        "content_hash": found.content_hash.hex(),
+        "hash_algorithm": "SHA-256",
+        "registered_at": found.registered_at.isoformat(),
+        "version": found.version,
+        "author": {
+            "entity_type": found.author_reference.target_id.entity_type,
+            "id": str(found.author_reference.target_id.value),
+        },
+        "source": {
+            "source_id": str(found.source.source_id.value),
+            "source_type": found.source.source_type.value,
+            "identifier_uri": found.source.identifier_uri,
+        },
+        "confidence": {
+            "tier": found.confidence_level.tier.value,
+            "reason": found.confidence_level.reason,
+        },
+        "validity": (
+            None
+            if found.validity_period is None
+            else {
+                "valid_from": (
+                    found.validity_period.valid_from.isoformat()
+                    if found.validity_period.valid_from is not None
+                    else None
+                ),
+                "valid_until": (
+                    found.validity_period.valid_until.isoformat()
+                    if found.validity_period.valid_until is not None
+                    else None
+                ),
+            }
+        ),
+        # Revogação viaja junto: apresentar evidência revogada como se valesse
+        # transformaria o dossiê em prova falsa.
+        "revocation": (
+            None
+            if found.revocation is None
+            else {
+                "revoked_at": found.revocation.revoked_at.isoformat(),
+                "reason": found.revocation.reason,
+                "revoking_actor": {
+                    "entity_type": found.revocation.revoking_actor.target_id.entity_type,
+                    "id": str(found.revocation.revoking_actor.target_id.value),
+                },
+            }
+        ),
+        "verifications": [
+            {
+                "verification_id": str(v.verification_id.value),
+                "verified_at": v.verified_at.isoformat(),
+                "outcome": v.outcome.value,
+                "notes": v.notes,
+                "verifier": {
+                    "entity_type": v.verifier_reference.target_id.entity_type,
+                    "id": str(v.verifier_reference.target_id.value),
+                },
+            }
+            for v in found.verifications
+        ],
+    }
