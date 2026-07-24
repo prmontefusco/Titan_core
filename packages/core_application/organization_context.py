@@ -52,6 +52,14 @@ class OrganizationContextService:
         if len(memberships) != 1:
             raise OrganizationContextDenied("CONTEXTO_ORGANIZACIONAL_NEGADO")
         membership = memberships[0]
+        # Defesa em profundidade (ADR-0003): o filtro por Organization é feito
+        # pelo RLS no banco, mas confiar apenas nele significa que uma conexão com
+        # role privilegiado — superusuário, engano de configuração, migração mal
+        # feita — derrubaria o isolamento **em silêncio**, concedendo contexto
+        # sobre o vínculo de outra Organization. A conferência aqui é barata e
+        # transforma essa falha silenciosa em negação.
+        if membership.organization_id != requested_organization_id:
+            raise OrganizationContextDenied("CONTEXTO_ORGANIZACIONAL_NEGADO")
         role_ids, permission_codes = self.reader.effective_roles_and_permissions(
             membership.membership_id, instant
         )

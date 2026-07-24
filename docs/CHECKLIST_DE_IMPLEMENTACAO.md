@@ -2,7 +2,7 @@
 
 **Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 10.4 — API mínima do fluxo aprovado
+**Próximo passo planejado:** Passo 10.4b — os seis endpoints restantes, após aprovação manual do 10.4a
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -54,7 +54,7 @@ Estados utilizados:
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
 | 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1, 10.2 e 10.3 completos; 10.4 em diante não iniciados | Pendente |
+| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.3 completos; 10.4a implementado; 10.4b congelado | Pendente |
 
 
 ## Registro dos passos executados
@@ -2410,6 +2410,79 @@ Todo valor impresso vem do JSON; a aritmética da carência é legível na folha
 
 Comparar JSON e PDF campo a campo, verificar legibilidade e recalcular a integridade usando o procedimento impresso.
 
+## Passo 10.4 — API mínima do fluxo aprovado
+
+**Estado:** EM ANDAMENTO. O 10.4a está implementado; o 10.4b está congelado e não iniciado.
+
+**Divisão adotada, com aprovação do responsável.** O 10.4 exige autenticação, autorização, teste positivo e negativo, tratamento de erro e validação com dois papéis e duas Organizations. A fundação não é detalhe de implementação: é pré-condição de todo endpoint. Separá-la isola um risco arquitetural transversal da simples exposição dos casos de uso — e se a raiz de composição estiver errada, todo endpoint construído sobre ela teria de ser refeito.
+
+**Portão declarado:** nenhum outro endpoint da vertical é implementado enquanto a prova ponta a ponta do 10.4a não estiver aprovada.
+
+### Decisões congeladas para o 10.4b
+
+**Sete endpoints**, não seis — a contagem anterior tratava medicamento e lote como um só:
+
+```
+POST /v1/livestock/animals
+POST /v1/livestock/medications
+POST /v1/livestock/medication-batches
+POST /v1/livestock/treatments
+POST /v1/livestock/animals/{id}/eligibility
+GET  /v1/livestock/animals/{id}/timeline
+GET  /v1/livestock/dossiers/{id}
+```
+
+**`VeterinaryPrescription` NÃO integra a API mínima do Marco 10.** A capacidade de domínio existe e continua existindo, mas `prescription_id` é opcional em `TreatmentApplication` e **nenhuma regra do cenário aprovado depende de prescrição** — a regra bloqueante do 9.5 consulta o fato `livestock.withdrawal`. Expor `POST /prescriptions` agora seria endpoint que grava algo que nenhuma regra consulta, violando o critério de "estritamente necessários". A exposição depende da definição futura dos casos em que a prescrição será obrigatória, conforme a NR-4 — e então nascerão juntos regra de domínio, validação, fato, permissão, endpoint e testes.
+
+**O dossiê é consequência da decisão, não criação manual.** `POST /animals/{id}/eligibility` executa fatos → avaliação → decisão → dossiê e devolve os identificadores. Não existe `POST /dossiers`: o operador não deveria ficar criando prova à mão.
+
+**Permissões e papéis:**
+
+| Papel | Permissões |
+|---|---|
+| `OPERADOR_PECUARIO` | `LIVESTOCK_ANIMAL.CRIAR`, `LIVESTOCK_MEDICATION.CRIAR`, `LIVESTOCK_TREATMENT.REGISTRAR`, `LIVESTOCK_ELIGIBILITY.EXECUTAR` |
+| `AUDITOR` | `LIVESTOCK_TIMELINE.LER`, `DOSSIER.LER` |
+
+`LIVESTOCK_ELIGIBILITY.EXECUTAR` é **uma** permissão de caso de uso, e não `AVALIAR` mais `EMITIR`. Internamente `Evaluation` e `Decision` são conceitos distintos; externamente, "executar elegibilidade" é uma capacidade de negócio única. Granularidade de permissão deve acompanhar necessidade real de separação de autoridade, não a quantidade de classes internas envolvidas — e hoje não há dois atores para as duas etapas.
+
+O auditor não recebe **nenhuma** permissão de escrita. É o que torna o teste negativo inequívoco.
+
+### 10.4a — Fundação HTTP da vertical · IMPLEMENTADO
+
+**Data:** 24 de julho de 2026. **Validação manual pendente.**
+
+- **Raiz de composição (`apps/api/livestock_dependencies.py`):** conexão e **uma transação por requisição** — registro e evento nascem juntos ou não nascem; contexto organizacional resolvido a partir do cabeçalho `X-Titan-Organization-Id`; **RLS armado dentro da transação** com `set_config(..., true)`, para o isolamento acompanhar a unidade de trabalho e não sobrar para a próxima conexão do pool.
+- **`require_permission(código)`, nunca papel.** A cadeia é `User → Membership → Role → Permission → Endpoint`. Uma rota que perguntasse "é OPERADOR_PECUARIO?" congelaria a organização de papéis dentro do código HTTP; perguntando pela permissão, papéis novos entram sem tocar em rota alguma.
+- **Problem Details (`apps/api/problem.py`)** com `reason_code` estável, e a distinção mantida explícita: **401** — não sei quem você é; **403** — sei quem você é, e você não pode. Erro não previsto vira **500 sanitizado**, sem vazar nada do que aconteceu por dentro.
+- **Endpoint-prova `POST /v1/livestock/animals`**, escolhido por ser simples o bastante para provar o encanamento sem envolver motor de regras, avaliação, decisão ou dossiê.
+- **Superfície pública atualizada conscientemente.** As rotas de domínio do **Core** seguem fechadas: a API do Marco 10 é da vertical, e expor `/v1/decisions` ou `/v1/evidences` seria decisão à parte.
+
+### Defesa em profundidade encontrada e corrigida no Core
+
+O teste de isolamento falhou primeiro com **201 em vez de 403**: o operador da Org A criou animal na Org B.
+
+A causa era o ambiente — o usuário `titan` do PostgreSQL é superusuário e **ignora RLS**. Mas isso expôs uma fragilidade real: `OrganizationContextService` consultava vínculos **confiando inteiramente no RLS** para filtrar por Organization, sem conferir se o vínculo devolvido pertencia à organização pedida. Uma conexão com role privilegiado — superusuário, engano de configuração, migração malfeita — derrubaria o isolamento **em silêncio**.
+
+A ADR-0003 se chama "RLS **e defesa em profundidade**", e a segunda camada não existia. Foi acrescentada a conferência explícita `membership.organization_id == requested_organization_id`, com teste que usa um leitor deliberadamente permissivo para simular a ausência de RLS.
+
+Além disso, as requisições da API no teste de integração passaram a rodar sob role `NOBYPASSRLS` criado por teste: sem isso, a prova de isolamento não valeria nada.
+
+### Testes da prova ponta a ponta (8)
+
+Criação autorizada `201`; sem token `401`; sem a permissão exigida `403` com `PERMISSAO_AUSENTE`; organização sem vínculo `403` com `CONTEXTO_ORGANIZACIONAL_NEGADO`, negação indistinguível; cabeçalho de organização ausente `400`; entrada inválida `422` em `problem+json` com os campos; conflito de domínio `409`; e o animal criado nasce com o evento no log do Core, provando que a transação cobre entidade e prova.
+
+### Portão de verificação
+
+`627 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (349 arquivos) e `alembic check` sem erros.
+
+### Dívida registrada
+
+Dois itens têm o código escrito e **não têm teste**: o **rollback explícito da transação** — a fixture já desfaz tudo, o que mascararia a prova — e o **500 sanitizado para erro inesperado**. Devem ser cobertos antes de o 10.4 fechar.
+
+### Validação manual pendente
+
+Operar o fluxo com dois papéis e duas Organizations, validando negações, erros e isolamento.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
@@ -2487,5 +2560,7 @@ Vale medir quanto da regulação real cabe nessas primitivas antes de construir 
 2. Se a maioria couber, construir a autoria declarativa primeiro — é incomparavelmente mais barata que o sandbox e resolve o problema prático.
 3. Reservar a implementação da ADR-0036 para o que sobrar, com evidência de que sobrou.
 4. Em qualquer dos caminhos, exigir portão de aprovação para publicar regra: o plano já trata regra de negócio como categoria de aprovação obrigatória, e autoria por administrador não afrouxa isso.
+
+Decidido em 24/07/2026: `VeterinaryPrescription` **não** integra a API mínima do Marco 10 — ver Passo 10.4. A pendência é de **regra de negócio**, não de API.
 
 Relacionado: [ADR-0011] fontes normativas, vigência e reavaliação temporal; [ADR-0016] decisões explicáveis e revisão humana; NR-4, sobre quem registra cada fato.

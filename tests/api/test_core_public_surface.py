@@ -1,9 +1,12 @@
-"""Superfície HTTP pública do Core no fechamento do Marco 7 (Passo 7.10).
+"""Superfície HTTP pública, congelada deliberadamente (Passos 7.10 e 10.4).
 
-A API de domínio pertence ao Passo 10.4 — "endpoints estritamente necessários
-para operar o cenário já implementado". Este teste fixa o que o Core expõe hoje
-para que endpoint de domínio não apareça por acidente antes daquele passo: um
-endpoint novo aqui é uma decisão, não um efeito colateral.
+Um endpoint novo aqui é uma decisão, não um efeito colateral: quem acrescentar
+rota sem atualizar esta lista quebra o portão.
+
+O Passo 10.4a abriu a primeira rota de domínio da vertical — `POST
+/v1/livestock/animals`, endpoint-prova da fundação HTTP. As rotas de domínio do
+**Core** seguem fechadas: a API mínima do Marco 10 é da vertical, e expor
+`/v1/decisions` ou `/v1/evidences` seria decisão à parte, que ninguém tomou.
 """
 
 from typing import Any
@@ -14,11 +17,13 @@ from apps.api.main import app
 
 client = TestClient(app)
 
-# Somente superfície técnica e verificação externa. Nada de domínio.
 SUPERFICIE_ESPERADA = {
+    # Técnico e verificação externa.
     ("/health", "get"),
     ("/technical/authentication", "get"),
     ("/v1/verification/bundles", "post"),
+    # Vertical Livestock — Passo 10.4a, endpoint-prova da fundação HTTP.
+    ("/v1/livestock/animals", "post"),
 }
 
 
@@ -81,11 +86,12 @@ def test_swagger_descreve_a_superficie_para_validacao_manual() -> None:
     assert "text/html" in resposta.headers["content-type"]
 
 
-def test_endpoints_de_dominio_ainda_nao_existem() -> None:
-    """Guarda explícita do portão do Marco 7.
+def test_endpoints_de_dominio_do_core_continuam_fechados() -> None:
+    """O Marco 10 expõe a vertical, não o Core.
 
-    Se um endpoint de domínio surgir antes do Passo 10.4, este teste falha e
-    obriga a decisão a passar pelo plano em vez de entrar despercebida.
+    Publicar `/v1/decisions` ou `/v1/evidences` daria a terceiros acesso direto às
+    primitivas do Core sem passar por caso de uso algum. Se um deles surgir, este
+    teste falha e obriga a decisão a passar pelo plano.
     """
     caminhos = {caminho for caminho, _ in _operacoes()}
     proibidos = (
@@ -104,4 +110,4 @@ def test_endpoints_de_dominio_ainda_nao_existem() -> None:
     )
     vazados = [prefixo for prefixo in proibidos if any(c.startswith(prefixo) for c in caminhos)]
 
-    assert not vazados, "Endpoints de domínio expostos antes do Passo 10.4: " + ", ".join(vazados)
+    assert not vazados, "Endpoints de domínio do Core expostos: " + ", ".join(vazados)

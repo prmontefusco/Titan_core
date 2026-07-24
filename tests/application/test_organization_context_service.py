@@ -91,3 +91,43 @@ def test_service_denies_unknown_identity_or_organization_without_membership() ->
             requested_organization_id=OrganizationId.new(),
             instant=NOW,
         )
+
+
+@dataclass
+class LeakyReader(FakeReader):
+    """Leitor que NÃO filtra por Organization, como aconteceria sem RLS efetivo."""
+
+    def valid_memberships(
+        self, user_id: TypedId, organization_id: OrganizationId, instant: datetime
+    ) -> tuple[Membership, ...]:
+        return self.memberships
+
+
+def test_membership_de_outra_organizacao_e_negado_mesmo_sem_rls() -> None:
+    """Defesa em profundidade: confiar só no RLS deixa a falha ser silenciosa.
+
+    Uma conexão com role privilegiado — superusuário, engano de configuração —
+    faria a consulta devolver o vínculo de outra Organization, e o contexto seria
+    concedido sobre ele. A conferência explícita transforma isso em negação.
+    """
+    user_id = TypedId.new("user")
+    organizacao_do_vinculo = OrganizationId.new()
+    organizacao_pedida = OrganizationId.new()
+    vinculo = Membership.create(
+        user_id=user_id,
+        organization_id=organizacao_do_vinculo,
+        valid_from=NOW,
+        valid_until=None,
+        origin_reference=TypedId.new("membership_invitation"),
+        granted_by_actor_id=TypedId.new("actor"),
+    )
+    servico = OrganizationContextService(
+        reader=LeakyReader(identity=_identity(user_id), memberships=(vinculo,))
+    )
+
+    with pytest.raises(OrganizationContextDenied):
+        servico.build(
+            principal=_principal(),
+            requested_organization_id=organizacao_pedida,
+            instant=NOW,
+        )

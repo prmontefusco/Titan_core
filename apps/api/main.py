@@ -3,12 +3,21 @@ from functools import lru_cache
 from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from apps.api.livestock_animals import router as livestock_router
+from apps.api.livestock_dependencies import _principal
+from apps.api.problem import (
+    DomainProblem,
+    domain_problem_handler,
+    unexpected_error_handler,
+    validation_problem_handler,
+)
 from apps.api.verification import public_contract_schemas
 from apps.api.verification import router as verification_router
 from packages.core_domain import AuthenticatedPrincipal
@@ -103,6 +112,18 @@ def require_authenticated_principal(
 AuthenticatedPrincipalDependency = Annotated[
     AuthenticatedPrincipal, Depends(require_authenticated_principal)
 ]
+
+# A raiz de composição da vertical declara um marcador de principal para não
+# importar este módulo, que a importa. Aqui o marcador recebe a dependência real.
+app.dependency_overrides[_principal] = require_authenticated_principal
+
+app.include_router(livestock_router)
+
+app.add_exception_handler(DomainProblem, domain_problem_handler)
+app.add_exception_handler(RequestValidationError, validation_problem_handler)
+# Handler de último recurso: o cliente recebe código estável e nada do que
+# aconteceu por dentro.
+app.add_exception_handler(Exception, unexpected_error_handler)
 
 
 @app.exception_handler(StarletteHTTPException)
