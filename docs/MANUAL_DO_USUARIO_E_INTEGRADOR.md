@@ -21,8 +21,10 @@
    - [3.9 Verificação Externa por Terceiros (Offline e API)](#39-verificação-externa-por-terceiros-offline-e-api)
    - [3.10 Operação Offline e Admissão de Dispositivos](#310-operação-offline-e-admissão-de-dispositivos)
    - [3.11 Resiliência de Borda e Proteção de Dados (Rate Limiting e Log Redaction)](#311-resiliência-de-borda-e-proteção-de-dados-rate-limiting-e-log-redaction)
+   - [3.12 Linha do Tempo (Passo 10.1)](#312-linha-do-tempo-passo-101)
 4. [Guia de Integração para Sistemas Externos (Passo a Passo)](#4-guia-de-integração-para-sistemas-externos-passo-a-passo)
 5. [Cenário Prático Completo em Python (End-to-End)](#5-cenário-prático-completo-em-python-end-to-end)
+6. [Vocabulário Essencial da Rastreabilidade](#6-vocabulário-essencial-da-rastreabilidade)
 
 ---
 
@@ -313,6 +315,37 @@ Permitir que dispositivos em campo (smartphones, coletores sem internet) capture
 
 ---
 
+### 3.12 Linha do Tempo (Passo 10.1)
+
+#### Para que serve?
+Responder "o que aconteceu com este sujeito, em que ordem, por obra de quem" **sem consultar o estado atual**. Se alguém alterar o cadastro de um animal hoje, a história de ontem continua dizendo o que dizia, porque ela não é lida do cadastro — é lida dos registros imutáveis.
+
+#### As duas ordens (o conceito mais importante desta seção)
+
+Existem **duas ordens diferentes** sobre os mesmos registros, e confundi-las é a origem da maior parte dos erros nesta área:
+
+| | Ordem de **chegada** | Ordem de **ocorrência** |
+|---|---|---|
+| Onde vive | O log (`core_audit.domain_events`) | A linha do tempo (calculada na leitura) |
+| Como é dada | `aggregate_version = máximo + 1` na gravação | Ordenação por `occurred_at` |
+| Para que serve | Encadear hashes e detectar adulteração | Contar a história como ela aconteceu |
+| Pode mudar? | Nunca — é append-only | Recalculada a cada leitura |
+
+Um evento capturado em campo no dia 3 e sincronizado no dia 20 é **anexado no fim** do log — receber a maior versão do fluxo. Inserir no meio quebraria a cadeia de hashes, que é exatamente o que torna adulteração detectável. Quem o coloca no meio, cronologicamente, é a **leitura**.
+
+> **Regra prática:** nunca assuma que ordem de versão é ordem cronológica. Elas coincidem hoje por acidente e divergem no dia em que houver captura offline.
+
+#### Corte bitemporal (`TimelineCutoff`)
+Duas perguntas diferentes, dois eixos independentes:
+
+- **`occurred_until`** — "o que **aconteceu** até tal data".
+- **`known_until`** — "o que o Titan **sabia** em tal data". É o eixo de auditoria: um lançamento atrasado não pode aparecer numa reconstrução do passado conhecido, senão um dossiê emitido naquela data deixa de ser reproduzível.
+
+#### Correção
+O registro corrigido **permanece na sua posição cronológica**, marcado com `superseded_by` apontando para quem o corrigiu. Reordenar para "correção sempre por último" mentiria sobre quando o fato ocorreu; omitir o corrigido apagaria o passado.
+
+---
+
 ## 4. Guia de Integração para Sistemas Externos (Passo a Passo)
 
 Para integrar uma aplicação externa (gateway, ERP, app mobile) ao Titan Core, siga este fluxo:
@@ -472,3 +505,103 @@ pdf_representation = dossier_service.generate_pdf(
 print(f"PDF Gerado com sucesso! Tamanho: {len(pdf_representation.pdf_bytes)} bytes.")
 print(f"Payload do QR Code de verificação: {pdf_representation.verification_qr_payload}")
 ```
+
+---
+
+## 6. Vocabulário Essencial da Rastreabilidade
+
+> **Para que serve esta seção:** dar o nome correto às coisas. Boa parte do atrito em projetos de rastreabilidade vem de palavras usadas de forma imprecisa — "evento" para o que é cálculo, "árvore" para o que é grafo, "data" para o que são dois instantes diferentes. Cada verbete traz o termo, o que significa e, quando útil, **o erro comum que ele evita**.
+
+### 6.1 Tempo
+
+**Instante de ocorrência (`occurred_at`)** — quando o fato aconteceu no mundo.
+
+**Instante de registro (`recorded_at`)** — quando o Titan tomou conhecimento dele. Os dois quase nunca são iguais em operação de campo.
+
+> ❌ Não diga "a data do evento". ✅ Diga "instante de ocorrência" ou "instante de registro", explicitando qual.
+
+**Bitemporal** — modelo que guarda os dois instantes separadamente e permite consultar por qualquer um dos eixos. É o que torna possível responder "o que sabíamos em 10 de maio" além de "o que aconteceu até 10 de maio".
+
+**Tempo alegado** — instante informado por um relógio que o sistema não controla, como o celular do operador em campo. Não é prova temporal.
+
+**Prova temporal** — instante atestado por fonte independente e verificável: carimbo do servidor, checkpoint de integridade ou autoridade de carimbo do tempo (TSA).
+
+> ❌ Não diga "o app registrou às 14h, então foi às 14h". ✅ Diga "hora alegada pelo dispositivo, com tal nível de confiança".
+
+**Âncora temporal** — registro de terceiro que limita quando um fato pôde ter ocorrido. A nota fiscal de compra do medicamento estabelece um **limite inferior** (não se aplica o que ainda não se comprou); o instante da sincronização estabelece um **limite superior**. Entre os dois há um intervalo provável que não depende de confiar no dispositivo.
+
+**Ordem de chegada × ordem de ocorrência** — ver seção 3.12. A primeira é imutável e serve à integridade; a segunda é calculada e serve à narrativa.
+
+### 6.2 Fatos e derivações
+
+**Evento de domínio** — algo que aconteceu e não se desfaz. Gravado uma vez, nunca editado.
+
+**Derivação (traço calculado)** — valor obtido por cálculo sobre fatos. Carência, ganho médio diário e peso ajustado aos 205 dias são derivações.
+
+> **A regra que evita a maior parte dos problemas:** derivação **nunca** vira evento. Gravar o resultado de um cálculo como fato cria duas fontes de verdade que podem divergir. O padrão internacional ICAR faz a mesma distinção, entre *traço registrado* e *traço calculado*.
+
+**Supersessão** — corrigir criando um **novo** registro que referencia o anterior, em vez de sobrescrever. O errado permanece visível e marcado.
+
+> ❌ Não diga "o sistema corrige o registro". ✅ Diga "o sistema supersede o registro: grava a correção apontando para o original, que permanece".
+
+**Agregado** — a entidade dona de um fluxo de eventos: um animal, um lote, uma aplicação de tratamento. Cada agregado tem sua própria numeração de versão e sua própria cadeia de hashes.
+
+**Fluxo (*stream*)** — a sequência de eventos de um agregado.
+
+**Correlação** — identificador que amarra operações de um mesmo fluxo de trabalho, ainda que atinjam agregados diferentes.
+
+**Causação** — identificador que aponta qual evento deu origem a outro.
+
+### 6.3 Estrutura da cadeia
+
+**Rastreabilidade para trás (*tracking*)** — a partir de um produto, chegar às origens. "Esta linguiça veio de quais animais?"
+
+**Rastreabilidade para frente (*tracing*)** — a partir de uma origem, chegar aos produtos. "Este lote de vacina atingiu quais produtos no mercado?"
+
+> São as duas direções da mesma travessia. Todo sistema sério precisa das duas, e a regulação de segurança de alimentos exige ambas.
+
+**Fan-out** — um insumo gera várias saídas. O abate é fan-out: um animal vira dezenas de cortes.
+
+**Fan-in** — várias entradas geram uma saída. Carne moída, linguiça e hambúrguer são fan-in: um lote mistura muitos animais.
+
+**DAG (grafo dirigido acíclico)** — a estrutura correta da cadeia produtiva.
+
+> ❌ Não diga "árvore de rastreabilidade". ✅ Diga "grafo" ou "DAG". Árvore pressupõe **um** pai, e isso quebra no primeiro produto misto, que tem dezenas. A genealogia animal também é fan-in: todo animal tem dois pais.
+
+**Evento de transformação** — o nó em que insumos são consumidos e saídas são produzidas. É o único tipo de evento que **quebra a cadeia de lote** e cria lote novo, e é irreversível. Abate, desossa e moagem são eventos de transformação.
+
+**Lote** — unidade de agrupamento rastreável. Aparece em três sentidos que não devem ser confundidos: lote de medicamento (unidade fabricada), lote pecuário (agrupamento de animais em manejo) e lote de produto (saída de uma transformação).
+
+### 6.4 Padrões e regulação que valem conhecer
+
+**GS1 EPCIS** — padrão internacional de eventos de cadeia de suprimentos. Define `TransformationEvent` exatamente para o caso fan-in/fan-out descrito acima, com listas de entrada e de saída.
+
+> **Recomendação de rumo:** quando o Titan chegar a abate e produtos, adotar o vocabulário do EPCIS em vez de inventar outro. Um sistema de auditoria que não troca dados com o sistema do frigorífico e do comprador perde valor como prova para terceiros.
+
+**CTE (*Critical Tracking Event*) e KDE (*Key Data Element*)** — vocabulário da regulação norte-americana FSMA 204: os eventos que obrigatoriamente devem ser registrados e os campos mínimos de cada um.
+
+**Um passo atrás, um passo à frente** — exigência mínima clássica: saber de quem se recebeu e para quem se entregou. Hoje é considerada insuficiente isoladamente, por não permitir reconstruir a cadeia inteira.
+
+**PNIB** — Plano Nacional de Identificação Individual de Bovinos e Búfalos, cronograma brasileiro de rastreabilidade individual obrigatória.
+
+**SISBOV** — sistema brasileiro de identificação e certificação para mercados que exigem rastreabilidade individual.
+
+### 6.5 Confiança e evidência
+
+**Evidência** — documento ou dado que sustenta uma afirmação, registrado com hash do conteúdo e proveniência.
+
+**Proveniência** — a cadeia de onde veio cada informação e por quais mãos passou.
+
+**Nível de confiança (`ConfidenceLevel`)** — grau de credibilidade de um dado. É **gradiente, não interruptor**: um registro cuja hora repousa em relógio não verificado entra no sistema, mas não deveria sustentar uma liberação com o mesmo peso de um registro corroborado por documento de terceiro.
+
+**Validação externa pendente** — estado explícito para "afirmado, ainda não conferido na fonte". Não é reprovação nem aprovação.
+
+> **Princípio do Titan:** lacuna é pendência, não reprovação. Ausência de comprovante nunca é tratada como descumprimento.
+
+### 6.6 O que diferencia o Titan
+
+O grafo de rastreabilidade descrito acima é **problema resolvido** e padronizado internacionalmente. Não é ali que está o diferencial.
+
+O que é raro é a **proveniência da decisão**: provar que determinado bloqueio foi produzido por tal regra, em tal versão, sobre tais fatos, com tais evidências — e que qualquer terceiro consegue refazer a conta e chegar ao mesmo resultado, sem acesso ao banco. Padrões de rastreabilidade dizem **para onde as coisas foram**; não dizem **por que uma decisão foi tomada**, nem permitem reproduzi-la.
+
+> Ao apresentar o Titan, esta é a frase que separa: *"não é mais um sistema que registra onde o boi andou; é um sistema que prova por que ele foi liberado ou barrado, e permite refazer a prova"*.

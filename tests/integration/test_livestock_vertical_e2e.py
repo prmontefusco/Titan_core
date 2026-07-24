@@ -8,6 +8,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import Connection, create_engine, text
 
+from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.livestock_application.animal_service import AnimalService
 from packages.livestock_application.event_recorder import LivestockEventRecorder
@@ -15,6 +17,10 @@ from packages.livestock_application.fact_provider import LivestockFactProvider
 from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
 from packages.livestock_application.property_service import RuralPropertyService
+from packages.livestock_application.timeline_service import (
+    LivestockTimelineService,
+    TimelineCutoff,
+)
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import AnimalSex, IdentifierType, VerificationStatus
 from packages.livestock_domain.lot import LotType
@@ -26,12 +32,18 @@ from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
     TransactionalLotMembershipRepository,
 )
+from packages.livestock_infrastructure.persistence.medication_repository import (
+    TransactionalMedicationBatchRepository,
+)
 from packages.livestock_infrastructure.persistence.movement_repository import (
     TransactionalAnimalMovementRepository,
     TransactionalPropertyStayRepository,
 )
 from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
+)
+from packages.livestock_infrastructure.persistence.treatment_repository import (
+    TransactionalTreatmentApplicationRepository,
 )
 from packages.livestock_infrastructure.persistence.veterinarian_repository import (
     TransactionalVeterinarianRepository,
@@ -284,6 +296,51 @@ def test_livestock_vertical_full_e2e_flow(db_connection: Connection) -> None:
     # A autoria e a correlação atravessaram o fluxo inteiro.
     assert {event.correlation_id for event in stored} == {ctx.correlation_id}
     assert {event.actor_reference for event in stored} == {ctx.actor_reference}
+
+    # H3. A linha do tempo do Passo 10.1b, montada sobre o log real do Core.
+    timeline_service = LivestockTimelineService(
+        event_reader=event_log,
+        movement_repository=mov_repo,
+        application_repository=TransactionalTreatmentApplicationRepository(
+            connection=db_connection
+        ),
+        membership_repository=mem_repo,
+        batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
+        evaluation_repository=TransactionalEvaluationRepository(connection=db_connection),
+        decision_repository=TransactionalDecisionRepository(connection=db_connection),
+    )
+    historia = timeline_service.animal_timeline(org_1, animal.animal_id)
+    tipos = [entry.entry_type for entry in historia]
+
+    # A história do animal reúne os fluxos de tudo que o tocou: cadastro e
+    # marcações dele, os dois lotes por onde passou e a movimentação.
+    assert tipos.count("livestock.animal_registered") == 1
+    assert tipos.count("livestock.identifier_attached") == 2
+    assert "livestock.animal_moved" in tipos
+    assert tipos.count("livestock.animal_added_to_lot") == 2
+    assert "livestock.animal_removed_from_lot" in tipos
+    # A propriedade não é história do animal e não entra.
+    assert "livestock.property_registered" not in tipos
+
+    # Ordem total e reproduzível: duas leituras são idênticas, não parecidas.
+    assert historia == timeline_service.animal_timeline(org_1, animal.animal_id)
+    assert [entry.sort_key() for entry in historia] == sorted(
+        entry.sort_key() for entry in historia
+    )
+
+    # O corte por instante devolve um prefixo do que a leitura completa devolveu.
+    corte = timeline_service.animal_timeline(
+        org_1,
+        animal.animal_id,
+        TimelineCutoff(occurred_until=m_time - timedelta(seconds=1)),
+    )
+    assert list(corte) == [
+        entry for entry in historia if entry.occurred_at <= m_time - timedelta(seconds=1)
+    ]
+    assert "livestock.animal_moved" not in [entry.entry_type for entry in corte]
+
+    # Outra Organization não enxerga história alguma deste animal.
+    assert timeline_service.animal_timeline(org_2, animal.animal_id) == ()
 
     # I. RLS Isolation: Org 2 não enxerga dados da Org 1
     role_name = f"titan_e2e_role_{uuid4().hex[:12]}"

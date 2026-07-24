@@ -221,6 +221,19 @@ class TransactionalLotMembershipRepository(LotMembershipRepositoryPort):
         rows = self.connection.execute(stmt).fetchall()
         return [self._map_membership(row) for row in rows]
 
+    def list_memberships_for_animal(self, animal_id: TypedId) -> list[LotMembership]:
+        """Todos os vínculos do animal, encerrados inclusive.
+
+        `get_active_memberships_for_animal` filtra `valid_until IS NULL` e serve à
+        regra de exclusividade. Uma linha do tempo montada com ele mostraria só o
+        lote atual e perderia todos os anteriores — que são justamente o histórico.
+        """
+        stmt = select(lot_memberships_table).where(
+            lot_memberships_table.c.animal_id == animal_id.value
+        )
+        rows = self.connection.execute(stmt).fetchall()
+        return [self._map_membership(row) for row in rows]
+
     def get_memberships_for_lot(
         self, lot_id: TypedId, at_time: datetime | None = None
     ) -> list[LotMembership]:

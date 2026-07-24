@@ -73,6 +73,9 @@ class InMemoryMembershipRepository(LotMembershipRepositoryPort):
             if m.animal_id == animal_id and m.valid_until is None
         ]
 
+    def list_memberships_for_animal(self, animal_id: TypedId) -> list[LotMembership]:
+        return [m for m in self.memberships.values() if m.animal_id == animal_id]
+
     def get_memberships_for_lot(
         self, lot_id: TypedId, at_time: datetime | None = None
     ) -> list[LotMembership]:

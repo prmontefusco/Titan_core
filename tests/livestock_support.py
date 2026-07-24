@@ -5,6 +5,7 @@ e importar de conftest alheio confunde a coleta do pytest.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from packages.core_domain.decision import Decision
 from packages.core_domain.evaluation import Evaluation
@@ -25,6 +26,15 @@ class FakeEvaluationRepository:
     def save(self, evaluation: Evaluation) -> None:
         self.saved.append(evaluation)
 
+    def list_by_subject(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[Evaluation]:
+        return [
+            evaluation
+            for evaluation in self.saved
+            if evaluation.organization_id == organization_id and evaluation.subject_id == subject_id
+        ]
+
 
 @dataclass
 class FakeDecisionRepository:
@@ -32,6 +42,15 @@ class FakeDecisionRepository:
 
     def save(self, decision: Decision) -> None:
         self.saved.append(decision)
+
+    def list_by_subject(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[Decision]:
+        return [
+            decision
+            for decision in self.saved
+            if decision.organization_id == organization_id and decision.subject_id == subject_id
+        ]
 
 
 @dataclass
@@ -73,6 +92,55 @@ class FakeEventLog:
         matches = self.of_type(event_type)
         assert len(matches) == 1, f"Esperado exatamente um '{event_type}', houve {len(matches)}."
         return matches[0]
+
+
+@dataclass(frozen=True, slots=True)
+class RecordedEventView:
+    """Um `DomainEvent` na forma achatada em que a persistência o devolve.
+
+    O log em memória guarda o objeto de domínio; o repositório do Core devolve
+    colunas. A leitura da timeline enxerga a segunda forma, então o apoio de teste
+    precisa entregá-la — senão o teste passa contra uma interface que não existe.
+    """
+
+    event_id: TypedId
+    aggregate_reference: UniversalReference
+    aggregate_version: int
+    event_type: str
+    occurred_at: datetime
+    recorded_at: datetime
+    actor_reference: UniversalReference
+    correlation_id: TypedId
+    causation_id: TypedId | None
+    payload_schema: str
+
+    @classmethod
+    def of(cls, event: DomainEvent) -> "RecordedEventView":
+        return cls(
+            event_id=event.event_id,
+            aggregate_reference=event.aggregate_reference,
+            aggregate_version=event.aggregate_version,
+            event_type=event.event_type,
+            occurred_at=event.timestamps.occurred_at,
+            recorded_at=event.timestamps.recorded_at,
+            actor_reference=event.actor_reference,
+            correlation_id=event.correlation_id,
+            causation_id=event.causation_id,
+            payload_schema=event.payload.schema,
+        )
+
+
+class ReadableEventLog(FakeEventLog):
+    """O log em memória, também legível por agregado, como o do Core."""
+
+    def list_for_aggregate(
+        self, aggregate_reference: UniversalReference
+    ) -> list[RecordedEventView]:
+        selected = [
+            event for event in self.events if event.aggregate_reference == aggregate_reference
+        ]
+        selected.sort(key=lambda event: event.aggregate_version)
+        return [RecordedEventView.of(event) for event in selected]
 
 
 def in_memory_recorder() -> tuple[LivestockEventRecorder, FakeEventLog]:
