@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Any
 
@@ -16,13 +17,23 @@ from reportlab.platypus import (  # type: ignore[import-untyped]
     TableStyle,
 )
 
+from packages.core_application.dossier_pdf_template import PdfSection, VerticalPdfTemplate
 from packages.core_domain.crypto import CryptographicProfile, KeyIdentifier
 from packages.core_domain.dossier import Dossier
 from packages.core_domain.dossier_pdf import DossierPdfRepresentation
 
 
 class SoftwareDossierPdfAdapter:
-    """Gera representação PDF determinística e autocontida a partir de um Dossier."""
+    """Gera representação PDF determinística e autocontida a partir de um Dossier.
+
+    `vertical_templates` são fornecidos por quem compõe a aplicação. O Core não
+    conhece vertical alguma: ele casa o namespace da seção com o do template e
+    desenha o que o template descrever. Seção sem template correspondente **não é
+    descartada em silêncio** — o PDF declara que ela existe e não foi apresentada.
+    """
+
+    def __init__(self, vertical_templates: Sequence[VerticalPdfTemplate] = ()) -> None:
+        self._templates = tuple(vertical_templates)
 
     def generate_pdf(
         self,
@@ -199,6 +210,39 @@ class SoftwareDossierPdfAdapter:
         story.append(t_eval)
         story.append(Spacer(1, 12))
 
+        # Seção da vertical, desenhada a partir do que o template dela descreveu.
+        for secao in self._vertical_sections(doc_data):
+            story.append(Paragraph(secao.title, subtitle_style))
+            dados = [list(secao.columns)] + [list(linha) for linha in secao.rows]
+            largura = 520 / max(len(secao.columns), 1)
+            tabela = Table(dados, colWidths=[largura] * len(secao.columns))
+            tabela.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E2E8F0")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, -1), 7),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E0")),
+                    ]
+                )
+            )
+            story.append(tabela)
+            story.append(Spacer(1, 10))
+
+        # Como conferir a integridade sem depender do Titan.
+        story.append(Paragraph("Como verificar este documento", subtitle_style))
+        story.append(
+            Paragraph(
+                "1) Obtenha o JSON do dossiê. 2) Serialize-o na especificação canônica "
+                f"<b>{doc_data.get('serialization')}</b>. 3) Calcule SHA-256 sobre os bytes "
+                "resultantes. 4) Compare com o Hash Canônico impresso acima. O JSON é a fonte: "
+                "havendo divergência entre ele e este PDF, o JSON prevalece.",
+                normal_style,
+            )
+        )
+        story.append(Spacer(1, 8))
+
         # Rodapé de integridade
         story.append(
             Paragraph(
@@ -212,3 +256,28 @@ class SoftwareDossierPdfAdapter:
         pdf_bytes = buffer.getvalue()
         buffer.close()
         return pdf_bytes
+
+    def _vertical_sections(self, doc_data: dict[str, Any]) -> list[PdfSection]:
+        """Casa a seção da vertical com seu template, ou declara a lacuna."""
+        secao = doc_data.get("vertical")
+        if not secao:
+            return []
+
+        namespace = str(secao.get("namespace", ""))
+        template = next((t for t in self._templates if t.namespace == namespace), None)
+        if template is None:
+            # Omitir seria esconder do leitor que o documento diz mais do que o
+            # papel mostra. Lacuna declarada é honesta; lacuna silenciosa não.
+            return [
+                PdfSection(
+                    title=f"Seção da vertical '{namespace}' não apresentada",
+                    columns=("Situação",),
+                    rows=(
+                        (
+                            "O documento contém uma seção desta vertical, mas nenhum "
+                            "template foi registrado para apresentá-la. Consulte o JSON.",
+                        ),
+                    ),
+                )
+            ]
+        return list(template.render(secao.get("content", {})))
