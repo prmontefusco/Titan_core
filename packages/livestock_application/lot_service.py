@@ -5,7 +5,19 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
+)
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
+from packages.livestock_domain.events import (
+    ANIMAL_ADDED_TO_LOT,
+    ANIMAL_REMOVED_FROM_LOT,
+    LOT_CREATED,
+    animal_added_to_lot_payload,
+    animal_removed_from_lot_payload,
+    lot_created_payload,
+)
 from packages.livestock_domain.lot import (
     LivestockLot,
     LotMembership,
@@ -47,15 +59,17 @@ class LotService:
     membership_repository: LotMembershipRepositoryPort
     animal_repository: AnimalRepositoryPort
     property_repository: RuralPropertyRepositoryPort
+    recorder: LivestockEventRecorder
 
     def create_lot(
         self,
-        organization_id: OrganizationId,
+        context: LivestockOperationContext,
         property_id: TypedId,
         code: str,
         name: str,
         lot_type: LotType = LotType.OPERATIONAL,
     ) -> LivestockLot:
+        organization_id = context.organization_id
         prop = self.property_repository.get_by_id(property_id)
         if prop is None or prop.organization_id != organization_id:
             raise KeyError(
@@ -70,6 +84,7 @@ class LotService:
                 f"{organization_id.value}."
             )
 
+        created_at = datetime.now(UTC)
         lot = LivestockLot(
             lot_id=TypedId.new("livestock_lot"),
             organization_id=organization_id,
@@ -78,21 +93,33 @@ class LotService:
             name=name,
             lot_type=lot_type,
             status=LotStatus.ACTIVE,
-            created_at=datetime.now(UTC),
+            created_at=created_at,
         )
 
         self.lot_repository.save(lot)
+        self.recorder.record(
+            context=context,
+            aggregate_id=lot.lot_id,
+            event_type=LOT_CREATED,
+            payload=lot_created_payload(
+                lot_id=lot.lot_id,
+                property_id=lot.property_id,
+                code=lot.code,
+                name=lot.name,
+                lot_type=lot.lot_type.value,
+            ),
+            occurred_at=created_at,
+        )
         return lot
 
     def add_animal_to_lot(
         self,
+        context: LivestockOperationContext,
         lot_id: TypedId,
         animal_id: TypedId,
         reason: str | None = None,
     ) -> LotMembership:
-        lot = self.lot_repository.get_by_id(lot_id)
-        if lot is None:
-            raise KeyError(f"Lote '{lot_id.value}' não encontrado.")
+        lot = self._owned_lot(context, lot_id)
 
         animal = self.animal_repository.get_by_id(animal_id)
         if animal is None or animal.organization_id != lot.organization_id:
@@ -124,16 +151,27 @@ class LotService:
         )
 
         self.membership_repository.save(membership)
+        self.recorder.record(
+            context=context,
+            aggregate_id=lot_id,
+            event_type=ANIMAL_ADDED_TO_LOT,
+            payload=animal_added_to_lot_payload(
+                lot_id=lot_id,
+                animal_id=animal_id,
+                membership_id=membership.membership_id,
+                valid_from=membership.valid_from,
+            ),
+            occurred_at=membership.valid_from,
+        )
         return membership
 
     def remove_animal_from_lot(
         self,
+        context: LivestockOperationContext,
         lot_id: TypedId,
         animal_id: TypedId,
     ) -> LotMembership:
-        lot = self.lot_repository.get_by_id(lot_id)
-        if lot is None:
-            raise KeyError(f"Lote '{lot_id.value}' não encontrado.")
+        self._owned_lot(context, lot_id)
 
         active_memberships = self.membership_repository.get_active_memberships_for_animal(animal_id)
         target_membership = None
@@ -155,7 +193,25 @@ class LotService:
         valid_until = max(now_utc, target_membership.valid_from + timedelta(microseconds=1))
         closed_membership = replace(target_membership, valid_until=valid_until)
         self.membership_repository.update(closed_membership)
+        self.recorder.record(
+            context=context,
+            aggregate_id=lot_id,
+            event_type=ANIMAL_REMOVED_FROM_LOT,
+            payload=animal_removed_from_lot_payload(
+                lot_id=lot_id,
+                animal_id=animal_id,
+                membership_id=closed_membership.membership_id,
+                valid_until=valid_until,
+            ),
+            occurred_at=valid_until,
+        )
         return closed_membership
+
+    def _owned_lot(self, context: LivestockOperationContext, lot_id: TypedId) -> LivestockLot:
+        lot = self.lot_repository.get_by_id(lot_id)
+        if lot is None or lot.organization_id != context.organization_id:
+            raise KeyError(f"Lote '{lot_id.value}' não encontrado.")
+        return lot
 
     def get_lot_composition(
         self, lot_id: TypedId, at_time: datetime | None = None

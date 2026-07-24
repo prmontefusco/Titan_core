@@ -12,6 +12,7 @@ from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
 )
 from packages.shared_kernel import OrganizationId
+from tests.livestock_support import in_memory_recorder, operation_context
 
 
 @pytest.fixture
@@ -49,11 +50,12 @@ def test_rural_property_persistence_and_rls(db_connection: Connection) -> None:
         {"org_id": str(org_1.value)},
     )
 
+    recorder, _ = in_memory_recorder()
     repo_1 = TransactionalRuralPropertyRepository(connection=db_connection)
-    service_1 = RuralPropertyService(repository=repo_1)
+    service_1 = RuralPropertyService(repository=repo_1, recorder=recorder)
 
     prop_1 = service_1.register_property(
-        organization_id=org_1,
+        context=operation_context(org_1),
         code="PROP-SP-001",
         name="Fazenda Sol Nascente",
         municipality="Ribeirão Preto",
@@ -88,7 +90,7 @@ def test_rural_property_persistence_and_rls(db_connection: Connection) -> None:
     )
 
     repo_2 = TransactionalRuralPropertyRepository(connection=db_connection)
-    service_2 = RuralPropertyService(repository=repo_2)
+    service_2 = RuralPropertyService(repository=repo_2, recorder=recorder)
 
     # RLS deve impedir a org_2 de enxergar a propriedade da org_1
     assert service_2.get_property(prop_1.property_id) is None
@@ -97,7 +99,7 @@ def test_rural_property_persistence_and_rls(db_connection: Connection) -> None:
 
     # org_2 cadastra sua própria propriedade com o mesmo código local
     prop_2 = service_2.register_property(
-        organization_id=org_2,
+        context=operation_context(org_2),
         code="PROP-SP-001",
         name="Fazenda Vale Verde (Org 2)",
         municipality="Campinas",

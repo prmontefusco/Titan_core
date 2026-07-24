@@ -21,6 +21,7 @@ from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
 )
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_support import in_memory_recorder, operation_context
 
 
 @pytest.fixture
@@ -93,17 +94,19 @@ def test_movement_persistence_and_rls(db_connection: Connection) -> None:
     anim_repo_1 = TransactionalAnimalRepository(connection=db_connection)
     prop_repo_1 = TransactionalRuralPropertyRepository(connection=db_connection)
 
+    recorder, _ = in_memory_recorder()
     service_1 = MovementService(
         movement_repository=m_repo_1,
         stay_repository=stay_repo_1,
         animal_repository=anim_repo_1,
         property_repository=prop_repo_1,
+        recorder=recorder,
     )
 
     # 1. Registra movimentação
     m_time = datetime.now(UTC) - timedelta(hours=3)
     movement_1 = service_1.register_movement(
-        organization_id=org_1,
+        context=operation_context(org_1),
         origin_property_id=prop_id_orig,
         destination_property_id=prop_id_dest,
         movement_time=m_time,
@@ -151,6 +154,7 @@ def test_movement_persistence_and_rls(db_connection: Connection) -> None:
         stay_repository=stay_repo_2,
         animal_repository=anim_repo_2,
         property_repository=prop_repo_2,
+        recorder=recorder,
     )
 
     # RLS impede org_2 de enxergar a movimentação ou a estada da org_1

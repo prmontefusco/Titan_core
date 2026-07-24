@@ -25,6 +25,7 @@ from packages.livestock_infrastructure.persistence.veterinarian_repository impor
     TransactionalVeterinarianRepository,
 )
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_support import in_memory_recorder, operation_context
 
 
 @pytest.fixture
@@ -97,15 +98,18 @@ def test_medication_and_prescription_persistence_and_rls(
     vet_repo_1 = TransactionalVeterinarianRepository(connection=db_connection)
     prop_repo_1 = TransactionalRuralPropertyRepository(connection=db_connection)
 
+    recorder, _ = in_memory_recorder()
+    context_1 = operation_context(org_1)
     service_1 = MedicationService(
         medication_repository=med_repo_1,
         prescription_repository=presc_repo_1,
         veterinarian_repository=vet_repo_1,
         property_repository=prop_repo_1,
+        recorder=recorder,
     )
 
     med_1 = service_1.register_medication(
-        organization_id=org_1,
+        context=context_1,
         trade_name="Ivomec Gold",
         active_ingredient="Ivermectina",
         manufacturer="Boehringer",
@@ -113,7 +117,7 @@ def test_medication_and_prescription_persistence_and_rls(
     )
 
     presc_1 = service_1.issue_prescription(
-        organization_id=org_1,
+        context=context_1,
         veterinarian_id=vet_id,
         medication_id=med_1.medication_id,
         property_id=prop_id,
@@ -156,6 +160,7 @@ def test_medication_and_prescription_persistence_and_rls(
         prescription_repository=presc_repo_2,
         veterinarian_repository=vet_repo_2,
         property_repository=prop_repo_2,
+        recorder=recorder,
     )
 
     assert service_2.medication_repository.get_by_id(med_1.medication_id) is None
@@ -183,14 +188,17 @@ def test_medication_batch_persistence_and_rls(db_connection: Connection) -> None
         {"org_id": str(org_1.value)},
     )
 
+    recorder, _ = in_memory_recorder()
+    context_1 = operation_context(org_1)
     med_repo = TransactionalMedicationRepository(connection=db_connection)
     med = MedicationService(
         medication_repository=med_repo,
         prescription_repository=TransactionalPrescriptionRepository(connection=db_connection),
         veterinarian_repository=TransactionalVeterinarianRepository(connection=db_connection),
         property_repository=TransactionalRuralPropertyRepository(connection=db_connection),
+        recorder=recorder,
     ).register_medication(
-        organization_id=org_1,
+        context=context_1,
         trade_name="Ivomec Gold",
         active_ingredient="Ivermectina",
         manufacturer="Boehringer",
@@ -200,9 +208,10 @@ def test_medication_batch_persistence_and_rls(db_connection: Connection) -> None
     batch_service = MedicationBatchService(
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         medication_repository=med_repo,
+        recorder=recorder,
     )
     batch = batch_service.register_batch(
-        organization_id=org_1,
+        context=context_1,
         medication_id=med.medication_id,
         batch_number="LOTE-2026-001",
         expiry_date=datetime.now(UTC) + timedelta(days=365),

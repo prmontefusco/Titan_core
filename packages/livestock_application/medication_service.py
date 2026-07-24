@@ -4,9 +4,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
+)
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_application.veterinarian_service import VeterinarianRepositoryPort
 from packages.livestock_domain.animal import VerificationStatus
+from packages.livestock_domain.events import (
+    MEDICATION_BATCH_REGISTERED,
+    MEDICATION_REGISTERED,
+    PRESCRIPTION_ISSUED,
+    medication_batch_registered_payload,
+    medication_registered_payload,
+    prescription_issued_payload,
+)
 from packages.livestock_domain.medication import Medication, MedicationBatch
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.shared_kernel import OrganizationId, TypedId
@@ -56,15 +68,17 @@ class MedicationBatchService:
 
     batch_repository: MedicationBatchRepositoryPort
     medication_repository: MedicationRepositoryPort
+    recorder: LivestockEventRecorder
 
     def register_batch(
         self,
-        organization_id: OrganizationId,
+        context: LivestockOperationContext,
         medication_id: TypedId,
         batch_number: str,
         expiry_date: datetime,
         manufacturing_date: datetime | None = None,
     ) -> MedicationBatch:
+        organization_id = context.organization_id
         medication = self.medication_repository.get_by_id(medication_id)
         if medication is None or medication.organization_id != organization_id:
             raise KeyError(
@@ -80,6 +94,7 @@ class MedicationBatchService:
                 f"organização {organization_id.value}."
             )
 
+        created_at = datetime.now(UTC)
         batch = MedicationBatch(
             batch_id=TypedId.new("medication_batch"),
             organization_id=organization_id,
@@ -87,9 +102,22 @@ class MedicationBatchService:
             batch_number=number,
             expiry_date=expiry_date,
             manufacturing_date=manufacturing_date,
-            created_at=datetime.now(UTC),
+            created_at=created_at,
         )
         self.batch_repository.save(batch)
+        self.recorder.record(
+            context=context,
+            aggregate_id=batch.batch_id,
+            event_type=MEDICATION_BATCH_REGISTERED,
+            payload=medication_batch_registered_payload(
+                batch_id=batch.batch_id,
+                medication_id=batch.medication_id,
+                batch_number=batch.batch_number,
+                expiry_date=batch.expiry_date,
+                manufacturing_date=batch.manufacturing_date,
+            ),
+            occurred_at=created_at,
+        )
         return batch
 
 
@@ -99,16 +127,18 @@ class MedicationService:
     prescription_repository: PrescriptionRepositoryPort
     veterinarian_repository: VeterinarianRepositoryPort
     property_repository: RuralPropertyRepositoryPort
+    recorder: LivestockEventRecorder
 
     def register_medication(
         self,
-        organization_id: OrganizationId,
+        context: LivestockOperationContext,
         trade_name: str,
         active_ingredient: str,
         manufacturer: str,
         withdrawal_period_days: int,
         dosage_instruction: str | None = None,
     ) -> Medication:
+        organization_id = context.organization_id
         t_name = trade_name.strip()
         existing = self.medication_repository.get_by_trade_name(organization_id, t_name)
         if existing is not None:
@@ -117,6 +147,7 @@ class MedicationService:
                 f"organização {organization_id.value}."
             )
 
+        created_at = datetime.now(UTC)
         medication = Medication(
             medication_id=TypedId.new("medication"),
             organization_id=organization_id,
@@ -125,15 +156,30 @@ class MedicationService:
             manufacturer=manufacturer.strip(),
             withdrawal_period_days=withdrawal_period_days,
             dosage_instruction=dosage_instruction,
-            created_at=datetime.now(UTC),
+            created_at=created_at,
         )
 
         self.medication_repository.save(medication)
+        # A carência declarada aqui é o que o Passo 9.4 congela no cálculo: o
+        # evento preserva o valor vigente no cadastro, não o de uma releitura.
+        self.recorder.record(
+            context=context,
+            aggregate_id=medication.medication_id,
+            event_type=MEDICATION_REGISTERED,
+            payload=medication_registered_payload(
+                medication_id=medication.medication_id,
+                trade_name=medication.trade_name,
+                active_ingredient=medication.active_ingredient,
+                manufacturer=medication.manufacturer,
+                withdrawal_period_days=medication.withdrawal_period_days,
+            ),
+            occurred_at=created_at,
+        )
         return medication
 
     def issue_prescription(
         self,
-        organization_id: OrganizationId,
+        context: LivestockOperationContext,
         veterinarian_id: TypedId,
         medication_id: TypedId,
         property_id: TypedId,
@@ -144,6 +190,7 @@ class MedicationService:
         reason: str,
         prescribed_date: datetime | None = None,
     ) -> Prescription:
+        organization_id = context.organization_id
         vet = self.veterinarian_repository.get_by_id(veterinarian_id)
         if vet is None or vet.organization_id != organization_id:
             raise KeyError(
@@ -191,4 +238,22 @@ class MedicationService:
         )
 
         self.prescription_repository.save(prescription)
+        self.recorder.record(
+            context=context,
+            aggregate_id=prescription.prescription_id,
+            event_type=PRESCRIPTION_ISSUED,
+            payload=prescription_issued_payload(
+                prescription_id=prescription.prescription_id,
+                veterinarian_id=prescription.veterinarian_id,
+                medication_id=prescription.medication_id,
+                property_id=prescription.property_id,
+                prescribed_date=prescription.prescribed_date,
+                target_type=prescription.target_type.value,
+                target_ids=prescription.target_ids,
+                dosage=prescription.dosage,
+                administration_route=prescription.administration_route,
+                reason=prescription.reason,
+            ),
+            occurred_at=prescription.prescribed_date,
+        )
         return prescription

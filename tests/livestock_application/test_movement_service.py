@@ -9,6 +9,10 @@ from packages.livestock_application.animal_service import (
     AnimalRepositoryPort,
     AnimalService,
 )
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
+)
 from packages.livestock_application.movement_service import (
     MovementRepositoryPort,
     MovementService,
@@ -19,6 +23,7 @@ from packages.livestock_application.property_service import (
     RuralPropertyService,
 )
 from packages.livestock_domain.animal import Animal, AnimalSex, IdentifierType
+from packages.livestock_domain.events import ANIMAL_MOVED
 from packages.livestock_domain.movement import (
     AnimalMovement,
     PropertyStay,
@@ -26,6 +31,7 @@ from packages.livestock_domain.movement import (
 )
 from packages.livestock_domain.property import RuralProperty
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_support import FakeEventLog
 
 
 class InMemoryMovementRepository(MovementRepositoryPort):
@@ -122,32 +128,35 @@ class InMemoryAnimalRepo(AnimalRepositoryPort):
         return [a for a in self.animals.values() if a.organization_id == organization_id]
 
 
-def test_register_movement_updates_stays_timeline() -> None:
+def test_register_movement_updates_stays_timeline(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
     org_id = OrganizationId(uuid4())
     prop_repo = InMemoryPropertyRepo()
     animal_repo = InMemoryAnimalRepo()
     m_repo = InMemoryMovementRepository()
     stay_repo = InMemoryPropertyStayRepository()
 
-    prop_service = RuralPropertyService(repository=prop_repo)
-    animal_service = AnimalService(repository=animal_repo)
+    prop_service = RuralPropertyService(repository=prop_repo, recorder=recorder)
+    animal_service = AnimalService(repository=animal_repo, recorder=recorder)
     movement_service = MovementService(
         movement_repository=m_repo,
         stay_repository=stay_repo,
         animal_repository=animal_repo,
         property_repository=prop_repo,
+        recorder=recorder,
     )
 
     # 1. Cadastra 2 fazendas
     p_orig = prop_service.register_property(
-        organization_id=org_id,
+        context=context,
         code="ORIGEM-01",
         name="Fazenda Origem",
         municipality="Ribeirão Preto",
         state_code="SP",
     )
     p_dest = prop_service.register_property(
-        organization_id=org_id,
+        context=context,
         code="DESTINO-02",
         name="Fazenda Destino",
         municipality="Sertãozinho",
@@ -156,7 +165,7 @@ def test_register_movement_updates_stays_timeline() -> None:
 
     # 2. Cadastra 1 animal
     animal = animal_service.register_animal(
-        organization_id=org_id,
+        context=context,
         birth_property_id=p_orig.property_id,
         sex=AnimalSex.MALE,
         breed="Nelore",
@@ -178,7 +187,7 @@ def test_register_movement_updates_stays_timeline() -> None:
     # 3. Movimenta o animal para a fazenda de destino
     m_time = datetime.now(UTC) - timedelta(hours=1)
     movement = movement_service.register_movement(
-        organization_id=org_id,
+        context=context,
         origin_property_id=p_orig.property_id,
         destination_property_id=p_dest.property_id,
         movement_time=m_time,
@@ -203,9 +212,10 @@ def test_register_movement_updates_stays_timeline() -> None:
     assert timeline[1].property_id == p_dest.property_id
 
 
-def _movement_scenario() -> tuple[MovementService, OrganizationId, TypedId, TypedId, TypedId]:
+def _movement_scenario(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> tuple[MovementService, TypedId, TypedId, TypedId]:
     """Duas fazendas e um animal, o mínimo para registrar um movimento."""
-    org_id = OrganizationId(uuid4())
     prop_repo = InMemoryPropertyRepo()
     animal_repo = InMemoryAnimalRepo()
     movement_service = MovementService(
@@ -213,32 +223,35 @@ def _movement_scenario() -> tuple[MovementService, OrganizationId, TypedId, Type
         stay_repository=InMemoryPropertyStayRepository(),
         animal_repository=animal_repo,
         property_repository=prop_repo,
+        recorder=recorder,
     )
-    prop_service = RuralPropertyService(repository=prop_repo)
-    animal_service = AnimalService(repository=animal_repo)
+    prop_service = RuralPropertyService(repository=prop_repo, recorder=recorder)
+    animal_service = AnimalService(repository=animal_repo, recorder=recorder)
     origem = prop_service.register_property(
-        organization_id=org_id, code="ORIG-1", name="Origem", municipality="Franca", state_code="SP"
+        context=context, code="ORIG-1", name="Origem", municipality="Franca", state_code="SP"
     )
     destino = prop_service.register_property(
-        organization_id=org_id,
+        context=context,
         code="DEST-1",
         name="Destino",
         municipality="Batatais",
         state_code="SP",
     )
     animal = animal_service.register_animal(
-        organization_id=org_id, birth_property_id=origem.property_id, sex=AnimalSex.FEMALE
+        context=context, birth_property_id=origem.property_id, sex=AnimalSex.FEMALE
     )
-    return movement_service, org_id, origem.property_id, destino.property_id, animal.animal_id
+    return movement_service, origem.property_id, destino.property_id, animal.animal_id
 
 
-def test_register_movement_rejects_future_time() -> None:
+def test_register_movement_rejects_future_time(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
     """A regra "não pode ser no futuro" vive na Application, com o relógio do servidor."""
-    service, org_id, origem, destino, animal_id = _movement_scenario()
+    service, origem, destino, animal_id = _movement_scenario(recorder, context)
 
     with pytest.raises(ValueError, match="não pode ser no futuro"):
         service.register_movement(
-            organization_id=org_id,
+            context=context,
             origin_property_id=origem,
             destination_property_id=destino,
             movement_time=datetime.now(UTC) + timedelta(days=1),
@@ -246,15 +259,72 @@ def test_register_movement_rejects_future_time() -> None:
         )
 
 
-def test_register_movement_rejects_naive_time() -> None:
+def test_register_movement_rejects_naive_time(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
     """Horário sem timezone é rejeitado, nunca silenciosamente tratado como UTC."""
-    service, org_id, origem, destino, animal_id = _movement_scenario()
+    service, origem, destino, animal_id = _movement_scenario(recorder, context)
 
     with pytest.raises(ValueError, match="timezone"):
         service.register_movement(
-            organization_id=org_id,
+            context=context,
             origin_property_id=origem,
             destination_property_id=destino,
             movement_time=datetime(2026, 7, 20, 12, 0),  # noqa: DTZ001 — naive de propósito
             animal_ids=(animal_id,),
         )
+
+
+def test_movement_is_one_event_on_the_movement_stream(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    """Mover dois animais é um fato só, não dois: o evento pertence à movimentação."""
+    service, origem, destino, animal_id = _movement_scenario(recorder, context)
+    outro = TypedId.new("animal")
+    service.animal_repository.save(
+        Animal(
+            animal_id=outro,
+            organization_id=context.organization_id,
+            birth_property_id=origem,
+            sex=AnimalSex.MALE,
+        )
+    )
+    event_log.events.clear()
+
+    movement = service.register_movement(
+        context=context,
+        origin_property_id=origem,
+        destination_property_id=destino,
+        movement_time=datetime.now(UTC) - timedelta(hours=1),
+        animal_ids=(animal_id, outro),
+        reason="Manejo de engorda",
+    )
+
+    event = event_log.only(ANIMAL_MOVED)
+    assert event.aggregate_reference.target_id == movement.movement_id
+    assert event.aggregate_version == 1
+    # Os dois animais estão no payload, na ordem declarada pelo operador.
+    payload = event.payload.canonical_bytes
+    assert payload.index(str(animal_id.value).encode()) < payload.index(str(outro.value).encode())
+
+
+def test_rejected_movement_leaves_no_event(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, origem, destino, animal_id = _movement_scenario(recorder, context)
+    event_log.events.clear()
+
+    with pytest.raises(ValueError, match="não pode ser no futuro"):
+        service.register_movement(
+            context=context,
+            origin_property_id=origem,
+            destination_property_id=destino,
+            movement_time=datetime.now(UTC) + timedelta(days=1),
+            animal_ids=(animal_id,),
+        )
+
+    assert event_log.events == []

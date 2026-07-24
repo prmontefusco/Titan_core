@@ -9,6 +9,7 @@ motivo, evidência (o snapshot dos fatos), versão da regra e sujeito afetado.
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
 from packages.core_application.decision_service import DecisionService
 from packages.core_application.evaluation_service import (
@@ -104,17 +105,33 @@ def build_lot_eligibility_rule(policy_id: TypedId, organization_id: Organization
     )
 
 
+class EvaluationRepositoryPort(Protocol):
+    def save(self, evaluation: Evaluation) -> None: ...
+
+
+class DecisionRepositoryPort(Protocol):
+    def save(self, decision: Decision) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class PharmacologicalEligibilityService:
     """Avalia a elegibilidade farmacológica de um animal.
 
     Compõe o fornecedor de fatos da vertical com a política e a regra
     farmacológicas e delega a decisão ao Core, sem reimplementar avaliação.
+
+    A avaliação e a decisão são gravadas nas tabelas do Core. Sem isso o bloqueio
+    e a reavaliação existiriam só durante a chamada, e a linha do tempo do Passo
+    10.1 não teria como mostrar por que um animal foi barrado — que é o fato
+    central do Marco 9. A vertical não cria armazenamento próprio para isso: a
+    fonte da verdade continua sendo o Core.
     """
 
     fact_provider: FactProviderPort
     policy: Policy
     rule: Rule
+    evaluation_repository: EvaluationRepositoryPort
+    decision_repository: DecisionRepositoryPort
     lot_rule: Rule | None = None
 
     def evaluate_animal(
@@ -150,4 +167,9 @@ class PharmacologicalEligibilityService:
             purpose=ELIGIBILITY_PURPOSE,
         )
         decision = DecisionService().decide(evaluation)
+        # A ordem importa: a decisão referencia a avaliação, então gravar a
+        # decisão primeiro deixaria uma referência pendurada se a segunda escrita
+        # falhasse.
+        self.evaluation_repository.save(evaluation)
+        self.decision_repository.save(decision)
         return evaluation, decision
