@@ -72,6 +72,9 @@ Exemplos:
 ## 6. Titan Auto (Histórico Imutável de Veículos e Sinistros)
 - **Objetivos:** Dossiê por chassi (VIN) de histórico de revisões, vistorias cautelares, registros de sinistros e leilões para seguradoras, locadoras e compradores de seminovos.
 
+## 7. Titan ZFM Logistics (Cadeia de Custódia Fluvial e Fiscais de Peças no PIM / ZFM)
+- **Objetivos:** Rastreabilidade e cadeia de custódia imutável de insumos e peças na calha fluvial do Amazonas, responsabilização determinística por quebras de SLA/avarias em transporte fluvial, geração de dossiês verificáveis de internamento fiscal para conformidade SUFRAMA/SEFAZ-AM, e captação de recursos via investimentos em P&D da Zona Franca de Manaus (Lei de Informática).
+
 ---
 
 # O que NÃO somos
