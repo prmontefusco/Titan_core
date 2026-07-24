@@ -1,4 +1,4 @@
-"""Implementação de FactProviderPort para a vertical Titan Livestock (Passo 8.0 - 8.3)."""
+"""Implementação de FactProviderPort para a vertical Titan Livestock (Passo 8.0 - 9.5)."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -8,7 +8,11 @@ from packages.core_domain.facts import Fact, FactSnapshot
 from packages.livestock_application.animal_service import AnimalRepositoryPort
 from packages.livestock_application.movement_service import PropertyStayRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
+from packages.livestock_application.withdrawal_service import WithdrawalCalculator
 from packages.shared_kernel import OrganizationId, TypedId
+
+# Fato de carência consumido pela regra de elegibilidade farmacológica (Passo 9.5).
+WITHDRAWAL_FACT_TYPE = "livestock.withdrawal"
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +20,7 @@ class LivestockFactProvider(FactProviderPort):
     property_repository: RuralPropertyRepositoryPort
     animal_repository: AnimalRepositoryPort
     stay_repository: PropertyStayRepositoryPort | None = None
+    withdrawal_calculator: WithdrawalCalculator | None = None
 
     def get_snapshot(
         self,
@@ -82,6 +87,30 @@ class LivestockFactProvider(FactProviderPort):
                         observed_at=at_time,
                     )
                 )
+
+                if self.withdrawal_calculator is not None:
+                    status = self.withdrawal_calculator.assess_animal(organization_id, target_id)
+                    blocking = [
+                        contribution.medication_batch_id.value.hex
+                        for contribution in status.contributions
+                        if contribution.withdrawal_ends_at > at_time
+                    ]
+                    fact_list.append(
+                        Fact.create(
+                            fact_type=WITHDRAWAL_FACT_TYPE,
+                            payload={
+                                "in_withdrawal": status.is_in_withdrawal_at(at_time),
+                                "eligible_from": (
+                                    status.eligible_from.isoformat()
+                                    if status.eligible_from is not None
+                                    else None
+                                ),
+                                "rule_version": status.rule_version,
+                                "blocking_batches": blocking,
+                            },
+                            observed_at=at_time,
+                        )
+                    )
 
         return FactSnapshot(
             organization_id=organization_id,
