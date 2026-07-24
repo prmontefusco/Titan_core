@@ -28,6 +28,7 @@ from uuid import UUID
 from fastapi import Depends, Header, status
 from sqlalchemy import Connection, Engine, text
 
+from apps.api.authentication import require_authenticated_principal
 from apps.api.problem import DomainProblem
 from packages.core_application.organization_context import (
     OrganizationContextDenied,
@@ -138,7 +139,7 @@ def require_permission(code: str) -> Callable[..., OrganizationContext]:
     """
 
     def dependency(
-        principal: Annotated[AuthenticatedPrincipal, Depends(_principal)],
+        principal: Annotated[AuthenticatedPrincipal, Depends(require_authenticated_principal)],
         connection: ConnectionDependency,
         organizacao: Annotated[str | None, Header(alias=ORGANIZATION_HEADER)] = None,
     ) -> OrganizationContext:
@@ -153,15 +154,6 @@ def require_permission(code: str) -> Callable[..., OrganizationContext]:
         return contexto
 
     return dependency
-
-
-def _principal() -> AuthenticatedPrincipal:
-    """Substituído no `main` pela dependência real de autenticação.
-
-    Existe para que este módulo não importe o `main` — que importa este módulo —
-    e o ciclo não se feche.
-    """
-    raise NotImplementedError
 
 
 def uuid_or_problem(raw: str, *, campo: str) -> UUID:

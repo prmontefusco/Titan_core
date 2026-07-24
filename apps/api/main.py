@@ -1,17 +1,17 @@
 import os
-from functools import lru_cache
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
-from fastapi.security import OAuth2AuthorizationCodeBearer
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from apps.api.authentication import (
+    AuthenticatedPrincipalDependency,
+)
 from apps.api.livestock_animals import router as livestock_router
-from apps.api.livestock_dependencies import _principal
 from apps.api.problem import (
     DomainProblem,
     domain_problem_handler,
@@ -20,12 +20,6 @@ from apps.api.problem import (
 )
 from apps.api.verification import public_contract_schemas
 from apps.api.verification import router as verification_router
-from packages.core_domain import AuthenticatedPrincipal
-from packages.core_infrastructure.authentication import (
-    AccessTokenValidationError,
-    AccessTokenValidator,
-    OidcJwtSettings,
-)
 
 
 class HealthResponse(BaseModel):
@@ -37,21 +31,6 @@ class AuthenticationResponse(BaseModel):
     subject: str
     scopes: list[str]
 
-
-_local_issuer = os.environ.get("TITAN_OIDC_ISSUER", "http://localhost:8080/realms/titan").rstrip(
-    "/"
-)
-oauth2_scheme = OAuth2AuthorizationCodeBearer(
-    authorizationUrl=os.environ.get(
-        "TITAN_OIDC_AUTHORIZATION_URL",
-        f"{_local_issuer}/protocol/openid-connect/auth",
-    ),
-    tokenUrl=os.environ.get(
-        "TITAN_OIDC_TOKEN_URL",
-        f"{_local_issuer}/protocol/openid-connect/token",
-    ),
-    scopes={"openid": "Identificar o principal autenticado"},
-)
 
 app = FastAPI(
     title="Titan API",
@@ -91,32 +70,6 @@ def _openapi_com_contrato_publico() -> dict[str, Any]:
 app.openapi = _openapi_com_contrato_publico  # type: ignore[method-assign]
 
 
-@lru_cache(maxsize=1)
-def get_access_token_validator() -> AccessTokenValidator:
-    return AccessTokenValidator(OidcJwtSettings.from_environment())
-
-
-def require_authenticated_principal(
-    token: Annotated[str, Depends(oauth2_scheme)],
-) -> AuthenticatedPrincipal:
-    try:
-        return get_access_token_validator().validate(token)
-    except (AccessTokenValidationError, RuntimeError) as error:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Access Token ausente ou inválido.",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from error
-
-
-AuthenticatedPrincipalDependency = Annotated[
-    AuthenticatedPrincipal, Depends(require_authenticated_principal)
-]
-
-# A raiz de composição da vertical declara um marcador de principal para não
-# importar este módulo, que a importa. Aqui o marcador recebe a dependência real.
-app.dependency_overrides[_principal] = require_authenticated_principal
-
 app.include_router(livestock_router)
 
 app.add_exception_handler(DomainProblem, domain_problem_handler)
@@ -124,6 +77,22 @@ app.add_exception_handler(RequestValidationError, validation_problem_handler)
 # Handler de último recurso: o cliente recebe código estável e nada do que
 # aconteceu por dentro.
 app.add_exception_handler(Exception, unexpected_error_handler)
+
+
+# Um `reason_code` genérico obriga o cliente a adivinhar o que houve. A
+# distinção que mais importa é entre "não sei quem você é" (401) e "sei, e você
+# não pode" (403) — colapsá-las esconderia se falta credencial ou permissão.
+# O terceiro item, quando presente, substitui a mensagem da exceção. No 401 isso
+# é deliberado por dois motivos: o esquema OAuth2 do FastAPI responde antes da
+# nossa dependência, com texto em inglês que destoaria do resto da API; e
+# distinguir "token ausente" de "token inválido" na resposta não ajuda o
+# integrador e informa quem sonda.
+_RESPOSTAS_CONHECIDAS: dict[int, tuple[str, str, str | None]] = {
+    401: ("Não autenticado", "NAO_AUTENTICADO", "Access Token ausente, inválido ou expirado."),
+    403: ("Acesso negado", "ACESSO_NEGADO", None),
+    405: ("Método não permitido", "METODO_NAO_PERMITIDO", None),
+    409: ("Conflito", "CONFLITO", None),
+}
 
 
 @app.exception_handler(StarletteHTTPException)
@@ -144,14 +113,25 @@ async def http_exception_handler(
             status_code=404,
         )
 
+    conhecida = _RESPOSTAS_CONHECIDAS.get(exception.status_code)
+    titulo, codigo, fixo = conhecida or ("Erro HTTP", "ERRO_HTTP", None)
+    # A mensagem da exceção só viaja quando o status é um que nós mesmos
+    # emitimos deliberadamente. Para o resto, texto genérico: repassar detalhe de
+    # erro desconhecido é por onde vaza informação interna.
+    if fixo is not None:
+        detalhe = fixo
+    elif conhecida is not None and exception.detail:
+        detalhe = str(exception.detail)
+    else:
+        detalhe = "A requisição não pôde ser processada."
     return JSONResponse(
         content={
-            "type": "urn:titan:problema:erro-http",
-            "title": "Erro HTTP",
+            "type": f"urn:titan:problema:{codigo.lower().replace('_', '-')}",
+            "title": titulo,
             "status": exception.status_code,
-            "detail": "A requisição não pôde ser processada.",
+            "detail": detalhe,
             "instance": request.url.path,
-            "reason_code": "ERRO_HTTP",
+            "reason_code": codigo,
         },
         media_type="application/problem+json",
         status_code=exception.status_code,

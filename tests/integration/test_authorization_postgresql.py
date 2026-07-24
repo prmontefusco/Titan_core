@@ -70,9 +70,14 @@ def test_role_grant_and_revocation_change_effective_permissions_without_direct_u
                     OrganizationRepository(connection).add(item)
 
                 connection.execute(text("RESET ROLE"))
+                # Código único por execução: `permissions.code` é único global, e
+                # um código fixo torna o teste refém do que já exista no banco —
+                # semeadura de demonstração, ambiente compartilhado, execução
+                # anterior. O que se prova aqui é concessão e revogação de papel,
+                # não o nome da permissão.
                 permission = Permission.create(
                     operator_organization_id=operator.organization_id,
-                    code="DOSSIER.LER",
+                    code=f"TESTE_{uuid4().hex[:12].upper()}.LER",
                 )
                 AuthorizationRepository(connection).add_permission(permission)
                 connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
@@ -109,7 +114,7 @@ def test_role_grant_and_revocation_change_effective_permissions_without_direct_u
                 repository.assign_role(assignment)
                 assert repository.effective_permission_codes(
                     membership.membership_id, granted_at
-                ) == {"DOSSIER.LER"}
+                ) == {permission.code}
 
                 revocation = MembershipRoleRevocation.create(
                     assignment_id=assignment.assignment_id,
@@ -120,7 +125,7 @@ def test_role_grant_and_revocation_change_effective_permissions_without_direct_u
                 repository.revoke_role(revocation)
                 assert repository.effective_permission_codes(
                     membership.membership_id, revoked_at - timedelta(seconds=1)
-                ) == {"DOSSIER.LER"}
+                ) == {permission.code}
                 assert (
                     repository.effective_permission_codes(membership.membership_id, revoked_at)
                     == set()

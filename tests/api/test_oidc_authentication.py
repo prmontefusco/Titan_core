@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
-from apps.api import main
+from apps.api import authentication, main
 from packages.core_domain import AuthenticatedPrincipal, PrincipalType
 
 client = TestClient(main.app)
@@ -29,7 +29,9 @@ def test_protected_route_rejects_missing_token() -> None:
 
 
 def test_protected_route_returns_normalized_principal(monkeypatch: MonkeyPatch) -> None:
-    monkeypatch.setattr(main, "get_access_token_validator", lambda: _Validator())
+    # O validador vive no módulo de autenticação, de onde `main` e a raiz de
+    # composição da vertical dependem da MESMA dependência declarada.
+    monkeypatch.setattr(authentication, "get_access_token_validator", lambda: _Validator())
     response = client.get(
         "/technical/authentication",
         headers={"Authorization": "Bearer valid-access-token"},

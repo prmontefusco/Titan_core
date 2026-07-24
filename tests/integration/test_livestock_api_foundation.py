@@ -23,13 +23,13 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import Connection, create_engine, text
 
+from apps.api.authentication import require_authenticated_principal
 from apps.api.livestock_dependencies import (
     ORGANIZATION_HEADER,
-    _principal,
     operator_organization_id,
     request_connection,
 )
-from apps.api.main import app, require_authenticated_principal
+from apps.api.main import app
 from packages.core_domain import (
     Membership,
     MembershipRoleAssignment,
@@ -75,14 +75,24 @@ class Ambiente:
             set_local_organization_context(connection, organizacao.organization_id)
             OrganizationRepository(connection).add(organizacao)
 
+        # `permissions.code` é único global, e a semeadura de demonstração grava
+        # esses mesmos códigos. Criar cegamente faria o teste passar só em banco
+        # virgem — e falhar em qualquer ambiente já semeado.
         autorizacao = AuthorizationRepository(connection)
-        self.permissoes = {}
+        self.permissoes: dict[str, TypedId] = {}
         for codigo in (ANIMAL_CRIAR, TIMELINE_LER):
+            existente = connection.execute(
+                text("SELECT permission_id FROM core_identity.permissions WHERE code = :c"),
+                {"c": codigo},
+            ).scalar_one_or_none()
+            if existente is not None:
+                self.permissoes[codigo] = TypedId("permission", existente)
+                continue
             permissao = Permission.create(
                 operator_organization_id=self.operadora.organization_id, code=codigo
             )
             autorizacao.add_permission(permissao)
-            self.permissoes[codigo] = permissao
+            self.permissoes[codigo] = permissao.permission_id
 
         # Um usuário operador e um auditor, cada um com o papel que lhe cabe.
         self.operador_subject = f"operador-{uuid4().hex}"
@@ -152,7 +162,7 @@ class Ambiente:
         papel = Role.create(
             organization_id=organizacao.organization_id,
             name=nome_papel,
-            permission_ids=tuple(self.permissoes[c].permission_id for c in permissoes),
+            permission_ids=tuple(self.permissoes[c] for c in permissoes),
         )
         autorizacao.add_role(papel)
         autorizacao.assign_role(
@@ -237,9 +247,9 @@ def _cliente(ambiente: Ambiente, principal: AuthenticatedPrincipal | None) -> Te
     ausência de token, que é justamente o que o teste quer observar.
     """
     if principal is None:
-        app.dependency_overrides[_principal] = require_authenticated_principal
+        app.dependency_overrides.pop(require_authenticated_principal, None)
     else:
-        app.dependency_overrides[_principal] = lambda: principal
+        app.dependency_overrides[require_authenticated_principal] = lambda: principal
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -267,7 +277,12 @@ def test_operador_autorizado_cria_o_animal(ambiente: Ambiente) -> None:
 
 
 def test_sem_token_a_resposta_e_401(ambiente: Ambiente) -> None:
-    """401 diz 'não sei quem você é' — distinto de 403."""
+    """401 diz 'não sei quem você é' — e precisa dizer isso no corpo.
+
+    Um `reason_code` genérico obrigaria o cliente a adivinhar se falta credencial
+    ou se houve outra falha qualquer. Foi o que a validação manual encontrou: o
+    handler genérico devolvia `ERRO_HTTP`.
+    """
     cliente = _cliente(ambiente, None)
 
     resposta = cliente.post(
@@ -277,6 +292,13 @@ def test_sem_token_a_resposta_e_401(ambiente: Ambiente) -> None:
     )
 
     assert resposta.status_code == 401
+    corpo = resposta.json()
+    assert corpo["reason_code"] == "NAO_AUTENTICADO"
+    # Mensagem própria e em português: o esquema OAuth2 do FastAPI responde antes
+    # da nossa dependência, e o texto dele destoaria do resto da API.
+    assert corpo["detail"] == "Access Token ausente, inválido ou expirado."
+    assert resposta.headers["www-authenticate"] == "Bearer"
+    assert resposta.headers["content-type"].startswith("application/problem+json")
 
 
 def test_sem_a_permissao_exigida_a_resposta_e_403(ambiente: Ambiente) -> None:
