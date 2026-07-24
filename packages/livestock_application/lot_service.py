@@ -1,7 +1,7 @@
 """Serviço de aplicação LotService (Passo 8.4 - Titan Livestock)."""
 
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from packages.livestock_application.animal_service import AnimalRepositoryPort
@@ -147,8 +147,13 @@ class LotService:
                 f"Animal '{animal_id.value}' não possui associação ativa no lote '{lot_id.value}'."
             )
 
+        # A membership exige fim estritamente posterior ao início. O relógio do
+        # Windows tem resolução grosseira: adicionar e remover no mesmo tick faria
+        # valid_until == valid_from e a membership recusaria. Garantimos o mínimo
+        # de um microssegundo após o início.
         now_utc = datetime.now(UTC)
-        closed_membership = replace(target_membership, valid_until=now_utc)
+        valid_until = max(now_utc, target_membership.valid_from + timedelta(microseconds=1))
+        closed_membership = replace(target_membership, valid_until=valid_until)
         self.membership_repository.update(closed_membership)
         return closed_membership
 
