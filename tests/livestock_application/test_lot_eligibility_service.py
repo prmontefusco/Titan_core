@@ -6,7 +6,6 @@ preservando ambas as decisões e com snapshots/hashes distintos.
 """
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
 
 from packages.core_domain.decision import DecisionResult
 from packages.livestock_application.eligibility import (
@@ -14,6 +13,10 @@ from packages.livestock_application.eligibility import (
     build_eligibility_policy,
     build_eligibility_rule,
     build_lot_eligibility_rule,
+)
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
 )
 from packages.livestock_application.fact_provider import (
     LOT_ELIGIBILITY_FACT_TYPE,
@@ -25,7 +28,11 @@ from packages.livestock_application.withdrawal_service import WithdrawalCalculat
 from packages.livestock_domain.animal import Animal, AnimalSex
 from packages.livestock_domain.medication import Medication, MedicationBatch
 from packages.livestock_domain.property import RuralProperty
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import TypedId
+from tests.livestock_application.conftest import (
+    FakeDecisionRepository,
+    FakeEvaluationRepository,
+)
 from tests.livestock_application.test_lot_service import (
     InMemoryAnimalRepo,
     InMemoryLotRepository,
@@ -40,8 +47,12 @@ from tests.livestock_application.test_treatment_service import (
 from tests.livestock_application.test_withdrawal_service import InMemoryMedicationRepo
 
 
-def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal() -> None:
-    org_id = OrganizationId(uuid4())
+def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    org_id = context.organization_id
+    evaluations = FakeEvaluationRepository()
+    decisions = FakeDecisionRepository()
     prop = RuralProperty(
         property_id=TypedId.new("rural_property"),
         organization_id=org_id,
@@ -95,11 +106,11 @@ def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal() -> None
         animal_repository=animal_repo,
         batch_repository=batch_repo,
         prescription_repository=InMemoryPrescriptionRepo(),
+        recorder=recorder,
     ).register_application(
-        organization_id=org_id,
+        context=context,
         animal_id=animal_em_carencia.animal_id,
         medication_batch_id=batch.batch_id,
-        actor_id=TypedId.new("actor"),
         applied_at=datetime.now(UTC) - timedelta(days=10),
     )
 
@@ -108,12 +119,13 @@ def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal() -> None
         membership_repository=membership_repo,
         animal_repository=animal_repo,
         property_repository=prop_repo,
+        recorder=recorder,
     )
     lot = lot_service.create_lot(
-        organization_id=org_id, property_id=prop.property_id, code="L-01", name="Lote 1"
+        context=context, property_id=prop.property_id, code="L-01", name="Lote 1"
     )
-    lot_service.add_animal_to_lot(lot.lot_id, animal_em_carencia.animal_id)
-    lot_service.add_animal_to_lot(lot.lot_id, animal_livre.animal_id)
+    lot_service.add_animal_to_lot(context, lot.lot_id, animal_em_carencia.animal_id)
+    lot_service.add_animal_to_lot(context, lot.lot_id, animal_livre.animal_id)
 
     fact_provider = LivestockFactProvider(
         property_repository=prop_repo,
@@ -131,6 +143,8 @@ def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal() -> None
         policy=policy,
         rule=build_eligibility_rule(policy.policy_id, org_id),
         lot_rule=build_lot_eligibility_rule(policy.policy_id, org_id),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
     )
 
     # 1. Lote REPROVADO: contém animal em carência.
@@ -141,7 +155,7 @@ def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal() -> None
     assert fato_1.payload["blocking_animals"] == [animal_em_carencia.animal_id.value.hex]
 
     # 2. Remoção temporal do animal em carência.
-    lot_service.remove_animal_from_lot(lot.lot_id, animal_em_carencia.animal_id)
+    lot_service.remove_animal_from_lot(context, lot.lot_id, animal_em_carencia.animal_id)
 
     # 3. Reavaliação: lote APROVADO, agora só com o animal livre.
     eval_2, decision_2 = service.evaluate_lot(
@@ -156,3 +170,8 @@ def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal() -> None
     # Ambas as decisões preservadas e distintas; o snapshot mudou (hash diferente).
     assert decision_1.decision_id != decision_2.decision_id
     assert eval_1.fact_snapshot.snapshot_hash != eval_2.fact_snapshot.snapshot_hash
+
+    # As duas avaliações e as duas decisões ficam gravadas no Core, em ordem: é o
+    # que permite reler o bloqueio e a reavaliação sem depender do estado atual.
+    assert evaluations.saved == [eval_1, eval_2]
+    assert decisions.saved == [decision_1, decision_2]

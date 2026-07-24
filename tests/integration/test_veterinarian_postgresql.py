@@ -13,6 +13,7 @@ from packages.livestock_infrastructure.persistence.veterinarian_repository impor
     TransactionalVeterinarianRepository,
 )
 from packages.shared_kernel import OrganizationId
+from tests.livestock_support import in_memory_recorder, operation_context
 
 
 @pytest.fixture
@@ -46,11 +47,13 @@ def test_veterinarian_persistence_and_rls(db_connection: Connection) -> None:
         {"org_id": str(org_1.value)},
     )
 
+    recorder, _ = in_memory_recorder()
+    context_1 = operation_context(org_1)
     repo_1 = TransactionalVeterinarianRepository(connection=db_connection)
-    service_1 = VeterinarianService(repository=repo_1)
+    service_1 = VeterinarianService(repository=repo_1, recorder=recorder)
 
     vet_1 = service_1.register_veterinarian(
-        organization_id=org_1,
+        context=context_1,
         name="Dr. Carlos Eduardo",
         cpf="111.222.333-44",
         council_number="44332",
@@ -60,7 +63,7 @@ def test_veterinarian_persistence_and_rls(db_connection: Connection) -> None:
     assert vet_1.verification_status == VerificationStatus.DECLARADO
 
     # Atualiza status e anexa prova
-    updated = service_1.attach_evidence(vet_1.veterinarian_id, "evidence:doc-crmv-44332")
+    updated = service_1.attach_evidence(context_1, vet_1.veterinarian_id, "evidence:doc-crmv-44332")
     assert updated.verification_status == VerificationStatus.DOCUMENTADO
 
     # Testar RLS em outra Role
@@ -82,7 +85,7 @@ def test_veterinarian_persistence_and_rls(db_connection: Connection) -> None:
     )
 
     repo_2 = TransactionalVeterinarianRepository(connection=db_connection)
-    service_2 = VeterinarianService(repository=repo_2)
+    service_2 = VeterinarianService(repository=repo_2, recorder=recorder)
 
     assert service_2.repository.get_by_id(vet_1.veterinarian_id) is None
 

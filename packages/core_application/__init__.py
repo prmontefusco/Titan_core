@@ -24,7 +24,12 @@ from packages.core_application.evaluation_service import (
     PolicyEvaluationService,
     RuleEvaluationEngine,
 )
-from packages.core_application.event_log import DomainEventLog, DomainEventLogService
+from packages.core_application.event_log import (
+    DomainEventLog,
+    DomainEventLogService,
+    DomainEventReader,
+    RecordedEvent,
+)
 from packages.core_application.evidence_service import EvidenceRepositoryPort, EvidenceService
 from packages.core_application.fact_service import FactProviderPort, FactService
 from packages.core_application.idempotency import (
@@ -122,6 +127,7 @@ __all__ = [
     "RuleEvaluationEngine",
     "DomainEventLog",
     "DomainEventLogService",
+    "DomainEventReader",
     "IdentityAndAccessReader",
     "IntegrityCheckpointService",
     "IntegrityCheckpointWriter",
@@ -141,6 +147,7 @@ __all__ = [
     "EvaluationRepositoryPort",
     "DecisionService",
     "DecisionRepositoryPort",
+    "RecordedEvent",
     "RelationService",
     "RelationRepositoryPort",
     "CrossOrganizationTraversalDenied",

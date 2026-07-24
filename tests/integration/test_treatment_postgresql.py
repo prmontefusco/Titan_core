@@ -22,6 +22,7 @@ from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_support import in_memory_recorder, operation_context
 
 
 @pytest.fixture
@@ -90,11 +91,14 @@ def test_treatment_application_correction_and_rls(db_connection: Connection) -> 
         {"m": med_id.value, "org": org_1.value},
     )
 
+    recorder, _ = in_memory_recorder()
+    context_1 = operation_context(org_1)
     batch = MedicationBatchService(
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         medication_repository=TransactionalMedicationRepository(connection=db_connection),
+        recorder=recorder,
     ).register_batch(
-        organization_id=org_1,
+        context=context_1,
         medication_id=med_id,
         batch_number="LOTE-2026-001",
         expiry_date=datetime.now(UTC) + timedelta(days=365),
@@ -107,21 +111,20 @@ def test_treatment_application_correction_and_rls(db_connection: Connection) -> 
         animal_repository=TransactionalAnimalRepository(connection=db_connection),
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         prescription_repository=TransactionalPrescriptionRepository(connection=db_connection),
+        recorder=recorder,
     )
 
     original = service.register_application(
-        organization_id=org_1,
+        context=context_1,
         animal_id=animal_id,
         medication_batch_id=batch.batch_id,
-        actor_id=TypedId.new("actor"),
         applied_at=datetime.now(UTC) - timedelta(hours=2),
         dose="1 mL",
         evidence_references=("evidence:foto-1",),
     )
     correction = service.correct_application(
-        organization_id=org_1,
+        context=context_1,
         original_application_id=original.application_id,
-        actor_id=TypedId.new("actor"),
         applied_at=datetime.now(UTC) - timedelta(hours=1),
         dose="2 mL",
     )

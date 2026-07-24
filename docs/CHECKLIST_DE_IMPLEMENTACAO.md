@@ -1,10 +1,12 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 23 de julho de 2026  
+**Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Marco 10 — Adaptação Livestock, API e prova da vertical (Passo 10.1)
+**Próximo passo planejado:** Passo 10.2 — Template Livestock do Dossier JSON
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
+
+> **Nota sobre o 10.1a e o 10.1b:** o PLANO define um único Passo 10.1 (Timeline Livestock). Ele foi dividido em dois na execução, com aprovação do responsável, porque a timeline pressupõe eventos que a vertical ainda não emitia — o **10.1a** faz a vertical emitir, o **10.1b** entrega a consulta cronológica que o PLANO descreve. A divisão é de execução, não de escopo: o 10.1 do PLANO só estará cumprido ao fim do 10.1b.
 
 
 
@@ -52,7 +54,7 @@ Estados utilizados:
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
 | 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | NÃO INICIADO | Pendente |
+| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 completo (10.1a e 10.1b); 10.2 em diante não iniciados | Pendente |
 
 
 ## Registro dos passos executados
@@ -2271,3 +2273,130 @@ Resultado esperado: 535 testes aprovados; banco em `20260723_0041 (head)`; Alemb
 
 
 
+
+## Passo 10.1a — Emissão de eventos da vertical (commit `568a8bb`)
+
+**Data de conclusão:** 24 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente). **Abre o Marco 10.**
+
+**Por que este passo existe.** O PLANO define o Passo 10.1 como "consulta cronológica reconstruída a partir dos eventos". Ao levantar o terreno descobriu-se que **a vertical não emitia evento nenhum**: as 13 subclasses de `DomainEvent` declaradas em `livestock_domain/events.py` nunca eram construídas — e não poderiam ser, porque o repositório do Core grava apenas `event_type` e os bytes canônicos do payload, de modo que campos de subclasse não teriam coluna e se perderiam na gravação. Uma linha do tempo lida do log encontraria a tabela vazia. O 10.1 foi então dividido, com aprovação do responsável: **10.1a** faz a vertical emitir; **10.1b** monta a timeline.
+
+### O que foi entregue
+- **Contrato de eventos (`packages/livestock_domain/events.py`, reescrito):** 14 constantes de `event_type` namespaced em `livestock.` e um construtor de `CanonicalPayload` por evento, no padrão que o próprio Core usa em `core_domain/corrections.py`. O 14º evento é o **`livestock.medication_batch_registered`**, que faltava desde o 9.1. O nome do schema do payload deriva do `event_type`, para os dois nunca divergirem.
+- **Gravador (`packages/livestock_application/event_recorder.py`, novo):** `LivestockOperationContext` (organização, `actor_reference`, `source_reference`, `correlation_id`) e `LivestockEventRecorder`, que consulta a versão corrente no log do Core, monta o `DomainEvent` e delega o append. Recusa `event_type` não declarado, para o log não receber tipo improvisado.
+- **Os 8 serviços da vertical emitem:** propriedade, animal (cadastro, marcação, desativação), veterinário (cadastro e promoções), medicamento, lote de medicamento, prescrição, movimentação, lote pecuário (criação, entrada, saída) e tratamento (registro e correção). Todo método de escrita troca `organization_id` solto por `context`.
+- **Avaliações persistidas no Core:** `PharmacologicalEligibilityService` grava `Evaluation` e `Decision` nas tabelas do Core (avaliação antes da decisão, porque a decisão a referencia). Sem isso o bloqueio e a reavaliação do Marco 9 existiriam só durante a chamada.
+- **Guarda de organização nos serviços:** operar entidade de outra Organization agora é recusado antes de gravar, e não depois.
+
+### Decisões que valem para o resto do Marco 10
+- **O agregado do evento é a entidade criada ou alterada.** Movimentar dez animais é **um** evento no fluxo do `animal_movement`, não dez; entrada e saída de lote pertencem ao `livestock_lot`. Um fato gravado duas vezes deixa de ser um fato — a timeline reúne os fluxos das entidades relacionadas.
+- **A carência (9.4) NÃO virou evento.** É derivação pura de aplicações efetivas mais o prazo do medicamento; gravá-la criaria uma segunda fonte de verdade capaz de divergir do cálculo.
+- **A autoria do tratamento vem do contexto.** O parâmetro `actor_id` foi removido de `register_application`/`correct_application`: com ele, o autor do registro e o do evento podiam divergir.
+- **Sem ADR.** Não há decisão arquitetural nova — a vertical usar a porta do Core já é o desenho vigente (ADR-0001), e o esquema de versão por agregado e cadeia de hash é imposto pelo Core.
+
+### Dois defeitos reais corrigidos na revisão
+1. **A marcação inicial vinha datada antes do próprio cadastro.** O `AnimalService` lia o relógio duas vezes, então o evento `identifier_attached` ficava com `occurred_at` anterior ao `animal_registered`, e uma timeline ordenada por esse campo mostraria o brinco sendo posto antes de o animal existir. O relógio do Windows tem resolução grosseira (~20 instantes distintos em 20 mil leituras) e escondia o defeito em 199 de 200 execuções — em Linux, com microssegundos, inverteria sempre. Corrigido com um instante único para os dois fatos; empatados, a ordem fica por `aggregate_version`, que não depende do relógio.
+2. **Reafirmar o status de um veterinário gravava evento vazio.** `update_verification_status` com o status já vigente escrevia `DOCUMENTADO → DOCUMENTADO` num log append-only, permanente e sem informação. Agora só grava quando o status muda de fato.
+
+### Limitações registradas, a tratar no 10.1b ou depois
+- **A correção de tratamento liga-se ao original por `corrects_application_id` no payload, não por `causation_id`.** A porta `DomainEventLog` expõe apenas `append` e `list_versions`, então o serviço não tem como descobrir o `event_id` do evento original. Usar `causation_id` de verdade exigiria ampliar a porta do Core.
+- **Mudança só de evidência do veterinário não gera evento**, consequência da correção 2: não existe um `evidence_attached` declarado.
+- **`attach_evidence` rebaixa veterinário já verificado** — força `DOCUMENTADO` sem olhar o status atual. Comportamento herdado do Marco 8; agora o rebaixamento fica registrado no log. Não alterado por mudar regra de negócio.
+- **A gravação da entidade e a do evento não são atômicas por si.** Nos testes de integração as duas caem na mesma transação da conexão; em produção isso depende de a raiz de composição manter a mesma unidade de trabalho, o que deve ser amarrado no Passo 10.4.
+
+### Testes
+- **Contrato (`tests/livestock_domain/test_events_contract.py`):** congela os 14 `event_type`, exige o prefixo e o padrão canônico do Core, e verifica que o schema do payload deriva do tipo e que o payload é determinístico.
+- **Gravador (`tests/livestock_application/test_event_recorder.py`):** versão por agregado (não global), separação entre instante do fato e instante do registro, recusa de tipo não declarado, correlação compartilhada e recusa de ator de outra Organization.
+- **Por serviço:** cada operação gera exatamente os eventos esperados, no fluxo certo; **operação recusada não deixa evento no log**; CPF do veterinário fica fora do payload; correção de tratamento cria fluxo próprio com o vínculo no payload.
+- **Integração (`test_livestock_vertical_e2e.py`):** liga o `DomainEventRepository` real e prova, contra o PostgreSQL, os fluxos por agregado na ordem certa, a **cadeia de hash do Core aplicada aos eventos da vertical** (`previous_hash` nulo no primeiro, encadeado nos seguintes) e autoria e correlação atravessando o fluxo inteiro. Os sete testes de RLS por tabela seguem com log em memória, por serem sobre o RLS das tabelas da vertical.
+
+### Portão de verificação
+`568 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (335 arquivos) e `alembic check` sem erros. Sem migration: nenhuma tabela nova — os eventos vão para o `core_audit.domain_events` do Core.
+
+**Atenção ao rodar:** `TITAN_DATABASE_URL` é **obrigatória**, não opcional. Sem ela, `tests/integration/conftest.py` pula a suíte de integração inteira e o `alembic check` falha; o resultado parece verde (`N passed, 50 skipped`) sem ter provado nada. **Conferir `skipped == 0`.**
+
+### Validação manual pendente (a cargo do responsável)
+Consultar o log de um animal, de um lote e de um tratamento e confirmar ordem, correções, autoria e evidências — a mesma validação que o PLANO pede para o 10.1, verificável em parte já agora e por completo com a timeline do 10.1b.
+
+## Passo 10.1b — Timeline Livestock
+
+**Data de conclusão:** 24 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente). **Fecha o Passo 10.1 do PLANO**, junto com o 10.1a.
+
+### O que foi entregue
+- **`packages/livestock_application/timeline_service.py` (novo):** `LivestockTimelineService` com três consultas — `animal_timeline`, `lot_timeline` e `treatment_timeline`, exatamente os três sujeitos que a validação manual do PLANO pede.
+- **Porta de leitura no Core (`core_application/event_log.py`):** `DomainEventReader` e `RecordedEvent`. A porta existente só sabia escrever (`append`) e contar versões; ler um fluxo exigia a Infrastructure, que a Application não pode conhecer. `RecordedEvent` descreve o registro **por estrutura**, em propriedades somente-leitura, e o `DomainEventRepository` o satisfaz sem que nada precise mudar nele — a mesma solução que `ProvenanceService` já usava, aqui tipada em vez de `Any`.
+- **Consulta histórica de vínculos (`lot_repository.py` + porta):** `list_memberships_for_animal`. O método existente filtra `valid_until IS NULL` e serve à regra de exclusividade; uma linha do tempo montada com ele mostraria só o lote atual e perderia todos os anteriores.
+- **Corte bitemporal (`TimelineCutoff`):** dois eixos independentes, porque o Titan separa quando o fato ocorreu de quando foi registrado e as perguntas são diferentes — `occurred_until` responde "o que aconteceu até tal data"; `known_until` responde "o que o Titan sabia em tal data", que é a pergunta de auditoria. Um tratamento lançado com atraso não aparece numa reconstrução do que se sabia antes de ele ser lançado. Instante naive é recusado.
+
+### Decisões
+- **A ordem é uma chave total, não só `occurred_at`.** A chave é `(occurred_at, tipo do agregado, id do agregado, origem, sequência, id da origem)`. Ordenar apenas por instante deixaria empates resolvidos pela ordem em que o banco devolveu as linhas — duas leituras da mesma história seriam parecidas, não idênticas. Mesmo princípio do Passo 7.2.
+- **Os repositórios da vertical dizem QUAIS fluxos pertencem ao sujeito; quem diz O QUE aconteceu é o evento.** Nenhum campo de estado atual entra na linha do tempo.
+- **A correção não reordena nada: ela marca.** O registro corrigido permanece na sua posição cronológica com `superseded_by` apontando para quem o corrigiu. Reordenar para "correção sempre depois" mentiria sobre quando o fato ocorreu; omitir o corrigido apagaria o passado. O vínculo é lido do campo tipado da aplicação, não do payload — o payload diria o mesmo, mas exigiria desserializar bytes canônicos.
+- **`Evaluation` e `Decision` entram como entradas próprias.** Não são eventos de domínio, mas são registros imutáveis do Core, e sem eles o bloqueio por carência e a reavaliação — o coração do Marco 9 — não apareceriam na história. A fronteira está nomeada no cabeçalho do módulo para não virar precedente frouxo.
+
+### Testes
+- **Unitários (`tests/livestock_application/test_timeline_service.py`, 12):** reunião dos fluxos que tocaram o animal e exclusão do que não é história dele; **ordem idêntica entre duas leituras**; cadastro nunca depois do que o seguiu; entrada de lote preservada após a remoção que a encerrou; correção marca o original sem removê-lo; cadeia de correção e lote de medicamento na história do tratamento; os dois eixos de corte; recusa de instante naive; isolamento por Organization.
+- **Integração (`test_livestock_vertical_e2e.py`):** a mesma timeline montada sobre o `DomainEventRepository` real, contra o PostgreSQL — reunião dos fluxos, ordem reproduzível, corte devolvendo um prefixo exato da leitura completa, e outra Organization enxergando história vazia.
+
+### Portão de verificação
+`580 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (337 arquivos) e `alembic check` sem erros. Sem migration: a consulta é leitura.
+
+### Limitação herdada, agora sem efeito prático
+O vínculo de correção viaja em `corrects_application_id` no payload e não em `causation_id`, porque a porta do log não permite descobrir o `event_id` do evento original. A timeline contorna lendo o campo tipado do registro, então **a limitação não afeta a leitura**; ampliar a porta do Core continua sendo opção, não necessidade.
+
+### Validação manual pendente (a cargo do responsável)
+Consultar animal, lote e tratamento e confirmar ordem, correções, autoria e evidências — a validação que o PLANO define para o Passo 10.1.
+
+## Notas de rumo — decisões de direção fora da numeração do PLANO
+
+**Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
+
+### NR-1 — Âncora temporal por documento de terceiro
+
+**Problema.** O `occurred_at` de um evento capturado offline é **tempo alegado** pelo relógio do dispositivo. Quem controla o aparelho controla a alegação. Isso é grave especificamente na carência: ela é calculada como `applied_at + dias`, então antedatar uma aplicação encurta a carência efetiva e libera o animal antes da hora — resíduo na carne, exatamente o dano que o Marco 9 existe para impedir. A ADR-0021, princípio 4, já veda tratar relógio de dispositivo como prova temporal, e o PLANO lista o risco na sua tabela ("relógio local apresentado como prova temporal").
+
+**Direção.** Todo evento offline já possui um **intervalo provável ancorado no servidor**, sem precisar confiar no dispositivo:
+
+- limite superior: o instante em que o lote sincronizou;
+- limite inferior: `DeviceClockReading.last_server_contact_at`, campo que já existe no domínio, reforçado por `monotonic_elapsed_ms` e `monotonic_continuity_id` — relógio civil que salta sem o cronômetro monotônico acompanhar é inconsistência aritmética, não opinião.
+
+Documentos de terceiro estreitam o intervalo e acrescentam corroboração independente. A **nota fiscal do medicamento** dá limite inferior forte (não se aplica o que ainda não se comprou) e permite conferência cruzada do número do lote contra o `batch_number` já registrado. A **nota do serviço veterinário** corrobora presença profissional na data. Ambas são documentos de terceiro com autorização carimbada pela SEFAZ e chave verificável fora do Titan.
+
+**Limite honesto:** nota prova aquisição, não aplicação. Eleva confiança sem produzir certeza — por isso o destino natural é `ConfidenceLevel` (Passo 5.2), e não um booleano. Enquanto a chave não for validada na fonte, o estado é `EvaluationOutcome.VALIDACAO_EXTERNA_PENDENTE`, hoje declarado no Core e **sem nenhum produtor** — este seria o primeiro.
+
+**Consequência para a regra de elegibilidade:** o registro entra sempre (registro existente vale mais que registro ausente), mas um animal cuja carência repousa em hora não verificável não deve ser liberado com o mesmo peso de outro registrado online.
+
+**Aplicação prevista para além de medicamento:** vacinação, serviços veterinários e demais manejos com nota.
+
+**Pendência de decisão:** quem introduz cada informação — veterinário, produtor ou ambos. Ver NR-4.
+
+### NR-2 — Alinhar ao GS1 EPCIS quando houver abate e produtos
+
+**Contexto.** Abate e produtos não estão nos Marcos 8 a 10; o Marco 11 cita regras adicionais de recall. Quando entrarem, a cadeia deixa de ser linear: o abate é **fan-out** (um animal vira dezenas de cortes) e o processamento é **fan-in** (carne moída e linguiça misturam muitos animais num lote). A estrutura correta é **DAG, não árvore** — árvore pressupõe um pai, e isso quebra no primeiro produto misto. A genealogia animal também é fan-in.
+
+**Direção.** O problema já está resolvido e padronizado internacionalmente. O **GS1 EPCIS** define `TransformationEvent` exatamente para esse caso, com listas de entrada e de saída; é o único tipo de evento que quebra a cadeia de lote e cria lote novo, e é irreversível. A regulação norte-americana (FSMA 204) usa o vocabulário de CTE e KDE.
+
+**Recomendação:** quando o escopo chegar, o trabalho é **mapear o modelo do Titan para o EPCIS**, não desenhar um grafo próprio. Um sistema de auditoria que não troca dados com o sistema do frigorífico e do comprador vira ilha, e ilha não serve como prova para terceiros.
+
+**Forma esperada:** o produto é entidade nova, com fluxo de eventos próprio, mais relação de origem apontando para a carcaça e daí para o animal. A linha do tempo do produto é o fluxo dele mais a travessia da origem — mesma forma que a timeline do animal já tem. `LivestockTimelineService` generaliza; não precisa ser reescrito. **Cópia da história para dentro do produto é o caminho errado:** cria N cópias do mesmo fato, e uma correção na origem passa a exigir propagação para N lugares.
+
+**Fundação já existente:** `RecallService` faz travessia de grafo; as relações do Passo 7.1 são universais e temporais; o `reference_projection` do 7.2 indexa quem aponta para cada entidade. Rastreabilidade para trás (*tracking*) e para frente (*tracing*) são as duas direções da mesma travessia.
+
+**Problema em aberto:** o que a linha do tempo de um lote de carne moída com dezenas de origens deve mostrar. Históricos completos de todas as origens é ilegível; provavelmente o certo é o fluxo próprio do produto mais os pontos de decisão de cada origem. Decisão para quando houver produto.
+
+### NR-3 — O diferencial é a proveniência da decisão, não o grafo
+
+O grafo de rastreabilidade é mesa posta: padronizado, com implementações maduras e concorrência estabelecida. O Titan não deve competir ali, e sim adotar o padrão.
+
+O que é raro, e não está nos padrões de rastreabilidade, é **provar por que uma decisão foi tomada e permitir refazê-la**: política versionada, regra versionada, snapshot de fatos hasheável, avaliação explicável e dossiê reproduzível por terceiro sem acesso ao banco. EPCIS diz para onde as coisas foram; não diz por que algo foi liberado ou barrado.
+
+**Consequência prática:** ao priorizar, passos que reforçam reprodutibilidade da decisão (dossiê, verificação externa, confiança temporal) valem mais que passos que ampliam cobertura de rastreio.
+
+### NR-4 — Quem registra o fato: pendência de decisão
+
+**Questão levantada em 24/07/2026 e ainda em aberto:** quem introduz cada informação — o veterinário, o produtor, ou ambos.
+
+**Observação que estreita a questão:** o modelo de dupla participação **já existe** no fluxo farmacológico. A prescrição exige veterinário com status `DOCUMENTADO` ou `VERIFICADO_EM_FONTE` — é a autoridade dele; a aplicação registra o ator que executou — é o ato do produtor. São dois papéis, dois registros, duas autorias, já modelados.
+
+Portanto a pergunta em aberto não é "quem registra", e sim **em que casos a prescrição deixa de ser opcional na aplicação** — hoje `prescription_id` é opcional em `TreatmentApplication`. Torná-la obrigatória para certas classes de produto é decisão de regra de negócio, com portão de aprovação, e afeta diretamente o peso probatório do registro.
+
+Relacionado: `DecisionAuthorityProfile` e o fluxo de aprovações da ADR-0016 permanecem como pendência deliberada do Core.

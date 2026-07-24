@@ -13,6 +13,7 @@ from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_support import in_memory_recorder, operation_context
 
 
 @pytest.fixture
@@ -64,12 +65,14 @@ def test_animal_persistence_and_rls(db_connection: Connection) -> None:
         {"id": prop_id_1.value, "org_id": org_1.value},
     )
 
+    recorder, _ = in_memory_recorder()
+    context_1 = operation_context(org_1)
     animal_repo_1 = TransactionalAnimalRepository(connection=db_connection)
-    animal_service_1 = AnimalService(repository=animal_repo_1)
+    animal_service_1 = AnimalService(repository=animal_repo_1, recorder=recorder)
 
     # 2. Cadastra animal com SISBOV
     animal_1 = animal_service_1.register_animal(
-        organization_id=org_1,
+        context=context_1,
         birth_property_id=prop_id_1,
         sex=AnimalSex.MALE,
         breed="Nelore",
@@ -85,7 +88,7 @@ def test_animal_persistence_and_rls(db_connection: Connection) -> None:
 
     # 3. Anexa brinco de manejo e atualiza
     updated_animal = animal_service_1.attach_identifier(
-        animal_1.animal_id, IdentifierType.EAR_TAG, "TAG-101"
+        context_1, animal_1.animal_id, IdentifierType.EAR_TAG, "TAG-101"
     )
     assert len(updated_animal.identifiers) == 2
 
@@ -110,7 +113,7 @@ def test_animal_persistence_and_rls(db_connection: Connection) -> None:
     )
 
     animal_repo_2 = TransactionalAnimalRepository(connection=db_connection)
-    animal_service_2 = AnimalService(repository=animal_repo_2)
+    animal_service_2 = AnimalService(repository=animal_repo_2, recorder=recorder)
 
     # RLS impede org_2 de enxergar o animal da org_1
     assert animal_service_2.get_animal(animal_1.animal_id) is None

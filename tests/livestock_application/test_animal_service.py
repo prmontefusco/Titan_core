@@ -1,12 +1,14 @@
 """Testes unitários para AnimalService (Passo 8.2 - Titan Livestock)."""
 
-from uuid import uuid4
-
 import pytest
 
 from packages.livestock_application.animal_service import (
     AnimalRepositoryPort,
     AnimalService,
+)
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
 )
 from packages.livestock_domain.animal import (
     Animal,
@@ -14,7 +16,13 @@ from packages.livestock_domain.animal import (
     IdentifierState,
     IdentifierType,
 )
+from packages.livestock_domain.events import (
+    ANIMAL_REGISTERED,
+    IDENTIFIER_ATTACHED,
+    IDENTIFIER_DEACTIVATED,
+)
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_application.conftest import FakeEventLog
 
 
 class InMemoryAnimalRepository(AnimalRepositoryPort):
@@ -54,34 +62,133 @@ class InMemoryAnimalRepository(AnimalRepositoryPort):
         return filtered[offset : offset + limit]
 
 
-def test_register_animal_and_find_by_sisbov() -> None:
-    repo = InMemoryAnimalRepository()
-    service = AnimalService(repository=repo)
-    org_id = OrganizationId(uuid4())
-    prop_id = TypedId.new("rural_property")
+def test_register_animal_and_find_by_sisbov(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    service = AnimalService(repository=InMemoryAnimalRepository(), recorder=recorder)
 
     animal = service.register_animal(
-        organization_id=org_id,
-        birth_property_id=prop_id,
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
         sex=AnimalSex.MALE,
         breed="Nelore",
         initial_identifier_type=IdentifierType.OFFICIAL_SISBOV,
         initial_identifier_value="BR99881122",
     )
 
-    assert animal.organization_id == org_id
-    found = service.find_by_identifier(org_id, IdentifierType.OFFICIAL_SISBOV, "BR99881122")
+    assert animal.organization_id == context.organization_id
+    found = service.find_by_identifier(
+        context.organization_id, IdentifierType.OFFICIAL_SISBOV, "BR99881122"
+    )
     assert found == animal
 
 
-def test_register_animal_duplicate_sisbov_fails() -> None:
-    repo = InMemoryAnimalRepository()
-    service = AnimalService(repository=repo)
-    org_id = OrganizationId(uuid4())
+def test_registering_with_initial_tag_records_both_facts_in_order(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    """A marcação é fato próprio: quem lê a linha do tempo não deve deduzi-la."""
+    service = AnimalService(repository=InMemoryAnimalRepository(), recorder=recorder)
+
+    animal = service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.MALE,
+        initial_identifier_type=IdentifierType.OFFICIAL_SISBOV,
+        initial_identifier_value="BR99881122",
+    )
+
+    assert event_log.types() == [ANIMAL_REGISTERED, IDENTIFIER_ATTACHED]
+    versions = [event.aggregate_version for event in event_log.events]
+    assert versions == [1, 2]
+    assert all(
+        event.aggregate_reference.target_id == animal.animal_id for event in event_log.events
+    )
+
+
+def test_registering_without_tag_records_only_the_registration(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service = AnimalService(repository=InMemoryAnimalRepository(), recorder=recorder)
+
+    service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.FEMALE,
+    )
+
+    assert event_log.types() == [ANIMAL_REGISTERED]
+
+
+def test_attach_and_deactivate_extend_the_same_animal_stream(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service = AnimalService(repository=InMemoryAnimalRepository(), recorder=recorder)
+    animal = service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.FEMALE,
+    )
+
+    updated = service.attach_identifier(
+        context=context,
+        animal_id=animal.animal_id,
+        identifier_type=IdentifierType.OFFICIAL_SISBOV,
+        identifier_value="BR55443322",
+    )
+    tag = updated.identifiers[0]
+    service.deactivate_identifier(
+        context=context, animal_id=animal.animal_id, identifier_id=tag.identifier_id
+    )
+
+    assert event_log.types() == [ANIMAL_REGISTERED, IDENTIFIER_ATTACHED, IDENTIFIER_DEACTIVATED]
+    assert [event.aggregate_version for event in event_log.events] == [1, 2, 3]
+
+
+def test_refuses_to_touch_an_animal_of_another_organization(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    """Sem esta guarda, o evento seria gravado no fluxo da Organization errada."""
+    service = AnimalService(repository=InMemoryAnimalRepository(), recorder=recorder)
+    animal = service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.FEMALE,
+    )
+    intruder = LivestockOperationContext.create(
+        organization_id=OrganizationId.new(),
+        actor_id=TypedId.new("actor"),
+        source_id=TypedId.new("system"),
+    )
+
+    with pytest.raises(KeyError, match="não encontrado"):
+        service.attach_identifier(
+            context=intruder,
+            animal_id=animal.animal_id,
+            identifier_type=IdentifierType.OFFICIAL_SISBOV,
+            identifier_value="BR11112222",
+        )
+
+    assert event_log.types() == [ANIMAL_REGISTERED]
+
+
+def test_register_animal_duplicate_sisbov_fails(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service = AnimalService(repository=InMemoryAnimalRepository(), recorder=recorder)
     prop_id = TypedId.new("rural_property")
 
     service.register_animal(
-        organization_id=org_id,
+        context=context,
         birth_property_id=prop_id,
         sex=AnimalSex.FEMALE,
         initial_identifier_type=IdentifierType.OFFICIAL_SISBOV,
@@ -90,9 +197,38 @@ def test_register_animal_duplicate_sisbov_fails() -> None:
 
     with pytest.raises(ValueError, match="Já existe um animal com o identificador"):
         service.register_animal(
-            organization_id=org_id,
+            context=context,
             birth_property_id=prop_id,
             sex=AnimalSex.MALE,
             initial_identifier_type=IdentifierType.OFFICIAL_SISBOV,
             initial_identifier_value="BR99881122",
         )
+
+    assert len(event_log.of_type(ANIMAL_REGISTERED)) == 1
+
+
+def test_initial_tag_never_predates_the_registration_it_belongs_to(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    """Ler o relógio duas vezes daria à marcação um instante anterior ao cadastro.
+
+    Uma linha do tempo ordenada por `occurred_at` mostraria o brinco sendo posto
+    antes de o animal existir. Em relógio de resolução grosseira o defeito quase
+    não aparece; em Linux, com microssegundos, apareceria sempre.
+    """
+    service = AnimalService(repository=InMemoryAnimalRepository(), recorder=recorder)
+
+    service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.MALE,
+        initial_identifier_type=IdentifierType.OFFICIAL_SISBOV,
+        initial_identifier_value="BR99881122",
+    )
+
+    registration, attachment = event_log.events
+    assert attachment.timestamps.occurred_at >= registration.timestamps.occurred_at
+    # Empatados, quem ordena é a versão do agregado, que não depende do relógio.
+    assert registration.aggregate_version < attachment.aggregate_version

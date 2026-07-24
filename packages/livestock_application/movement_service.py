@@ -5,7 +5,12 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
+)
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
+from packages.livestock_domain.events import ANIMAL_MOVED, animal_moved_payload
 from packages.livestock_domain.movement import (
     AnimalMovement,
     PropertyStay,
@@ -45,10 +50,11 @@ class MovementService:
     stay_repository: PropertyStayRepositoryPort
     animal_repository: AnimalRepositoryPort
     property_repository: RuralPropertyRepositoryPort
+    recorder: LivestockEventRecorder
 
     def register_movement(
         self,
-        organization_id: OrganizationId,
+        context: LivestockOperationContext,
         origin_property_id: TypedId,
         destination_property_id: TypedId,
         movement_time: datetime,
@@ -56,6 +62,7 @@ class MovementService:
         reason: str | None = None,
         evidence_reference: str | None = None,
     ) -> AnimalMovement:
+        organization_id = context.organization_id
         # 1. Valida existência de propriedades
         origin_prop = self.property_repository.get_by_id(origin_property_id)
         if origin_prop is None or origin_prop.organization_id != organization_id:
@@ -100,6 +107,24 @@ class MovementService:
         )
 
         self.movement_repository.save(movement)
+        # O fato é a movimentação, e ela tem fluxo próprio: repetir o evento em
+        # cada animal gravaria o mesmo acontecimento várias vezes. Quem monta a
+        # linha do tempo de um animal alcança a movimentação pelos animal_ids.
+        self.recorder.record(
+            context=context,
+            aggregate_id=movement.movement_id,
+            event_type=ANIMAL_MOVED,
+            payload=animal_moved_payload(
+                movement_id=movement.movement_id,
+                origin_property_id=movement.origin_property_id,
+                destination_property_id=movement.destination_property_id,
+                movement_time=movement.movement_time,
+                animal_ids=movement.animal_ids,
+                reason=movement.reason,
+                evidence_reference=movement.evidence_reference,
+            ),
+            occurred_at=movement.movement_time,
+        )
 
         # 3. Atualiza as permanências (PropertyStay) para cada animal
         for aid in animal_ids:

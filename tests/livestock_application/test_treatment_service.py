@@ -1,11 +1,14 @@
 """Testes unitários para TreatmentApplicationService (Passo 9.3 - Titan Livestock)."""
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
 
 import pytest
 
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
+)
 from packages.livestock_application.medication_service import (
     MedicationBatchRepositoryPort,
     PrescriptionRepositoryPort,
@@ -15,10 +18,12 @@ from packages.livestock_application.treatment_service import (
     TreatmentApplicationService,
 )
 from packages.livestock_domain.animal import Animal, AnimalSex, IdentifierType
+from packages.livestock_domain.events import TREATMENT_APPLIED
 from packages.livestock_domain.medication import MedicationBatch
 from packages.livestock_domain.prescription import Prescription
 from packages.livestock_domain.treatment import TreatmentApplication
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_application.conftest import FakeEventLog
 
 
 class InMemoryApplicationRepo(TreatmentApplicationRepositoryPort):
@@ -114,10 +119,10 @@ class InMemoryPrescriptionRepo(PrescriptionRepositoryPort):
         return list(self.prescriptions.values())
 
 
-def _scenario() -> tuple[
-    TreatmentApplicationService, OrganizationId, TypedId, TypedId, InMemoryApplicationRepo
-]:
-    org_id = OrganizationId(uuid4())
+def _scenario(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> tuple[TreatmentApplicationService, TypedId, TypedId, InMemoryApplicationRepo]:
+    org_id = context.organization_id
     animal = Animal(
         animal_id=TypedId.new("animal"),
         organization_id=org_id,
@@ -137,43 +142,52 @@ def _scenario() -> tuple[
         animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
         batch_repository=InMemoryBatchRepo({batch.batch_id.value.hex: batch}),
         prescription_repository=InMemoryPrescriptionRepo(),
+        recorder=recorder,
     )
-    return service, org_id, animal.animal_id, batch.batch_id, app_repo
+    return service, animal.animal_id, batch.batch_id, app_repo
 
 
-def test_register_application_success() -> None:
-    service, org_id, animal_id, batch_id, _ = _scenario()
+def test_register_application_success(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
 
     app = service.register_application(
-        organization_id=org_id,
+        context=context,
         animal_id=animal_id,
         medication_batch_id=batch_id,
-        actor_id=TypedId.new("actor"),
         applied_at=datetime.now(UTC) - timedelta(hours=1),
         dose="1 mL",
         evidence_references=("evidence:foto",),
     )
     assert app.corrects_application_id is None
     assert app.animal_id == animal_id
+    # A autoria do registro vem do contexto, e é a mesma do evento.
+    assert app.actor_id == context.actor_reference.target_id
+    assert event_log.only(TREATMENT_APPLIED).actor_reference == context.actor_reference
 
 
-def test_correction_creates_new_record_preserving_original() -> None:
+def test_correction_creates_new_record_preserving_original(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
     """O cenário do plano: não se edita; corrige-se por um novo evento."""
-    service, org_id, animal_id, batch_id, app_repo = _scenario()
+    service, animal_id, batch_id, app_repo = _scenario(recorder, context)
 
     original = service.register_application(
-        organization_id=org_id,
+        context=context,
         animal_id=animal_id,
         medication_batch_id=batch_id,
-        actor_id=TypedId.new("actor"),
         applied_at=datetime.now(UTC) - timedelta(hours=2),
         dose="1 mL",
     )
 
     correction = service.correct_application(
-        organization_id=org_id,
+        context=context,
         original_application_id=original.application_id,
-        actor_id=TypedId.new("actor"),
         applied_at=datetime.now(UTC) - timedelta(hours=1),
         dose="2 mL",  # a dose correta
     )
@@ -189,28 +203,47 @@ def test_correction_creates_new_record_preserving_original() -> None:
     assert app_repo.get_by_id(original.application_id).dose == "1 mL"  # type: ignore[union-attr]
     assert len(app_repo.apps) == 2
 
+    # Dois registros, dois fluxos: a correção não reescreve o evento original, e
+    # o vínculo entre eles viaja no payload.
+    events = event_log.of_type(TREATMENT_APPLIED)
+    assert len(events) == 2
+    assert [event.aggregate_version for event in events] == [1, 1]
+    assert events[0].aggregate_reference.target_id == original.application_id
+    assert events[1].aggregate_reference.target_id == correction.application_id
+    assert str(original.application_id.value).encode() in events[1].payload.canonical_bytes
 
-def test_register_application_rejects_future_time() -> None:
-    service, org_id, animal_id, batch_id, _ = _scenario()
+
+def test_register_application_rejects_future_time(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
 
     with pytest.raises(ValueError, match="não pode ser no futuro"):
         service.register_application(
-            organization_id=org_id,
+            context=context,
             animal_id=animal_id,
             medication_batch_id=batch_id,
-            actor_id=TypedId.new("actor"),
             applied_at=datetime.now(UTC) + timedelta(days=1),
         )
 
+    assert event_log.events == []
 
-def test_register_application_rejects_unknown_batch() -> None:
-    service, org_id, animal_id, _, _ = _scenario()
+
+def test_register_application_rejects_unknown_batch(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, _, _ = _scenario(recorder, context)
 
     with pytest.raises(KeyError, match="Lote"):
         service.register_application(
-            organization_id=org_id,
+            context=context,
             animal_id=animal_id,
             medication_batch_id=TypedId.new("medication_batch"),
-            actor_id=TypedId.new("actor"),
             applied_at=datetime.now(UTC),
         )
+
+    assert event_log.events == []

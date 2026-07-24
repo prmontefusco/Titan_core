@@ -20,7 +20,12 @@ from packages.core_domain.facts import reference_from_dict, reference_to_dict
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.serialization import CanonicalSerializer
 
-DOSSIER_DOCUMENT_VERSION = 1
+# Versão 2: as entradas de `evidences` passaram a poder carregar o conteúdo da
+# evidência (hash, fonte, confiança, revogação) e não apenas o identificador. Os
+# campos são aditivos — um leitor da versão 1 continua encontrando o que
+# esperava. Dossiês já gravados guardam o próprio documento e a própria versão, e
+# seguem verificando contra o hash que carregam.
+DOSSIER_DOCUMENT_VERSION = 2
 
 _SERIALIZER = CanonicalSerializer()
 

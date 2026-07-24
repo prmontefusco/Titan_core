@@ -14,6 +14,7 @@ from packages.core_domain.dossier import (
 )
 from packages.core_domain.dossier_pdf import DossierPdfRepresentation
 from packages.core_domain.evaluation import Evaluation
+from packages.core_domain.evidence import Evidence
 from packages.core_domain.nonconformity import NonConformity
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import Rule
@@ -69,12 +70,20 @@ class DossierService:
         rules: Sequence[Rule] = (),
         nonconformities: Sequence[NonConformity] = (),
         generated_at: datetime | None = None,
+        evidences: Sequence[Evidence] = (),
     ) -> Dossier:
+        """`evidences` são as evidências citadas pela decisão, para terem o conteúdo copiado.
+
+        Quem não as fornece obtém o mesmo documento de antes: as entradas trazem o
+        identificador e declaram que o conteúdo não acompanha. Omitir em silêncio
+        seria pior — quem lê precisa distinguir "não havia evidência" de "havia e
+        não veio junto".
+        """
         self._guard_coherence(decision, evaluation, policy)
 
         instante = generated_at or datetime.now(UTC)
         documento = self._build_document(
-            decision, evaluation, policy, rules, nonconformities, instante
+            decision, evaluation, policy, rules, nonconformities, instante, evidences
         )
 
         return Dossier(
@@ -123,6 +132,7 @@ class DossierService:
         rules: Sequence[Rule],
         nonconformities: Sequence[NonConformity],
         generated_at: datetime,
+        evidences: Sequence[Evidence] = (),
     ) -> dict[str, Any]:
         return {
             "document_version": DOSSIER_DOCUMENT_VERSION,
@@ -196,12 +206,8 @@ class DossierService:
                 ],
             },
             "evidences": [
-                {
-                    "entity_type": e.target_id.entity_type,
-                    "id": str(e.target_id.value),
-                    "contract_version": e.contract_version,
-                }
-                for e in decision.evidence_references
+                self._evidence_entry(reference, evidences)
+                for reference in decision.evidence_references
             ],
             "nonconformities": [
                 {
@@ -218,3 +224,99 @@ class DossierService:
                 for n in nonconformities
             ],
         }
+
+    # -- Evidências --------------------------------------------------------
+
+    @staticmethod
+    def _evidence_entry(
+        reference: UniversalReference, evidences: Sequence[Evidence]
+    ) -> dict[str, Any]:
+        """Copia o conteúdo da evidência, e não apenas o identificador.
+
+        Um dossiê que dissesse apenas `evidence: <uuid>` exigiria o banco do Titan
+        para ser compreendido — exatamente o que ele existe para evitar. Com o hash
+        do conteúdo, quem tem o arquivo original confere se é o mesmo, sem nos
+        consultar.
+
+        Quando a evidência não acompanha, `content` é nulo e `content_status` diz
+        por quê. Ausência declarada é honesta; ausência silenciosa não.
+        """
+        entry: dict[str, Any] = {
+            "entity_type": reference.target_id.entity_type,
+            "id": str(reference.target_id.value),
+            "contract_version": reference.contract_version,
+        }
+
+        found = next(
+            (e for e in evidences if e.evidence_id == reference.target_id),
+            None,
+        )
+        if found is None:
+            entry["content"] = None
+            entry["content_status"] = "NAO_ACOMPANHA"
+            return entry
+
+        entry["content_status"] = "COPIADO"
+        entry["content"] = {
+            "content_hash": found.content_hash.hex(),
+            "hash_algorithm": "SHA-256",
+            "registered_at": found.registered_at.isoformat(),
+            "version": found.version,
+            "author": {
+                "entity_type": found.author_reference.target_id.entity_type,
+                "id": str(found.author_reference.target_id.value),
+            },
+            "source": {
+                "source_id": str(found.source.source_id.value),
+                "source_type": found.source.source_type.value,
+                "identifier_uri": found.source.identifier_uri,
+            },
+            "confidence": {
+                "tier": found.confidence_level.tier.value,
+                "reason": found.confidence_level.reason,
+            },
+            "validity": (
+                None
+                if found.validity_period is None
+                else {
+                    "valid_from": (
+                        found.validity_period.valid_from.isoformat()
+                        if found.validity_period.valid_from is not None
+                        else None
+                    ),
+                    "valid_until": (
+                        found.validity_period.valid_until.isoformat()
+                        if found.validity_period.valid_until is not None
+                        else None
+                    ),
+                }
+            ),
+            # Revogação viaja junto: apresentar evidência revogada como se valesse
+            # transformaria o dossiê em prova falsa.
+            "revocation": (
+                None
+                if found.revocation is None
+                else {
+                    "revoked_at": found.revocation.revoked_at.isoformat(),
+                    "reason": found.revocation.reason,
+                    "revoking_actor": {
+                        "entity_type": found.revocation.revoking_actor.target_id.entity_type,
+                        "id": str(found.revocation.revoking_actor.target_id.value),
+                    },
+                }
+            ),
+            "verifications": [
+                {
+                    "verification_id": str(v.verification_id.value),
+                    "verified_at": v.verified_at.isoformat(),
+                    "outcome": v.outcome.value,
+                    "notes": v.notes,
+                    "verifier": {
+                        "entity_type": v.verifier_reference.target_id.entity_type,
+                        "id": str(v.verifier_reference.target_id.value),
+                    },
+                }
+                for v in found.verifications
+            ],
+        }
+        return entry

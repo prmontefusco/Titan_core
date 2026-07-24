@@ -1,13 +1,16 @@
 """Testes da elegibilidade farmacológica (Passo 9.5 - Titan Livestock)."""
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
 
 from packages.core_domain.decision import DecisionResult
 from packages.livestock_application.eligibility import (
     PharmacologicalEligibilityService,
     build_eligibility_policy,
     build_eligibility_rule,
+)
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
 )
 from packages.livestock_application.fact_provider import (
     WITHDRAWAL_FACT_TYPE,
@@ -20,6 +23,10 @@ from packages.livestock_domain.animal import Animal, AnimalSex
 from packages.livestock_domain.medication import Medication, MedicationBatch
 from packages.livestock_domain.property import RuralProperty
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_application.conftest import (
+    FakeDecisionRepository,
+    FakeEvaluationRepository,
+)
 from tests.livestock_application.test_treatment_service import (
     InMemoryAnimalRepo,
     InMemoryApplicationRepo,
@@ -47,8 +54,14 @@ class _NullPropertyRepo(RuralPropertyRepositoryPort):
 
 
 def _service(
-    org_id: OrganizationId, animal_id: TypedId, applied_days_ago: int | None, withdrawal_days: int
-) -> PharmacologicalEligibilityService:
+    animal_id: TypedId,
+    applied_days_ago: int | None,
+    withdrawal_days: int,
+    *,
+    recorder: LivestockEventRecorder,
+    context: LivestockOperationContext,
+) -> tuple[PharmacologicalEligibilityService, FakeEvaluationRepository, FakeDecisionRepository]:
+    org_id = context.organization_id
     medication = Medication(
         medication_id=TypedId.new("medication"),
         organization_id=org_id,
@@ -81,11 +94,11 @@ def _service(
             animal_repository=animal_repo,
             batch_repository=batch_repo,
             prescription_repository=InMemoryPrescriptionRepo(),
+            recorder=recorder,
         ).register_application(
-            organization_id=org_id,
+            context=context,
             animal_id=animal_id,
             medication_batch_id=batch.batch_id,
-            actor_id=TypedId.new("actor"),
             applied_at=datetime.now(UTC) - timedelta(days=applied_days_ago),
         )
 
@@ -99,17 +112,26 @@ def _service(
         ),
     )
     policy = build_eligibility_policy(org_id)
-    return PharmacologicalEligibilityService(
+    evaluations = FakeEvaluationRepository()
+    decisions = FakeDecisionRepository()
+    service = PharmacologicalEligibilityService(
         fact_provider=fact_provider,
         policy=policy,
         rule=build_eligibility_rule(policy.policy_id, org_id),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
     )
+    return service, evaluations, decisions
 
 
-def test_animal_in_withdrawal_is_rejected() -> None:
-    org_id = OrganizationId(uuid4())
+def test_animal_in_withdrawal_is_rejected(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    org_id = context.organization_id
     animal_id = TypedId.new("animal")
-    service = _service(org_id, animal_id, applied_days_ago=10, withdrawal_days=30)
+    service, evaluations, decisions = _service(
+        animal_id, applied_days_ago=10, withdrawal_days=30, recorder=recorder, context=context
+    )
 
     evaluation, decision = service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
 
@@ -124,21 +146,52 @@ def test_animal_in_withdrawal_is_rejected() -> None:
     assert fato.payload["rule_version"] == "titan-livestock-withdrawal-v1"
     assert fato.payload["blocking_batches"]  # evidência: o lote que bloqueia
 
+    # O bloqueio fica gravado nas tabelas do Core: sem isso ele existiria apenas
+    # durante a chamada, e a linha do tempo não teria como mostrar por que barrou.
+    assert evaluations.saved == [evaluation]
+    assert decisions.saved == [decision]
 
-def test_animal_out_of_withdrawal_is_approved() -> None:
-    org_id = OrganizationId(uuid4())
+
+def test_animal_out_of_withdrawal_is_approved(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    org_id = context.organization_id
     animal_id = TypedId.new("animal")
-    service = _service(org_id, animal_id, applied_days_ago=100, withdrawal_days=30)
+    service, _, _ = _service(
+        animal_id, applied_days_ago=100, withdrawal_days=30, recorder=recorder, context=context
+    )
 
     _, decision = service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
 
     assert decision.result is DecisionResult.APROVADA
 
 
-def test_animal_without_treatment_is_approved() -> None:
-    org_id = OrganizationId(uuid4())
+def test_reevaluation_adds_a_record_instead_of_replacing_the_first(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    """Reavaliar não apaga a avaliação anterior — as duas ficam."""
+    org_id = context.organization_id
     animal_id = TypedId.new("animal")
-    service = _service(org_id, animal_id, applied_days_ago=None, withdrawal_days=30)
+    service, evaluations, decisions = _service(
+        animal_id, applied_days_ago=10, withdrawal_days=30, recorder=recorder, context=context
+    )
+
+    service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
+    service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
+
+    assert len(evaluations.saved) == 2
+    assert len(decisions.saved) == 2
+    assert evaluations.saved[0].evaluation_id != evaluations.saved[1].evaluation_id
+
+
+def test_animal_without_treatment_is_approved(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    org_id = context.organization_id
+    animal_id = TypedId.new("animal")
+    service, _, _ = _service(
+        animal_id, applied_days_ago=None, withdrawal_days=30, recorder=recorder, context=context
+    )
 
     evaluation, decision = service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
 

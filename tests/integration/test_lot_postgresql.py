@@ -20,6 +20,7 @@ from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
 )
 from packages.shared_kernel import OrganizationId, TypedId
+from tests.livestock_support import in_memory_recorder, operation_context
 
 
 @pytest.fixture
@@ -87,23 +88,26 @@ def test_lot_persistence_and_rls(db_connection: Connection) -> None:
     anim_repo_1 = TransactionalAnimalRepository(connection=db_connection)
     prop_repo_1 = TransactionalRuralPropertyRepository(connection=db_connection)
 
+    recorder, _ = in_memory_recorder()
+    context_1 = operation_context(org_1)
     service_1 = LotService(
         lot_repository=lot_repo_1,
         membership_repository=mem_repo_1,
         animal_repository=anim_repo_1,
         property_repository=prop_repo_1,
+        recorder=recorder,
     )
 
     # 1. Cria lote e associa animal
     lot_1 = service_1.create_lot(
-        organization_id=org_1,
+        context=context_1,
         property_id=prop_id,
         code="LOTE-01",
         name="Lote Principal",
         lot_type=LotType.OPERATIONAL,
     )
 
-    m_1 = service_1.add_animal_to_lot(lot_1.lot_id, animal_id)
+    m_1 = service_1.add_animal_to_lot(context_1, lot_1.lot_id, animal_id)
     assert m_1.animal_id == animal_id
 
     composition = service_1.get_lot_composition(lot_1.lot_id)
@@ -138,6 +142,7 @@ def test_lot_persistence_and_rls(db_connection: Connection) -> None:
         membership_repository=mem_repo_2,
         animal_repository=anim_repo_2,
         property_repository=prop_repo_2,
+        recorder=recorder,
     )
 
     # RLS impede org_2 de enxergar o lote da org_1

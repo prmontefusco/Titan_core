@@ -4,6 +4,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from packages.livestock_application.event_recorder import (
+    LivestockEventRecorder,
+    LivestockOperationContext,
+)
+from packages.livestock_domain.events import PROPERTY_REGISTERED, property_registered_payload
 from packages.livestock_domain.property import RuralProperty
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -23,10 +28,11 @@ class RuralPropertyRepositoryPort(Protocol):
 @dataclass(frozen=True, slots=True)
 class RuralPropertyService:
     repository: RuralPropertyRepositoryPort
+    recorder: LivestockEventRecorder
 
     def register_property(
         self,
-        organization_id: OrganizationId,
+        context: LivestockOperationContext,
         code: str,
         name: str,
         municipality: str,
@@ -34,6 +40,7 @@ class RuralPropertyService:
         registration_number: str | None = None,
         total_area_hectares: float | None = None,
     ) -> RuralProperty:
+        organization_id = context.organization_id
         # Verifica duplicidade de código dentro da mesma organização
         existing = self.repository.get_by_code(organization_id, code)
         if existing is not None:
@@ -42,6 +49,7 @@ class RuralPropertyService:
                 f"{organization_id.value}."
             )
 
+        created_at = datetime.now(UTC)
         property_obj = RuralProperty(
             property_id=TypedId.new("rural_property"),
             organization_id=organization_id,
@@ -51,10 +59,25 @@ class RuralPropertyService:
             state_code=state_code,
             registration_number=registration_number,
             total_area_hectares=total_area_hectares,
-            created_at=datetime.now(UTC),
+            created_at=created_at,
         )
 
         self.repository.save(property_obj)
+        self.recorder.record(
+            context=context,
+            aggregate_id=property_obj.property_id,
+            event_type=PROPERTY_REGISTERED,
+            payload=property_registered_payload(
+                property_id=property_obj.property_id,
+                code=property_obj.code,
+                name=property_obj.name,
+                municipality=property_obj.municipality,
+                state_code=property_obj.state_code,
+                registration_number=property_obj.registration_number,
+                total_area_hectares=property_obj.total_area_hectares,
+            ),
+            occurred_at=created_at,
+        )
         return property_obj
 
     def get_property(self, property_id: TypedId) -> RuralProperty | None:
