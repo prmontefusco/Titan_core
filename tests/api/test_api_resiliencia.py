@@ -17,13 +17,25 @@ from sqlalchemy import Connection, create_engine, text
 from apps.api.configuration import (
     VARIAVEIS_OBRIGATORIAS,
     ConfiguracaoIncompleta,
+    ConfiguracaoInvalida,
     exigir_configuracao,
     variaveis_ausentes,
+    variaveis_malformadas,
 )
 from apps.api.main import app
 from apps.api.problem import unexpected_error_handler
 
 DATABASE_URL = os.environ.get("TITAN_DATABASE_URL")
+
+# Configuração que o arranque aceita. Serve de base para os testes de forma:
+# cada um estraga uma variável e mantém as outras íntegras, para que a recusa
+# só possa vir da que foi estragada.
+AMBIENTE_VALIDO: dict[str, str] = {
+    "TITAN_DATABASE_URL": "postgresql+psycopg://titan:senha@127.0.0.1:5432/titan",
+    "TITAN_OPERATOR_ORGANIZATION_ID": "3ede8211-222b-4f5a-aaae-0abd47b5849b",
+    "TITAN_OIDC_ISSUER": "http://localhost:8080/realms/titan",
+    "TITAN_OIDC_AUDIENCE": "titan-api",
+}
 
 
 class TestConfiguracaoNoArranque:
@@ -54,7 +66,7 @@ class TestConfiguracaoNoArranque:
         assert "TITAN_DATABASE_URL" not in mensagem
 
     def test_configuracao_completa_deixa_subir(self) -> None:
-        exigir_configuracao(dict.fromkeys(VARIAVEIS_OBRIGATORIAS, "valor"))
+        exigir_configuracao(AMBIENTE_VALIDO)
 
     def test_o_arranque_falha_quando_falta_configuracao(self, monkeypatch: MonkeyPatch) -> None:
         """O processo não sobe: é o que troca um erro tardio por um imediato."""
@@ -62,6 +74,88 @@ class TestConfiguracaoNoArranque:
             monkeypatch.delenv(nome, raising=False)
 
         with pytest.raises(ConfiguracaoIncompleta), TestClient(app):
+            pass
+
+
+class TestFormaDaConfiguracaoNoArranque:
+    """Presença não basta: a variável definida com valor errado é o engano mais caro.
+
+    Um `TITAN_OPERATOR_ORGANIZATION_ID` que não era UUID deixou a API anunciar
+    "startup complete" e estourou na primeira requisição como 500 sanitizado —
+    pelo Swagger, indistinguível de erro nos dados enviados.
+    """
+
+    def test_organizacao_operadora_que_nao_e_uuid_e_recusada(self) -> None:
+        ambiente = AMBIENTE_VALIDO | {"TITAN_OPERATOR_ORGANIZATION_ID": "id-da-operadora"}
+
+        with pytest.raises(ConfiguracaoInvalida) as erro:
+            exigir_configuracao(ambiente)
+
+        mensagem = str(erro.value)
+        assert "TITAN_OPERATOR_ORGANIZATION_ID" in mensagem
+        assert "UUID" in mensagem
+        # O valor recebido viaja junto: é ele que faz o diagnóstico ser imediato.
+        assert "id-da-operadora" in mensagem
+
+    def test_emissor_sem_esquema_e_recusado(self) -> None:
+        ambiente = AMBIENTE_VALIDO | {"TITAN_OIDC_ISSUER": "localhost:8080/realms/titan"}
+
+        with pytest.raises(ConfiguracaoInvalida) as erro:
+            exigir_configuracao(ambiente)
+
+        assert "TITAN_OIDC_ISSUER" in str(erro.value)
+
+    def test_url_de_banco_de_outro_dialeto_e_recusada(self) -> None:
+        ambiente = AMBIENTE_VALIDO | {"TITAN_DATABASE_URL": "mysql://titan@127.0.0.1:3306/titan"}
+
+        with pytest.raises(ConfiguracaoInvalida) as erro:
+            exigir_configuracao(ambiente)
+
+        assert "TITAN_DATABASE_URL" in str(erro.value)
+
+    def test_o_driver_do_sqlalchemy_nao_e_assunto_do_arranque(self) -> None:
+        """Qual driver é fica com o SQLAlchemy; aqui só importa que seja PostgreSQL."""
+        ambiente = AMBIENTE_VALIDO | {
+            "TITAN_DATABASE_URL": "postgresql://titan:senha@127.0.0.1:5432/titan"
+        }
+
+        exigir_configuracao(ambiente)
+
+    def test_a_senha_do_banco_nao_viaja_na_mensagem(self) -> None:
+        """Mensagem de arranque acaba em log, em ticket e em captura de tela."""
+        ambiente = AMBIENTE_VALIDO | {
+            "TITAN_DATABASE_URL": "mysql://titan:senha-secretissima@127.0.0.1:3306/titan"
+        }
+
+        with pytest.raises(ConfiguracaoInvalida) as erro:
+            exigir_configuracao(ambiente)
+
+        assert "senha-secretissima" not in str(erro.value)
+
+    def test_audience_e_cadeia_livre_e_nao_tem_forma_conferida(self) -> None:
+        """Inventar forma para audience recusaria configuração legítima."""
+        ambiente = AMBIENTE_VALIDO | {"TITAN_OIDC_AUDIENCE": "qualquer-coisa-acordada"}
+
+        exigir_configuracao(ambiente)
+
+    def test_variavel_ausente_nao_e_acusada_tambem_de_malformada(self) -> None:
+        """Ausência tem precedência: acusar duas vezes só faria a mensagem confundir."""
+        ambiente = dict(AMBIENTE_VALIDO)
+        del ambiente["TITAN_OPERATOR_ORGANIZATION_ID"]
+
+        assert variaveis_malformadas(ambiente) == {}
+        with pytest.raises(ConfiguracaoIncompleta):
+            exigir_configuracao(ambiente)
+
+    def test_o_arranque_falha_quando_a_configuracao_e_malformada(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """O processo não sobe — que é o que faltava quando isso custou caro."""
+        for nome, valor in AMBIENTE_VALIDO.items():
+            monkeypatch.setenv(nome, valor)
+        monkeypatch.setenv("TITAN_OPERATOR_ORGANIZATION_ID", "id-da-operadora")
+
+        with pytest.raises(ConfiguracaoInvalida), TestClient(app):
             pass
 
 

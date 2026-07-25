@@ -2709,9 +2709,31 @@ postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan
 
 **As duas Organizations do roteiro não se substituem, e confundi-las custou duas rodadas de diagnóstico às cegas.** `TITAN_OPERATOR_ORGANIZATION_ID` recebe a **operadora** — onde a identidade do usuário vive, e onde ele justamente *não* opera. O cabeçalho `X-Titan-Organization-Id` recebe a **Organization A**, que é onde há vínculo e onde estão a propriedade e o rebanho. O seed imprime as duas com rótulos distintos.
 
-**Dívida do Marco 10.4 confirmada em campo: a API não valida a própria configuração ao subir.** `TITAN_OPERATOR_ORGANIZATION_ID` com valor que não é UUID não impede o `uvicorn` de anunciar "Application startup complete" — a falha só aparece na primeira requisição autenticada, como **500 `ERRO_INTERNO` sanitizado**, cuja causa real (`ValueError: O identificador de Organization não é um UUID válido`) existe apenas no log do servidor. Para quem valida pelo Swagger, o sintoma é indistinguível de erro de dados. O correto é conferir as quatro variáveis no startup e recusar-se a subir nomeando a que está errada.
+**A conferência de configuração no arranque existia e só olhava presença — resolvido no Passo 13.1a.** `TITAN_OPERATOR_ORGANIZATION_ID` estava *definida*, e por isso passou; o valor é que não era UUID. O `uvicorn` anunciou "Application startup complete" e a falha só apareceu na primeira requisição autenticada, como **500 `ERRO_INTERNO` sanitizado**, cuja causa real (`ValueError: O identificador de Organization não é um UUID válido`) existia apenas no log do servidor. Para quem validava pelo Swagger, o sintoma era indistinguível de erro nos dados enviados.
 
-## Notas de rumo — decisões de direção fora da numeração do PLANO
+### Passo 13.1a — Forma da configuração no arranque, e a saída no roteiro do seed
+
+**Data:** 25 de julho de 2026 · **Estado:** CONCLUÍDO.
+
+Não é passo do plano de conclusão do domínio: é a infraestrutura de validação que o 13.1 mostrou faltar, feita antes do 13.2 porque barateia toda validação manual seguinte.
+
+#### Conferência de forma, e não só de presença
+
+`exigir_configuracao()` passou a recusar o arranque também quando a variável está definida com valor de forma errada: `TITAN_DATABASE_URL` que não seja `postgresql://`, `TITAN_OPERATOR_ORGANIZATION_ID` que não seja UUID e `TITAN_OIDC_ISSUER` que não seja URL absoluta http. A exceção nova é `ConfiguracaoInvalida`, distinta de `ConfiguracaoIncompleta` — faltar e estar errada são enganos diferentes e merecem mensagens diferentes.
+
+**`TITAN_OIDC_AUDIENCE` fica deliberadamente de fora.** Audience é cadeia livre acordada com o emissor; inventar uma forma para ela recusaria configuração legítima, o que é pior do que não conferir.
+
+**O limite continua sendo forma, nunca alcançabilidade.** Que a URL seja de PostgreSQL, o arranque garante; que o banco exista, responda e tenha as tabelas, não — isso é I/O e descobre-se usando. Vale igual para o emissor: que seja URL http, sim; que seja o Keycloak que assina os tokens, não.
+
+**O valor recebido viaja na mensagem, menos onde carrega credencial.** É o valor que torna o diagnóstico imediato — mas a URL do banco traz a senha, e mensagem de arranque acaba em log, em ticket e em captura de tela. `TITAN_DATABASE_URL` é nomeada sem ser ecoada, e há teste que falha se a senha vazar.
+
+#### Parte 5 do roteiro do seed
+
+O roteiro impresso por `python -m apps.seed` ia até a Parte 4 sem uma linha sobre a saída, e a validação do 13.1 teve de ser ditada em conversa — que some quando a conversa acaba. A Parte 5 acrescenta os sete passos da saída com datas reais já calculadas, incluindo o par decisivo (fato posterior recusado, fato anterior aceito) e a segunda saída recusada.
+
+#### Testes
+
+`test_api_resiliencia.py` ganhou a classe `TestFormaDaConfiguracaoNoArranque` (8): UUID inválido recusado com o valor citado; emissor sem esquema recusado; banco de outro dialeto recusado; driver do SQLAlchemy não é assunto do arranque; a senha não viaja na mensagem; audience passa com qualquer valor; ausência tem precedência sobre forma; e o arranque de fato falha, pelo `TestClient`.
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
 

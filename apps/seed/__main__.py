@@ -260,6 +260,12 @@ def _roteiro(semeado: Semeado, keycloak_url: str) -> str:
     corrigido_em = (hoje - timedelta(days=9)).strftime("%Y-%m-%dT12:00:00Z")
     antes_do_tratamento = (hoje - timedelta(days=20)).strftime("%Y-%m-%dT00:00:00Z")
     no_futuro = (hoje + timedelta(days=1)).strftime("%Y-%m-%dT12:00:00Z")
+    # A saída divide a linha do tempo em duas metades, e é essa divisão que a
+    # Parte 5 põe à prova: o que ocorreu antes dela ainda entra, o que ocorreu
+    # depois não pode ter ocorrido.
+    saida_em = (hoje - timedelta(days=5)).strftime("%Y-%m-%dT12:00:00Z")
+    depois_da_saida = (hoje - timedelta(days=3)).strftime("%Y-%m-%dT12:00:00Z")
+    antes_da_saida = (hoje - timedelta(days=7)).strftime("%Y-%m-%dT12:00:00Z")
     validade_do_lote = (hoje + timedelta(days=365)).strftime("%Y-%m-%dT00:00:00Z")
     org_a = semeado.org_a.value
     org_b = semeado.org_b.value
@@ -434,13 +440,74 @@ usuário, abra uma JANELA ANÔNIMA em http://localhost:8000/docs e autorize como
        >>> CONFIRA: reason_code == "CONFLITO_DE_DOMINIO"
 
 
+======== PARTE 5 — A SAÍDA DO REBANHO (volte ao operador) ========
+
+Até o Passo 13.1 o animal não tinha fim: todo animal cadastrado permanecia
+implicitamente vivo e presente, e um recall varreria animais mortos há anos.
+
+  5.1  POST /v1/livestock/animals/<animal_id>/exit ...... espera 201
+       {{
+         "exit_type": "ABATE",
+         "occurred_at": "{saida_em}",
+         "reason": "Abate programado",
+         "destination": "Frigorifico Central"
+       }}
+       Os tipos são MORTE, ABATE, VENDA e TRANSFERENCIA_DEFINITIVA.
+
+  5.2  GET /v1/livestock/animals?limit=200 ............. espera 200
+       >>> CONFIRA: o animal NÃO aparece mais
+
+       A listagem passou a devolver o rebanho ativo. Quem lista animais quer o
+       rebanho, e não o histórico inteiro desde a fundação da organização.
+
+  5.3  GET /v1/livestock/animals?limit=200&incluir_saidos=true ... espera 200
+       >>> CONFIRA: o animal reaparece, agora com o objeto "saida" preenchido
+
+  5.4  GET /v1/livestock/animals/<animal_id> ........... espera 200
+       >>> CONFIRA: "saida" vem preenchida sem precisar de parâmetro algum
+
+       Sair do rebanho não é desaparecer: é justamente depois da saída que a
+       auditoria acontece.
+
+  5.5  POST /v1/livestock/treatments ................... espera 409
+       {{
+         "animal_id": "<animal_id>",
+         "medication_batch_id": "<batch_id>",
+         "applied_at": "{depois_da_saida}",
+         "dose": "1 mL / 50 kg"
+       }}
+       >>> CONFIRA: reason_code == "CONFLITO_DE_DOMINIO"
+       >>> CONFIRA: a mensagem cita a data da saída e o tipo ABATE
+
+       Um boi abatido não é tratado depois. O critério é o instante em que o
+       fato OCORREU, nunca o do registro.
+
+  5.6  POST /v1/livestock/treatments ................... espera 201
+       O mesmo corpo do 5.5, mudando só a data para antes da saída:
+         "applied_at": "{antes_da_saida}"
+       >>> CONFIRA: passa
+
+       Lançar hoje um tratamento aplicado antes da saída é regularização de
+       registro — o caso mais comum no campo. Recusá-lo apagaria o que de fato
+       aconteceu, que é o oposto do que um registro append-only faz.
+
+       Os passos 5.5 e 5.6 são o coração do Marco 13, do mesmo modo que o 1.5
+       é o do Marco 9.
+
+  5.7  POST /v1/livestock/animals/<animal_id>/exit ...... espera 409
+       Repita o corpo do 5.1 com "exit_type": "VENDA".
+       >>> CONFIRA: sair é terminal, e o banco recusa a segunda saída mesmo que
+                    a conferência da aplicação falhasse
+
+
 =========== O QUE ISTO DEMONSTRA NO FIM ===========
 
   o animal foi bloqueado por uma regra versionada, com motivo;
   a correção acrescentou sem apagar o que estava errado;
   a prova é verificável por terceiro, sem acesso ao Titan;
   papéis diferentes têm alcances diferentes, nos dois sentidos;
-  uma organização não enxerga a outra, e a negação não entrega pistas.
+  uma organização não enxerga a outra, e a negação não entrega pistas;
+  o animal tem fim, e o fim fecha o futuro sem apagar o passado.
 
 =====================================================
 """
