@@ -1,6 +1,6 @@
 # ADR 0042 — Contraparte externa, transferência de custódia e continuidade de proveniência
 
-**Status:** Proposta
+**Status:** Aceita
 **Data:** 25 de julho de 2026
 **Decisores:** fundador e responsável pela arquitetura do Titan
 
@@ -98,6 +98,15 @@ Estados do protocolo, previstos e não necessariamente implementados de imediato
 
 ```text
 CREATED · DELIVERED · ACCEPTED · REJECTED · EXPIRED
+```
+
+> **Estes são estados do `TransferProtocol`, e nunca do `AnimalExit`.**
+
+A saída tem instante de ocorrência, não estado de negociação. Uma implementação que colocasse `AnimalExit.status = ACCEPTED` faria o registro de um fato consumado depender do andamento de um protocolo — e o animal que já saiu da fazenda ficaria "pendente" no sistema porque o comprador não clicou.
+
+```text
+AnimalExit         occurred_at = 25/07 16:00      ← o fato
+TransferProtocol   status = ACCEPTED              ← a negociação da prova
 ```
 
 ## Dois fatos locais, ligados pela prova
@@ -201,7 +210,13 @@ Colapsá-las numa só faria o sistema confundir **"não fui eu que afirmei"** co
 
 A ADR-0039 já fixou essa semântica para os pacotes de verificação, e **esta ADR a herda inteira**: verificar uma assinatura contra uma âncora não demonstra que a chave pertence legitimamente a quem se alega emissor, nem que ele estava autorizado a emitir aquilo no instante em que emitiu.
 
-Portanto `CRYPTOGRAPHICALLY_ATTESTED` significa *"o material não foi adulterado desde a assinatura"*, e **nunca** *"o Titan confirmou que isto veio oficialmente da Fazenda X"*. Ler o primeiro como o segundo transformaria integridade em autenticidade institucional, que é o engano mais caro possível numa cadeia de custódia — porque um pacote forjado com par de chaves próprio verifica perfeitamente.
+Portanto `CRYPTOGRAPHICALLY_ATTESTED` significa exatamente isto:
+
+> **A assinatura criptográfica confere para o material verificado, contra a âncora utilizada.**
+
+E **nunca** *"o Titan confirmou que isto veio oficialmente da Fazenda X"*. Ler o primeiro como o segundo transformaria integridade em autenticidade institucional, que é o engano mais caro possível numa cadeia de custódia — porque um pacote forjado com par de chaves próprio verifica perfeitamente.
+
+A formulação é deliberadamente estreita: não afirma sequer que o material é o mesmo que algum original, porque isso dependeria de saber qual era o original. Afirma apenas o que a operação de fato apurou.
 
 Vincular o emissor a uma contraparte ou a uma Organization é afirmação separada, sustentada por evidência própria, e sujeita à mesma escala de confiança.
 

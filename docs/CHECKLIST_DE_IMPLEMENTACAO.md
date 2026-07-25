@@ -2951,6 +2951,54 @@ O `Titan_geodata` expõe `/api/v1/sicar/properties/{cod_imovel}` com chave de AP
 
 **Decomposição proposta — Marco 17:** 17.1 georreferenciamento da propriedade; 17.2 importação do CAR; 17.3 mercado de destino e matriz de elegibilidade; 17.4 carência por mercado; 17.5 avaliação territorial, quando as camadas existirem.
 
+### NR-7 — `Assertion` como conceito estrutural emergente
+
+**Registrada em 25 de julho de 2026**, observada pelo responsável ao revisar a ADR-0042. **Marcada, e deliberadamente não generalizada.**
+
+Até o Marco 10 o vocabulário do Core era `Fact`, `Evidence`, `Policy`, `Decision`. As ADRs 0041 e 0042 fizeram aparecer algo maior, sem que nenhuma das duas o tenha proposto:
+
+```text
+                  Assertion
+                 /    |    \
+           Subject  Fact   AssertedBy
+                       \
+                      Evidence
+                         |
+                    Provenance
+                         |
+                     Confidence
+```
+
+**A mesma forma já apareceu quatro vezes:** `ContinuityAssertion` ("este animal é o mesmo indivíduo anterior"); o vínculo entre contraparte e Organization ("esta contraparte é a Organization Y"); o fato importado ("a Organization A afirma que o tratamento T ocorreu sobre o animal X naquele instante"); e a paternidade declarada do Passo 13.2.
+
+E é previsível que se repita em toda integração externa — órgão oficial afirma, fazenda afirma, sensor afirma, veterinário afirma.
+
+Se aparecer em domínio distinto pela terceira ou quarta vez, talvez exista um conceito de Core parecido com:
+
+```text
+Assertion<T>
+    subject · predicate · value
+    asserted_by · asserted_at
+    evidence[] · provenance · confidence
+```
+
+**Não generalizar agora**, pela mesma cautela das ADRs 0041 e 0042: sem casos concretos em domínios diferentes, a abstração sai especulativa.
+
+**Por que isso importa mais do que parece.** Ele descreve o que o Titan está se tornando: menos um banco que pretende possuir a verdade, e mais um sistema que preserva, relaciona, verifica e avalia **afirmações sobre o mundo real**. É a frase que fecha a ADR-0042 — *"o Titan não precisa possuir toda a realidade"* — e é o que torna a rastreabilidade tratável, porque nenhum sistema jamais possuirá a cadeia inteira.
+
+Cada conceito responde a uma pergunta distinta, e a separação é o ativo:
+
+```text
+Identity    → sobre quem estamos falando?
+Continuity  → é o mesmo sujeito anterior?
+Provenance  → quem afirmou?
+Evidence    → com base em quê?
+Confidence  → quanto essa afirmação sustenta?
+Coverage    → de qual período realmente sabemos?
+Policy      → isso é suficiente para esta finalidade?
+Decision    → qual é a conclusão?
+```
+
 ### NR-1 — Âncora temporal por documento de terceiro
 
 **Problema.** O `occurred_at` de um evento capturado offline é **tempo alegado** pelo relógio do dispositivo. Quem controla o aparelho controla a alegação. Isso é grave especificamente na carência: ela é calculada como `applied_at + dias`, então antedatar uma aplicação encurta a carência efetiva e libera o animal antes da hora — resíduo na carne, exatamente o dano que o Marco 9 existe para impedir. A ADR-0021, princípio 4, já veda tratar relógio de dispositivo como prova temporal, e o PLANO lista o risco na sua tabela ("relógio local apresentado como prova temporal").
