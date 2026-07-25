@@ -1,8 +1,11 @@
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -11,10 +14,14 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from apps.api.authentication import (
     AuthenticatedPrincipalDependency,
 )
+from apps.api.configuration import exigir_configuracao
 from apps.api.livestock_animals import router as livestock_animals_router
+from apps.api.livestock_dependencies import ORGANIZATION_HEADER
 from apps.api.livestock_medications import router as livestock_medications_router
 from apps.api.livestock_queries import router as livestock_queries_router
+from apps.api.livestock_reads import router as livestock_reads_router
 from apps.api.livestock_treatments import router as livestock_treatments_router
+from apps.api.livestock_writes import router as livestock_writes_router
 from apps.api.problem import (
     DomainProblem,
     domain_problem_handler,
@@ -35,7 +42,15 @@ class AuthenticationResponse(BaseModel):
     scopes: list[str]
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """Recusa subir sem configuração, em vez de falhar na primeira requisição."""
+    exigir_configuracao()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Titan API",
     version="0.0.0",
     swagger_ui_init_oauth={
@@ -43,6 +58,25 @@ app = FastAPI(
         "usePkceWithAuthorizationCodeGrant": True,
     },
 )
+
+
+# Um frontend em outra origem é bloqueado pelo navegador antes de a requisição
+# sair. As origens permitidas vêm do ambiente e **não** têm curinga por padrão:
+# `*` com credenciais é recusado pelo próprio navegador, e liberar tudo num
+# serviço que carrega prova auditável não é conveniência, é falha.
+_origens = [
+    origem.strip()
+    for origem in os.environ.get("TITAN_CORS_ORIGINS", "").split(",")
+    if origem.strip()
+]
+if _origens:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_origens,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", ORGANIZATION_HEADER],
+    )
 
 
 # Verificação externa é deliberadamente anônima: verifica apenas o material que o
@@ -78,6 +112,8 @@ for livestock_router in (
     livestock_medications_router,
     livestock_treatments_router,
     livestock_queries_router,
+    livestock_reads_router,
+    livestock_writes_router,
 ):
     app.include_router(livestock_router)
 

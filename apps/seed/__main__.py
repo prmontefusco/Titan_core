@@ -47,26 +47,17 @@ from packages.core_infrastructure.persistence.external_identities import (
     ExternalIdentityRepository,
 )
 from packages.livestock_application.authorization import (
-    ANIMAL_CRIAR,
     AUDITOR,
-    DOSSIER_LER,
-    ELIGIBILITY_EXECUTAR,
-    MEDICATION_CRIAR,
+    LIVESTOCK_PERMISSIONS,
     OPERADOR_PECUARIO,
     ROLE_PERMISSIONS,
-    TIMELINE_LER,
-    TREATMENT_REGISTRAR,
 )
 from packages.shared_kernel import OrganizationId, TypedId
 
-TODAS_AS_PERMISSOES = (
-    ANIMAL_CRIAR,
-    MEDICATION_CRIAR,
-    TREATMENT_REGISTRAR,
-    ELIGIBILITY_EXECUTAR,
-    TIMELINE_LER,
-    DOSSIER_LER,
-)
+# Derivada da fonte única, e não repetida aqui. Uma lista paralela fica para trás
+# em silêncio quando uma permissão nova nasce — foi o que aconteceu ao acrescentar
+# as permissões de leitura.
+TODAS_AS_PERMISSOES = tuple(sorted(LIVESTOCK_PERMISSIONS))
 
 SENHA_DEMONSTRACAO = "titan_demo_local"  # noqa: S105 — ambiente local descartável
 

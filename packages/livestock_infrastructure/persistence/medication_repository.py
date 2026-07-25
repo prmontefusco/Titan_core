@@ -356,6 +356,25 @@ class TransactionalMedicationBatchRepository(MedicationBatchRepositoryPort):
         rows = self.connection.execute(stmt).fetchall()
         return [self._map_batch(row) for row in rows]
 
+    def list_by_organization(
+        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+    ) -> list[MedicationBatch]:
+        """Lotes da organização, do mais recente ao mais antigo.
+
+        Ordenar por criação, e não por validade, porque quem lista quer ver o que
+        acabou de cadastrar. A validade ordena a consulta por medicamento, onde a
+        pergunta é qual lote vence primeiro.
+        """
+        stmt = (
+            select(medication_batches_table)
+            .where(medication_batches_table.c.record_owner_organization_id == organization_id.value)
+            .order_by(medication_batches_table.c.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = self.connection.execute(stmt).fetchall()
+        return [self._map_batch(row) for row in rows]
+
     def _map_batch(self, row: Row[Any]) -> MedicationBatch:
         def _aware(value: datetime | None) -> datetime | None:
             if value is None:

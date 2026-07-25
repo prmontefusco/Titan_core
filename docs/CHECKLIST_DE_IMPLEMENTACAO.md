@@ -2,7 +2,7 @@
 
 **Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** validar manualmente o Passo 10.6, que fecha o Marco 10
+**Próximo passo planejado:** validar o Marco 12 e iniciar o frontend
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -2598,6 +2598,58 @@ Cobrem: bloqueio seguido de aprovação sobre fatos corrigidos, com decisões di
 ### Validação manual pendente
 
 Recriar o ambiente do zero — `docker compose down -v`, `docker compose up -d`, `alembic upgrade head` — e executar `python -m apps.demo`, conferindo os sete passos e inspecionando o JSON e o PDF gravados.
+
+## Marco 12 — API de leitura e entidades faltantes
+
+**Data:** 25 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente).
+
+**Fora do PLANO_DE_IMPLEMENTACAO_VALIDADO**, que se encerrou no Marco 10. Autorizado diretamente pelo responsável ao constatar que a API do Marco 10 não sustenta um frontend.
+
+### Por que existe
+
+A API do Marco 10 tinha oito rotas: seis criavam, duas liam por identificador. **Não havia listagem alguma** — quem cadastrasse um animal e perdesse o UUID não o alcançava mais. Metade do domínio (propriedade, lote pecuário, veterinário, movimentação) tinha serviço e persistência completos e nenhuma rota. E não havia CORS, o que bloqueia qualquer navegador em outra origem antes da requisição sair.
+
+Nada disso era falha do Marco 10: o PLANO definiu "endpoints **estritamente necessários** para operar o cenário". A API existia para provar a tese, não para sustentar produto.
+
+### O que foi entregue
+
+**36 rotas** ao todo, contra 11 antes.
+
+- **CORS** por `TITAN_CORS_ORIGINS`, sem curinga por padrão. `*` com credenciais é recusado pelo próprio navegador, e liberar tudo num serviço que carrega prova auditável não é conveniência.
+- **Listagem e detalhe** de animal, propriedade, medicamento, lote de medicamento, tratamento, lote pecuário, veterinário e movimentação. Filtros onde fazem sentido: lotes por medicamento, tratamentos e movimentações por animal.
+- **Composição temporal do lote** (`/lots/{id}/members?at_time=`): sem instante devolve a vigente; com ele, a que valia então. Um lote não é o que ele é hoje.
+- **Escrita** de propriedade, lote, inclusão e encerramento de permanência, veterinário, atualização de verificação e movimentação.
+- **`GET /dossiers?subject_id=`**, que exige o sujeito: devolver toda a prova da organização de uma vez não é pergunta que alguém faça, e é varredura cara sobre a tabela mais sensível.
+
+### Decisões
+
+**Paginação sem contagem total.** Contar exige varrer a tabela a cada página, e o custo cresce com o acervo — justamente onde a paginação deveria aliviar. `has_more` responde a única pergunta da interface, obtido pedindo um registro a mais e descartando-o. O teto de 200 é rígido: pedir acima é **recusado**, não reduzido em silêncio, para o cliente não acreditar que recebeu tudo.
+
+**Permissão de leitura por área**, não uma só para tudo: `LIVESTOCK_ANIMAL.LER`, `LIVESTOCK_MEDICATION.LER`, e assim por diante. Papel de consulta restrita — um comprador que só vê o dossiê, um técnico que só vê tratamentos — deixa de exigir código novo para existir. Os conjuntos `LEITURA` e `ESCRITA` compõem os papéis, e `LIVESTOCK_PERMISSIONS` deriva deles.
+
+**O operador passou a ler o que opera.** Cadastrar sem poder consultar o que se cadastrou não é papel utilizável. O dossiê ficou de fora: a prova é do auditor.
+
+**`organization_id` nunca vem do cliente** — vem do contexto resolvido, e o RLS confirma no banco. Aceitá-lo por parâmetro daria ao chamador a chance de pedir dados de outra organização.
+
+**Encerrar permanência é POST, não DELETE.** Fecha a vigência e acrescenta um fato; o vínculo anterior permanece. Um DELETE prometeria apagar o que o domínio preserva.
+
+**O CPF do veterinário não sai da API.** É usado para impedir duplicidade no cadastro e não aparece em consulta alguma — há teste.
+
+### Defeito encontrado no caminho
+
+A ferramenta de semeadura mantinha uma **lista paralela** de permissões e ficou para trás em silêncio quando as de leitura nasceram. Passou a derivar de `LIVESTOCK_PERMISSIONS`, que é a fonte única.
+
+### Testes (13, em `test_livestock_api_leitura.py`)
+
+O animal cadastrado aparece na listagem; a página indica continuidade sem contar tudo, e páginas não se sobrepõem; pedir acima do teto é recusado; detalhe por identificador; recurso de outra organização responde como inexistente; identificador malformado é erro do cliente; ciclo completo de uma entidade que não tinha rota; o lote recebe e encerra permanência **sem apagar o vínculo**, com consulta temporal; movimentação é um fato só ainda que mova vários; o CPF não vaza; o auditor lê e não escreve; e os dossiês de um sujeito são encontráveis sem saber o UUID.
+
+### Portão de verificação
+
+`667 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (368 arquivos) e `alembic check` sem erros.
+
+### Validação manual pendente
+
+Percorrer as rotas de leitura pelo Swagger e conferir a paginação. Depois disso, a API sustenta um frontend.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 

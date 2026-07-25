@@ -416,3 +416,38 @@ def test_an_animal_of_another_organization_yields_nothing(
     entries = scenario.timeline_service().animal_timeline(OrganizationId.new(), animal_id)
 
     assert entries == ()
+
+
+def test_a_decisao_nunca_aparece_antes_da_avaliacao_que_a_produziu(
+    context: LivestockOperationContext,
+) -> None:
+    """A decisão é derivada da avaliação e emitida no mesmo instante que ela.
+
+    Desempatar pelo nome da origem colocava DECISION antes de EVALUATION, o que
+    inverte a causalidade num documento que se apresenta como prova.
+    """
+    from tests.livestock_application.test_eligibility_service import _service
+
+    animal_id = TypedId.new("animal")
+    scenario = Scenario(context)
+    eligibility, evaluations, decisions = _service(
+        animal_id,
+        applied_days_ago=10,
+        withdrawal_days=30,
+        recorder=scenario.recorder,
+        context=context,
+    )
+    eligibility.evaluate_animal(scenario.organization_id, animal_id, datetime.now(UTC))
+
+    entradas = LivestockTimelineService(
+        event_reader=scenario.event_log,
+        movement_repository=scenario.movement_repository,
+        application_repository=scenario.application_repository,
+        membership_repository=scenario.membership_repository,
+        batch_repository=scenario.batch_repository,
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+    ).animal_timeline(scenario.organization_id, animal_id)
+
+    posicoes = {entrada.source_kind: indice for indice, entrada in enumerate(entradas)}
+    assert posicoes[TimelineSourceKind.EVALUATION] < posicoes[TimelineSourceKind.DECISION]

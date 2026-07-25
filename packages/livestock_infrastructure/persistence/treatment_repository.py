@@ -129,6 +129,27 @@ class TransactionalTreatmentApplicationRepository(TreatmentApplicationRepository
         rows = self.connection.execute(stmt).fetchall()
         return [self._map(row) for row in rows]
 
+    def list_by_organization(
+        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+    ) -> list[TreatmentApplication]:
+        """Aplicações da organização, da mais recente à mais antiga.
+
+        Inclui as corrigidas: elas continuam sendo registros válidos do que foi
+        lançado, e omiti-las aqui esconderia da listagem o que a linha do tempo
+        mostra. Quem quer saber o que vale hoje consulta a carência.
+        """
+        stmt = (
+            select(treatment_applications_table)
+            .where(
+                treatment_applications_table.c.record_owner_organization_id == organization_id.value
+            )
+            .order_by(treatment_applications_table.c.applied_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = self.connection.execute(stmt).fetchall()
+        return [self._map(row) for row in rows]
+
     def list_by_batch(
         self, organization_id: OrganizationId, medication_batch_id: TypedId
     ) -> list[TreatmentApplication]:

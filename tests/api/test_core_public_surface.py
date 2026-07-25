@@ -34,6 +34,33 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/animals/{animal_id}/eligibility", "post"),
     ("/v1/livestock/animals/{animal_id}/timeline", "get"),
     ("/v1/livestock/dossiers/{dossier_id}", "get"),
+    # Leitura acrescentada pelo Marco 12: sem listagem, nenhuma interface funciona.
+    ("/v1/livestock/animals", "get"),
+    ("/v1/livestock/animals/{animal_id}", "get"),
+    ("/v1/livestock/properties", "get"),
+    ("/v1/livestock/properties/{property_id}", "get"),
+    ("/v1/livestock/medications", "get"),
+    ("/v1/livestock/medications/{medication_id}", "get"),
+    ("/v1/livestock/medication-batches", "get"),
+    ("/v1/livestock/medication-batches/{batch_id}", "get"),
+    ("/v1/livestock/treatments", "get"),
+    ("/v1/livestock/treatments/{application_id}", "get"),
+    ("/v1/livestock/lots", "get"),
+    ("/v1/livestock/lots/{lot_id}", "get"),
+    ("/v1/livestock/lots/{lot_id}/members", "get"),
+    ("/v1/livestock/veterinarians", "get"),
+    ("/v1/livestock/veterinarians/{veterinarian_id}", "get"),
+    ("/v1/livestock/movements", "get"),
+    ("/v1/livestock/movements/{movement_id}", "get"),
+    ("/v1/livestock/dossiers", "get"),
+    # Escrita das entidades que o Marco 10 deixou fora da API.
+    ("/v1/livestock/properties", "post"),
+    ("/v1/livestock/lots", "post"),
+    ("/v1/livestock/lots/{lot_id}/members", "post"),
+    ("/v1/livestock/lots/{lot_id}/removals", "post"),
+    ("/v1/livestock/veterinarians", "post"),
+    ("/v1/livestock/veterinarians/{veterinarian_id}/verification", "post"),
+    ("/v1/livestock/movements", "post"),
 }
 
 

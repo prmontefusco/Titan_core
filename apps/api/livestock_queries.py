@@ -238,6 +238,44 @@ def consultar_linha_do_tempo(
 
 
 @router.get(
+    "/dossiers",
+    summary="Listar dossiês de um sujeito",
+    description=(
+        "Exige `subject_id`. Sem ele a consulta devolveria toda a prova da "
+        "organização de uma vez, que não é pergunta que alguém faça — e é varredura "
+        "cara sobre a tabela mais sensível do sistema."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_dossies(
+    subject_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(DOSSIER_LER))],
+) -> dict[str, Any]:
+    alvo = typed_id_or_problem(subject_id, entity_type="animal", campo="subject_id")
+    encontrados = TransactionalDossierRepository(connection=connection).list_by_subject(
+        contexto.organization_id, alvo
+    )
+    # O resumo traz o suficiente para escolher qual dossiê abrir; o documento
+    # inteiro vem na rota de detalhe, porque é grande e nem sempre necessário.
+    return {
+        "subject_id": str(alvo.value),
+        "items": [
+            {
+                "dossier_id": str(dossie.dossier_id.value),
+                "purpose": dossie.purpose,
+                "decision_id": str(dossie.decision_id.value),
+                "evaluation_id": str(dossie.evaluation_id.value),
+                "generated_at": dossie.generated_at.isoformat(),
+                "dossier_hash": dossie.dossier_hash,
+                "document_version": dossie.document_version,
+            }
+            for dossie in encontrados
+        ],
+    }
+
+
+@router.get(
     "/dossiers/{dossier_id}",
     summary="Obter o dossiê de uma decisão",
     description=(

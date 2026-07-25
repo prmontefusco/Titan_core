@@ -48,6 +48,17 @@ class TimelineSourceKind(StrEnum):
     DECISION = "DECISION"
 
 
+# Desempate por precedência causal, e não pelo nome. A decisão é derivada da
+# avaliação e emitida no mesmo instante que ela; ordenar alfabeticamente colocava
+# a decisão ANTES da avaliação que a produziu — causalidade invertida num
+# documento que se apresenta como prova.
+_PRECEDENCIA_CAUSAL = {
+    TimelineSourceKind.DOMAIN_EVENT: 0,
+    TimelineSourceKind.EVALUATION: 1,
+    TimelineSourceKind.DECISION: 2,
+}
+
+
 @dataclass(frozen=True, slots=True)
 class TimelineCutoff:
     """Corte bitemporal da consulta.
@@ -94,19 +105,22 @@ class TimelineEntry:
     payload_schema: str | None
     superseded_by: TypedId | None
 
-    def sort_key(self) -> tuple[datetime, str, str, str, int, str]:
+    def sort_key(self) -> tuple[datetime, str, str, int, int, str]:
         """Ordem total e estável, que não depende da ordem de leitura do banco.
 
         `occurred_at` é a cronologia que interessa a quem lê. O resto existe para
         desempatar sempre — inclusive `source_id` ao final, que é único e garante
         que duas leituras da mesma história produzam exatamente a mesma sequência,
         e não apenas uma parecida. É o mesmo princípio de chave total do Passo 7.2.
+
+        Entre origens, o desempate segue a **precedência causal**: fato, depois
+        avaliação, depois decisão. Ver `_PRECEDENCIA_CAUSAL`.
         """
         return (
             self.occurred_at,
             self.aggregate_id.entity_type,
             str(self.aggregate_id.value),
-            self.source_kind.value,
+            _PRECEDENCIA_CAUSAL[self.source_kind],
             self.sequence,
             str(self.source_id.value),
         )
