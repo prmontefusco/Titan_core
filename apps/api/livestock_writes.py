@@ -33,6 +33,7 @@ from packages.livestock_application.authorization import (
     LOT_CRIAR,
     MOVEMENT_REGISTRAR,
     PROPERTY_CRIAR,
+    REPRODUCTION_REGISTRAR,
     VETERINARIAN_CRIAR,
 )
 from packages.livestock_application.event_recorder import LivestockEventRecorder
@@ -41,8 +42,13 @@ from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
 from packages.livestock_application.parentage_service import ParentageService
 from packages.livestock_application.property_service import RuralPropertyService
+from packages.livestock_application.reproduction_service import (
+    CriaDeclarada,
+    ReproductionService,
+    StayBasedPropertyReader,
+)
 from packages.livestock_application.veterinarian_service import VeterinarianService
-from packages.livestock_domain.animal import VerificationStatus
+from packages.livestock_domain.animal import AnimalSex, BirthOutcome, VerificationStatus
 from packages.livestock_domain.exit import ExitType
 from packages.livestock_domain.lot import LotType
 from packages.livestock_domain.parentage import (
@@ -51,6 +57,7 @@ from packages.livestock_domain.parentage import (
     ParentageRole,
     confidence_from_tier,
 )
+from packages.livestock_domain.reproduction import GestationalAgeBasis
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
@@ -67,6 +74,9 @@ from packages.livestock_infrastructure.persistence.movement_repository import (
 )
 from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
+)
+from packages.livestock_infrastructure.persistence.reproduction_repository import (
+    TransactionalReproductiveEventRepository,
 )
 from packages.livestock_infrastructure.persistence.veterinarian_repository import (
     TransactionalVeterinarianRepository,
@@ -697,3 +707,195 @@ def registrar_paternidade(
         raise _conflito(error) from error
 
     return _parentesco(relacao)
+
+
+# -- Reprodução --------------------------------------------------------------
+
+
+class CriaRequest(BaseModel):
+    outcome: BirthOutcome
+    sex: AnimalSex = AnimalSex.UNKNOWN
+    breed: str | None = Field(default=None, max_length=100)
+
+
+class RegistrarPartoRequest(BaseModel):
+    dam_id: str = Field(description="A mãe. Quem pare é fêmea.")
+    occurred_at: datetime
+    offspring: list[CriaRequest] = Field(min_length=1)
+    sire_id: str | None = None
+    birth_property_id: str | None = Field(
+        default=None,
+        description=(
+            "Só é usada quando a permanência da mãe não for determinável. Se houver "
+            "permanência conhecida e ela divergir desta, o registro é recusado — a "
+            "contradição precisa ser corrigida conscientemente."
+        ),
+    )
+    confidence: ParentageConfidence = ParentageConfidence.DECLARADO
+    gestational_age_days: int | None = Field(default=None, gt=0)
+    gestational_age_basis: GestationalAgeBasis = GestationalAgeBasis.UNKNOWN
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class RegistrarAbortoRequest(BaseModel):
+    dam_id: str
+    occurred_at: datetime
+    gestational_age_days: int | None = Field(default=None, gt=0)
+    gestational_age_basis: GestationalAgeBasis = GestationalAgeBasis.UNKNOWN
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class CriaResponse(BaseModel):
+    animal_id: str
+    outcome: str
+    sex: str
+    birth_property_id: str | None
+    birth_property_source: str
+
+
+class EventoReprodutivoResponse(BaseModel):
+    event_id: str
+    dam_id: str
+    sire_id: str | None
+    event_type: str
+    occurred_at: datetime
+    gestational_age_days: int | None
+    gestational_age_basis: str
+    offspring: list[CriaResponse]
+
+
+def _reproduction_service(connection: Connection) -> ReproductionService:
+    return ReproductionService(
+        event_repository=TransactionalReproductiveEventRepository(connection=connection),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        parentage_service=_parentage_service(connection),
+        stay_reader=StayBasedPropertyReader(
+            stay_repository=TransactionalPropertyStayRepository(connection=connection)
+        ),
+        recorder=_recorder(connection),
+    )
+
+
+def _evento_reprodutivo(evento: Any, animais: dict[str, Any]) -> EventoReprodutivoResponse:
+    return EventoReprodutivoResponse(
+        event_id=str(evento.event_id.value),
+        dam_id=str(evento.dam_id.value),
+        sire_id=None if evento.sire_id is None else str(evento.sire_id.value),
+        event_type=evento.event_type.value,
+        occurred_at=evento.occurred_at,
+        gestational_age_days=evento.gestational_age_days,
+        gestational_age_basis=evento.gestational_age_basis.value,
+        offspring=[
+            CriaResponse(
+                animal_id=str(cria.animal_id.value),
+                outcome=cria.outcome.value,
+                sex=animais[str(cria.animal_id.value)].sex.value,
+                birth_property_id=(
+                    None
+                    if animais[str(cria.animal_id.value)].birth_property_id is None
+                    else str(animais[str(cria.animal_id.value)].birth_property_id.value)
+                ),
+                birth_property_source=animais[
+                    str(cria.animal_id.value)
+                ].birth_property_source.value,
+            )
+            for cria in evento.offspring
+        ],
+    )
+
+
+@router.post(
+    "/reproductive-events/parturitions",
+    response_model=EventoReprodutivoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar um parto",
+    description=(
+        "Cria o evento, **cada cria** e a linhagem de todas na mesma transação. "
+        "Registrar o bezerro e depois declarar de quem ele é deixa uma janela em "
+        "que o animal existe sem linhagem.\n\n"
+        "O parto gemelar é **um** evento com várias crias, cada qual com o seu "
+        "resultado: uma pode nascer viva e a outra ser natimorta, e é o vínculo "
+        "obstétrico entre as duas que explica o caso.\n\n"
+        "O natimorto é criado como indivíduo rastreável e **não** recebe registro "
+        "de saída — `MORTE` afirmaria que nasceu vivo e morreu depois."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_parto(
+    corpo: RegistrarPartoRequest,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_REGISTRAR))],
+) -> EventoReprodutivoResponse:
+    try:
+        registrado = _reproduction_service(connection).register_parturition(
+            context=operation_context(contexto),
+            dam_id=typed_id_or_problem(corpo.dam_id, entity_type="animal", campo="dam_id"),
+            occurred_at=corpo.occurred_at,
+            offspring=tuple(
+                CriaDeclarada(outcome=cria.outcome, sex=cria.sex, breed=cria.breed)
+                for cria in corpo.offspring
+            ),
+            sire_id=(
+                None
+                if corpo.sire_id is None
+                else typed_id_or_problem(corpo.sire_id, entity_type="animal", campo="sire_id")
+            ),
+            birth_property_id=(
+                None
+                if corpo.birth_property_id is None
+                else typed_id_or_problem(
+                    corpo.birth_property_id,
+                    entity_type="rural_property",
+                    campo="birth_property_id",
+                )
+            ),
+            confidence=corpo.confidence,
+            gestational_age_days=corpo.gestational_age_days,
+            gestational_age_basis=corpo.gestational_age_basis,
+            notes=corpo.notes,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _evento_reprodutivo(
+        registrado.event, {str(a.animal_id.value): a for a in registrado.animals}
+    )
+
+
+@router.post(
+    "/reproductive-events/pregnancy-losses",
+    response_model=EventoReprodutivoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar uma perda gestacional",
+    description=(
+        "O aborto encerra a gestação e **não cria animal**: criar um indivíduo com "
+        "estado morto para um produto de gestação sem identidade atribuível seria "
+        "fabricar entidade a partir de um fato que não a produziu.\n\n"
+        "A idade gestacional é opcional; ausente significa desconhecida, nunca zero. "
+        "A classificação em precoce ou tardio é derivada por regra versionada, e "
+        "nunca informada como fato primário."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_perda_gestacional(
+    corpo: RegistrarAbortoRequest,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_REGISTRAR))],
+) -> EventoReprodutivoResponse:
+    try:
+        evento = _reproduction_service(connection).register_pregnancy_loss(
+            context=operation_context(contexto),
+            dam_id=typed_id_or_problem(corpo.dam_id, entity_type="animal", campo="dam_id"),
+            occurred_at=corpo.occurred_at,
+            gestational_age_days=corpo.gestational_age_days,
+            gestational_age_basis=corpo.gestational_age_basis,
+            notes=corpo.notes,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _evento_reprodutivo(evento, {})

@@ -95,13 +95,18 @@ def _exigir_permissoes_do_passo(cliente: Cliente) -> None:
     quando o que falta é semeadura. Descobrir isso no primeiro passo do roteiro
     custa a leitura de vinte respostas vermelhas.
     """
-    sonda = cliente.get("/v1/livestock/animals/00000000-0000-4000-8000-000000000000/ancestry")
-    if sonda.status != 403:
+    inexistente = "00000000-0000-4000-8000-000000000000"
+    sondas = [
+        cliente.get(f"/v1/livestock/animals/{inexistente}/{rota}")
+        for rota in ("ancestry", "origin")
+    ]
+    if all(sonda.status != 403 for sonda in sondas):
         return
     raise SystemExit(
-        f"{AMARELO}O papel desta Organization não tem as permissões da genealogia.{FIM}\n"
-        "Os papéis guardam as permissões que existiam quando foram semeados, e este\n"
-        "passo acrescentou duas. Semeie de novo e reinicie a API com a operadora nova:\n"
+        f"{AMARELO}O papel desta Organization não tem as permissões deste roteiro.{FIM}\n"
+        "Os papéis guardam as permissões que existiam quando foram semeados, e os\n"
+        "passos 13.2 e 13.3 acrescentaram quatro. Semeie de novo e reinicie a API\n"
+        "com a operadora nova:\n"
         "  $env:TITAN_SEED_CONFIRM = '1'; python -m uv run --locked python -m apps.seed"
     )
 
@@ -378,7 +383,195 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, propriedade: str) -> Ro
         porque="Ler é o que o auditor faz; a negação vale só para a escrita.",
     )
 
+    _acrescentar_reproducao(roteiro, operador, auditor, propriedade, rebanho)
     return roteiro
+
+
+def _acrescentar_reproducao(
+    roteiro: Roteiro,
+    operador: Cliente,
+    auditor: Cliente,
+    propriedade: str,
+    rebanho: Rebanho,
+) -> None:
+    """Passo 13.3 — o parto como origem da identidade (ADR-0040)."""
+
+    roteiro.passo(
+        "6.1",
+        "Cadastrar a MATRIZ do parto",
+        lambda: operador.post(
+            "/v1/livestock/animals",
+            {"birth_property_id": propriedade, "sex": "FEMALE", "breed": "Nelore"},
+        ),
+        201,
+        guardar=rebanho.guardar("MATRIZ"),
+    )
+
+    roteiro.passo(
+        "6.2",
+        "Parto gemelar: um vivo e um natimorto",
+        lambda: operador.post(
+            "/v1/livestock/reproductive-events/parturitions",
+            {
+                "dam_id": rebanho["MATRIZ"],
+                "occurred_at": ONTEM,
+                "sire_id": rebanho["TOURO-1"],
+                "offspring": [
+                    {"outcome": "NASCIDO_VIVO", "sex": "MALE", "breed": "Nelore"},
+                    {"outcome": "NATIMORTO", "sex": "FEMALE"},
+                ],
+            },
+        ),
+        201,
+        conferir=lambda r: (
+            None
+            if {cria["outcome"] for cria in r["offspring"]} == {"NASCIDO_VIVO", "NATIMORTO"}
+            else "os dois resultados não vieram no mesmo evento"
+        ),
+        porque="Dois partos perderiam o vínculo obstétrico que explica o natimorto.",
+        guardar=lambda r: rebanho.ids.update(
+            {
+                "PARTO": str(r["event_id"]),
+                "BEZERRO-VIVO": str(
+                    next(c for c in r["offspring"] if c["outcome"] == "NASCIDO_VIVO")["animal_id"]
+                ),
+                "NATIMORTO": str(
+                    next(c for c in r["offspring"] if c["outcome"] == "NATIMORTO")["animal_id"]
+                ),
+            }
+        ),
+    )
+
+    roteiro.passo(
+        "6.3",
+        "A cria já nasce com a linhagem pronta",
+        lambda: operador.get(f"/v1/livestock/animals/{rebanho['BEZERRO-VIVO']}/ancestry"),
+        200,
+        conferir=lambda r: (
+            None
+            if rebanho["MATRIZ"] in {ramo["link"]["parent_id"] for ramo in r["parents"]}
+            else "a mãe não apareceu na ascendência"
+        ),
+        porque="Um ato, uma transação: não há janela com o bezerro sem linhagem.",
+    )
+
+    roteiro.passo(
+        "6.4",
+        "O natimorto NÃO aparece no rebanho ativo",
+        lambda: operador.get("/v1/livestock/animals?limit=200"),
+        200,
+        conferir=lambda r: (
+            None
+            if rebanho["NATIMORTO"] not in {item["animal_id"] for item in r["items"]}
+            else "o natimorto apareceu como se estivesse pastando"
+        ),
+        porque="Ele é rastreável, mas nunca entrou no ciclo operacional.",
+    )
+
+    roteiro.passo(
+        "6.5",
+        "E não tem registro de saída",
+        lambda: operador.get(f"/v1/livestock/animals/{rebanho['NATIMORTO']}"),
+        200,
+        conferir=lambda r: (
+            None
+            if r["saida"] is None and r["birth_outcome"] == "NATIMORTO"
+            else "o natimorto recebeu saída, ou o resultado do nascimento não bate"
+        ),
+        porque="MORTE diria que nasceu vivo e morreu depois. Não foi o que houve.",
+    )
+
+    roteiro.passo(
+        "6.6",
+        "O natimorto conserva a linhagem",
+        lambda: operador.get(f"/v1/livestock/animals/{rebanho['NATIMORTO']}/ancestry"),
+        200,
+        conferir=lambda r: None if r["parents"] else "o natimorto ficou sem ascendência",
+        porque="É o que permite investigar de qual matriz e de qual touro ele veio.",
+    )
+
+    roteiro.passo(
+        "6.7",
+        "A origem do bezerro é o parto",
+        lambda: auditor.get(f"/v1/livestock/animals/{rebanho['BEZERRO-VIVO']}/origin"),
+        200,
+        conferir=lambda r: (
+            None
+            if r["event_id"] == rebanho["PARTO"]
+            else "a origem não aponta para o parto que o criou"
+        ),
+        porque="O nascimento é a origem comprovável da identidade, não um campo.",
+    )
+
+    roteiro.passo(
+        "6.8",
+        "Aborto: encerra a gestação sem criar animal",
+        lambda: operador.post(
+            "/v1/livestock/reproductive-events/pregnancy-losses",
+            {
+                "dam_id": rebanho["MATRIZ"],
+                "occurred_at": ANTEONTEM,
+                "gestational_age_days": 170,
+                "gestational_age_basis": "ESTIMATED",
+            },
+        ),
+        201,
+        conferir=lambda r: None if r["offspring"] == [] else "o aborto inventou um indivíduo",
+        porque="Um feto sem identidade atribuível não vira entidade rastreável.",
+    )
+
+    roteiro.passo(
+        "6.9",
+        "Idade gestacional sem base declarada é recusada",
+        lambda: operador.post(
+            "/v1/livestock/reproductive-events/pregnancy-losses",
+            {"dam_id": rebanho["MATRIZ"], "occurred_at": ANTEONTEM, "gestational_age_days": 90},
+        ),
+        409,
+        porque="Declarar idade sem dizer como se chegou a ela é inventar precisão.",
+    )
+
+    roteiro.passo(
+        "6.10",
+        "O histórico reprodutivo da matriz traz os dois desfechos",
+        lambda: auditor.get(f"/v1/livestock/animals/{rebanho['MATRIZ']}/reproductive-events"),
+        200,
+        conferir=lambda r: (
+            None
+            if {evento["event_type"] for evento in r.corpo} == {"PARTO", "ABORTO"}
+            else f"vieram {[e['event_type'] for e in r.corpo]}"
+        ),
+        porque="É a base do índice: cada gestação contada pelo que de fato foi.",
+    )
+
+    roteiro.passo(
+        "6.11",
+        "Um macho não pare",
+        lambda: operador.post(
+            "/v1/livestock/reproductive-events/parturitions",
+            {
+                "dam_id": rebanho["TOURO-1"],
+                "occurred_at": ONTEM,
+                "offspring": [{"outcome": "NASCIDO_VIVO", "sex": "MALE"}],
+            },
+        ),
+        409,
+    )
+
+    roteiro.passo(
+        "6.12",
+        "O auditor não registra parto",
+        lambda: auditor.post(
+            "/v1/livestock/reproductive-events/parturitions",
+            {
+                "dam_id": rebanho["MATRIZ"],
+                "occurred_at": ONTEM,
+                "offspring": [{"outcome": "NASCIDO_VIVO", "sex": "MALE"}],
+            },
+        ),
+        403,
+        porque="Quem registra o parto decide o que passa a existir no rebanho.",
+    )
 
 
 def main() -> int:

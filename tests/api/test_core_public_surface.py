@@ -74,6 +74,13 @@ SUPERFICIE_ESPERADA = {
     # Histórico reprodutivo é rota própria, e não filtro da descendência: uma
     # receptora gestou bezerros que não descendem dela.
     ("/v1/livestock/animals/{animal_id}/reproduction", "get"),
+    # Reprodução (Passo 13.3, ADR-0040). São duas rotas porque são dois fatos de
+    # natureza distinta: o parto produz indivíduos rastreáveis, a perda gestacional
+    # encerra a gestação sem produzir nenhum.
+    ("/v1/livestock/reproductive-events/parturitions", "post"),
+    ("/v1/livestock/reproductive-events/pregnancy-losses", "post"),
+    ("/v1/livestock/animals/{animal_id}/reproductive-events", "get"),
+    ("/v1/livestock/animals/{animal_id}/origin", "get"),
 }
 
 

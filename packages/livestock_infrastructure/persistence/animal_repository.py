@@ -5,6 +5,7 @@ from datetime import UTC
 from typing import Any
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     Connection,
     Date,
@@ -29,6 +30,8 @@ from packages.livestock_domain.animal import (
     Animal,
     AnimalIdentifier,
     AnimalSex,
+    BirthOutcome,
+    BirthPropertySource,
     IdentifierState,
     IdentifierType,
     VerificationStatus,
@@ -46,10 +49,14 @@ animals_table = Table(
     livestock_metadata,
     Column("animal_id", PG_UUID(as_uuid=True), primary_key=True),
     Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
-    Column("birth_property_id", PG_UUID(as_uuid=True), nullable=False),
+    # Nulo quando o parto ocorreu sem permanência materna determinável e sem
+    # declaração (ADR-0040): o fato entra, e a lacuna fica declarada.
+    Column("birth_property_id", PG_UUID(as_uuid=True), nullable=True),
     Column("sex", String(20), nullable=False),
     Column("breed", String(100), nullable=True),
     Column("birth_date", Date, nullable=True),
+    Column("birth_outcome", String(20), nullable=False, server_default="NAO_INFORMADO"),
+    Column("birth_property_source", String(40), nullable=False, server_default="DECLARED"),
     Column("version", Integer, nullable=False, default=1),
     Column("created_at", DateTime(timezone=True), nullable=False),
     ForeignKeyConstraint(
@@ -61,6 +68,13 @@ animals_table = Table(
         ["birth_property_id"],
         ["core_audit.rural_properties.property_id"],
         name="fk_animals_birth_property",
+    ),
+    # A coerência entre valor e procedência é do banco, e não só do serviço: um
+    # registro que declara a origem de um dado ausente mente sobre si mesmo.
+    CheckConstraint(
+        "(birth_property_id IS NULL AND birth_property_source = 'UNKNOWN')"
+        " OR (birth_property_id IS NOT NULL AND birth_property_source <> 'UNKNOWN')",
+        name="ck_animals_birth_property_source",
     ),
     Index("ix_animals_org_birth_prop", "record_owner_organization_id", "birth_property_id"),
     schema=CORE_AUDIT_SCHEMA,
@@ -113,10 +127,14 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
         stmt_animal = insert(animals_table).values(
             animal_id=animal.animal_id.value,
             record_owner_organization_id=animal.organization_id.value,
-            birth_property_id=animal.birth_property_id.value,
+            birth_property_id=(
+                None if animal.birth_property_id is None else animal.birth_property_id.value
+            ),
             sex=animal.sex.value,
             breed=animal.breed,
             birth_date=animal.birth_date,
+            birth_outcome=animal.birth_outcome.value,
+            birth_property_source=animal.birth_property_source.value,
             version=animal.version,
             created_at=animal.created_at,
         )
@@ -239,7 +257,11 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
                     select(animal_exits_table.c.exit_id).where(
                         animal_exits_table.c.animal_id == animals_table.c.animal_id
                     )
-                )
+                ),
+                # O natimorto não tem registro de saída, e não deveria mesmo ter
+                # (ADR-0040) — mas também nunca entrou no rebanho ativo. Sem esta
+                # linha ele apareceria na listagem como se estivesse pastando.
+                animals_table.c.birth_outcome != BirthOutcome.NATIMORTO.value,
             )
         rows = self.connection.execute(stmt).fetchall()
         return [self._map_animal(row) for row in rows]
@@ -299,7 +321,15 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
         return Animal(
             animal_id=TypedId(entity_type="animal", value=row.animal_id),
             organization_id=OrganizationId(row.record_owner_organization_id),
-            birth_property_id=TypedId(entity_type="rural_property", value=row.birth_property_id),
+            birth_property_id=(
+                None
+                if row.birth_property_id is None
+                else TypedId(entity_type="rural_property", value=row.birth_property_id)
+            ),
+            birth_outcome=BirthOutcome(getattr(row, "birth_outcome", None) or "NAO_INFORMADO"),
+            birth_property_source=BirthPropertySource(
+                getattr(row, "birth_property_source", None) or "DECLARED"
+            ),
             sex=AnimalSex(row.sex),
             breed=row.breed,
             birth_date=row.birth_date,

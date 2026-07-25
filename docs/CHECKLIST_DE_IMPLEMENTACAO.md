@@ -2812,6 +2812,65 @@ A Parte 6 do roteiro do `apps.seed` continua existindo, para quem preferir confe
 
 O script sonda isso antes do primeiro passo e para com instrução, em vez de deixar vinte respostas vermelhas para serem lidas uma a uma.
 
+### Passo 13.3 — Nascimento (ADR-0040)
+
+**Data:** 25 de julho de 2026 · **Estado:** CONCLUÍDO E VALIDADO. **Fecha o Marco 13.**
+
+#### Por que existe
+
+Até aqui o animal surgia por cadastro, e `birth_date` era um campo digitado. O Passo 13.2 acrescentou a genealogia como **ato separado** — cadastra-se o bezerro e, numa segunda chamada, declara-se de quem ele é. Entre as duas há uma janela em que o animal está no rebanho sem linhagem, e se a segunda falha resta um órfão silencioso.
+
+#### As decisões de domínio — todas do responsável, registradas na ADR-0040
+
+O responsável decidiu as três questões que o plano marcava como portão, e a resposta reorganizou o modelo: **o evento reprodutivo é separado do indivíduo rastreável.**
+
+| Situação | Evento | Cria `Animal`? |
+|---|---|---|
+| Nascimento vivo | `PARTO` | Sim |
+| Natimorto | `PARTO`, resultado `NATIMORTO` | Sim, como indivíduo não-vivo ao nascer |
+| Aborto | `ABORTO` | **Não** |
+| Gemelar | **Um** `PARTO` | Dois ou mais |
+
+**Natimorto não é morte.** `AnimalExit(MORTE)` diria que nasceu vivo e morreu depois, e o índice sairia como "97 nascimentos + 3 mortes neonatais" quando o correto é "94 nascidos vivos + 3 natimortos". Além disso, saída significa deixar o rebanho ativo, e quem nunca entrou não sai.
+
+**Um parto, N crias.** Modelar o gemelar como dois partos perderia o vínculo obstétrico entre irmãos — que é justamente o que explica o natimorto quando o outro nasce vivo.
+
+**Propriedade de nascimento derivada, com recuo explícito.** Vem da `PropertyStay` materna quando houver **uma única** permanência determinável; recua para a declarada; e admite lacuna. *Ausência de dado contextual não impede o registro de um fato real ocorrido.* Divergência entre declarada e permanência conhecida é **conflito explícito**, nunca resolvido em silêncio. A origem viaja no campo `birth_property_source`.
+
+**Idade gestacional opcional, com base declarada.** Ausente significa `UNKNOWN` — nunca zero. Presente, viaja com `gestational_age_basis` (`KNOWN`, `ESTIMATED`). A classificação em precoce ou tardio é **derivada por regra versionada**, nunca gravada — mesmo princípio da carência no Passo 9.4.
+
+#### Três consequências que o natimorto obrigou
+
+1. **O rebanho ativo passou a excluir quem não nasceu vivo**, além de quem saiu. Sem isso o natimorto apareceria na listagem como se estivesse pastando.
+2. **`guard_animal_active` passou a recusar qualquer fato sobre quem não nasceu vivo** — na mesma porta do 13.1, porque guarda que alguém esqueça de chamar é guarda desligada em silêncio.
+3. **`birth_property_id` passou a aceitar nulo.** Mudança de contrato que atingiu 28 usos; o cadastro avulso continua exigindo a propriedade, e só o parto pode deixá-la ausente. `birth_outcome` e `birth_property_source` são **constitutivos e imutáveis**, como `birth_date` — não contrariam a regra "estado derivado, nunca campo mutável" do 13.1.
+
+O rebanho legado recebe `NAO_INFORMADO` e `DECLARED`. Preencher `NASCIDO_VIVO` afirmaria o que ninguém registrou.
+
+#### Fronteira com o Marco 16
+
+`Pregnancy` **não** entra: exigi-la travaria o passo esperando a cobertura e o diagnóstico, e recusaria o caso majoritário do campo, em que o parto é registrado sem que a cobertura tenha sido. O `ReproductiveEvent` ganha `pregnancy_id` opcional quando o Marco 16 chegar.
+
+#### Um fato, duas histórias
+
+O agregado do evento é o **próprio evento reprodutivo**. A linha do tempo da mãe contém o parto; a do bezerro **começa** nele. Mesma propriedade que o 13.2 obteve com a relação de parentesco.
+
+#### Testes
+
+`test_reproduction_service.py` (24) e `test_livestock_api_reproducao.py` (12). Cobrem o gemelar com desfechos distintos, o natimorto sem saída e sem fatos, o aborto sem animal, as três vias da propriedade de nascimento com o conflito, e a idade gestacional nos dois sentidos.
+
+#### Portão de verificação
+
+`760 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (387 arquivos) e `alembic check` sem erros. Migration `20260725_0044`.
+
+#### Limite conhecido
+
+**O downgrade da migration falha se já houver animal sem propriedade de nascimento** — `SET NOT NULL` não passa com nulos existentes. É comportamento honesto: reverter apagaria a distinção entre "não sei onde nasceu" e "nasceu na fazenda X". Recriar do zero é o caminho em ambiente descartável.
+
+#### Validação manual — APROVADA em 25 de julho de 2026
+
+Roteiro executável completo, **38 passos passando**, com conferência independente no banco: dois partos e dois abortos registrados, dois nascidos vivos e dois natimortos, quatro eventos `livestock.reproductive_event_recorded` no log — e **nenhum natimorto com registro de saída**, que é a prova de que a distinção entre não nascer vivo e morrer depois sobreviveu até o banco.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.

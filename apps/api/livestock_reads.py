@@ -34,6 +34,7 @@ from packages.livestock_application.authorization import (
     MEDICATION_LER,
     MOVEMENT_LER,
     PROPERTY_LER,
+    REPRODUCTION_LER,
     TREATMENT_LER,
     VETERINARIAN_LER,
 )
@@ -59,6 +60,9 @@ from packages.livestock_infrastructure.persistence.movement_repository import (
 )
 from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
+)
+from packages.livestock_infrastructure.persistence.reproduction_repository import (
+    TransactionalReproductiveEventRepository,
 )
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
@@ -101,7 +105,11 @@ class AnimalResumo(BaseModel):
     sex: str
     breed: str | None
     birth_date: date | None
-    birth_property_id: str
+    # Nulo quando o parto não teve propriedade determinável (ADR-0040). A
+    # procedência ao lado diz se o valor foi derivado, declarado ou é desconhecido.
+    birth_property_id: str | None
+    birth_property_source: str
+    birth_outcome: str
     identifiers: list[dict[str, Any]]
     created_at: datetime
     # Nulo quando o animal está no rebanho. Na listagem padrão é nulo em toda
@@ -195,7 +203,11 @@ def _animal(entidade: Any, saida: Any = None) -> AnimalResumo:
         sex=entidade.sex.value,
         breed=entidade.breed,
         birth_date=entidade.birth_date,
-        birth_property_id=str(entidade.birth_property_id.value),
+        birth_property_id=(
+            None if entidade.birth_property_id is None else str(entidade.birth_property_id.value)
+        ),
+        birth_property_source=entidade.birth_property_source.value,
+        birth_outcome=entidade.birth_outcome.value,
         identifiers=[
             {
                 "identifier_id": str(tag.identifier_id.value),
@@ -480,6 +492,91 @@ def consultar_historico_reprodutivo(
         _vinculo_resumo(link)
         for link in _genealogia(connection).gestational_history(contexto.organization_id, alvo)
     ]
+
+
+# -- Reprodução --------------------------------------------------------------
+
+
+class CriaResumo(BaseModel):
+    animal_id: str
+    outcome: str
+
+
+class EventoReprodutivoResumo(BaseModel):
+    event_id: str
+    dam_id: str
+    sire_id: str | None
+    event_type: str
+    occurred_at: datetime
+    gestational_age_days: int | None
+    gestational_age_basis: str
+    notes: str | None
+    offspring: list[CriaResumo]
+
+
+def _evento_reprodutivo_resumo(evento: Any) -> EventoReprodutivoResumo:
+    return EventoReprodutivoResumo(
+        event_id=str(evento.event_id.value),
+        dam_id=str(evento.dam_id.value),
+        sire_id=None if evento.sire_id is None else str(evento.sire_id.value),
+        event_type=evento.event_type.value,
+        occurred_at=evento.occurred_at,
+        gestational_age_days=evento.gestational_age_days,
+        gestational_age_basis=evento.gestational_age_basis.value,
+        notes=evento.notes,
+        offspring=[
+            CriaResumo(animal_id=str(cria.animal_id.value), outcome=cria.outcome.value)
+            for cria in evento.offspring
+        ],
+    )
+
+
+@router.get(
+    "/animals/{animal_id}/reproductive-events",
+    response_model=list[EventoReprodutivoResumo],
+    summary="Consultar os eventos reprodutivos de uma matriz",
+    description=(
+        "Partos e perdas gestacionais em ordem cronológica. É a base do índice "
+        "reprodutivo: cem gestações que se resolvem em nascidos vivos, natimortos "
+        "e abortos, cada um contado pelo que foi."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_eventos_reprodutivos(
+    animal_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_LER))],
+) -> list[EventoReprodutivoResumo]:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    encontrados = TransactionalReproductiveEventRepository(connection=connection).list_by_dam(
+        contexto.organization_id, alvo
+    )
+    return [_evento_reprodutivo_resumo(evento) for evento in encontrados]
+
+
+@router.get(
+    "/animals/{animal_id}/origin",
+    response_model=EventoReprodutivoResumo | None,
+    summary="Consultar o parto de onde este animal veio",
+    description=(
+        "A origem comprovável da identidade do animal. Devolve `null` para o "
+        "rebanho legado, cadastrado sem parto registrado — o que é uma resposta "
+        "honesta, e não uma falha."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_origem(
+    animal_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_LER))],
+) -> EventoReprodutivoResumo | None:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    encontrado = TransactionalReproductiveEventRepository(connection=connection).get_by_offspring(
+        alvo
+    )
+    if encontrado is None or encontrado.organization_id != contexto.organization_id:
+        return None
+    return _evento_reprodutivo_resumo(encontrado)
 
 
 # -- Propriedades ------------------------------------------------------------

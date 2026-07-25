@@ -45,7 +45,20 @@ def guard_animal_active(
 
     Chamada pelos serviços de tratamento, movimentação e lote. Silenciosa quando
     o animal continua no rebanho, que é o caso comum.
+
+    **Também recusa qualquer fato sobre quem não nasceu vivo** (ADR-0040). O
+    natimorto é rastreável pela genealogia e pelo índice reprodutivo, mas nunca
+    entrou no ciclo operacional: ele não é tratado, movimentado nem colocado em
+    lote. A conferência vive aqui, e não numa guarda nova, porque uma guarda que
+    alguém esqueça de chamar é uma guarda desligada em silêncio.
     """
+    animal = animal_repository.get_by_id(animal_id)
+    if animal is not None and not animal.born_alive:
+        raise AnimalForaDoRebanho(
+            "O animal não nasceu vivo (NATIMORTO); ele não participa do ciclo "
+            "operacional do rebanho e não recebe fatos."
+        )
+
     saida = animal_repository.get_exit(animal_id)
     if saida is None or saida.admite_fato_em(occurred_at):
         return

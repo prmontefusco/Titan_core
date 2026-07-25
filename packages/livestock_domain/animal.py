@@ -68,15 +68,50 @@ class AnimalIdentifier:
             )
 
 
+class BirthOutcome(StrEnum):
+    """Como o animal chegou ao mundo (ADR-0040).
+
+    **Natimorto não é morte.** Registrar saída com `MORTE` diria que ele nasceu
+    vivo e morreu depois, e o indicador sairia como "97 nascimentos + 3 mortes
+    neonatais" quando o correto é "94 nascidos vivos + 3 natimortos".
+
+    `NAO_INFORMADO` é o valor do rebanho legado, cadastrado fora de um parto.
+    Preencher `NASCIDO_VIVO` por padrão afirmaria o que ninguém registrou.
+    """
+
+    NASCIDO_VIVO = "NASCIDO_VIVO"
+    NATIMORTO = "NATIMORTO"
+    NAO_INFORMADO = "NAO_INFORMADO"
+
+
+class BirthPropertySource(StrEnum):
+    """De onde veio a propriedade de nascimento (ADR-0040).
+
+    O dado vale conforme a origem, e a origem é consultável — a mesma escala de
+    confiança que o Titan aplica a evidências e a parentesco.
+    """
+
+    DERIVED_FROM_MATERNAL_STAY = "DERIVED_FROM_MATERNAL_STAY"
+    DECLARED = "DECLARED"
+    UNKNOWN = "UNKNOWN"
+
+
 @dataclass(frozen=True, slots=True)
 class Animal:
     animal_id: TypedId
     organization_id: OrganizationId
-    birth_property_id: TypedId
+    # Nulo quando o parto ocorreu sem permanência materna determinável e sem
+    # declaração: ausência de dado contextual não impede o registro do fato.
+    birth_property_id: TypedId | None
     sex: AnimalSex
     breed: str | None = None
     birth_date: date | None = None
     identifiers: tuple[AnimalIdentifier, ...] = ()
+    # Constitutivos: definidos no nascimento e imutáveis, como `birth_date`. Não
+    # contrariam a regra "estado derivado, nunca campo mutável" do Passo 13.1,
+    # que trata de estado que muda ao longo da vida.
+    birth_outcome: BirthOutcome = BirthOutcome.NAO_INFORMADO
+    birth_property_source: BirthPropertySource = BirthPropertySource.DECLARED
     version: int = 1
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -86,11 +121,22 @@ class Animal:
             raise ValueError(
                 f"animal_id deve ter entity_type 'animal', recebido '{self.animal_id.entity_type}'."
             )
-        if self.birth_property_id.entity_type != "rural_property":
+        if (
+            self.birth_property_id is not None
+            and self.birth_property_id.entity_type != "rural_property"
+        ):
             raise ValueError(
                 "birth_property_id deve ter entity_type 'rural_property', recebido "
                 f"'{self.birth_property_id.entity_type}'."
             )
+        if self.birth_property_id is None:
+            if self.birth_property_source is not BirthPropertySource.UNKNOWN:
+                raise ValueError(
+                    "Sem propriedade de nascimento, a origem tem de ser UNKNOWN: "
+                    "declarar procedência para um dado ausente é afirmar o que não se sabe."
+                )
+        elif self.birth_property_source is BirthPropertySource.UNKNOWN:
+            raise ValueError("Há propriedade de nascimento, então a origem não pode ser UNKNOWN.")
 
         # Valida que não há mais de uma tag ativa do mesmo tipo no mesmo animal
         active_types = set()
@@ -102,6 +148,15 @@ class Animal:
                         f"'{tag.identifier_type.value}'."
                     )
                 active_types.add(tag.identifier_type)
+
+    @property
+    def born_alive(self) -> bool:
+        """Só quem nasceu vivo entra no ciclo operacional do rebanho.
+
+        `NAO_INFORMADO` conta como vivo: é o rebanho legado, cadastrado porque
+        está lá. Tratá-lo como não-vivo apagaria o rebanho inteiro da listagem.
+        """
+        return self.birth_outcome is not BirthOutcome.NATIMORTO
 
     def attach_identifier(self, identifier: AnimalIdentifier) -> "Animal":
         if any(tag.identifier_id == identifier.identifier_id for tag in self.identifiers):

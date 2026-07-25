@@ -74,7 +74,14 @@ class LivestockFactProvider(FactProviderPort):
                 ] = {
                     "sex": animal.sex.value,
                     "breed": animal.breed,
-                    "birth_property_id": animal.birth_property_id.value.hex,
+                    # Nulo quando o parto não teve propriedade determinável: o
+                    # fato entra na avaliação com a lacuna declarada, e não com
+                    # uma fazenda inventada (ADR-0040).
+                    "birth_property_id": (
+                        None
+                        if animal.birth_property_id is None
+                        else animal.birth_property_id.value.hex
+                    ),
                     "version": animal.version,
                     "identifiers": tags_payload,
                 }

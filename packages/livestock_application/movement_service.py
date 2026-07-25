@@ -173,27 +173,33 @@ class MovementService:
 
         self.stay_repository.delete_by_animal(animal_id)
 
-        # Estada inicial do nascimento
-        current_stay = PropertyStay(
-            stay_id=TypedId.new("property_stay"),
-            organization_id=animal.organization_id,
-            animal_id=animal_id,
-            property_id=animal.birth_property_id,
-            start_time=animal.created_at,
-            end_time=None,
-            status=StayStatus.ACTIVE,
-            source_movement_id=None,
-        )
+        # Estada inicial do nascimento. Ela não existe quando a propriedade de
+        # nascimento é desconhecida (ADR-0040): inventar um ponto de partida diria
+        # onde o animal esteve, que é justamente o que não se sabe. A história de
+        # permanências passa a começar na primeira movimentação registrada.
+        current_stay: PropertyStay | None = None
+        if animal.birth_property_id is not None:
+            current_stay = PropertyStay(
+                stay_id=TypedId.new("property_stay"),
+                organization_id=animal.organization_id,
+                animal_id=animal_id,
+                property_id=animal.birth_property_id,
+                start_time=animal.created_at,
+                end_time=None,
+                status=StayStatus.ACTIVE,
+                source_movement_id=None,
+            )
 
         rebuilt: list[PropertyStay] = []
         for m in movements:
-            closed_stay = replace(
-                current_stay,
-                end_time=m.movement_time,
-                status=StayStatus.CLOSED,
-            )
-            rebuilt.append(closed_stay)
-            self.stay_repository.save(closed_stay)
+            if current_stay is not None:
+                closed_stay = replace(
+                    current_stay,
+                    end_time=m.movement_time,
+                    status=StayStatus.CLOSED,
+                )
+                rebuilt.append(closed_stay)
+                self.stay_repository.save(closed_stay)
 
             current_stay = PropertyStay(
                 stay_id=TypedId.new("property_stay"),
@@ -206,6 +212,7 @@ class MovementService:
                 source_movement_id=m.movement_id,
             )
 
-        rebuilt.append(current_stay)
-        self.stay_repository.save(current_stay)
+        if current_stay is not None:
+            rebuilt.append(current_stay)
+            self.stay_repository.save(current_stay)
         return rebuilt

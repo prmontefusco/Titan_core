@@ -42,6 +42,7 @@ PRESCRIPTION_ISSUED = "livestock.prescription_issued"
 TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
+REPRODUCTIVE_EVENT_RECORDED = "livestock.reproductive_event_recorded"
 
 LIVESTOCK_EVENT_TYPES = frozenset(
     {
@@ -61,6 +62,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         TREATMENT_APPLIED,
         ANIMAL_EXITED,
         PARENTAGE_REGISTERED,
+        REPRODUCTIVE_EVENT_RECORDED,
     }
 )
 
@@ -114,17 +116,22 @@ def property_registered_payload(
 def animal_registered_payload(
     *,
     animal_id: TypedId,
-    birth_property_id: TypedId,
+    birth_property_id: TypedId | None,
     sex: str,
     breed: str | None,
     birth_date: str | None,
 ) -> CanonicalPayload:
+    """`birth_property_id` é nulo quando o parto não teve propriedade determinável.
+
+    Ausência de dado contextual não impede o registro do fato (ADR-0040), e o
+    payload precisa poder dizer "não se sabe" em vez de inventar uma fazenda.
+    """
     return _payload(
         ANIMAL_REGISTERED,
         {
             "animal_id": _id(animal_id),
             "birth_date": birth_date,
-            "birth_property_id": _id(birth_property_id),
+            "birth_property_id": None if birth_property_id is None else _id(birth_property_id),
             "breed": breed,
             "sex": sex,
         },
@@ -382,6 +389,48 @@ def treatment_applied_payload(
             "evidence_references": [_id(r.target_id) for r in evidence_references],
             "medication_batch_id": _id(medication_batch_id),
             "prescription_id": None if prescription_id is None else _id(prescription_id),
+        },
+    )
+
+
+def reproductive_event_recorded_payload(
+    *,
+    event_id: TypedId,
+    dam_id: TypedId,
+    sire_id: TypedId | None,
+    event_type: str,
+    occurred_at: datetime,
+    offspring: tuple[tuple[TypedId, str], ...],
+    gestational_age_days: int | None,
+    gestational_age_basis: str,
+    notes: str | None,
+    evidence_references: tuple[UniversalReference, ...],
+) -> CanonicalPayload:
+    """O agregado é o próprio evento reprodutivo, e não a mãe nem a cria.
+
+    É a entidade criada pela operação, e as duas pontas a citam — a linha do
+    tempo da mãe contém o parto, e a do bezerro começa nele. Emitir um evento
+    para cada ponta transformaria um fato em dois.
+
+    A classificação do aborto em precoce ou tardio **não** entra aqui: ela é
+    derivada por regra versionada, e gravá-la criaria segunda fonte de verdade.
+    """
+    return _payload(
+        REPRODUCTIVE_EVENT_RECORDED,
+        {
+            "dam_id": _id(dam_id),
+            "event_id": _id(event_id),
+            "event_type": event_type,
+            "evidence_references": [_id(r.target_id) for r in evidence_references],
+            "gestational_age_basis": gestational_age_basis,
+            "gestational_age_days": gestational_age_days,
+            "notes": notes,
+            "occurred_at": occurred_at,
+            "offspring": [
+                {"animal_id": _id(animal_id), "outcome": outcome}
+                for animal_id, outcome in offspring
+            ],
+            "sire_id": None if sire_id is None else _id(sire_id),
         },
     )
 

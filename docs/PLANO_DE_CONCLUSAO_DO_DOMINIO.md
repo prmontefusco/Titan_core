@@ -89,11 +89,15 @@ Detalhamento do que foi entregue e das decisões: `docs/CHECKLIST_DE_IMPLEMENTAC
 
 **Validação manual:** registrar mãe conhecida e pai desconhecido; registrar touro do lote com três pais possíveis; consultar ascendência; confirmar que a confiança viaja na resposta.
 
-#### Passo 13.3 — Nascimento
+#### Passo 13.3 — Nascimento — IMPLEMENTADO em 25/07/2026
+
+Detalhamento e decisões: **ADR-0040** e `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, Marco 13.
 
 **Entrega:** um ato que cria o animal **e** as relações de parentesco na mesma transação. Sem isso, cadastro e genealogia ficam sempre um passo defasados.
 
-**Validação manual:** registrar um nascimento e confirmar que o bezerro nasce já com a linhagem, e que a mãe aparece com a cria na descendência.
+**Cresceu em relação ao previsto aqui.** As três perguntas marcadas como portão no Marco 16 — natimorto, aborto e parto múltiplo — tiveram de ser respondidas já, porque o ato de nascimento não existe sem elas. A resposta separou o **evento reprodutivo** do **indivíduo rastreável**: o parto é evento materno que produz zero, uma ou várias crias, cada qual com o seu resultado de nascimento. Natimorto cria indivíduo e **não** recebe registro de saída; aborto não cria indivíduo; gemelar é um evento com várias crias.
+
+**Validação manual:** passos 6.1 a 6.12 do roteiro executável (`python -m apps.validacao`).
 
 ---
 
@@ -135,9 +139,9 @@ Barato por causa de D-1: reusa medicamento, lote, carência e veterinário.
 
 Depende do 13.2.
 
-**Passos:** cobertura ou inseminação; diagnóstico de gestação; parto, que aciona o 13.3 e pode registrar natimorto; desmame.
+**Passos:** cobertura ou inseminação; diagnóstico de gestação; desmame. **O parto saiu daqui** — foi entregue no Passo 13.3, e o que resta ao Marco 16 é a gestação que o antecede.
 
-**Portão:** o parto cria animal, cria genealogia e pode encerrar a vida do bezerro no mesmo ato. As regras de natimorto e aborto precisam ser confirmadas antes do código.
+**Portão resolvido antecipadamente.** As regras de natimorto, aborto e parto múltiplo foram decididas pelo responsável e estão na **ADR-0040**. O que sobra para este marco é ligar `Pregnancy` ao `ReproductiveEvent`, por um `pregnancy_id` opcional que já foi previsto — exigi-lo no 13.3 recusaria o caso majoritário do campo, em que o parto é registrado sem que a cobertura tenha sido.
 
 ---
 
