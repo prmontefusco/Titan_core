@@ -2657,7 +2657,7 @@ Percorrer as rotas de leitura pelo Swagger e conferir a paginação. Depois diss
 
 ### Passo 13.1 — Saída do rebanho
 
-**Data:** 25 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente).
+**Data:** 25 de julho de 2026 · **Estado:** CONCLUÍDO E VALIDADO.
 
 #### Por que existe
 
@@ -2691,9 +2691,13 @@ Até aqui **o animal não tinha fim**. Todo animal cadastrado permanecia implici
 
 `681 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (374 arquivos) e `alembic check` sem erros.
 
-#### Validação manual pendente
+#### Validação manual — APROVADA em 25 de julho de 2026
 
-Registrar uma saída pelo Swagger, conferir que o animal some da listagem padrão e reaparece com `incluir_saidos=true`, e tentar lançar um tratamento com data posterior à saída.
+Percorrida pelo Swagger, com conferência independente no banco ao final.
+
+Registradas **cinco saídas**, cobrindo os quatro tipos (`ABATE`, `MORTE`, `VENDA`, `TRANSFERENCIA_DEFINITIVA`), cada uma com seu evento `livestock.animal_exited` no log — cinco fatos, cinco eventos, nenhum perdido. O animal que saiu deixou a listagem padrão e voltou com `incluir_saidos=true`, trazendo o objeto `saida`; o detalhe o trouxe preenchido sem parâmetro algum. Recusadas, como previsto: a segunda saída (409), a saída com data futura (409), o animal inexistente (404) e a tentativa do auditor (403).
+
+**A prova central é o par de tratamentos sobre o animal abatido em 20/07.** A aplicação datada de 22/07 foi recusada com 409 e **não deixou rastro no banco**; a datada de 18/07, lançada no mesmo dia da conferência, foi aceita e gravada. O critério é o instante em que o fato ocorreu, e a regularização de registro atrasado continua possível depois da saída — que é o comportamento que distingue um registro append-only de um cadastro comum.
 
 #### Armadilha de ambiente descoberta aqui
 
