@@ -13,7 +13,7 @@ a chance de pedir dados de outra.
 from datetime import date, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 
 from apps.api.livestock_dependencies import (
@@ -23,15 +23,25 @@ from apps.api.livestock_dependencies import (
 )
 from apps.api.pagination import Pagina, PaginacaoDependency, montar_pagina
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
+from packages.core_application.relation_service import RelationService
 from packages.core_domain import OrganizationContext
+from packages.core_infrastructure.persistence.events import DomainEventRepository
+from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
 from packages.livestock_application.authorization import (
     ANIMAL_LER,
+    ANIMAL_LER_GENEALOGIA,
     LOT_LER,
     MEDICATION_LER,
     MOVEMENT_LER,
     PROPERTY_LER,
     TREATMENT_LER,
     VETERINARIAN_LER,
+)
+from packages.livestock_application.event_recorder import LivestockEventRecorder
+from packages.livestock_application.parentage_service import (
+    GERACOES_MAXIMAS,
+    GERACOES_PADRAO,
+    ParentageService,
 )
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
@@ -56,6 +66,7 @@ from packages.livestock_infrastructure.persistence.treatment_repository import (
 from packages.livestock_infrastructure.persistence.veterinarian_repository import (
     TransactionalVeterinarianRepository,
 )
+from packages.shared_kernel import SystemClock
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
 
@@ -343,6 +354,132 @@ def detalhar_animal(
     # O detalhe sempre diz se o animal saiu: quem pergunta por um animal
     # específico precisa saber se ele ainda existe no rebanho.
     return _animal(encontrado, repositorio.get_exit(alvo))
+
+
+# -- Genealogia --------------------------------------------------------------
+
+
+class VinculoResumo(BaseModel):
+    relation_id: str
+    parent_id: str
+    offspring_id: str
+    role: str
+    confidence: str | None
+    confidence_reason: str
+    occurred_at: datetime | None
+
+
+class AscendenciaResumo(BaseModel):
+    animal_id: str
+    parents: list["RamoResumo"]
+
+
+class RamoResumo(BaseModel):
+    link: VinculoResumo
+    ancestry: AscendenciaResumo
+
+
+def _vinculo_resumo(link: Any) -> VinculoResumo:
+    return VinculoResumo(
+        relation_id=str(link.relation_id.value),
+        parent_id=str(link.parent_id.value),
+        offspring_id=str(link.offspring_id.value),
+        role=link.role.value,
+        confidence=None if link.confidence is None else link.confidence.value,
+        confidence_reason=link.confidence_reason,
+        occurred_at=link.occurred_at,
+    )
+
+
+def _ascendencia(no: Any) -> AscendenciaResumo:
+    return AscendenciaResumo(
+        animal_id=str(no.animal_id.value),
+        parents=[
+            RamoResumo(link=_vinculo_resumo(ramo.link), ancestry=_ascendencia(ramo.ancestry))
+            for ramo in no.parents
+        ],
+    )
+
+
+def _genealogia(connection: Any) -> ParentageService:
+    """O serviço é um só, e a leitura o monta inteiro.
+
+    Um segundo serviço só de leitura duplicaria a travessia e as regras de qual
+    papel compõe a linhagem — e as duas cópias divergiriam na primeira mudança.
+    O gravador de eventos entra pronto e simplesmente não é acionado aqui.
+    """
+    return ParentageService(
+        relation_service=RelationService(
+            repository=TransactionalRelationRepository(connection=connection)
+        ),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        recorder=LivestockEventRecorder(
+            event_log=DomainEventRepository(connection=connection), clock=SystemClock()
+        ),
+    )
+
+
+@router.get(
+    "/animals/{animal_id}/ancestry",
+    response_model=AscendenciaResumo,
+    summary="Consultar a ascendência de um animal",
+    description=(
+        "Sobe pela **linhagem genética** — mãe doadora e pai. A mãe gestacional "
+        "fica de fora: quem gestou não transmitiu genes, e incluí-la daria à árvore "
+        "ancestrais que não são. Use `/reproduction` para o histórico da receptora."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_ascendencia(
+    animal_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER_GENEALOGIA))],
+    geracoes: int = Query(default=GERACOES_PADRAO, ge=1, le=GERACOES_MAXIMAS),
+) -> AscendenciaResumo:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    arvore = _genealogia(connection).ancestry(
+        organization_id=contexto.organization_id, animal_id=alvo, generations=geracoes
+    )
+    return _ascendencia(arvore)
+
+
+@router.get(
+    "/animals/{animal_id}/descendants",
+    response_model=list[VinculoResumo],
+    summary="Consultar as crias diretas de um animal",
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_descendencia(
+    animal_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER_GENEALOGIA))],
+) -> list[VinculoResumo]:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    return [
+        _vinculo_resumo(link)
+        for link in _genealogia(connection).descendants(contexto.organization_id, alvo)
+    ]
+
+
+@router.get(
+    "/animals/{animal_id}/reproduction",
+    response_model=list[VinculoResumo],
+    summary="Consultar as crias que esta fêmea gestou",
+    description=(
+        "Pergunta distinta da descendência: uma receptora gestou bezerros que não descendem dela."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_historico_reprodutivo(
+    animal_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER_GENEALOGIA))],
+) -> list[VinculoResumo]:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    return [
+        _vinculo_resumo(link)
+        for link in _genealogia(connection).gestational_history(contexto.organization_id, alvo)
+    ]
 
 
 # -- Propriedades ------------------------------------------------------------

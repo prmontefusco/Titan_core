@@ -4,6 +4,7 @@ Vive fora de um `conftest.py` porque também é usado pelos testes de integraç�
 e importar de conftest alheio confunde a coleta do pytest.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -17,6 +18,7 @@ from packages.core_domain.evidence import (
     Source,
     SourceType,
 )
+from packages.core_domain.relations import UniversalRelation
 from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
@@ -57,6 +59,57 @@ class FakeDecisionRepository:
             decision
             for decision in self.saved
             if decision.organization_id == organization_id and decision.subject_id == subject_id
+        ]
+
+
+@dataclass
+class FakeRelationRepository:
+    """A tabela `relations` do Core, em memória (Passo 7.1, usada pelo 13.2).
+
+    `save` sobrescreve pelo identificador, e não acumula: é assim que o
+    encerramento de vigência substitui a relação sem criar uma segunda linha.
+    """
+
+    saved: dict[str, UniversalRelation] = field(default_factory=dict)
+
+    def save(self, relation: UniversalRelation) -> None:
+        self.saved[str(relation.relation_id.value)] = relation
+
+    def get_by_id(self, relation_id: TypedId) -> UniversalRelation | None:
+        return self.saved.get(str(relation_id.value))
+
+    def list_outgoing(
+        self,
+        organization_id: OrganizationId,
+        source_id: TypedId,
+        at_time: datetime | None = None,
+    ) -> list[UniversalRelation]:
+        return self._filtrar(
+            organization_id, at_time, lambda r: r.source_reference.target_id == source_id
+        )
+
+    def list_incoming(
+        self,
+        organization_id: OrganizationId,
+        target_id: TypedId,
+        at_time: datetime | None = None,
+    ) -> list[UniversalRelation]:
+        return self._filtrar(
+            organization_id, at_time, lambda r: r.target_reference.target_id == target_id
+        )
+
+    def _filtrar(
+        self,
+        organization_id: OrganizationId,
+        at_time: datetime | None,
+        cabe: Callable[[UniversalRelation], bool],
+    ) -> list[UniversalRelation]:
+        return [
+            relation
+            for relation in self.saved.values()
+            if relation.organization_id == organization_id
+            and cabe(relation)
+            and (at_time is None or relation.is_valid_at(at_time))
         ]
 
 

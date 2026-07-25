@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from packages.core_application.relation_service import RelationService
 from packages.livestock_application.animal_service import AnimalService
 from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
@@ -20,6 +21,7 @@ from packages.livestock_application.medication_service import (
     MedicationService,
 )
 from packages.livestock_application.movement_service import MovementService
+from packages.livestock_application.parentage_service import ParentageService
 from packages.livestock_application.property_service import RuralPropertyService
 from packages.livestock_application.timeline_service import (
     DECISION_ENTRY_TYPE,
@@ -37,8 +39,10 @@ from packages.livestock_domain.events import (
     ANIMAL_REMOVED_FROM_LOT,
     IDENTIFIER_ATTACHED,
     LOT_CREATED,
+    PARENTAGE_REGISTERED,
     TREATMENT_APPLIED,
 )
+from packages.livestock_domain.parentage import ParentageConfidence
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.test_animal_service import InMemoryAnimalRepository
 from tests.livestock_application.test_lot_service import (
@@ -60,6 +64,7 @@ from tests.livestock_application.test_treatment_service import InMemoryApplicati
 from tests.livestock_support import (
     FakeDecisionRepository,
     FakeEvaluationRepository,
+    FakeRelationRepository,
     ReadableEventLog,
 )
 
@@ -83,6 +88,7 @@ class Scenario:
         self.batch_repository = InMemoryBatchRepo()
         self.evaluations = FakeEvaluationRepository()
         self.decisions = FakeDecisionRepository()
+        self.relations = FakeRelationRepository()
 
         self.property_service = RuralPropertyService(
             repository=self.property_repository, recorder=self.recorder
@@ -133,6 +139,7 @@ class Scenario:
             batch_repository=self.batch_repository,
             evaluation_repository=self.evaluations,
             decision_repository=self.decisions,
+            relation_repository=self.relations,
         )
 
 
@@ -198,6 +205,44 @@ def test_animal_timeline_gathers_the_streams_of_everything_that_touched_it(
     assert ANIMAL_MOVED in types
     # A propriedade não entra: ela não é do histórico do animal.
     assert "livestock.property_registered" not in types
+
+
+def test_o_parto_aparece_na_linha_do_tempo_da_matriz(
+    context: LivestockOperationContext,
+) -> None:
+    """O nascimento é um dos fatos mais importantes da vida da vaca (Passo 13.2).
+
+    A relação é o agregado do evento, e tanto a cria quanto a mãe a citam — do
+    mesmo modo que a movimentação pertence ao `animal_movement` e aparece na
+    história de cada animal citado. Sem isto, o parto existiria apenas na
+    história do bezerro.
+    """
+    scenario, bezerro_id, _ = build_herd(context)
+    vaca = scenario.animal_service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.FEMALE,
+    )
+    ParentageService(
+        relation_service=RelationService(repository=scenario.relations),
+        animal_repository=scenario.animal_repository,
+        recorder=scenario.recorder,
+    ).register_maternity(
+        context=context,
+        offspring_id=bezerro_id,
+        genetic_mother_id=vaca.animal_id,
+        occurred_at=datetime.now(UTC) - timedelta(hours=2),
+        confidence=ParentageConfidence.DECLARADO,
+    )
+    service = scenario.timeline_service()
+
+    da_mae = service.animal_timeline(scenario.organization_id, vaca.animal_id)
+    da_cria = service.animal_timeline(scenario.organization_id, bezerro_id)
+
+    assert PARENTAGE_REGISTERED in [entrada.entry_type for entrada in da_mae]
+    assert PARENTAGE_REGISTERED in [entrada.entry_type for entrada in da_cria]
+    # A história do bezerro não é arrastada para a da mãe: só o vínculo é citado.
+    assert ANIMAL_MOVED not in [entrada.entry_type for entrada in da_mae]
 
 
 def test_the_order_is_total_and_reproducible(context: LivestockOperationContext) -> None:
@@ -389,6 +434,7 @@ def test_evaluations_and_decisions_appear_as_their_own_entries(
         batch_repository=scenario.batch_repository,
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        relation_repository=scenario.relations,
     )
     entries = service.animal_timeline(scenario.organization_id, animal_id)
 
@@ -447,6 +493,7 @@ def test_a_decisao_nunca_aparece_antes_da_avaliacao_que_a_produziu(
         batch_repository=scenario.batch_repository,
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        relation_repository=scenario.relations,
     ).animal_timeline(scenario.organization_id, animal_id)
 
     posicoes = {entrada.source_kind: indice for indice, entrada in enumerate(entradas)}

@@ -11,6 +11,7 @@ from sqlalchemy import Connection, create_engine, text
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.events import DomainEventRepository
+from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
 from packages.livestock_application.animal_service import AnimalService
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.fact_provider import LivestockFactProvider
@@ -308,6 +309,7 @@ def test_livestock_vertical_full_e2e_flow(db_connection: Connection) -> None:
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         evaluation_repository=TransactionalEvaluationRepository(connection=db_connection),
         decision_repository=TransactionalDecisionRepository(connection=db_connection),
+        relation_repository=TransactionalRelationRepository(connection=db_connection),
     )
     historia = timeline_service.animal_timeline(org_1, animal.animal_id)
     tipos = [entry.entry_type for entry in historia]

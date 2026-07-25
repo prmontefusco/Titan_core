@@ -22,6 +22,11 @@ ANIMAL_LER: Final = "LIVESTOCK_ANIMAL.LER"
 # é necessariamente quem atesta morte, abate ou venda. Permissão própria deixa
 # essa separação possível sem código novo.
 ANIMAL_REGISTRAR_SAIDA: Final = "LIVESTOCK_ANIMAL.REGISTRAR_SAIDA"
+# A genealogia tem permissões próprias porque atravessa o rebanho inteiro: quem
+# lê ascendência enxerga animais que não estão sob sua responsabilidade direta, e
+# quem a declara afirma linhagem — que é o que dá valor comercial ao registro.
+ANIMAL_REGISTRAR_GENEALOGIA: Final = "LIVESTOCK_ANIMAL.REGISTRAR_GENEALOGIA"
+ANIMAL_LER_GENEALOGIA: Final = "LIVESTOCK_ANIMAL.LER_GENEALOGIA"
 MEDICATION_CRIAR: Final = "LIVESTOCK_MEDICATION.CRIAR"
 MEDICATION_LER: Final = "LIVESTOCK_MEDICATION.LER"
 TREATMENT_REGISTRAR: Final = "LIVESTOCK_TREATMENT.REGISTRAR"
@@ -55,6 +60,7 @@ LEITURA: Final = frozenset(
         MOVEMENT_LER,
         TIMELINE_LER,
         DOSSIER_LER,
+        ANIMAL_LER_GENEALOGIA,
     }
 )
 
@@ -62,6 +68,7 @@ ESCRITA: Final = frozenset(
     {
         ANIMAL_CRIAR,
         ANIMAL_REGISTRAR_SAIDA,
+        ANIMAL_REGISTRAR_GENEALOGIA,
         MEDICATION_CRIAR,
         TREATMENT_REGISTRAR,
         PROPERTY_CRIAR,

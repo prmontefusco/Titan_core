@@ -48,6 +48,7 @@ from packages.core_infrastructure.persistence.evaluation import (
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.core_infrastructure.persistence.evidence import TransactionalEvidenceRepository
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.livestock_application.animal_service import AnimalService
 from packages.livestock_application.dossier_template import LivestockDossierTemplate
@@ -253,6 +254,7 @@ class Demonstracao:
             batch_repository=self.batch_repository,
             evaluation_repository=TransactionalEvaluationRepository(connection=self.connection),
             decision_repository=TransactionalDecisionRepository(connection=self.connection),
+            relation_repository=TransactionalRelationRepository(connection=self.connection),
         ).animal_timeline(self.semeado.org_a, animal.animal_id)
 
         return {
@@ -307,6 +309,7 @@ class Demonstracao:
                 batch_repository=self.batch_repository,
                 evaluation_repository=TransactionalEvaluationRepository(connection=self.connection),
                 decision_repository=TransactionalDecisionRepository(connection=self.connection),
+                relation_repository=TransactionalRelationRepository(connection=self.connection),
             ),
             application_repository=self.application_repository,
             evidence_lookup=TransactionalEvidenceRepository(connection=self.connection),

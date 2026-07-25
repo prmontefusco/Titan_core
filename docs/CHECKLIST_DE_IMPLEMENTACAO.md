@@ -2735,6 +2735,85 @@ O roteiro impresso por `python -m apps.seed` ia até a Parte 4 sem uma linha sob
 
 `test_api_resiliencia.py` ganhou a classe `TestFormaDaConfiguracaoNoArranque` (8): UUID inválido recusado com o valor citado; emissor sem esquema recusado; banco de outro dialeto recusado; driver do SQLAlchemy não é assunto do arranque; a senha não viaja na mensagem; audience passa com qualquer valor; ausência tem precedência sobre forma; e o arranque de fato falha, pelo `TestClient`.
 
+### Passo 13.2 — Genealogia
+
+**Data:** 25 de julho de 2026 · **Estado:** CONCLUÍDO E VALIDADO.
+
+#### Por que existe
+
+O Passo 7.1 entregou a Relação Universal e Temporal, e a vertical **nunca a usou** — não havia uma única ocorrência de `UniversalRelation` em `apps/` ou `packages/livestock_*`. O animal registrava onde nasceu, não de quem. Sem mãe não há linhagem, e sem linhagem o parto do Marco 16 não teria para onde apontar.
+
+#### A decisão que reorganizou o passo — D-4, maternidade dupla
+
+Levantada pelo responsável durante a apresentação do escopo: **com transferência de embrião, a vaca que gesta não é a que forneceu o óvulo.** O escopo proposto tinha um único `mother_of` e teria produzido um dado que mente numa das duas leituras — ou a árvore genealógica erra, ou a rastreabilidade sanitária erra.
+
+São **dois tipos de relação**, e não um com anotação, pelo mesmo argumento do touro do lote: "quem é a mãe genética" precisa ser consultável sem abrir metadados.
+
+- `livestock.genetic_mother_of` — a doadora. **É por ela que a linhagem sobe.**
+- `livestock.gestational_mother_of` — a receptora. Não é ancestral de ninguém; responde pelo histórico reprodutivo, que é outra pergunta e outra rota.
+- `livestock.father_of` — o touro, que não muda de natureza com a transferência.
+
+**Um ato do operador, dois fatos no registro.** Sem transferência, doadora e receptora são a mesma vaca e as duas relações são gravadas assim mesmo. Deixar a gestacional implícita obrigaria toda consulta futura a inferir, e inferência silenciosa é o que produz o dado que se contradiz — *ausência se declara, nunca se omite*.
+
+#### O parto na vida da matriz
+
+Pergunta do responsável que virou entrega: a vaca precisa ver o parto na linha do tempo dela. **O agregado do evento é a relação**, e não a cria nem o progenitor — é o vínculo que nasce ali. As duas pontas o enxergam por citação, exatamente como a movimentação pertence ao `animal_movement` e aparece na história de cada animal citado. Emitir um evento para cada ponta transformaria um fato em dois.
+
+O `LivestockTimelineService` ganhou o `RelationRepositoryPort` como dependência **obrigatória**. Opcional com padrão nulo faria a genealogia sumir em silêncio para quem esquecesse de ligá-la — o mesmo perigo que o 13.1 evitou ao pôr a guarda na porta de animal.
+
+#### Guardas da vertical
+
+O Core já garante organização e não-autorreferência. A vertical acrescenta: **uma só mãe genética e uma só gestacional vigentes** (duas são contradição, não dado incompleto); **sexo coerente com o papel**, recusando `UNKNOWN`, porque nomear alguém como mãe é afirmar que é fêmea; **progenitor nascido antes da cria**, conferido só quando as duas datas existem; e **ciclo direto barrado**.
+
+**Paternidade múltipla só entre vínculos `DECLARADO`.** É o touro do lote: monta natural com vários reprodutores, em que a paternidade só se resolve por DNA. Quem tem registro de cobertura afirma **um** pai — admitir um segundo ao lado de um vínculo documentado transformaria prova em palpite.
+
+**A guarda de saída do rebanho não se aplica aqui.** Parentesco é fato anterior ao nascimento, e descobrir a mãe de um boi já abatido é a regularização que a decisão D-2 protege.
+
+#### Vocabulário
+
+O operador nunca vê `INFORMED` ou `VERIFIED_SOURCE`. `ParentageConfidence` traz `DECLARADO`, `DOCUMENTADO` e `VERIFICADO_EM_FONTE`, traduzidos para `ConfidenceTier` na fronteira — o Core não ganha enum por causa da vertical. O `INDETERMINADO` dos identificadores fica de fora: afirmar parentesco indeterminado é não afirmar parentesco, e para isso basta não registrar a relação.
+
+#### Testes
+
+`test_parentage_service.py` (22) e `test_livestock_api_genealogia.py` (10), mais o teste do parto na linha do tempo da matriz em `test_timeline_service.py`. Cobrem a transferência de embrião separando doadora de receptora, a árvore por gerações, o touro do lote, e cada guarda pelo seu lado negativo.
+
+#### Portão de verificação
+
+`723 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (378 arquivos) e `alembic check` sem erros. **Sem migration:** a tabela `relations` existe desde o Passo 7.1.
+
+#### Limites conhecidos
+
+**Ciclo profundo não é detectado** — varrer a árvore a cada escrita não se paga; a travessia se defende com conjunto de visitados. **Doadora de outra organização** (compra de embrião, caso comum) não pode ser registrada, porque a relação recusa uma ponta fora da Organization, e com razão: o caso é origem externa declarada, não vínculo, e exige decomposição própria.
+
+#### Validação manual — APROVADA em 25 de julho de 2026
+
+Percorrida pelo roteiro executável, com os 26 passos passando. **O responsável aprovou a prática e pediu que virasse regra**: está no `AGENTS.md`, em "O roteiro de validação manual é executável".
+
+#### Validação manual executável
+
+Percorrer o roteiro pelo Swagger custa caro: cada passo exige copiar o identificador que o anterior devolveu, e um engano de cópia produz erro que parece defeito da aplicação — foi assim que a validação do 13.1 se perdeu duas vezes. Por isso este passo entrega o roteiro **executável**:
+
+```
+python -m uv run --locked python -m apps.validacao
+python -m uv run --locked python -m apps.validacao --pausar
+```
+
+São 26 passos que criam o rebanho, registram a genealogia, consultam a árvore e exercitam cada negação, imprimindo o que pediu, o que esperava, o que veio e por que o passo existe. **Descobre sozinho a Organization e a propriedade**, para que nenhum identificador precise ser copiado — confundir a operadora com a Organization A é justamente o engano que custou caro no 13.1.
+
+O que ele **não** faz é julgar se a regra faz sentido para o negócio; isso continua sendo leitura humana, e é por isso que cada passo carrega a sua justificativa impressa.
+
+A Parte 6 do roteiro do `apps.seed` continua existindo, para quem preferir conferir pelo Swagger.
+
+**Cliente `titan-validacao` no realm local.** O `titan-swagger` tem `directAccessGrantsEnabled: false` e está certo — ele serve ao fluxo de navegador com PKCE. Habilitar o grant nele afrouxaria o cliente que a demonstração usa; um cliente à parte, criado sob demanda e só no realm local, mantém a separação. Ele precisa de **dois** mapeadores: `aud: titan-api` e `token_use: access`. Sem qualquer um deles a API responde 401, e o 401 fala do token quando o defeito está na configuração do cliente.
+
+#### Armadilha descoberta aqui
+
+**Passo que acrescenta permissão exige semeadura nova.** Os papéis guardam as permissões que existiam quando foram criados, e `ROLE_PERMISSIONS` é lido uma vez, na semeadura. O operador de uma semeadura anterior recebe **403 `PERMISSAO_AUSENTE`** em toda escrita nova — e o 403 fala de permissão quando o que falta é re-semear. Depois de semear, a API tem de subir com a **operadora nova**, que muda a cada execução.
+
+O script sonda isso antes do primeiro passo e para com instrução, em vez de deixar vinte respostas vermelhas para serem lidas uma a uma.
+
+## Notas de rumo — decisões de direção fora da numeração do PLANO
+
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
 
 ### NR-1 — Âncora temporal por documento de terceiro

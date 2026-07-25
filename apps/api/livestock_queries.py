@@ -32,6 +32,7 @@ from packages.core_infrastructure.persistence.evaluation import (
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.core_infrastructure.persistence.evidence import TransactionalEvidenceRepository
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.livestock_application.authorization import (
     DOSSIER_LER,
@@ -98,6 +99,7 @@ def _timeline_service(connection: Connection) -> LivestockTimelineService:
         batch_repository=TransactionalMedicationBatchRepository(connection=connection),
         evaluation_repository=TransactionalEvaluationRepository(connection=connection),
         decision_repository=TransactionalDecisionRepository(connection=connection),
+        relation_repository=TransactionalRelationRepository(connection=connection),
     )
 
 

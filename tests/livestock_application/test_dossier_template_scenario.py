@@ -48,6 +48,7 @@ from tests.livestock_support import (
     FakeDecisionRepository,
     FakeEvaluationRepository,
     FakeEvidenceLookup,
+    FakeRelationRepository,
     ReadableEventLog,
 )
 
@@ -82,6 +83,7 @@ class Cenario:
         self.evidence_lookup = FakeEvidenceLookup()
         self.evaluations = FakeEvaluationRepository()
         self.decisions = FakeDecisionRepository()
+        self.relations = FakeRelationRepository()
 
         property_service = RuralPropertyService(
             repository=self.property_repository, recorder=self.recorder
@@ -185,6 +187,7 @@ class Cenario:
             batch_repository=self.batch_repository,
             evaluation_repository=self.evaluations,
             decision_repository=self.decisions,
+            relation_repository=self.relations,
         )
 
     def avaliar(self) -> tuple[Evaluation, Decision]:

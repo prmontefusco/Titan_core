@@ -41,6 +41,7 @@ MEDICATION_BATCH_REGISTERED = "livestock.medication_batch_registered"
 PRESCRIPTION_ISSUED = "livestock.prescription_issued"
 TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
+PARENTAGE_REGISTERED = "livestock.parentage_registered"
 
 LIVESTOCK_EVENT_TYPES = frozenset(
     {
@@ -59,6 +60,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         PRESCRIPTION_ISSUED,
         TREATMENT_APPLIED,
         ANIMAL_EXITED,
+        PARENTAGE_REGISTERED,
     }
 )
 
@@ -380,6 +382,41 @@ def treatment_applied_payload(
             "evidence_references": [_id(r.target_id) for r in evidence_references],
             "medication_batch_id": _id(medication_batch_id),
             "prescription_id": None if prescription_id is None else _id(prescription_id),
+        },
+    )
+
+
+def parentage_registered_payload(
+    *,
+    relation_id: TypedId,
+    offspring_id: TypedId,
+    parent_id: TypedId,
+    role: str,
+    relation_type: str,
+    confidence: str,
+    confidence_reason: str,
+    occurred_at: datetime,
+    evidence_references: tuple[UniversalReference, ...],
+) -> CanonicalPayload:
+    """O agregado deste evento é a **relação**, não a cria nem o progenitor.
+
+    É o vínculo que nasce aqui, e é ele que as duas pontas enxergam por citação —
+    do mesmo modo que a movimentação pertence ao `animal_movement` e aparece na
+    linha do tempo de cada animal citado. Emiti-lo duas vezes, uma para cada
+    ponta, transformaria um fato em dois.
+    """
+    return _payload(
+        PARENTAGE_REGISTERED,
+        {
+            "confidence": confidence,
+            "confidence_reason": confidence_reason,
+            "evidence_references": [_id(r.target_id) for r in evidence_references],
+            "occurred_at": occurred_at,
+            "offspring_id": _id(offspring_id),
+            "parent_id": _id(parent_id),
+            "relation_id": _id(relation_id),
+            "relation_type": relation_type,
+            "role": role,
         },
     )
 

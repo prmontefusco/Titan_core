@@ -500,6 +500,77 @@ implicitamente vivo e presente, e um recall varreria animais mortos há anos.
                     a conferência da aplicação falhasse
 
 
+========= PARTE 6 — A GENEALOGIA (Passo 13.2) =========
+
+Cadastre três animais novos e anote os identificadores:
+  BEZERRO (MALE), DOADORA (FEMALE) e RECEPTORA (FEMALE).
+
+  6.1  POST /v1/livestock/animals/<BEZERRO>/maternity ... espera 201
+       {{
+         "genetic_mother_id": "<DOADORA>",
+         "gestational_mother_id": "<RECEPTORA>",
+         "occurred_at": "{saida_em}",
+         "confidence": "DECLARADO"
+       }}
+       >>> CONFIRA: a resposta traz DOIS vinculos, MAE_GENETICA e MAE_GESTACIONAL
+
+       Com transferencia de embriao, quem forneceu o ovulo e quem gestou sao
+       vacas diferentes, e ambas sao fato. Sem transferencia, basta omitir
+       gestational_mother_id — e as duas relacoes sao gravadas do mesmo jeito,
+       porque ausencia se declara e nao se infere.
+
+  6.2  GET /v1/livestock/animals/<BEZERRO>/ancestry .... espera 200
+       >>> CONFIRA: aparece a DOADORA
+       >>> CONFIRA: a RECEPTORA nao aparece
+
+       A linhagem sobe pela genetica. Quem gestou nao transmitiu genes, e
+       inclui-la daria a arvore um ancestral que nao e.
+
+  6.3  GET /v1/livestock/animals/<RECEPTORA>/reproduction ... espera 200
+       >>> CONFIRA: o BEZERRO aparece — ela gestou
+
+  6.4  GET /v1/livestock/animals/<RECEPTORA>/descendants .... espera 200
+       >>> CONFIRA: lista VAZIA — nenhuma cria descende dela
+
+       Os passos 6.3 e 6.4 sao a mesma vaca respondendo a duas perguntas
+       diferentes. Colapsa-las e o erro que este passo existe para evitar.
+
+  6.5  GET /v1/livestock/animals/<RECEPTORA>/timeline ... espera 200
+       >>> CONFIRA: aparece livestock.parentage_registered
+
+       O parto entra na vida da vaca. A relacao e o agregado do evento, e as
+       duas pontas a citam — o fato nao e gravado duas vezes.
+
+  6.6  POST /v1/livestock/animals/<BEZERRO>/paternity ... espera 201, tres vezes
+       Cadastre tres touros e repita com cada um:
+       {{
+         "father_id": "<TOURO>",
+         "occurred_at": "{saida_em}",
+         "confidence": "DECLARADO"
+       }}
+       >>> CONFIRA: os tres sao aceitos
+
+       E o touro do lote: monta natural com varios reprodutores, em que a
+       paternidade so se resolve por DNA. Paternidade indeterminada e caso
+       reconhecido, e nao erro a corrigir.
+
+  6.7  POST /v1/livestock/animals/<BEZERRO>/paternity ... espera 409
+       Um quarto touro, agora com "confidence": "DOCUMENTADO".
+       >>> CONFIRA: reason_code == "CONFLITO_DE_DOMINIO"
+
+       Quem tem registro de cobertura afirma UM pai. Admitir um segundo ao lado
+       de um vinculo documentado transformaria prova em palpite.
+
+  6.8  POST /v1/livestock/animals/<BEZERRO>/maternity ... espera 409
+       Outra vaca qualquer como genetic_mother_id.
+       >>> CONFIRA: duas maes geneticas vigentes sao contradicao, e nao dado
+                    incompleto
+
+  6.9  POST /v1/livestock/animals/<BEZERRO>/maternity ... espera 409
+       Use um TOURO como genetic_mother_id.
+       >>> CONFIRA: nomear alguem como mae e afirmar que e femea
+
+
 =========== O QUE ISTO DEMONSTRA NO FIM ===========
 
   o animal foi bloqueado por uma regra versionada, com motivo;
@@ -507,7 +578,8 @@ implicitamente vivo e presente, e um recall varreria animais mortos há anos.
   a prova é verificável por terceiro, sem acesso ao Titan;
   papéis diferentes têm alcances diferentes, nos dois sentidos;
   uma organização não enxerga a outra, e a negação não entrega pistas;
-  o animal tem fim, e o fim fecha o futuro sem apagar o passado.
+  o animal tem fim, e o fim fecha o futuro sem apagar o passado;
+  a linhagem sobe por quem deu os genes, e o parto fica com quem pariu.
 
 =====================================================
 """

@@ -24,6 +24,7 @@ from enum import StrEnum
 from typing import Protocol
 
 from packages.core_application.event_log import DomainEventReader, RecordedEvent
+from packages.core_application.relation_service import RelationRepositoryPort
 from packages.core_domain.decision import Decision
 from packages.core_domain.evaluation import Evaluation
 from packages.livestock_application.event_recorder import AGGREGATE_CONTRACT_VERSION
@@ -33,6 +34,7 @@ from packages.livestock_application.movement_service import MovementRepositoryPo
 from packages.livestock_application.treatment_service import (
     TreatmentApplicationRepositoryPort,
 )
+from packages.livestock_domain.parentage import ROLE_BY_RELATION_TYPE
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
 
@@ -153,6 +155,7 @@ class LivestockTimelineService:
     batch_repository: MedicationBatchRepositoryPort
     evaluation_repository: EvaluationReaderPort
     decision_repository: DecisionReaderPort
+    relation_repository: RelationRepositoryPort
 
     def animal_timeline(
         self,
@@ -177,6 +180,7 @@ class LivestockTimelineService:
             for membership in self.membership_repository.list_memberships_for_animal(animal_id)
         )
         aggregates.extend(application.application_id for application in applications)
+        aggregates.extend(self._parentage_relations(organization_id, animal_id))
 
         return self._assemble(organization_id, animal_id, aggregates, superseded, cutoff)
 
@@ -246,6 +250,34 @@ class LivestockTimelineService:
             else [entry for entry in entries if cutoff.admits(entry.occurred_at, entry.recorded_at)]
         )
         return tuple(sorted(admitted, key=lambda entry: entry.sort_key()))
+
+    def _parentage_relations(
+        self, organization_id: OrganizationId, animal_id: TypedId
+    ) -> list[TypedId]:
+        """Os vínculos de parentesco em que este animal é uma das pontas.
+
+        É por aqui que o parto entra na vida da matriz: a relação é o agregado do
+        evento, e tanto a cria quanto a mãe a citam. Sem isto, o nascimento
+        apareceria só na história do bezerro, e a vaca que o pariu não teria
+        registro do parto — que é um dos fatos mais importantes da vida dela.
+
+        As relações de saída trazem as crias; as de entrada, os progenitores. A
+        tabela é do Core e guarda vínculos de toda natureza, então só o que for
+        parentesco entra.
+        """
+        encontradas = [
+            *self.relation_repository.list_outgoing(
+                organization_id=organization_id, source_id=animal_id
+            ),
+            *self.relation_repository.list_incoming(
+                organization_id=organization_id, target_id=animal_id
+            ),
+        ]
+        return [
+            relacao.relation_id
+            for relacao in encontradas
+            if relacao.relation_type in ROLE_BY_RELATION_TYPE
+        ]
 
     def _events_of(
         self, organization_id: OrganizationId, aggregate_id: TypedId

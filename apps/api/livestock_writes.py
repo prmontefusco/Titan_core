@@ -10,7 +10,7 @@ prometeria apagar o que o domínio preserva.
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
@@ -23,9 +23,12 @@ from apps.api.livestock_dependencies import (
     typed_id_or_problem,
 )
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
+from packages.core_application.relation_service import RelationService
 from packages.core_domain import OrganizationContext
 from packages.core_infrastructure.persistence.events import DomainEventRepository
+from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
 from packages.livestock_application.authorization import (
+    ANIMAL_REGISTRAR_GENEALOGIA,
     ANIMAL_REGISTRAR_SAIDA,
     LOT_CRIAR,
     MOVEMENT_REGISTRAR,
@@ -36,11 +39,18 @@ from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.exit_service import AnimalExitService
 from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
+from packages.livestock_application.parentage_service import ParentageService
 from packages.livestock_application.property_service import RuralPropertyService
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import VerificationStatus
 from packages.livestock_domain.exit import ExitType
 from packages.livestock_domain.lot import LotType
+from packages.livestock_domain.parentage import (
+    ROLE_BY_RELATION_TYPE,
+    ParentageConfidence,
+    ParentageRole,
+    confidence_from_tier,
+)
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
@@ -542,3 +552,148 @@ def registrar_saida(
         reason=saida.reason,
         destination=saida.destination,
     )
+
+
+# -- Genealogia --------------------------------------------------------------
+
+
+class RegistrarMaternidadeRequest(BaseModel):
+    genetic_mother_id: str = Field(description="A doadora do óvulo, que define a linhagem.")
+    occurred_at: datetime
+    confidence: ParentageConfidence
+    gestational_mother_id: str | None = Field(
+        default=None,
+        description=(
+            "A receptora, quando houver transferência de embrião. Ausente, entende-se "
+            "que a doadora também gestou — e as duas relações são gravadas assim mesmo, "
+            "porque ausência se declara e não se infere."
+        ),
+    )
+    confidence_reason: str | None = Field(default=None, max_length=500)
+
+
+class RegistrarPaternidadeRequest(BaseModel):
+    father_id: str
+    occurred_at: datetime
+    confidence: ParentageConfidence
+    confidence_reason: str | None = Field(default=None, max_length=500)
+
+
+class ParentescoResponse(BaseModel):
+    relation_id: str
+    offspring_id: str
+    parent_id: str
+    role: str
+    confidence: str
+    confidence_reason: str
+
+
+def _parentesco(relacao: Any) -> ParentescoResponse:
+    return ParentescoResponse(
+        relation_id=str(relacao.relation_id.value),
+        offspring_id=str(relacao.target_reference.target_id.value),
+        parent_id=str(relacao.source_reference.target_id.value),
+        role=ROLE_BY_RELATION_TYPE[relacao.relation_type].value,
+        confidence=str(confidence_from_tier(relacao.confidence.tier)),
+        confidence_reason=relacao.confidence.reason,
+    )
+
+
+def _parentage_service(connection: Connection) -> ParentageService:
+    return ParentageService(
+        relation_service=RelationService(
+            repository=TransactionalRelationRepository(connection=connection)
+        ),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+
+
+@router.post(
+    "/animals/{animal_id}/maternity",
+    response_model=list[ParentescoResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar a maternidade de um animal",
+    description=(
+        "Grava **duas** relações: a maternidade genética e a gestacional. Sem "
+        "transferência de embrião as duas apontam para a mesma vaca, e ainda assim "
+        "as duas são registradas — deixar a gestacional implícita obrigaria toda "
+        "consulta futura a inferir. A árvore genealógica sobe pela genética; a "
+        "receptora responde pelo histórico reprodutivo."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_maternidade(
+    animal_id: str,
+    corpo: RegistrarMaternidadeRequest,
+    connection: ConnectionDependency,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_GENEALOGIA))
+    ],
+) -> list[ParentescoResponse]:
+    try:
+        genetica, gestacional = _parentage_service(connection).register_maternity(
+            context=operation_context(contexto),
+            offspring_id=typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id"),
+            genetic_mother_id=typed_id_or_problem(
+                corpo.genetic_mother_id, entity_type="animal", campo="genetic_mother_id"
+            ),
+            gestational_mother_id=(
+                None
+                if corpo.gestational_mother_id is None
+                else typed_id_or_problem(
+                    corpo.gestational_mother_id,
+                    entity_type="animal",
+                    campo="gestational_mother_id",
+                )
+            ),
+            occurred_at=corpo.occurred_at,
+            confidence=corpo.confidence,
+            confidence_reason=corpo.confidence_reason,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return [_parentesco(genetica), _parentesco(gestacional)]
+
+
+@router.post(
+    "/animals/{animal_id}/paternity",
+    response_model=ParentescoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar a paternidade de um animal",
+    description=(
+        "O pai é opcional e admite mais de um vínculo simultâneo — é o caso do "
+        "touro do lote, em que a monta natural teve vários reprodutores e a "
+        "paternidade só se resolve por exame de DNA. Vários pais só são aceitos "
+        "quando **todos** os vínculos são DECLARADO: admitir um segundo ao lado de "
+        "um vínculo documentado transformaria prova em palpite."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_paternidade(
+    animal_id: str,
+    corpo: RegistrarPaternidadeRequest,
+    connection: ConnectionDependency,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_GENEALOGIA))
+    ],
+) -> ParentescoResponse:
+    try:
+        relacao = _parentage_service(connection).register_parentage(
+            context=operation_context(contexto),
+            offspring_id=typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id"),
+            parent_id=typed_id_or_problem(corpo.father_id, entity_type="animal", campo="father_id"),
+            role=ParentageRole.PAI,
+            occurred_at=corpo.occurred_at,
+            confidence=corpo.confidence,
+            confidence_reason=corpo.confidence_reason,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _parentesco(relacao)

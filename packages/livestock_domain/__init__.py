@@ -20,6 +20,7 @@ from packages.livestock_domain.events import (
     LOT_CREATED,
     MEDICATION_BATCH_REGISTERED,
     MEDICATION_REGISTERED,
+    PARENTAGE_REGISTERED,
     PRESCRIPTION_ISSUED,
     PROPERTY_REGISTERED,
     TREATMENT_APPLIED,
@@ -39,6 +40,7 @@ from packages.livestock_domain.movement import (
     PropertyStay,
     StayStatus,
 )
+from packages.livestock_domain.parentage import ParentageConfidence, ParentageRole
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.veterinarian import Veterinarian
@@ -55,6 +57,7 @@ __all__ = [
     "LOT_CREATED",
     "MEDICATION_BATCH_REGISTERED",
     "MEDICATION_REGISTERED",
+    "PARENTAGE_REGISTERED",
     "PRESCRIPTION_ISSUED",
     "PROPERTY_REGISTERED",
     "TREATMENT_APPLIED",
@@ -73,6 +76,8 @@ __all__ = [
     "LotStatus",
     "LotType",
     "Medication",
+    "ParentageConfidence",
+    "ParentageRole",
     "Prescription",
     "PrescriptionTargetType",
     "PropertyStay",

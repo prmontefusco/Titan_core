@@ -94,6 +94,113 @@ class AdminKeycloak:
         )
         return segundos
 
+    def garantir_cliente_de_validacao(self, client_id: str) -> None:
+        """Cliente público com *direct access grant*, para o roteiro automatizado.
+
+        O `titan-swagger` tem `directAccessGrantsEnabled: false`, e está certo: ele
+        existe para o fluxo de navegador com PKCE. Um script de validação não tem
+        navegador, e habilitar o grant nele afrouxaria o cliente que a demonstração
+        usa de verdade. Um cliente à parte mantém essa separação.
+
+        **Só faz sentido no realm local descartável**, pelo mesmo motivo que
+        ampliar a validade do token: trocar senha por token sem interação é
+        exatamente o que não se quer em produção.
+
+        Os mapeadores não são detalhe: ver `_mapeadores_de_validacao`.
+        """
+        mapeadores = self._mapeadores_de_validacao()
+        _, existentes = _requisicao(
+            "GET",
+            f"{self.base_url}/admin/realms/{self.realm}/clients"
+            f"?{urllib.parse.urlencode({'clientId': client_id})}",
+            token=self.token,
+        )
+        if existentes:
+            # Idempotente de verdade: um cliente criado por uma versão anterior,
+            # sem algum mapeador, precisa ser completado. Sair cedo aqui deixaria
+            # o token quebrado para sempre, e o sintoma seria um 401 que fala do
+            # token quando o defeito está na configuração do cliente.
+            self._completar_mapeadores(str(existentes[0]["id"]), mapeadores)
+            return
+
+        _requisicao(
+            "POST",
+            f"{self.base_url}/admin/realms/{self.realm}/clients",
+            token=self.token,
+            json_body={
+                "clientId": client_id,
+                "name": "Titan — validação automatizada (local)",
+                "enabled": True,
+                "publicClient": True,
+                "standardFlowEnabled": False,
+                "directAccessGrantsEnabled": True,
+                "protocol": "openid-connect",
+                "protocolMappers": mapeadores,
+            },
+        )
+
+    def _completar_mapeadores(self, id_interno: str, desejados: list[dict[str, Any]]) -> None:
+        caminho = (
+            f"{self.base_url}/admin/realms/{self.realm}/clients/{id_interno}"
+            "/protocol-mappers/models"
+        )
+        _, atuais = _requisicao("GET", caminho, token=self.token)
+        presentes = {mapeador["name"] for mapeador in (atuais or [])}
+        for mapeador in desejados:
+            if mapeador["name"] not in presentes:
+                _requisicao("POST", caminho, token=self.token, json_body=mapeador)
+
+    @staticmethod
+    def _mapeadores_de_validacao() -> list[dict[str, Any]]:
+        """Os dois claims sem os quais a API recusa o token.
+
+        `aud: titan-api` diz para quem o token vale; `token_use: access` distingue
+        credencial de acesso de ID token. Faltando qualquer um, a resposta é 401 —
+        e o 401 fala do token, quando o defeito está na configuração do cliente.
+        """
+        return [
+            {
+                "name": "titan-api-audience",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-audience-mapper",
+                "consentRequired": False,
+                "config": {
+                    "included.client.audience": "titan-api",
+                    "id.token.claim": "false",
+                    "access.token.claim": "true",
+                },
+            },
+            {
+                "name": "titan-access-token-purpose",
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-hardcoded-claim-mapper",
+                "consentRequired": False,
+                "config": {
+                    "claim.name": "token_use",
+                    "claim.value": "access",
+                    "jsonType.label": "String",
+                    "id.token.claim": "false",
+                    "access.token.claim": "true",
+                    "userinfo.token.claim": "false",
+                    "access.tokenResponse.claim": "false",
+                },
+            },
+        ]
+
+    def token_de_usuario(self, *, client_id: str, username: str, senha: str) -> str:
+        _, corpo = _requisicao(
+            "POST",
+            f"{self.base_url}/realms/{self.realm}/protocol/openid-connect/token",
+            form={
+                "client_id": client_id,
+                "grant_type": "password",
+                "scope": "openid",
+                "username": username,
+                "password": senha,
+            },
+        )
+        return str(corpo["access_token"])
+
     def garantir_usuario(self, *, username: str, senha: str) -> str:
         """Cria o usuário se faltar, e devolve o `sub` — que é o id dele no Keycloak.
 

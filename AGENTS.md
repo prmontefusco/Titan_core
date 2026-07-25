@@ -129,6 +129,21 @@ Executar a suíte completa de verificações e testes:
 
 Após os testes manuais e a aprovação da funcionalidade, realizar obrigatoriamente o commit no Git das alterações finalizadas.
 
+## O roteiro de validação manual é executável
+
+**Todo passo que acrescenta comportamento observável pela API entrega também o seu roteiro em `apps/validacao`.** Ditar passos numa conversa não vale: some quando a conversa acaba, e o responsável passa a copiar identificadores de uma janela para outra — foi assim que a validação do Passo 13.1 se perdeu duas vezes, com um engano de cópia produzindo erro que parecia defeito da aplicação.
+
+O roteiro executável obedece a quatro regras, todas aprendidas doendo:
+
+1. **Nenhum identificador é copiado à mão.** O script descobre a Organization e as entidades de que precisa. Confundir a operadora com a Organization A já custou duas rodadas de diagnóstico às cegas.
+2. **Cada passo mostra a requisição e a resposta**, com corpo formatado. Sem o corpo à vista, "esperava 201 e veio 409" obriga a abrir o código do script para saber o que foi pedido.
+3. **Cada passo diz por que existe**, numa linha. O script confere status e forma; se a regra faz sentido para o negócio é julgamento humano, e ele precisa do contexto para julgar.
+4. **O que costuma quebrar o ambiente é sondado antes do primeiro passo**, com instrução do que fazer — e não descoberto na vigésima resposta vermelha.
+
+`--pausar` espera ENTER entre um passo e o seguinte, para acompanhar em ritmo de leitura.
+
+**Passo que acrescenta permissão exige semeadura nova**: papéis guardam as permissões que existiam quando foram criados. Depois de semear, subir a API com a operadora nova, que muda a cada execução.
+
 Revisar o Diff.
 
 Listar riscos.
