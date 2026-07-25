@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy import Connection, create_engine, text
 
 from packages.livestock_domain.geometry import (
+    CAMADA_PERIMETRO,
     SRID_CANONICO,
     GeometriaInvalida,
     GeometrySource,
@@ -102,12 +103,14 @@ def _geometria(
     srid: int = SRID_CANONICO,
     version: int = 1,
     source: GeometrySource = GeometrySource.DECLARADA,
+    layer: str = CAMADA_PERIMETRO,
 ) -> PropertyGeometry:
     return PropertyGeometry(
         geometry_id=TypedId.new("property_geometry"),
         organization_id=organizacao,
         property_id=property_id,
         source=source,
+        layer=layer,
         srid=srid,
         source_payload=payload,
         source_digest=digest_de(payload),
@@ -292,3 +295,40 @@ def _papel_sem_bypass(db_connection: Connection) -> Iterator[None]:
     db_connection.execute(text("GRANT USAGE ON SCHEMA core_audit TO titan_rls_probe"))
     db_connection.execute(text("GRANT SELECT ON core_audit.property_geometries TO titan_rls_probe"))
     yield
+
+
+def test_a_camada_e_dimensao_e_nao_versao(db_connection: Connection) -> None:
+    """Importar a reserva legal nao pode transformar o perimetro em versao antiga."""
+    organizacao = _organizacao(db_connection)
+    property_id = _propriedade(db_connection, organizacao, f"P-{uuid4().hex[:8]}")
+    _contexto(db_connection, organizacao)
+    repositorio = TransactionalPropertyGeometryRepository(connection=db_connection)
+
+    repositorio.save(_geometria(organizacao, property_id))
+    reserva = json.dumps(
+        {
+            "type": "Polygon",
+            "coordinates": [
+                [[-47.89, -15.79], [-47.85, -15.79], [-47.85, -15.75], [-47.89, -15.79]]
+            ],
+        }
+    )
+    repositorio.save(_geometria(organizacao, property_id, payload=reserva, layer="RESERVA_LEGAL"))
+
+    # Cada camada comeca na versao 1: elas nao se versionam juntas.
+    assert repositorio.next_version_for(property_id, CAMADA_PERIMETRO) == 2
+    assert repositorio.next_version_for(property_id, "RESERVA_LEGAL") == 2
+
+    perimetro = repositorio.current_for(property_id, CAMADA_PERIMETRO)
+    assert perimetro is not None
+    assert perimetro.source_payload == QUADRADO
+    assert perimetro.e_perimetro
+
+    protegida = repositorio.current_for(property_id, "RESERVA_LEGAL")
+    assert protegida is not None
+    assert protegida.e_area_protegida
+
+    assert {g.layer for g in repositorio.current_layers_for(property_id)} == {
+        CAMADA_PERIMETRO,
+        "RESERVA_LEGAL",
+    }

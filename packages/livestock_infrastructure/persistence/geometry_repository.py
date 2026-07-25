@@ -14,6 +14,7 @@ Duas responsabilidades que só existem aqui:
    reparo é derivado novo, com método e diferenças declarados.
 """
 
+import json
 from dataclasses import dataclass
 from datetime import UTC
 from typing import Any
@@ -34,11 +35,13 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.engine import Row
 
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.livestock_domain.geometry import (
+    CAMADA_PERIMETRO,
     SRID_CANONICO,
     GeometriaInvalida,
     GeometrySource,
@@ -55,6 +58,7 @@ property_geometries_table = Table(
     Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
     Column("property_id", PG_UUID(as_uuid=True), nullable=False),
     Column("source", String(40), nullable=False),
+    Column("layer", String(60), nullable=False, server_default="AREA_IMOVEL"),
     Column("source_srid", Integer, nullable=False),
     Column("source_payload", Text, nullable=False),
     Column("source_digest", String(64), nullable=False),
@@ -63,6 +67,9 @@ property_geometries_table = Table(
     Column("captured_at", DateTime(timezone=True), nullable=True),
     Column("imported_at", DateTime(timezone=True), nullable=False),
     Column("notes", String(1000), nullable=True),
+    Column("source_attributes", JSONB, nullable=False, server_default="{}"),
+    Column("response_digest", String(64), nullable=True),
+    Column("layer_version", String(120), nullable=True),
     Column("geom", Geometry("MultiPolygon", SRID_CANONICO), nullable=False),
     ForeignKeyConstraint(
         ["record_owner_organization_id"],
@@ -74,12 +81,16 @@ property_geometries_table = Table(
         ["core_audit.rural_properties.property_id"],
         name="fk_property_geometries_property",
     ),
-    UniqueConstraint("property_id", "version", name="uq_property_geometries_version"),
+    UniqueConstraint("property_id", "layer", "version", name="uq_property_geometries_version"),
     CheckConstraint("version >= 1", name="ck_property_geometries_version"),
     CheckConstraint("source_srid > 0", name="ck_property_geometries_srid"),
     CheckConstraint("char_length(source_digest) = 64", name="ck_property_geometries_digest"),
+    CheckConstraint(
+        "response_digest IS NULL OR char_length(response_digest) = 64",
+        name="ck_property_geometries_response_digest",
+    ),
     CheckConstraint("ST_IsValid(geom)", name="ck_property_geometries_geom_valida"),
-    Index("ix_property_geometries_property", "property_id", "version"),
+    Index("ix_property_geometries_property", "property_id", "layer", "version"),
     Index("ix_property_geometries_geom", "geom", postgresql_using="gist"),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",
@@ -108,12 +119,14 @@ class TransactionalPropertyGeometryRepository:
                 """
                 INSERT INTO core_audit.property_geometries (
                     geometry_id, record_owner_organization_id, property_id, source,
-                    source_srid, source_payload, source_digest, external_reference,
-                    version, captured_at, imported_at, notes, geom
+                    layer, source_srid, source_payload, source_digest, external_reference,
+                    version, captured_at, imported_at, notes,
+                    source_attributes, response_digest, layer_version, geom
                 ) VALUES (
                     :geometry_id, :organization_id, :property_id, :source,
-                    :source_srid, :source_payload, :source_digest, :external_reference,
+                    :layer, :source_srid, :source_payload, :source_digest, :external_reference,
                     :version, :captured_at, :imported_at, :notes,
+                    CAST(:source_attributes AS jsonb), :response_digest, :layer_version,
                     ST_Multi(
                         ST_Transform(
                             ST_SetSRID(ST_GeomFromGeoJSON(:source_payload), :source_srid),
@@ -128,6 +141,7 @@ class TransactionalPropertyGeometryRepository:
                 "organization_id": geometry.organization_id.value,
                 "property_id": geometry.property_id.value,
                 "source": geometry.source.value,
+                "layer": geometry.layer,
                 "source_srid": geometry.srid,
                 "source_payload": geometry.source_payload,
                 "source_digest": geometry.source_digest,
@@ -136,23 +150,44 @@ class TransactionalPropertyGeometryRepository:
                 "captured_at": geometry.captured_at,
                 "imported_at": geometry.imported_at,
                 "notes": geometry.notes,
+                "source_attributes": json.dumps(geometry.source_attributes),
+                "response_digest": geometry.response_digest,
+                "layer_version": geometry.layer_version,
                 "canonico": SRID_CANONICO,
             },
         )
 
-    def current_for(self, property_id: TypedId) -> PropertyGeometry | None:
-        """A versão vigente é a de maior número — a última importada.
+    def current_for(
+        self, property_id: TypedId, layer: str = CAMADA_PERIMETRO
+    ) -> PropertyGeometry | None:
+        """A versão vigente **daquela camada** — a última importada dela.
 
-        Versões anteriores permanecem, e é por elas que uma avaliação histórica
-        continua sendo reproduzível.
+        Sem o recorte por camada, importar a reserva legal faria a consulta do
+        perímetro devolver a reserva legal.
         """
         row = self.connection.execute(
             select(property_geometries_table)
-            .where(property_geometries_table.c.property_id == property_id.value)
+            .where(
+                property_geometries_table.c.property_id == property_id.value,
+                property_geometries_table.c.layer == layer,
+            )
             .order_by(property_geometries_table.c.version.desc())
             .limit(1)
         ).fetchone()
         return None if row is None else self._mapear(row)
+
+    def current_layers_for(self, property_id: TypedId) -> list[PropertyGeometry]:
+        """A versão vigente de cada camada que a propriedade tem."""
+        rows = self.connection.execute(
+            select(property_geometries_table)
+            .distinct(property_geometries_table.c.layer)
+            .where(property_geometries_table.c.property_id == property_id.value)
+            .order_by(
+                property_geometries_table.c.layer,
+                property_geometries_table.c.version.desc(),
+            )
+        ).fetchall()
+        return [self._mapear(row) for row in rows]
 
     def get_by_id(self, geometry_id: TypedId) -> PropertyGeometry | None:
         row = self.connection.execute(
@@ -162,18 +197,27 @@ class TransactionalPropertyGeometryRepository:
         ).fetchone()
         return None if row is None else self._mapear(row)
 
-    def history_of(self, property_id: TypedId) -> list[PropertyGeometry]:
+    def history_of(self, property_id: TypedId, layer: str | None = None) -> list[PropertyGeometry]:
+        """Todas as versões, de uma camada ou de todas."""
+        stmt = select(property_geometries_table).where(
+            property_geometries_table.c.property_id == property_id.value
+        )
+        if layer is not None:
+            stmt = stmt.where(property_geometries_table.c.layer == layer)
         rows = self.connection.execute(
-            select(property_geometries_table)
-            .where(property_geometries_table.c.property_id == property_id.value)
-            .order_by(property_geometries_table.c.version.asc())
+            stmt.order_by(
+                property_geometries_table.c.layer,
+                property_geometries_table.c.version.asc(),
+            )
         ).fetchall()
         return [self._mapear(row) for row in rows]
 
-    def next_version_for(self, property_id: TypedId) -> int:
+    def next_version_for(self, property_id: TypedId, layer: str = CAMADA_PERIMETRO) -> int:
+        """A versão é por (propriedade, camada), e não por propriedade."""
         atual = self.connection.execute(
             select(func.max(property_geometries_table.c.version)).where(
-                property_geometries_table.c.property_id == property_id.value
+                property_geometries_table.c.property_id == property_id.value,
+                property_geometries_table.c.layer == layer,
             )
         ).scalar()
         return 1 if atual is None else int(atual) + 1
@@ -222,6 +266,7 @@ class TransactionalPropertyGeometryRepository:
             organization_id=OrganizationId(row.record_owner_organization_id),
             property_id=TypedId(entity_type="rural_property", value=row.property_id),
             source=GeometrySource(row.source),
+            layer=row.layer,
             srid=row.source_srid,
             source_payload=row.source_payload,
             source_digest=row.source_digest,
@@ -230,4 +275,7 @@ class TransactionalPropertyGeometryRepository:
             captured_at=captured_at,
             imported_at=imported_at,
             notes=row.notes,
+            source_attributes=dict(row.source_attributes or {}),
+            response_digest=row.response_digest,
+            layer_version=row.layer_version,
         )

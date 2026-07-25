@@ -385,8 +385,34 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, propriedade: str) -> Ro
     )
 
     _acrescentar_reproducao(roteiro, operador, auditor, propriedade, rebanho)
-    _acrescentar_geometria(roteiro, operador, auditor, propriedade)
+    _acrescentar_geometria(roteiro, operador, auditor, rebanho)
+    disponivel, motivo = _provider_configurado(operador)
+    if disponivel:
+        _acrescentar_car(roteiro, operador, rebanho)
+    else:
+        print(f"{AMARELO}  Parte 8 (importação do CAR) omitida.{FIM}")
+        print(
+            f"{CINZA}  Confira TITAN_GEODATA_URL e TITAN_GEODATA_API_KEY na janela da "
+            f"API — são lidas por ela, e não por este script.{FIM}"
+        )
+        if motivo:
+            print(f"{CINZA}  O provider respondeu: {motivo[:220]}{FIM}")
     return roteiro
+
+
+def _provider_configurado(cliente: Cliente) -> tuple[bool, str]:
+    """A integração é opcional, e o roteiro não falha por ela estar ausente.
+
+    Trata **duas** ausências, e não uma: provider não configurado (503) e provider
+    que responde mas recusa — chave inválida, fora do ar, sem rota. Nos dois casos
+    os passos seguintes falhariam todos pelo mesmo motivo, e cinco vermelhos que
+    dizem a mesma coisa ensinam a ignorar vermelho.
+    """
+    sonda = cliente.get("/v1/livestock/properties/car-preview?cod_imovel=SONDA&state=MS")
+    if sonda.status in (502, 503):
+        motivo = str(sonda.corpo.get("detail", "")) if isinstance(sonda.corpo, dict) else ""
+        return False, motivo
+    return True, ""
 
 
 QUADRADO = {
@@ -413,14 +439,37 @@ AMPULHETA = {
 
 
 def _acrescentar_geometria(
-    roteiro: Roteiro, operador: Cliente, auditor: Cliente, propriedade: str
+    roteiro: Roteiro, operador: Cliente, auditor: Cliente, rebanho: Rebanho
 ) -> None:
-    """Passo 17.1 — a primeira coluna espacial do Titan (ADR-0026)."""
+    """Passo 17.1 — a primeira coluna espacial do Titan (ADR-0026).
+
+    Cria a **própria** propriedade em vez de reusar a da semeadura: os passos
+    afirmam "sem geometria" e "vira versão 2", e reusar faria o roteiro passar
+    só na primeira execução — o que ensinaria a ignorar vermelho.
+    """
+    roteiro.passo(
+        "7.0",
+        "Cadastrar a propriedade que vai receber o limite",
+        lambda: operador.post(
+            "/v1/livestock/properties",
+            {
+                "code": f"GEO-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}",
+                "name": "Fazenda do roteiro",
+                "municipality": "Brasilia",
+                "state_code": "DF",
+            },
+        ),
+        201,
+        guardar=lambda r: rebanho.ids.update({"PROPRIEDADE": str(r["property_id"])}),
+    )
+
+    def propriedade() -> str:
+        return rebanho["PROPRIEDADE"]
 
     roteiro.passo(
         "7.1",
         "Propriedade sem geometria responde nulo",
-        lambda: operador.get(f"/v1/livestock/properties/{propriedade}/geometry"),
+        lambda: operador.get(f"/v1/livestock/properties/{propriedade()}/geometry"),
         200,
         conferir=lambda r: None if r.corpo is None else "já havia geometria registrada",
         porque="Lacuna declarada, e não erro: a propriedade opera sem limite.",
@@ -430,7 +479,7 @@ def _acrescentar_geometria(
         "7.2",
         "Registrar o limite da propriedade",
         lambda: operador.post(
-            f"/v1/livestock/properties/{propriedade}/geometry",
+            f"/v1/livestock/properties/{propriedade()}/geometry",
             {"source": "DECLARADA", "geojson": QUADRADO},
         ),
         201,
@@ -444,7 +493,7 @@ def _acrescentar_geometria(
         "7.3",
         "Geometria com lados que se cruzam é recusada",
         lambda: operador.post(
-            f"/v1/livestock/properties/{propriedade}/geometry",
+            f"/v1/livestock/properties/{propriedade()}/geometry",
             {"source": "DECLARADA", "geojson": AMPULHETA},
         ),
         409,
@@ -458,7 +507,7 @@ def _acrescentar_geometria(
         "7.4",
         "Ponto não é limite de propriedade",
         lambda: operador.post(
-            f"/v1/livestock/properties/{propriedade}/geometry",
+            f"/v1/livestock/properties/{propriedade()}/geometry",
             {"source": "DECLARADA", "geojson": {"type": "Point", "coordinates": [-47.9, -15.8]}},
         ),
         409,
@@ -468,7 +517,7 @@ def _acrescentar_geometria(
         "7.5",
         "Geometria do SICAR sem o código do imóvel é recusada",
         lambda: operador.post(
-            f"/v1/livestock/properties/{propriedade}/geometry",
+            f"/v1/livestock/properties/{propriedade()}/geometry",
             {"source": "SICAR_CAR", "geojson": QUADRADO},
         ),
         409,
@@ -479,7 +528,7 @@ def _acrescentar_geometria(
         "7.6",
         "Registrar de novo cria versão 2",
         lambda: operador.post(
-            f"/v1/livestock/properties/{propriedade}/geometry",
+            f"/v1/livestock/properties/{propriedade()}/geometry",
             {"source": "DECLARADA", "geojson": MAIOR},
         ),
         201,
@@ -490,7 +539,7 @@ def _acrescentar_geometria(
     roteiro.passo(
         "7.7",
         "O histórico traz as duas versões, com a primeira intacta",
-        lambda: operador.get(f"/v1/livestock/properties/{propriedade}/geometry/history"),
+        lambda: operador.get(f"/v1/livestock/properties/{propriedade()}/geometry/history"),
         200,
         conferir=lambda r: (
             None
@@ -504,7 +553,7 @@ def _acrescentar_geometria(
     roteiro.passo(
         "7.8",
         "A vigente é a última registrada",
-        lambda: operador.get(f"/v1/livestock/properties/{propriedade}/geometry"),
+        lambda: operador.get(f"/v1/livestock/properties/{propriedade()}/geometry"),
         200,
         conferir=lambda r: None if r["version"] == 2 else "a vigente não é a versão 2",
     )
@@ -513,11 +562,127 @@ def _acrescentar_geometria(
         "7.9",
         "O auditor lê o limite, mas não o declara",
         lambda: auditor.post(
-            f"/v1/livestock/properties/{propriedade}/geometry",
+            f"/v1/livestock/properties/{propriedade()}/geometry",
             {"source": "DECLARADA", "geojson": QUADRADO},
         ),
         403,
         porque="O polígono revela onde a operação fica; escrita é do operador.",
+    )
+
+
+# Um imóvel real do SICAR em Santa Rita do Pardo (MS), com 1.363,93 ha e cadastro
+# atualizado em 2023 — a defasagem faz parte do que o roteiro demonstra.
+CAR_DE_TESTE = "MS-5007554-1EF4AA06D08041829247C61FE4412C4F"
+UF_DE_TESTE = "MS"
+
+
+def _acrescentar_car(roteiro: Roteiro, operador: Cliente, rebanho: Rebanho) -> None:
+    """Passo 17.2 — importacao do CAR pelo Titan_geodata.
+
+    Cria a **propria** propriedade, como a Parte 7: reusar aquela faria o passo
+    da data de captura ler a geometria declarada da Parte 7 e afirmar sobre ela
+    algo que so vale para a importada.
+    """
+
+    def propriedade() -> str:
+        return rebanho["PROPRIEDADE_CAR"]
+
+    roteiro.passo(
+        "8.0",
+        "Cadastrar a propriedade que vai receber o CAR",
+        lambda: operador.post(
+            "/v1/livestock/properties",
+            {
+                "code": f"CAR-{datetime.now(UTC).strftime('%Y%m%d%H%M%S%f')}",
+                "name": "Fazenda do CAR",
+                "municipality": "Santa Rita do Pardo",
+                "state_code": "MS",
+            },
+        ),
+        201,
+        guardar=lambda r: rebanho.ids.update({"PROPRIEDADE_CAR": str(r["property_id"])}),
+    )
+
+    consulta = f"cod_imovel={CAR_DE_TESTE}&state={UF_DE_TESTE}"
+
+    def _conferir_importacao(r: Resposta) -> str | None:
+        """A importação devolve o lote, não uma geometria.
+
+        Conferir `r["source"]` no topo era o formato de antes das camadas — e a
+        asserção que envelhece cala junto com o código que ela deveria vigiar.
+        """
+        gravadas = r["gravadas"]
+        perimetro = [g for g in gravadas if g["layer"] == "AREA_IMOVEL"]
+        if len(perimetro) != 1:
+            return f"esperava exatamente um perímetro, vieram {len(perimetro)}"
+        fontes = {g["source"] for g in gravadas}
+        if fontes != {"SICAR_CAR"}:
+            return f"as fontes vieram {sorted(fontes)}"
+        sem_motivo = [c["layer"] for c in r["recusadas"] if not c.get("motivo")]
+        if sem_motivo:
+            return f"recusa sem motivo em {sem_motivo}"
+        return None
+
+    roteiro.passo(
+        "8.1",
+        "Consultar o CAR sem gravar nada",
+        lambda: operador.get(f"/v1/livestock/properties/car-preview?{consulta}"),
+        200,
+        conferir=lambda r: (
+            None
+            if r["municipality"] and r["area_hectares"]
+            else "a prévia não trouxe município e área"
+        ),
+        porque="Serve para pré-preencher o cadastro; quem confirma é o operador.",
+    )
+
+    roteiro.passo(
+        "8.2",
+        "A condição do cadastro vem sem ser interpretada",
+        lambda: operador.get(f"/v1/livestock/properties/car-preview?{consulta}"),
+        200,
+        conferir=lambda r: None if r["registry_condition"] else "a condição do cadastro não veio",
+        porque="Diz onde o cadastro está na fila do SICAR, não se a fazenda é regular.",
+    )
+
+    roteiro.passo(
+        "8.3",
+        "Importar o limite do CAR",
+        lambda: operador.post(
+            f"/v1/livestock/properties/{propriedade()}/geometry/import-car",
+            {"cod_imovel": CAR_DE_TESTE, "state": UF_DE_TESTE},
+        ),
+        201,
+        conferir=_conferir_importacao,
+        porque=(
+            "O perímetro é obrigatório; as demais camadas vêm juntas, e camada "
+            "quebrada é recusada com motivo em vez de derrubar as boas."
+        ),
+    )
+
+    roteiro.passo(
+        "8.4",
+        "captured_at é a data do CAR, não a da importação",
+        lambda: operador.get(f"/v1/livestock/properties/{propriedade()}/geometry"),
+        200,
+        conferir=lambda r: (
+            None
+            if r["source"] == "SICAR_CAR"
+            and r["captured_at"]
+            and r["captured_at"] < r["imported_at"]
+            else f"fonte={r['source']} captured_at={r['captured_at']}"
+        ),
+        porque="Este cadastro é de 2023: confundir os dois faria o dado parecer novo.",
+    )
+
+    roteiro.passo(
+        "8.5",
+        "CAR inexistente responde 404",
+        lambda: operador.post(
+            f"/v1/livestock/properties/{propriedade()}/geometry/import-car",
+            {"cod_imovel": "MS-0000000-NAOEXISTE", "state": UF_DE_TESTE},
+        ),
+        404,
     )
 
 

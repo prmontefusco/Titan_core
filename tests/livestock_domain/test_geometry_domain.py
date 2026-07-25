@@ -10,6 +10,7 @@ import json
 import pytest
 
 from packages.livestock_domain.geometry import (
+    CAMADA_PERIMETRO,
     SRID_CANONICO,
     GeometriaInvalida,
     GeometrySource,
@@ -35,6 +36,7 @@ def _geometria(**ajustes: object) -> PropertyGeometry:
         "organization_id": OrganizationId.new(),
         "property_id": TypedId.new("rural_property"),
         "source": GeometrySource.DECLARADA,
+        "layer": CAMADA_PERIMETRO,
         "srid": SRID_CANONICO,
         "source_payload": POLIGONO,
         "source_digest": digest_de(POLIGONO),
@@ -153,3 +155,18 @@ def test_versao_precisa_ser_positiva() -> None:
 def test_identificador_de_outro_tipo_e_recusado() -> None:
     with pytest.raises(ValueError, match="property_geometry"):
         _geometria(geometry_id=TypedId.new("animal"))
+
+
+def test_a_camada_e_obrigatoria() -> None:
+    """Sem ela nao se sabe se o poligono e o perimetro ou a reserva legal."""
+    with pytest.raises(ValueError, match="layer"):
+        _geometria(layer="  ")
+
+
+def test_a_camada_distingue_perimetro_de_area_protegida() -> None:
+    assert _geometria().e_perimetro
+    assert not _geometria().e_area_protegida
+
+    reserva = _geometria(layer="RESERVA_LEGAL")
+    assert reserva.e_area_protegida
+    assert not reserva.e_perimetro

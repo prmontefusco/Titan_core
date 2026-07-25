@@ -2921,11 +2921,77 @@ Roteiro executável completo, **47 passos passando**, incluindo os nove da geome
 
 ### Passo 17.2 — Importação do CAR pelo Titan_geodata
 
-**Estado:** NÃO INICIADO. Bloqueado apenas por decisão de sequência, não por dependência.
+**Data:** 25 de julho de 2026 · **Estado:** CONCLUÍDO E VALIDADO. **54 passos do roteiro executável passando.**
 
-O `Titan_geodata` expõe `/api/v1/sicar/properties/{cod_imovel}` com chave de API. A geometria importada entra como `GeometrySource.SICAR_CAR`, que já exige a referência externa, e cria versão nova — nunca substitui.
+#### A prévia ajuda o cadastro; a gravação carrega proveniência
 
-**A chave de API não vive no repositório.** Entra por variável de ambiente, como as demais credenciais.
+O responsável queria usar os dados do CAR para **pré-preencher o cadastro**, e a primeira formulação minha foi restritiva demais. A síntese que ficou: `GET /properties/car-preview` consulta e **não grava nada** — município, UF e área vêm da fonte e evitam erro de digitação, e o que o operador confirmar entra como declaração dele. `POST .../geometry/import-car` grava, com proveniência `SICAR_CAR`.
+
+**O risco real não é pré-preencher.** É o dado chegar pronto e perder a marca de que veio de fora. E há um risco que nenhuma das duas abordagens resolve: informar o CAR do vizinho. O antídoto é a proveniência declarada mais a proibição da ADR-0026 de inferir titularidade a partir de coordenadas — verificação de titularidade é afirmação à parte (NR-7).
+
+#### Correção de modelagem: a camada é dimensão, não versão
+
+Descoberto antes do commit, quando o responsável mostrou que o SICAR tem nove camadas. A chave era `UNIQUE (property_id, version)`; importar a reserva legal a transformaria em "versão 2 do limite", e `current_for` devolveria a reserva legal no lugar do perímetro.
+
+Passou a ser **`UNIQUE (property_id, layer, version)`**, com `current_for(property_id, layer)` e `next_version_for(property_id, layer)`.
+
+#### Camada do imóvel não é camada territorial
+
+Registrado no domínio, porque a distinção vai voltar: **APP, reserva legal, hidrografia e área consolidada são partes do próprio imóvel.** Embargo do IBAMA, terra indígena da FUNAI, alerta do PRODES e uso do solo do MapBiomas existem independentemente de qualquer propriedade — a pergunta que respondem é se a fazenda **intersecta** aquela área.
+
+Guardá-las nesta tabela faria área pública virar atributo de imóvel privado, e obrigaria a duplicá-la para cada propriedade que a tocasse. Elas exigem modelo próprio, com vigência, cobertura e `SpatialAssessment` (ADR-0026).
+
+#### Descoberta de campo: dado oficial contém geometria inválida
+
+Duas das três fazendas de teste têm camada com `Too few points in geometry component` **no próprio SICAR**. A primeira implementação recusava a importação inteira — e o perímetro válido não entrava por causa da área consolidada quebrada.
+
+**A recusa está certa; a granularidade estava errada.** Camada inválida agora volta em `recusadas`, com o motivo, e não derruba as boas. Só o **perímetro** inválido faz a operação falhar: sem ele não há o que importar.
+
+A validação de anel mínimo subiu para o domínio — anel com menos de quatro posições não delimita área, e conferir isso ali faz a recusa acontecer com mensagem do domínio, sem depender de haver banco.
+
+#### O que a validação real mostrou
+
+Três CAR de Mato Grosso do Sul importados de ponta a ponta. A área que o PostGIS calcula do polígono importado bate com a declarada no CAR com desvio de **0,02% a 0,04%** — o esperado por projeção geodésica:
+
+| CAR | Declarada | Calculada | Camadas |
+|---|---|---|---|
+| `...1EF4AA06` (Santa Rita do Pardo) | 1.363,93 ha | 1.363,70 ha | 5 gravadas, 1 recusada |
+| `...9923F6F7` (Ponta Porã) | 25.505,09 ha | 25.509,73 ha | 4 gravadas, 1 recusada |
+| `...3DCF573F` (Ponta Porã) | 75,81 ha | 75,84 ha | 5 gravadas, 0 recusada |
+
+`captured_at` recebe `dat_atuali` — a data de atualização do CAR, não a da importação. Um dos cadastros é de **2021**, e confundir os dois instantes faria a avaliação parecer mais fresca do que é.
+
+#### O 17.5 ficou mais próximo do que o plano supunha
+
+`RESERVA_LEGAL`, `APPS` e `USO_RESTRITO` são áreas onde a legislação restringe atividade, **e vêm do próprio CAR do imóvel** — sem depender de camada de embargo alguma. Cruzar `PropertyStay` com elas já responde "este animal permaneceu em área de reserva legal?".
+
+Não é embargo do IBAMA e não substitui. Mas é conformidade territorial de verdade, meses antes do previsto.
+
+#### Configuração opcional, e de propósito
+
+A API sobe e opera inteira sem o provider; só a consulta e a importação ficam indisponíveis, com **503 nomeando as variáveis ausentes**. Tratá-las como obrigatórias impediria subir o Titan para quem não usa o Titan_geodata.
+
+**A chave nunca vive no repositório:** entra por `TITAN_GEODATA_API_KEY`.
+
+#### Testes
+
+`test_car_client.py` (14), `test_geometry_service.py` (7) e o teste de camada como dimensão em `test_property_geometry_postgresql.py`.
+
+#### Portão de verificação
+
+`820 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (401 arquivos) e `alembic check` sem erros. Migration `20260725_0046`.
+
+#### O que a validação manual encontrou — no roteiro, não no código
+
+Os passos 8.0 a 8.5 só rodam com o provider configurado; sem ele são omitidos com aviso, e não falham. A primeira rodada real derrubou três defeitos, **todos no roteiro**:
+
+**A sonda enxergava a ausência, não a recusa.** Ela tratava só `503` (provider não configurado). Provider configurado que recusa a chave responde `502`, então a Parte 8 rodava e devolvia cinco vermelhos dizendo a mesma coisa. Passou a tratar os dois, imprimindo o motivo do provider e lembrando que as variáveis são lidas **pela API**, não pelo script.
+
+**A Parte 8 reusava a propriedade da Parte 7**, que já tinha geometria `DECLARADA` na versão 2 — o passo da data de captura afirmava sobre a geometria errada. Ganhou o passo 8.0, com propriedade própria. É o mesmo defeito que a Parte 7 tinha tido: roteiro que depende do estado deixado por outro só passa uma vez.
+
+**Uma asserção envelheceu junto com o formato.** O passo 8.3 conferia `source` no topo da resposta da importação, escrito quando ela devolvia uma geometria só; com as camadas, o topo virou `{gravadas, recusadas}`. Passou a conferir o que agora importa: veio um perímetro, todas as gravadas têm fonte `SICAR_CAR`, e nenhuma recusa vem sem motivo — esta última é a que protege a descoberta de campo, porque recusa sem motivo é indistinguível de camada que o SICAR não tem.
+
+**Chave recusada agora diz qual chave foi usada** (prefixo, sufixo e comprimento — nunca a chave). Sem isso não se distingue variável vazia, truncada, com o placeholder literal, ou errada. É o mesmo problema do 500 sanitizado do Passo 10.4.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 

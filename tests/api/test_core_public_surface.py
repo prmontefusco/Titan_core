@@ -87,6 +87,14 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/properties/{property_id}/geometry", "post"),
     ("/v1/livestock/properties/{property_id}/geometry", "get"),
     ("/v1/livestock/properties/{property_id}/geometry/history", "get"),
+    # As camadas do imovel: perimetro, reserva legal, APP, hidrografia. Camadas
+    # territoriais (embargo, terra indigena, desmatamento) NAO vivem aqui.
+    ("/v1/livestock/properties/{property_id}/geometry/layers", "get"),
+    # Importação do CAR (Passo 17.2). A prévia consulta e não grava: serve para
+    # pré-preencher o cadastro, e o que o operador confirmar entra como
+    # declaração dele. A importação grava, com proveniência SICAR_CAR.
+    ("/v1/livestock/properties/car-preview", "get"),
+    ("/v1/livestock/properties/{property_id}/geometry/import-car", "post"),
 }
 
 

@@ -17,6 +17,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 
+from apps.api.geodata_dependencies import car_lookup_opcional
 from apps.api.livestock_dependencies import (
     ConnectionDependency,
     require_permission,
@@ -46,6 +47,12 @@ from packages.livestock_application.parentage_service import (
     GERACOES_MAXIMAS,
     GERACOES_PADRAO,
     ParentageService,
+)
+from packages.livestock_domain.geometry import CAMADA_PERIMETRO
+from packages.livestock_infrastructure.geodata import (
+    CarNaoEncontrado,
+    GeodataIndisponivel,
+    GeodataNaoConfigurado,
 )
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
@@ -592,6 +599,7 @@ class GeometriaResumo(BaseModel):
     geometry_id: str
     property_id: str
     source: str
+    layer: str
     srid: int
     source_digest: str
     external_reference: str | None
@@ -606,6 +614,7 @@ def _geometria_resumo(registro: Any) -> GeometriaResumo:
         geometry_id=str(registro.geometry_id.value),
         property_id=str(registro.property_id.value),
         source=registro.source.value,
+        layer=registro.layer,
         srid=registro.srid,
         source_digest=registro.source_digest,
         external_reference=registro.external_reference,
@@ -625,6 +634,7 @@ def _geometria_servico(connection: Any) -> PropertyGeometryService:
         recorder=LivestockEventRecorder(
             event_log=DomainEventRepository(connection=connection), clock=SystemClock()
         ),
+        car_lookup=car_lookup_opcional(),
     )
 
 
@@ -645,10 +655,37 @@ def consultar_geometria(
     property_id: str,
     connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    layer: str = Query(default=CAMADA_PERIMETRO, max_length=60),
 ) -> GeometriaResumo | None:
     alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
-    encontrada = _geometria_servico(connection).current_for(contexto.organization_id, alvo)
+    encontrada = _geometria_servico(connection).current_for(contexto.organization_id, alvo, layer)
     return None if encontrada is None else _geometria_resumo(encontrada)
+
+
+@router.get(
+    "/properties/{property_id}/geometry/layers",
+    response_model=list[GeometriaResumo],
+    summary="Consultar a versao vigente de cada camada do imovel",
+    description=(
+        "Perimetro, reserva legal, APP, hidrografia — o que o CAR declarar sobre "
+        "aquele imovel.\n\n"
+        "**Sao camadas DO IMOVEL.** Embargo, terra indigena e alerta de "
+        "desmatamento existem independentemente de qualquer propriedade e nao "
+        "vivem aqui: a pergunta que elas respondem e se a fazenda intersecta "
+        "aquela area, e nao qual e a area da fazenda."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_camadas(
+    property_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+) -> list[GeometriaResumo]:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    return [
+        _geometria_resumo(geometria)
+        for geometria in _geometria_servico(connection).layers_of(contexto.organization_id, alvo)
+    ]
 
 
 @router.get(
@@ -666,12 +703,86 @@ def consultar_historico_de_geometria(
     property_id: str,
     connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    layer: str | None = Query(default=None, max_length=60),
 ) -> list[GeometriaResumo]:
     alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
     return [
         _geometria_resumo(geometria)
-        for geometria in _geometria_servico(connection).history_of(contexto.organization_id, alvo)
+        for geometria in _geometria_servico(connection).history_of(
+            contexto.organization_id, alvo, layer
+        )
     ]
+
+
+class CarPreviewResumo(BaseModel):
+    """O que o CAR diz, para ajudar o cadastro. Nada aqui foi gravado."""
+
+    cod_imovel: str
+    state: str
+    layer: str
+    municipality: str | None
+    state_code: str | None
+    area_hectares: float | None
+    registry_condition: str | None
+    captured_at: datetime | None
+    polygon_digest: str
+    geojson: dict[str, Any]
+    attributes: dict[str, Any]
+
+
+@router.get(
+    "/properties/car-preview",
+    response_model=CarPreviewResumo,
+    summary="Consultar o CAR sem gravar nada",
+    description=(
+        "Serve para **pre-preencher o cadastro**: municipio, UF e area vindos da "
+        "fonte evitam erro de digitacao. Nada e gravado, e o que o operador "
+        "confirmar entra como declaracao dele. "
+        "**Nao afirma titularidade.** O codigo informado pode ser de outro imovel, "
+        "e o Titan nao infere propriedade juridica a partir de coordenadas. A "
+        "condicao do cadastro diz onde ele esta na fila do SICAR, e nao se a "
+        "propriedade esta regular."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_car(
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    cod_imovel: str = Query(min_length=1, max_length=120),
+    state: str = Query(min_length=2, max_length=2),
+) -> CarPreviewResumo:
+    try:
+        imovel = _geometria_servico(connection).preview_car(cod_imovel, state)
+    except CarNaoEncontrado as error:
+        raise _nao_encontrado("Imovel no CAR") from error
+    except GeodataNaoConfigurado as error:
+        raise DomainProblem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            reason_code="PROVIDER_NAO_CONFIGURADO",
+            title="Consulta ao CAR indisponivel",
+            detail=str(error),
+        ) from error
+    except GeodataIndisponivel as error:
+        raise DomainProblem(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            reason_code="PROVIDER_INDISPONIVEL",
+            title="O provider de geodados nao respondeu",
+            detail=str(error),
+        ) from error
+
+    return CarPreviewResumo(
+        cod_imovel=imovel.cod_imovel,
+        state=imovel.state,
+        layer=imovel.layer,
+        municipality=imovel.municipality,
+        state_code=imovel.state_code,
+        area_hectares=imovel.area_hectares,
+        registry_condition=imovel.registry_condition,
+        captured_at=imovel.captured_at,
+        polygon_digest=imovel.polygon_digest,
+        geojson=json.loads(imovel.polygon_payload),
+        attributes=imovel.attributes,
+    )
 
 
 # -- Propriedades ------------------------------------------------------------

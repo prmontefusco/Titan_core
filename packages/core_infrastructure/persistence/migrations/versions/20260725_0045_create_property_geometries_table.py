@@ -48,6 +48,7 @@ def upgrade() -> None:
         sa.Column("record_owner_organization_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("property_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("source", sa.String(length=40), nullable=False),
+        sa.Column("layer", sa.String(length=60), nullable=False, server_default="AREA_IMOVEL"),
         sa.Column("source_srid", sa.Integer(), nullable=False),
         sa.Column("source_payload", sa.Text(), nullable=False),
         sa.Column("source_digest", sa.String(length=64), nullable=False),
@@ -67,9 +68,13 @@ def upgrade() -> None:
             [f"{SCHEMA}.rural_properties.property_id"],
             name="fk_property_geometries_property",
         ),
-        # Uma versao por propriedade. Duas linhas com a mesma versao tornariam
-        # ambigua a resposta a "qual geometria a avaliacao usou".
-        sa.UniqueConstraint("property_id", "version", name="uq_property_geometries_version"),
+        # Uma versao por (propriedade, CAMADA). A camada e dimensao, e nao
+        # versao: perimetro, reserva legal e APP sao naturezas diferentes sobre o
+        # mesmo imovel, e versiona-las juntas faria a reserva legal ser devolvida
+        # no lugar do perimetro.
+        sa.UniqueConstraint(
+            "property_id", "layer", "version", name="uq_property_geometries_version"
+        ),
         sa.CheckConstraint("version >= 1", name="ck_property_geometries_version"),
         sa.CheckConstraint("source_srid > 0", name="ck_property_geometries_srid"),
         sa.CheckConstraint("char_length(source_digest) = 64", name="ck_property_geometries_digest"),
@@ -90,7 +95,9 @@ def upgrade() -> None:
         f"ADD CONSTRAINT ck_{TABELA}_geom_valida CHECK (ST_IsValid(geom))"
     )
     op.execute(f"CREATE INDEX ix_{TABELA}_geom ON {SCHEMA}.{TABELA} USING GIST (geom)")
-    op.create_index(f"ix_{TABELA}_property", TABELA, ["property_id", "version"], schema=SCHEMA)
+    op.create_index(
+        f"ix_{TABELA}_property", TABELA, ["property_id", "layer", "version"], schema=SCHEMA
+    )
 
     op.execute(f"ALTER TABLE {SCHEMA}.{TABELA} ENABLE ROW LEVEL SECURITY")
     op.execute(f"ALTER TABLE {SCHEMA}.{TABELA} FORCE ROW LEVEL SECURITY")

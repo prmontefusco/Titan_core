@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection
 
+from apps.api.geodata_dependencies import car_lookup_opcional
 from apps.api.livestock_dependencies import (
     ConnectionDependency,
     operation_context,
@@ -53,7 +54,11 @@ from packages.livestock_application.reproduction_service import (
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import AnimalSex, BirthOutcome, VerificationStatus
 from packages.livestock_domain.exit import ExitType
-from packages.livestock_domain.geometry import SRID_CANONICO, GeometrySource
+from packages.livestock_domain.geometry import (
+    CAMADA_PERIMETRO,
+    SRID_CANONICO,
+    GeometrySource,
+)
 from packages.livestock_domain.lot import LotType
 from packages.livestock_domain.parentage import (
     ROLE_BY_RELATION_TYPE,
@@ -62,6 +67,11 @@ from packages.livestock_domain.parentage import (
     confidence_from_tier,
 )
 from packages.livestock_domain.reproduction import GestationalAgeBasis
+from packages.livestock_infrastructure.geodata import (
+    CarNaoEncontrado,
+    GeodataIndisponivel,
+    GeodataNaoConfigurado,
+)
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
@@ -913,6 +923,14 @@ def registrar_perda_gestacional(
 
 class RegistrarGeometriaRequest(BaseModel):
     source: GeometrySource
+    layer: str = Field(
+        default=CAMADA_PERIMETRO,
+        max_length=60,
+        description=(
+            "O que esta geometria e: o perimetro do imovel, a reserva legal, uma "
+            "APP. Camadas nao sao versoes umas das outras — cada uma tem a sua."
+        ),
+    )
     srid: int = Field(
         default=SRID_CANONICO,
         gt=0,
@@ -934,6 +952,7 @@ class GeometriaResponse(BaseModel):
     geometry_id: str
     property_id: str
     source: str
+    layer: str
     srid: int
     source_digest: str
     external_reference: str | None
@@ -942,11 +961,22 @@ class GeometriaResponse(BaseModel):
     imported_at: datetime
 
 
+def _geometria_servico(connection: Connection) -> PropertyGeometryService:
+    """O provider é opcional: sem configuração, só a importação do CAR falha."""
+    return PropertyGeometryService(
+        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        recorder=_recorder(connection),
+        car_lookup=car_lookup_opcional(),
+    )
+
+
 def _geometria(registro: Any) -> GeometriaResponse:
     return GeometriaResponse(
         geometry_id=str(registro.geometry_id.value),
         property_id=str(registro.property_id.value),
         source=registro.source.value,
+        layer=registro.layer,
         srid=registro.srid,
         source_digest=registro.source_digest,
         external_reference=registro.external_reference,
@@ -981,13 +1011,8 @@ def registrar_geometria(
         OrganizationContext, Depends(require_permission(PROPERTY_REGISTRAR_GEOMETRIA))
     ],
 ) -> GeometriaResponse:
-    servico = PropertyGeometryService(
-        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
-        property_repository=TransactionalRuralPropertyRepository(connection=connection),
-        recorder=_recorder(connection),
-    )
     try:
-        geometria = servico.register_geometry(
+        geometria = _geometria_servico(connection).register_geometry(
             context=operation_context(contexto),
             property_id=typed_id_or_problem(
                 property_id, entity_type="rural_property", campo="property_id"
@@ -995,6 +1020,7 @@ def registrar_geometria(
             source=corpo.source,
             source_payload=json.dumps(corpo.geojson, separators=(",", ":"), sort_keys=True),
             srid=corpo.srid,
+            layer=corpo.layer,
             external_reference=corpo.external_reference,
             captured_at=corpo.captured_at,
             notes=corpo.notes,
@@ -1005,3 +1031,99 @@ def registrar_geometria(
         raise _conflito(error) from error
 
     return _geometria(geometria)
+
+
+class CamadaRecusadaResponse(BaseModel):
+    layer: str
+    motivo: str
+
+
+class ImportacaoResponse(BaseModel):
+    """O que entrou e o que nao entrou — as duas coisas visiveis."""
+
+    gravadas: list[GeometriaResponse]
+    recusadas: list[CamadaRecusadaResponse]
+
+
+class ImportarCarRequest(BaseModel):
+    cod_imovel: str = Field(min_length=1, max_length=120)
+    state: str = Field(min_length=2, max_length=2)
+    notes: str | None = Field(default=None, max_length=1000)
+    incluir_camadas: bool = Field(
+        default=True,
+        description=(
+            "Traz tambem reserva legal, APP, hidrografia e o que mais o CAR "
+            "declarar sobre o imovel. Cada camada e versionada por si."
+        ),
+    )
+
+
+@router.post(
+    "/properties/{property_id}/geometry/import-car",
+    response_model=ImportacaoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Importar o imovel a partir do CAR",
+    description=(
+        "Traz o poligono do provider e o guarda como versao nova, com o que veio "
+        "junto: municipio, area, modulos fiscais e a data da ultima atualizacao "
+        "do cadastro. "
+        "`captured_at` recebe a data de atualizacao do CAR, e **nao** a da "
+        "importacao. Ha cadastro em uso com dado de anos atras, e confundir os "
+        "dois faria a avaliacao parecer mais fresca do que e. "
+        "**Nada do que vem e interpretado como conformidade.** A condicao do "
+        "cadastro diz onde ele esta na fila do SICAR, e nao se a propriedade esta "
+        "regular. O Titan tambem nao infere titularidade a partir de coordenadas: "
+        "o codigo informado pode ser de outro imovel, e o registro diz apenas que "
+        "alguem o informou.\n\n"
+        "**Camada invalida nao derruba a importacao.** Dado oficial contem "
+        "geometria degenerada; o que nao pode ser admitido volta em `recusadas`, "
+        "com o motivo. So o perimetro invalido faz a operacao falhar."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def importar_geometria_do_car(
+    property_id: str,
+    corpo: ImportarCarRequest,
+    connection: ConnectionDependency,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(PROPERTY_REGISTRAR_GEOMETRIA))
+    ],
+) -> ImportacaoResponse:
+    try:
+        resultado = _geometria_servico(connection).import_from_car(
+            context=operation_context(contexto),
+            property_id=typed_id_or_problem(
+                property_id, entity_type="rural_property", campo="property_id"
+            ),
+            cod_imovel=corpo.cod_imovel,
+            state=corpo.state,
+            notes=corpo.notes,
+            incluir_camadas=corpo.incluir_camadas,
+        )
+    except CarNaoEncontrado as error:
+        raise _nao_encontrado("Imovel no CAR") from error
+    except GeodataNaoConfigurado as error:
+        raise DomainProblem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            reason_code="PROVIDER_NAO_CONFIGURADO",
+            title="Consulta ao CAR indisponivel",
+            detail=str(error),
+        ) from error
+    except GeodataIndisponivel as error:
+        raise DomainProblem(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            reason_code="PROVIDER_INDISPONIVEL",
+            title="O provider de geodados nao respondeu",
+            detail=str(error),
+        ) from error
+    except KeyError as error:
+        raise _nao_encontrado("Propriedade") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return ImportacaoResponse(
+        gravadas=[_geometria(g) for g in resultado.gravadas],
+        recusadas=[
+            CamadaRecusadaResponse(layer=r.layer, motivo=r.motivo) for r in resultado.recusadas
+        ],
+    )

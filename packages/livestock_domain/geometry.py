@@ -18,6 +18,23 @@ proíbe ao dizer que geometria atual não substitui versão histórica.
 **O material recebido é preservado.** Normalizar destruindo o original impediria
 auditar a própria transformação, e a ADR-0026 distingue `SourceGeometry` de
 `NormalizedGeometry` justamente por isso.
+
+## Camada do imóvel não é camada territorial
+
+Esta entidade guarda **camadas do imóvel**: perímetro, reserva legal, APP,
+hidrografia — partes do próprio cadastro daquela propriedade, que só existem
+enquanto ela existe.
+
+**Camadas territoriais são outra coisa.** Embargo do IBAMA, terra indígena da
+FUNAI, alerta do PRODES e uso do solo do MapBiomas existem independentemente de
+qualquer imóvel; a pergunta que elas respondem não é "qual é a reserva legal
+desta fazenda", e sim "esta fazenda intersecta aquela área". Guardá-las aqui
+faria uma área pública virar atributo de um imóvel privado, e obrigaria a
+duplicá-la para cada propriedade que a tocasse.
+
+Elas exigem modelo próprio — camada versionada com vigência e cobertura, e
+avaliação espacial que produz `SpatialAssessment` (ADR-0026) — e é por isso que
+`layer` aqui é validada contra o que descreve o imóvel.
 """
 
 import hashlib
@@ -36,6 +53,27 @@ SRID_CANONICO = 4326
 # Só limite de área entra aqui. Ponto não é promovido a polígono nem
 # interpretado como limite cadastral (ADR-0026).
 TIPOS_ADMITIDOS: frozenset[str] = frozenset({"Polygon", "MultiPolygon"})
+
+# O perímetro do imóvel. É a camada que responde "onde fica a fazenda", e por
+# isso é o padrão de quem não declara camada alguma.
+CAMADA_PERIMETRO = "AREA_IMOVEL"
+
+# Camadas do CAR que descrevem partes do próprio imóvel. A lista é conhecida, e
+# não fechada: o provider pode passar a entregar outras, e recusá-las aqui
+# obrigaria a alterar o domínio para importar dado que já existe.
+CAMADAS_DO_IMOVEL: frozenset[str] = frozenset(
+    {
+        CAMADA_PERIMETRO,
+        "APPS",
+        "AREA_CONSOLIDADA",
+        "AREA_POUSIO",
+        "HIDROGRAFIA",
+        "RESERVA_LEGAL",
+        "SERVIDAO_ADMINISTRATIVA",
+        "USO_RESTRITO",
+        "VEGETACAO_NATIVA",
+    }
+)
 
 
 class GeometrySource(StrEnum):
@@ -74,6 +112,11 @@ class PropertyGeometry:
     organization_id: OrganizationId
     property_id: TypedId
     source: GeometrySource
+    # **A camada é dimensão, e não versão.** Perímetro, reserva legal e APP são
+    # coisas de natureza diferente sobre o mesmo imóvel: tratá-las como versões
+    # faria a reserva legal ser devolvida no lugar do perímetro na consulta
+    # seguinte. A versão é por (propriedade, camada).
+    layer: str
     srid: int
     source_payload: str
     source_digest: str
@@ -82,6 +125,16 @@ class PropertyGeometry:
     external_reference: str | None = None
     imported_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     notes: str | None = None
+    # O que veio junto do provider, sem interpretacao. Guardar evita ter de
+    # consultar de novo para saber o que a importacao viu — e a consulta de
+    # amanha pode devolver outra coisa, porque o CAR e retificavel.
+    source_attributes: dict[str, Any] = field(default_factory=dict)
+    # Identifica a resposta INTEIRA; `source_digest` identifica so o poligono.
+    response_digest: str | None = None
+    # A versão da camada no provider, quando ele a declara. É ela que permite
+    # reproduzir a avaliação de hoje contra o material de hoje, meses depois
+    # (ADR-0026: comparação reproduzível exige snapshot ou versão identificada).
+    layer_version: str | None = None
 
     def __post_init__(self) -> None:
         require_utc(self.imported_at, field_name="imported_at")
@@ -96,6 +149,8 @@ class PropertyGeometry:
             raise ValueError("property_id deve apontar para uma propriedade rural.")
         if not isinstance(self.source, GeometrySource):
             raise TypeError("source deve ser um GeometrySource.")
+        if not self.layer or not self.layer.strip():
+            raise ValueError("layer é obrigatória: sem ela não se sabe o que a geometria é.")
         if self.version < 1:
             raise ValueError("version deve ser >= 1.")
         # Coordenada sem sistema de referência conhecido é recusada: um número sem
@@ -111,11 +166,28 @@ class PropertyGeometry:
             raise ValueError("external_reference, quando informado, não pode ser vazio.")
         if self.notes is not None and not self.notes.strip():
             raise ValueError("notes, quando informado, não pode ser vazio.")
+        if self.response_digest is not None and len(self.response_digest) != 64:
+            raise ValueError("response_digest deve ser um SHA-256 em hexadecimal.")
         if self.source is GeometrySource.SICAR_CAR and not self.external_reference:
             raise ValueError(
                 "Geometria vinda do SICAR exige a referência externa (código do imóvel): "
                 "sem ela, a importação não é reproduzível."
             )
+
+    @property
+    def e_perimetro(self) -> bool:
+        """Se esta geometria é o limite do imóvel, e não uma área interna a ele."""
+        return self.layer == CAMADA_PERIMETRO
+
+    @property
+    def e_area_protegida(self) -> bool:
+        """Camadas em que a legislação restringe atividade dentro do imóvel.
+
+        Não é conclusão jurídica: diz que a área foi **declarada** como reserva
+        legal, APP ou uso restrito no CAR. Se há gado ali, e se isso é irregular,
+        é avaliação com regra versionada — nunca inferência desta propriedade.
+        """
+        return self.layer in {"APPS", "RESERVA_LEGAL", "USO_RESTRITO"}
 
     @property
     def normalizada(self) -> bool:
@@ -165,7 +237,38 @@ def validar_geojson(payload: str) -> dict[str, Any]:
         raise GeometriaInvalida("A geometria não declara coordenadas.")
 
     _guard_coordenadas(coordenadas)
+    _guard_aneis(coordenadas, multiplo=tipo == "MultiPolygon")
     return dados
+
+
+# Um anel fechado precisa de três posições distintas mais a repetição da
+# primeira. Com menos que isso não há área — é linha ou ponto disfarçado.
+MINIMO_DE_POSICOES_NO_ANEL = 4
+
+
+def _guard_aneis(coordenadas: list[Any], multiplo: bool) -> None:
+    """Recusa anel degenerado antes de o banco ser acionado.
+
+    **Dado oficial contém isto.** O SICAR entrega camadas com componentes de duas
+    posições, e o PostGIS as recusa com "Too few points in geometry component".
+    Conferir aqui faz a recusa acontecer com mensagem do domínio, e não depender
+    de haver banco — o que também a torna testável sem PostGIS.
+    """
+    poligonos = coordenadas if multiplo else [coordenadas]
+    for poligono in poligonos:
+        if not isinstance(poligono, list) or not poligono:
+            raise GeometriaInvalida("Polígono sem anéis.")
+        for anel in poligono:
+            if not isinstance(anel, list) or len(anel) < MINIMO_DE_POSICOES_NO_ANEL:
+                quantas = len(anel) if isinstance(anel, list) else 0
+                raise GeometriaInvalida(
+                    f"Anel com {quantas} posições não delimita área: são necessárias ao "
+                    f"menos {MINIMO_DE_POSICOES_NO_ANEL}, sendo a última igual à primeira."
+                )
+            if anel[0] != anel[-1]:
+                raise GeometriaInvalida(
+                    "Anel não fechado: a última posição precisa repetir a primeira."
+                )
 
 
 def _guard_coordenadas(valor: Any, profundidade: int = 0) -> None:
