@@ -11,7 +11,10 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from apps.api.authentication import (
     AuthenticatedPrincipalDependency,
 )
-from apps.api.livestock_animals import router as livestock_router
+from apps.api.livestock_animals import router as livestock_animals_router
+from apps.api.livestock_medications import router as livestock_medications_router
+from apps.api.livestock_queries import router as livestock_queries_router
+from apps.api.livestock_treatments import router as livestock_treatments_router
 from apps.api.problem import (
     DomainProblem,
     domain_problem_handler,
@@ -70,7 +73,13 @@ def _openapi_com_contrato_publico() -> dict[str, Any]:
 app.openapi = _openapi_com_contrato_publico  # type: ignore[method-assign]
 
 
-app.include_router(livestock_router)
+for livestock_router in (
+    livestock_animals_router,
+    livestock_medications_router,
+    livestock_treatments_router,
+    livestock_queries_router,
+):
+    app.include_router(livestock_router)
 
 app.add_exception_handler(DomainProblem, domain_problem_handler)
 app.add_exception_handler(RequestValidationError, validation_problem_handler)

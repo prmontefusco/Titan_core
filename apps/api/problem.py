@@ -24,6 +24,17 @@ from fastapi.responses import JSONResponse
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
+# Respostas de erro que toda rota autenticada da vertical pode produzir. Ficam
+# num só lugar porque contrato repetido em cada rota diverge com o tempo — e o
+# que o OpenAPI publica é o que o integrador programa contra.
+RESPOSTAS_PADRAO: dict[int | str, dict[str, Any]] = {
+    401: {"description": "Token ausente, inválido ou expirado"},
+    403: {"description": "Sem vínculo com a organização, ou sem a permissão exigida"},
+    404: {"description": "Recurso não encontrado nesta organização"},
+    409: {"description": "Conflito com o estado atual do domínio"},
+    422: {"description": "Entrada inválida"},
+}
+
 
 class DomainProblem(Exception):
     """Falha prevista, com código estável e status deliberado."""

@@ -2,7 +2,7 @@
 
 **Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 10.4b — os seis endpoints restantes do fluxo
+**Próximo passo planejado:** validar manualmente o 10.4b e seguir para o Passo 10.6 — cenário demonstrativo reproduzível
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -54,7 +54,7 @@ Estados utilizados:
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
 | 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.3 completos; 10.4a concluído e validado; 10.4b liberado | 10.4a aprovada |
+| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.3 completos; 10.4a validado; 10.4b implementado | 10.4a aprovada |
 
 
 ## Registro dos passos executados
@@ -2412,7 +2412,7 @@ Comparar JSON e PDF campo a campo, verificar legibilidade e recalcular a integri
 
 ## Passo 10.4 — API mínima do fluxo aprovado
 
-**Estado:** EM ANDAMENTO. O 10.4a está **concluído e validado**; o 10.4b está congelado e liberado para começar.
+**Estado:** EM ANDAMENTO. O 10.4a está **concluído e validado**; o 10.4b está **implementado**, com validação manual pendente.
 
 **Divisão adotada, com aprovação do responsável.** O 10.4 exige autenticação, autorização, teste positivo e negativo, tratamento de erro e validação com dois papéis e duas Organizations. A fundação não é detalhe de implementação: é pré-condição de todo endpoint. Separá-la isola um risco arquitetural transversal da simples exposição dos casos de uso — e se a raiz de composição estiver errada, todo endpoint construído sobre ela teria de ser refeito.
 
@@ -2506,6 +2506,55 @@ Dois itens têm o código escrito e **não têm teste**: o **rollback explícito
 ### Portão liberado
 
 A prova ponta a ponta da fundação foi aprovada, e o 10.4b está liberado para começar.
+
+### 10.4b — API mínima do fluxo · IMPLEMENTADO
+
+**Data:** 24 de julho de 2026. **Validação manual pendente.**
+
+As sete rotas congeladas foram expostas, mais uma oitava que a decisão de escopo não previa e o domínio exige (ver abaixo). Todas sobre a fundação já aprovada no 10.4a.
+
+| Rota | Permissão |
+|---|---|
+| `POST /v1/livestock/animals` | `LIVESTOCK_ANIMAL.CRIAR` |
+| `POST /v1/livestock/medications` | `LIVESTOCK_MEDICATION.CRIAR` |
+| `POST /v1/livestock/medication-batches` | `LIVESTOCK_MEDICATION.CRIAR` |
+| `POST /v1/livestock/treatments` | `LIVESTOCK_TREATMENT.REGISTRAR` |
+| `POST /v1/livestock/treatments/{id}/corrections` | `LIVESTOCK_TREATMENT.REGISTRAR` |
+| `POST /v1/livestock/animals/{id}/eligibility` | `LIVESTOCK_ELIGIBILITY.EXECUTAR` |
+| `GET /v1/livestock/animals/{id}/timeline` | `LIVESTOCK_TIMELINE.LER` |
+| `GET /v1/livestock/dossiers/{id}` | `DOSSIER.LER` |
+
+**A rota de correção não estava na lista congelada, e precisa estar.** Sem ela, a API ofereceria registro de tratamento sem oferecer correção — e corrigir por novo registro é o cenário que o Marco 9 existe para demonstrar. Não é rota nova de escopo: é a segunda metade de uma capacidade que já estava aprovada. **Não há PUT, PATCH nem DELETE em rota alguma da vertical**, e um teste de contrato falha se algum aparecer: append-only não é convenção, é ausência de rota que sobrescreva.
+
+**A elegibilidade é POST, e não GET.** Ela não consulta: produz `Evaluation`, `Decision` e `Dossier` — registros permanentes. Um GET que grava prova quebra a expectativa de quem integra, e qualquer intermediário que repita a chamada produziria registros duplicados.
+
+**O dossiê é consequência da decisão.** Não existe `POST /dossiers`: a execução da elegibilidade o materializa e devolve o identificador. O operador não cria prova à mão.
+
+### Defeito estrutural encontrado: política não persistida
+
+A avaliação falhava contra o PostgreSQL com violação de chave estrangeira: `evaluations` referencia `policies`, e **a política de elegibilidade era construída em memória a cada execução, sem nunca ser gravada**. Os testes unitários não pegavam porque repositórios falsos não impõem integridade.
+
+O defeito era mais fundo que a chave estrangeira. Política construída em memória não tem existência própria: não pode ser consultada, comparada com a de ontem, nem citada por um dossiê emitido no ano passado. **Uma decisão só é reproduzível se a norma sob a qual foi tomada estiver registrada** — que é a tese do produto.
+
+Foi criado `EligibilityPolicyProvider`, que grava política e regras na primeira execução e as reusa nas seguintes, procurando por código e versão. É o passo mínimo na direção da nota de rumo **NR-5**: quando a autoria passar ao administrador, o que muda é quem escreve a política; a leitura pela versão vigente já está aqui.
+
+### Testes ponta a ponta (10, em `test_livestock_api_flow.py`)
+
+O fluxo inteiro por HTTP — animal, medicamento, lote, tratamento, elegibilidade, dossiê — com dois papéis e duas Organizations. Cobre: bloqueio dentro da carência e aprovação fora dela; **o dossiê devolvido pela API verifica-se pelo próprio hash**, sem o Titan; a linha do tempo mostra cadastro, tratamento e decisão; a correção cria registro novo e o corrigido continua visível, marcado; auditor não escreve (403); **operador não lê dossiê** (403 — a separação vale nos dois sentidos); outra Organization não alcança o dossiê; lote inexistente devolve 404; tratamento no futuro devolve 409.
+
+Dois testes de contrato foram acrescentados ao congelamento da superfície: nenhuma rota da vertical permite edição destrutiva, e toda rota declara autenticação e as negações 401 e 403 no OpenAPI.
+
+### Defeito no próprio teste, encontrado e corrigido
+
+O cliente de teste definia o override de autenticação na construção, e o override é **global à aplicação**. Num teste que usasse operador e auditor, o último sobrescrevia o outro, e os dois papéis agiam como um só — falha silenciosa que faria o teste provar o contrário do que afirma. O cliente passou a reafirmar o principal a cada requisição.
+
+### Portão de verificação
+
+`640 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (359 arquivos) e `alembic check` sem erros.
+
+### Validação manual pendente
+
+Operar o fluxo completo pelo Swagger, com os dois papéis e as duas Organizations semeadas.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 

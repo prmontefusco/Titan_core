@@ -42,7 +42,8 @@ from packages.core_infrastructure.persistence.database import (
     DatabaseSettings,
     create_database_engine,
 )
-from packages.shared_kernel import OrganizationId
+from packages.livestock_application.event_recorder import LivestockOperationContext
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 ORGANIZATION_HEADER = "X-Titan-Organization-Id"
 
@@ -154,6 +155,44 @@ def require_permission(code: str) -> Callable[..., OrganizationContext]:
         return contexto
 
     return dependency
+
+
+def operation_context(contexto: OrganizationContext) -> LivestockOperationContext:
+    """Traduz o contexto do Core no contexto de operação da vertical.
+
+    A autoria vem do principal autenticado, e não de um parâmetro do corpo: quem
+    registra o fato é quem apresentou a credencial. A origem declara que o fato
+    entrou por requisição HTTP, o que distingue captura online de sincronização
+    offline quando esta existir. A correlação é uma por requisição, o que amarra
+    numa unidade os eventos que uma mesma chamada produzir.
+    """
+    return LivestockOperationContext(
+        organization_id=contexto.organization_id,
+        actor_reference=UniversalReference(
+            target_id=contexto.actor_id,
+            organization_id=contexto.organization_id,
+            contract_version=1,
+        ),
+        source_reference=UniversalReference(
+            target_id=TypedId.new("http_request"),
+            organization_id=contexto.organization_id,
+            contract_version=1,
+        ),
+        correlation_id=TypedId.new("correlation"),
+    )
+
+
+def typed_id_or_problem(raw: str, *, entity_type: str, campo: str) -> TypedId:
+    """Identificador malformado é erro do cliente, e ele precisa saber qual campo."""
+    try:
+        return TypedId.parse(entity_type, raw)
+    except (ValueError, TypeError) as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason_code="IDENTIFICADOR_INVALIDO",
+            title="Identificador inválido",
+            detail=f"O campo {campo} deve conter um UUID.",
+        ) from error
 
 
 def uuid_or_problem(raw: str, *, campo: str) -> UUID:
