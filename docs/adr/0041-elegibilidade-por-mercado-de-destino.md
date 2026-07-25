@@ -1,6 +1,6 @@
 # ADR 0041 — Elegibilidade por mercado de destino
 
-**Status:** Proposta
+**Status:** Aceita
 **Data:** 25 de julho de 2026
 **Decisores:** fundador e responsável pela arquitetura do Titan
 
@@ -102,6 +102,48 @@ O Core continua vendo apenas `purpose: str`. A vertical ganha um lugar único on
 
 Se a granularidade evoluir para um `MarketProfile` explícito — jurisdição, commodity, finalidade — a mudança acontece dentro da vertical, no Value Object e nas políticas, sem tocar no Core e sem invalidar decisões emitidas, que continuam apontando para a finalidade textual que as produziu.
 
+## Duas camadas de vocabulário, que não se misturam
+
+`CONDICIONADO`, `AUSENTE` e `REAVALIACAO_NECESSARIA` **não pertencem ao `DecisionResult`**, e procurá-los lá é o engano que esta seção existe para evitar.
+
+**Resultado da `Decision`** — do Core, imutável, apurado no instante da avaliação:
+
+```text
+APROVADA · REJEITADA · APROVADA_COM_RESTRICOES · INDETERMINADA
+```
+
+**Estado da célula da matriz** — da vertical, calculado na leitura:
+
+```text
+ELEGIVEL · INELEGIVEL · CONDICIONADO · AUSENTE · INDETERMINADO · REAVALIACAO_NECESSARIA
+```
+
+A célula combina três perguntas independentes, e o estado exibido é a leitura delas em conjunto:
+
+| Dimensão | Responde | Origem |
+|---|---|---|
+| `decision_status` | o que foi apurado | `DecisionResult` da decisão mais recente |
+| `dependency_status` | falta outro sujeito? | requisitos da política e sujeitos já avaliados |
+| `freshness_status` | a norma usada ainda é a atual? | política usada × política vigente |
+
+Não é obrigatório expor as três dimensões como campos separados desde o primeiro corte — mas a distinção de camadas é, porque é ela que impede alguém de tentar acrescentar `CONDICIONADO` a um enum do Core para "simplificar".
+
+## A resolução da política vigente é determinística
+
+A comparação entre "política usada" e "política vigente" só é honesta se a segunda for inequívoca.
+
+> **Para uma finalidade canônica, política vigente é aquela publicada, aplicável ao instante da consulta e não revogada, segundo as regras temporais já definidas no Core.**
+
+A resolução é **fail-closed**:
+
+| Políticas aplicáveis | Estado da célula |
+|---|---|
+| nenhuma | `AUSENTE` |
+| exatamente uma | resolução normal |
+| mais de uma | `INDETERMINADO`, com motivo de erro de configuração |
+
+Duas políticas aplicáveis ao mesmo instante para a mesma finalidade é **defeito de configuração, não ambiguidade a resolver por critério implícito**. Escolher a mais recente, a de maior versão ou a primeira encontrada faria o sistema decidir em silêncio qual norma vale — exatamente o que a ADR-0026 proíbe para conflito de camadas, e pelo mesmo motivo.
+
 ## A matriz é derivação, nunca registro
 
 A matriz é **calculada na leitura**. Não existe tabela de matriz, nem campo agregado no animal.
@@ -134,16 +176,18 @@ Decision histórica  →  imutável, aponta para a política que a produziu
 Célula da matriz    →  interpreta resultado, idade e atualidade normativa
 ```
 
-## Ausente e indeterminado são coisas diferentes
+## Ausente e indeterminado são coisas diferentes — e nenhum é inelegível
 
-Ambos significam "não é elegível", e por motivos que exigem ações opostas:
+> **`AUSENTE` e `INDETERMINADO` não significam inelegibilidade. Significam que não há base suficiente para afirmar elegibilidade.** As causas e as ações corretivas são diferentes.
 
 | Estado | Significado | O que fazer |
 |---|---|---|
 | `AUSENTE` | Não existe `Policy` declarada para este mercado | Declarar a regra |
 | `INDETERMINADO` | Existe `Policy`, mas não foi possível concluir | Obter o dado que falta |
 
-Ausência de informação **nunca** produz elegibilidade, e nenhum dos dois estados é omitido da matriz. É o princípio "desconhecido permanece desconhecido" da ADR-0026 aplicado à saída do motor, e é o que separa um sistema de rastreabilidade de um carimbo.
+`INELEGIVEL` é conclusão apurada: uma regra foi avaliada e não foi atendida. Os outros dois são ausência de conclusão, e tratá-los como negativa seria tão errado quanto tratá-los como aprovação — no primeiro caso o Titan afirmaria uma reprovação que ninguém apurou.
+
+Ausência de informação **nunca** produz elegibilidade, e nenhum dos estados é omitido da matriz. É o princípio "desconhecido permanece desconhecido" da ADR-0026 aplicado à saída do motor, e é o que separa um sistema de rastreabilidade de um carimbo.
 
 ## A carência passa a ser por mercado
 
@@ -301,6 +345,9 @@ Isso **não** autoriza movê-lo para o Core agora: o vocabulário de mercado con
 - política nova publicada leva a célula a `REAVALIACAO_NECESSARIA` sem alterar a `Decision` histórica;
 - a célula declara resultado, instante, política usada e política vigente;
 - mercado sem política declarada responde `AUSENTE`; mercado com política e sem dado responde `INDETERMINADO`;
+- nem `AUSENTE` nem `INDETERMINADO` são apresentados como `INELEGIVEL`;
+- duas políticas aplicáveis ao mesmo instante para a mesma finalidade produzem `INDETERMINADO` com motivo de configuração, e nunca escolha silenciosa;
+- os estados da célula não existem em nenhum enum do Core;
 - mercado sem prazo de carência declarado responde indeterminado, e não elegível;
 - decisão histórica continua apontando para a versão de política que a produziu;
 - acrescentar condição sobre fato já disponível não altera nenhum código do motor;
@@ -318,8 +365,10 @@ A ADR pode ser aceita quando:
 - mercado for finalidade, e não campo do Core, produzida por Value Object da vertical;
 - a granularidade da finalidade puder evoluir sem tocar no Core;
 - a matriz for derivação declarada, com resultado, instante, política usada e atualidade normativa;
+- os estados da célula da matriz forem camada distinta do `DecisionResult`, sem mistura;
 - `REAVALIACAO_NECESSARIA` for estado da projeção, nunca `DecisionResult`;
-- `AUSENTE` e `INDETERMINADO` forem distinguíveis;
+- `AUSENTE` e `INDETERMINADO` forem distinguíveis entre si e de `INELEGIVEL`;
+- a resolução da política vigente for determinística e fail-closed;
 - carência por mercado não reaproveitar prazo alheio;
 - a distinção entre "condição nova sobre fato existente" e "categoria nova de fato" estiver explícita;
 - autoria de regras preservar portão de aprovação, imutabilidade e não retroatividade;
