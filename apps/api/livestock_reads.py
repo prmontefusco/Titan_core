@@ -77,6 +77,14 @@ def _nao_encontrado(o_que: str) -> DomainProblem:
 # -- Representações ----------------------------------------------------------
 
 
+class SaidaResumo(BaseModel):
+    exit_id: str
+    exit_type: str
+    occurred_at: datetime
+    reason: str | None
+    destination: str | None
+
+
 class AnimalResumo(BaseModel):
     animal_id: str
     sex: str
@@ -85,6 +93,9 @@ class AnimalResumo(BaseModel):
     birth_property_id: str
     identifiers: list[dict[str, Any]]
     created_at: datetime
+    # Nulo quando o animal está no rebanho. Na listagem padrão é nulo em toda
+    # linha por construção, já que só o rebanho ativo é devolvido.
+    saida: SaidaResumo | None = None
 
 
 class PropriedadeResumo(BaseModel):
@@ -155,7 +166,19 @@ class MovimentacaoResumo(BaseModel):
 # -- Conversões --------------------------------------------------------------
 
 
-def _animal(entidade: Any) -> AnimalResumo:
+def _saida(registro: Any) -> SaidaResumo | None:
+    if registro is None:
+        return None
+    return SaidaResumo(
+        exit_id=str(registro.exit_id.value),
+        exit_type=registro.exit_type.value,
+        occurred_at=registro.occurred_at,
+        reason=registro.reason,
+        destination=registro.destination,
+    )
+
+
+def _animal(entidade: Any, saida: Any = None) -> AnimalResumo:
     return AnimalResumo(
         animal_id=str(entidade.animal_id.value),
         sex=entidade.sex.value,
@@ -172,6 +195,7 @@ def _animal(entidade: Any) -> AnimalResumo:
             for tag in entidade.identifiers
         ],
         created_at=entidade.created_at,
+        saida=_saida(saida),
     )
 
 
@@ -266,17 +290,38 @@ def _movimentacao(entidade: Any) -> MovimentacaoResumo:
     "/animals",
     response_model=Pagina[AnimalResumo],
     summary="Listar animais",
+    description=(
+        "Devolve o **rebanho ativo**. Quem lista animais quer o rebanho, e não o "
+        "histórico inteiro: incluir por padrão quem já morreu, foi abatido ou "
+        "vendido enviesaria toda tela e todo relatório. Use "
+        "`incluir_saidos=true` para o levantamento histórico — aí cada linha traz "
+        "o objeto `saida` preenchido para quem já deixou o rebanho."
+    ),
     responses=RESPOSTAS_PADRAO,
 )
 def listar_animais(
     connection: ConnectionDependency,
     paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
+    incluir_saidos: bool = False,
 ) -> Any:
-    encontrados = TransactionalAnimalRepository(connection=connection).list_by_organization(
-        contexto.organization_id, limit=paginacao.limite_de_sondagem, offset=paginacao.offset
+    repositorio = TransactionalAnimalRepository(connection=connection)
+    encontrados = repositorio.list_by_organization(
+        contexto.organization_id,
+        limit=paginacao.limite_de_sondagem,
+        offset=paginacao.offset,
+        include_exited=incluir_saidos,
     )
-    return montar_pagina([_animal(item) for item in encontrados], paginacao)
+    # A consulta por animal só acontece quando os saídos foram pedidos, e no
+    # máximo uma vez por linha da página. Na listagem padrão não há o que buscar:
+    # todo animal devolvido está no rebanho.
+    return montar_pagina(
+        [
+            _animal(item, repositorio.get_exit(item.animal_id) if incluir_saidos else None)
+            for item in encontrados
+        ],
+        paginacao,
+    )
 
 
 @router.get(
@@ -291,10 +336,13 @@ def detalhar_animal(
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
 ) -> AnimalResumo:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
-    encontrado = TransactionalAnimalRepository(connection=connection).get_by_id(alvo)
+    repositorio = TransactionalAnimalRepository(connection=connection)
+    encontrado = repositorio.get_by_id(alvo)
     if encontrado is None or encontrado.organization_id != contexto.organization_id:
         raise _nao_encontrado("Animal")
-    return _animal(encontrado)
+    # O detalhe sempre diz se o animal saiu: quem pergunta por um animal
+    # específico precisa saber se ele ainda existe no rebanho.
+    return _animal(encontrado, repositorio.get_exit(alvo))
 
 
 # -- Propriedades ------------------------------------------------------------

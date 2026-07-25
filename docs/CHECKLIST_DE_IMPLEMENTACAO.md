@@ -2651,6 +2651,62 @@ O animal cadastrado aparece na listagem; a página indica continuidade sem conta
 
 Percorrer as rotas de leitura pelo Swagger e conferir a paginação. Depois disso, a API sustenta um frontend.
 
+## Marco 13 — Ciclo de vida do animal
+
+**Fora do PLANO_DE_IMPLEMENTACAO_VALIDADO.** Descrito em `docs/PLANO_DE_CONCLUSAO_DO_DOMINIO.md`, autorizado pelo responsável ao optar por concluir o domínio antes de partir para o frontend.
+
+### Passo 13.1 — Saída do rebanho
+
+**Data:** 25 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente).
+
+#### Por que existe
+
+Até aqui **o animal não tinha fim**. Todo animal cadastrado permanecia implicitamente vivo e presente, para sempre. As consequências não eram cosméticas: um recall varreria animais mortos há anos, a carência seria calculada para bois que já saíram, e toda listagem, tela e relatório nasceriam enviesados por incluir o rebanho inteiro desde a fundação da organização.
+
+#### O que foi entregue
+
+- `AnimalExit` em `livestock_domain/exit.py`, com `ExitType` (`MORTE`, `ABATE`, `VENDA`, `TRANSFERENCIA_DEFINITIVA`), instante, motivo, destino e evidências opcionais.
+- `AnimalExitService` e `guard_animal_active` em `livestock_application/exit_service.py`.
+- Tabela `core_audit.animal_exits` (migration `20260725_0043`) com RLS `FORCE` e `UNIQUE (animal_id)`.
+- `POST /v1/livestock/animals/{id}/exit`, com permissão própria `LIVESTOCK_ANIMAL.REGISTRAR_SAIDA`.
+- Listagem de animais passou a devolver o **rebanho ativo** por padrão, com `incluir_saidos=true` para o levantamento histórico. O detalhe sempre traz o objeto `saida`.
+
+#### Decisões
+
+**O estado é derivado, nunca campo mutável.** Não existe coluna `ativo` em `animals`: quem responde se o animal saiu é a existência da linha em `animal_exits`. Estado guardado em campo diverge do histórico assim que alguém o edita; estado derivado não tem como divergir.
+
+**A saída fecha o futuro, não o passado** (decisão D-2 do plano de conclusão, tomada por delegação). `admite_fato_em` aceita `occurred_at <= saida.occurred_at`. Lançar hoje um tratamento aplicado na semana passada, antes do abate, é **regularização de registro** — o caso mais comum no campo — e recusá-lo apagaria o que de fato aconteceu, que é justamente o que um registro append-only não faz. Já um fato posterior à saída não pôde ocorrer: o animal não estava mais lá. O critério é sempre o instante em que o fato **ocorreu**, nunca o do registro.
+
+**A guarda entrou pela porta de animal, e não por uma porta nova.** `guard_animal_active` lê a saída por `AnimalRepositoryPort.get_exit`, que todo serviço já recebe. Uma porta separada exigiria alterar a fiação de cada serviço, e quem esquecesse de fazê-lo teria a guarda desligada em silêncio. Hoje ela está ligada em tratamento, movimentação e lote.
+
+**Terminalidade garantida no banco, e não só no serviço.** `UNIQUE (animal_id)` recusa a segunda saída mesmo que a conferência da aplicação falhe. Invariante que só a aplicação garante é invariante que se perde na primeira execução concorrente.
+
+**Permissão própria para declarar a saída.** Quem cadastra não é necessariamente quem atesta morte, abate ou venda — um ato irreversível que encerra a história do animal. `LIVESTOCK_ANIMAL.REGISTRAR_SAIDA` deixa essa separação possível sem código novo.
+
+#### Testes
+
+`test_exit_service.py` (7): registro grava o fato no fluxo do animal; sair é terminal; saída no futuro é recusada; animal de outra organização não é alcançado; a guarda recusa fato posterior, aceita fato anterior e o instante exato da saída, e é silenciosa para quem está no rebanho. `test_treatment_service.py` (2): tratamento posterior à saída é recusado **sem deixar rastro no log**, e tratamento anterior continua aceito. `test_livestock_api_saida.py` (5): o animal que saiu deixa o rebanho ativo mas continua alcançável pelo detalhe; o levantamento histórico o traz com a saída preenchida; a segunda saída responde 409; o auditor recebe 403; animal inexistente responde 404.
+
+#### Portão de verificação
+
+`681 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (374 arquivos) e `alembic check` sem erros.
+
+#### Validação manual pendente
+
+Registrar uma saída pelo Swagger, conferir que o animal some da listagem padrão e reaparece com `incluir_saidos=true`, e tentar lançar um tratamento com data posterior à saída.
+
+#### Armadilha de ambiente descoberta aqui
+
+A senha do PostgreSQL local **não** é `titan`: o `compose.yaml` usa `TITAN_POSTGRES_PASSWORD`, com padrão `titan_local_dev_password`. Com a senha errada o `psycopg` não falha rápido — tenta `::1`, espera o timeout de conexão, e a suíte parece travada em vez de erro de configuração. A URL correta é:
+
+```
+postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan
+```
+
+**As duas Organizations do roteiro não se substituem, e confundi-las custou duas rodadas de diagnóstico às cegas.** `TITAN_OPERATOR_ORGANIZATION_ID` recebe a **operadora** — onde a identidade do usuário vive, e onde ele justamente *não* opera. O cabeçalho `X-Titan-Organization-Id` recebe a **Organization A**, que é onde há vínculo e onde estão a propriedade e o rebanho. O seed imprime as duas com rótulos distintos.
+
+**Dívida do Marco 10.4 confirmada em campo: a API não valida a própria configuração ao subir.** `TITAN_OPERATOR_ORGANIZATION_ID` com valor que não é UUID não impede o `uvicorn` de anunciar "Application startup complete" — a falha só aparece na primeira requisição autenticada, como **500 `ERRO_INTERNO` sanitizado**, cuja causa real (`ValueError: O identificador de Organization não é um UUID válido`) existe apenas no log do servidor. Para quem valida pelo Swagger, o sintoma é indistinguível de erro de dados. O correto é conferir as quatro variáveis no startup e recusar-se a subir nomeando a que está errada.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.

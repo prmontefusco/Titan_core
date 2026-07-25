@@ -10,6 +10,7 @@ from packages.livestock_domain.animal import (
 )
 from packages.livestock_domain.events import (
     ANIMAL_ADDED_TO_LOT,
+    ANIMAL_EXITED,
     ANIMAL_MOVED,
     ANIMAL_REGISTERED,
     ANIMAL_REMOVED_FROM_LOT,
@@ -25,6 +26,7 @@ from packages.livestock_domain.events import (
     VETERINARIAN_REGISTERED,
     VETERINARIAN_STATUS_UPDATED,
 )
+from packages.livestock_domain.exit import AnimalExit, ExitType
 from packages.livestock_domain.lot import (
     LivestockLot,
     LotMembership,
@@ -43,6 +45,7 @@ from packages.livestock_domain.veterinarian import Veterinarian
 
 __all__ = [
     "ANIMAL_ADDED_TO_LOT",
+    "ANIMAL_EXITED",
     "ANIMAL_MOVED",
     "ANIMAL_REGISTERED",
     "ANIMAL_REMOVED_FROM_LOT",
@@ -58,9 +61,11 @@ __all__ = [
     "VETERINARIAN_REGISTERED",
     "VETERINARIAN_STATUS_UPDATED",
     "Animal",
+    "AnimalExit",
     "AnimalIdentifier",
     "AnimalMovement",
     "AnimalSex",
+    "ExitType",
     "IdentifierState",
     "IdentifierType",
     "LivestockLot",

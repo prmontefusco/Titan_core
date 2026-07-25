@@ -9,6 +9,7 @@ from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
 )
+from packages.livestock_application.exit_service import guard_animal_active
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_domain.events import (
     ANIMAL_ADDED_TO_LOT,
@@ -143,6 +144,7 @@ class LotService:
                     )
 
         now_utc = datetime.now(UTC)
+        guard_animal_active(self.animal_repository, animal_id, now_utc)
         membership = LotMembership(
             membership_id=TypedId.new("lot_membership"),
             lot_id=lot_id,

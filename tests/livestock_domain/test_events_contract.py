@@ -17,6 +17,7 @@ from packages.shared_kernel import TypedId
 EXPECTED_EVENT_TYPES = frozenset(
     {
         "livestock.animal_added_to_lot",
+        "livestock.animal_exited",
         "livestock.animal_moved",
         "livestock.animal_registered",
         "livestock.animal_removed_from_lot",

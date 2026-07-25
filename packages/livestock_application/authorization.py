@@ -18,6 +18,10 @@ from typing import Final
 
 ANIMAL_CRIAR: Final = "LIVESTOCK_ANIMAL.CRIAR"
 ANIMAL_LER: Final = "LIVESTOCK_ANIMAL.LER"
+# Declarar a saída é irreversível e fecha a história do animal: quem cadastra não
+# é necessariamente quem atesta morte, abate ou venda. Permissão própria deixa
+# essa separação possível sem código novo.
+ANIMAL_REGISTRAR_SAIDA: Final = "LIVESTOCK_ANIMAL.REGISTRAR_SAIDA"
 MEDICATION_CRIAR: Final = "LIVESTOCK_MEDICATION.CRIAR"
 MEDICATION_LER: Final = "LIVESTOCK_MEDICATION.LER"
 TREATMENT_REGISTRAR: Final = "LIVESTOCK_TREATMENT.REGISTRAR"
@@ -57,6 +61,7 @@ LEITURA: Final = frozenset(
 ESCRITA: Final = frozenset(
     {
         ANIMAL_CRIAR,
+        ANIMAL_REGISTRAR_SAIDA,
         MEDICATION_CRIAR,
         TREATMENT_REGISTRAR,
         PROPERTY_CRIAR,

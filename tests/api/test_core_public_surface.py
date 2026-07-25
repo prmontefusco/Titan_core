@@ -61,6 +61,9 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/veterinarians", "post"),
     ("/v1/livestock/veterinarians/{veterinarian_id}/verification", "post"),
     ("/v1/livestock/movements", "post"),
+    # Saída do rebanho (Passo 13.1). É POST, e não DELETE: o animal não é apagado,
+    # ganha um fato terminal que o tira do rebanho ativo sem tirá-lo da história.
+    ("/v1/livestock/animals/{animal_id}/exit", "post"),
 }
 
 

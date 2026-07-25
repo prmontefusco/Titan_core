@@ -9,6 +9,7 @@ from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
 )
+from packages.livestock_application.exit_service import guard_animal_active
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_domain.events import ANIMAL_MOVED, animal_moved_payload
 from packages.livestock_domain.movement import (
@@ -78,13 +79,14 @@ class MovementService:
                 "pertencente a outra organização."
             )
 
-        # 2. Valida existência dos animais
+        # 2. Valida existência dos animais e recusa mover quem já saiu do rebanho
         for aid in animal_ids:
             animal = self.animal_repository.get_by_id(aid)
             if animal is None or animal.organization_id != organization_id:
                 raise KeyError(
                     f"Animal '{aid.value}' não encontrado ou pertencente a outra organização."
                 )
+            guard_animal_active(self.animal_repository, aid, movement_time)
 
         # O horário do movimento é alegado pelo chamador: precisa ser UTC explícito
         # (o domínio rejeita naive) e não pode estar no futuro em relação ao relógio

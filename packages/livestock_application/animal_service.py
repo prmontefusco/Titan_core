@@ -23,6 +23,7 @@ from packages.livestock_domain.events import (
     identifier_attached_payload,
     identifier_deactivated_payload,
 )
+from packages.livestock_domain.exit import AnimalExit
 from packages.shared_kernel import OrganizationId, TypedId
 
 
@@ -43,6 +44,15 @@ class AnimalRepositoryPort(Protocol):
     def list_by_organization(
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
     ) -> list[Animal]: ...
+
+    def get_exit(self, animal_id: TypedId) -> "AnimalExit | None":
+        """A saída do animal, se houver.
+
+        Vive nesta porta, e não numa nova, porque todo serviço que registra fato
+        datado sobre um animal já a recebe. Porta separada exigiria alterar a
+        fiação de cada um, e quem esquecesse teria a guarda desligada em silêncio.
+        """
+        ...
 
 
 @dataclass(frozen=True, slots=True)

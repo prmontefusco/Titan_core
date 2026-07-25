@@ -21,12 +21,14 @@ from packages.livestock_domain.events import (
     IDENTIFIER_ATTACHED,
     IDENTIFIER_DEACTIVATED,
 )
+from packages.livestock_domain.exit import AnimalExit
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.conftest import FakeEventLog
 
 
 class InMemoryAnimalRepository(AnimalRepositoryPort):
     def __init__(self) -> None:
+        self.saidas: dict[str, AnimalExit] = {}
         self.animals: dict[str, Animal] = {}
 
     def save(self, animal: Animal) -> None:
@@ -54,6 +56,9 @@ class InMemoryAnimalRepository(AnimalRepositoryPort):
                     ):
                         return animal
         return None
+
+    def get_exit(self, animal_id: TypedId) -> AnimalExit | None:
+        return self.saidas.get(animal_id.value.hex)
 
     def list_by_organization(
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0

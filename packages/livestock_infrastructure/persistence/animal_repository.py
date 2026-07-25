@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Table,
     delete,
+    exists,
     insert,
     select,
     update,
@@ -31,6 +32,11 @@ from packages.livestock_domain.animal import (
     IdentifierState,
     IdentifierType,
     VerificationStatus,
+)
+from packages.livestock_domain.exit import AnimalExit
+from packages.livestock_infrastructure.persistence.exit_repository import (
+    TransactionalAnimalExitRepository,
+    animal_exits_table,
 )
 from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
@@ -202,9 +208,24 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
         animal_id = TypedId(entity_type="animal", value=row.animal_id)
         return self.get_by_id(animal_id)
 
+    def get_exit(self, animal_id: TypedId) -> AnimalExit | None:
+        return TransactionalAnimalExitRepository(connection=self.connection).get_by_animal(
+            animal_id
+        )
+
     def list_by_organization(
-        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+        self,
+        organization_id: OrganizationId,
+        limit: int = 50,
+        offset: int = 0,
+        include_exited: bool = False,
     ) -> list[Animal]:
+        """Por padrão devolve o **rebanho ativo**.
+
+        Quem lista animais quer o rebanho, não o cemitério. Incluir os que saíram
+        por padrão faria toda tela e todo relatório nascerem enviesados — e é o
+        que acontecia antes de a saída existir.
+        """
         stmt = (
             select(animals_table)
             .where(animals_table.c.record_owner_organization_id == organization_id.value)
@@ -212,6 +233,14 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
             .limit(limit)
             .offset(offset)
         )
+        if not include_exited:
+            stmt = stmt.where(
+                ~exists(
+                    select(animal_exits_table.c.exit_id).where(
+                        animal_exits_table.c.animal_id == animals_table.c.animal_id
+                    )
+                )
+            )
         rows = self.connection.execute(stmt).fetchall()
         return [self._map_animal(row) for row in rows]
 

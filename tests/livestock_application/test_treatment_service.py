@@ -10,6 +10,7 @@ from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
 )
+from packages.livestock_application.exit_service import AnimalForaDoRebanho
 from packages.livestock_application.medication_service import (
     MedicationBatchRepositoryPort,
     PrescriptionRepositoryPort,
@@ -20,6 +21,7 @@ from packages.livestock_application.treatment_service import (
 )
 from packages.livestock_domain.animal import Animal, AnimalSex, IdentifierType
 from packages.livestock_domain.events import TREATMENT_APPLIED
+from packages.livestock_domain.exit import AnimalExit, ExitType
 from packages.livestock_domain.medication import MedicationBatch
 from packages.livestock_domain.prescription import Prescription
 from packages.livestock_domain.treatment import TreatmentApplication
@@ -59,6 +61,7 @@ class InMemoryApplicationRepo(TreatmentApplicationRepositoryPort):
 
 class InMemoryAnimalRepo(AnimalRepositoryPort):
     def __init__(self, animals: dict[str, Animal]) -> None:
+        self.saidas: dict[str, AnimalExit] = {}
         self.animals = animals
 
     def save(self, animal: Animal) -> None:
@@ -77,6 +80,9 @@ class InMemoryAnimalRepo(AnimalRepositoryPort):
         identifier_value: str,
     ) -> Animal | None:
         return None
+
+    def get_exit(self, animal_id: TypedId) -> AnimalExit | None:
+        return self.saidas.get(animal_id.value.hex)
 
     def list_by_organization(
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
@@ -431,3 +437,57 @@ def test_service_without_lookup_refuses_to_accept_evidence(
             applied_at=datetime.now(UTC) - timedelta(hours=1),
             evidence_references=(referencia,),
         )
+
+
+def _saida_em(animal_id: TypedId, organization_id: OrganizationId, quando: datetime) -> AnimalExit:
+    return AnimalExit(
+        exit_id=TypedId.new("animal_exit"),
+        organization_id=organization_id,
+        animal_id=animal_id,
+        exit_type=ExitType.ABATE,
+        occurred_at=quando,
+    )
+
+
+def test_tratamento_posterior_a_saida_e_recusado(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    """A guarda da saída está ligada no serviço de tratamento, e não só no domínio."""
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    animal_repo = service.animal_repository
+    assert isinstance(animal_repo, InMemoryAnimalRepo)
+    saiu_em = datetime.now(UTC) - timedelta(days=5)
+    animal_repo.saidas[animal_id.value.hex] = _saida_em(animal_id, context.organization_id, saiu_em)
+    event_log.events.clear()
+
+    with pytest.raises(AnimalForaDoRebanho, match="deixou o rebanho"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=saiu_em + timedelta(days=1),
+        )
+
+    # Recusa não deixa rastro: o log só recebe o que aconteceu.
+    assert event_log.events == []
+
+
+def test_tratamento_anterior_a_saida_continua_aceito(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    animal_repo = service.animal_repository
+    assert isinstance(animal_repo, InMemoryAnimalRepo)
+    saiu_em = datetime.now(UTC) - timedelta(days=5)
+    animal_repo.saidas[animal_id.value.hex] = _saida_em(animal_id, context.organization_id, saiu_em)
+
+    aplicacao = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=saiu_em - timedelta(days=2),
+    )
+
+    assert aplicacao.animal_id == animal_id

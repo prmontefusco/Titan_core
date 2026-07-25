@@ -40,6 +40,7 @@ MEDICATION_REGISTERED = "livestock.medication_registered"
 MEDICATION_BATCH_REGISTERED = "livestock.medication_batch_registered"
 PRESCRIPTION_ISSUED = "livestock.prescription_issued"
 TREATMENT_APPLIED = "livestock.treatment_applied"
+ANIMAL_EXITED = "livestock.animal_exited"
 
 LIVESTOCK_EVENT_TYPES = frozenset(
     {
@@ -57,6 +58,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         MEDICATION_BATCH_REGISTERED,
         PRESCRIPTION_ISSUED,
         TREATMENT_APPLIED,
+        ANIMAL_EXITED,
     }
 )
 
@@ -378,5 +380,29 @@ def treatment_applied_payload(
             "evidence_references": [_id(r.target_id) for r in evidence_references],
             "medication_batch_id": _id(medication_batch_id),
             "prescription_id": None if prescription_id is None else _id(prescription_id),
+        },
+    )
+
+
+def animal_exited_payload(
+    *,
+    exit_id: TypedId,
+    animal_id: TypedId,
+    exit_type: str,
+    occurred_at: datetime,
+    reason: str | None,
+    destination: str | None,
+    evidence_references: tuple[UniversalReference, ...],
+) -> CanonicalPayload:
+    return _payload(
+        ANIMAL_EXITED,
+        {
+            "animal_id": _id(animal_id),
+            "destination": destination,
+            "evidence_references": [_id(r.target_id) for r in evidence_references],
+            "exit_id": _id(exit_id),
+            "exit_type": exit_type,
+            "occurred_at": occurred_at,
+            "reason": reason,
         },
     )

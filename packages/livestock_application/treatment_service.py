@@ -16,6 +16,7 @@ from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
 )
+from packages.livestock_application.exit_service import guard_animal_active
 from packages.livestock_application.medication_service import (
     MedicationBatchRepositoryPort,
     PrescriptionRepositoryPort,
@@ -69,6 +70,7 @@ class TreatmentApplicationService:
         organization_id = context.organization_id
         self._validate_references(organization_id, animal_id, medication_batch_id, prescription_id)
         self._validate_evidences(organization_id, evidence_references)
+        guard_animal_active(self.animal_repository, animal_id, applied_at)
         self._guard_applied_at(applied_at)
 
         # A autoria vem do contexto, e não de um parâmetro à parte: assim o autor

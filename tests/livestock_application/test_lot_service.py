@@ -21,6 +21,7 @@ from packages.livestock_domain.events import (
     ANIMAL_REMOVED_FROM_LOT,
     LOT_CREATED,
 )
+from packages.livestock_domain.exit import AnimalExit
 from packages.livestock_domain.lot import (
     LivestockLot,
     LotMembership,
@@ -114,6 +115,7 @@ class InMemoryPropertyRepo(RuralPropertyRepositoryPort):
 
 class InMemoryAnimalRepo(AnimalRepositoryPort):
     def __init__(self) -> None:
+        self.saidas: dict[str, AnimalExit] = {}
         self.animals: dict[str, Animal] = {}
 
     def save(self, animal: Animal) -> None:
@@ -132,6 +134,9 @@ class InMemoryAnimalRepo(AnimalRepositoryPort):
         identifier_value: str,
     ) -> Animal | None:
         return None
+
+    def get_exit(self, animal_id: TypedId) -> AnimalExit | None:
+        return self.saidas.get(animal_id.value.hex)
 
     def list_by_organization(
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0

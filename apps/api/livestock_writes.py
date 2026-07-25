@@ -26,20 +26,26 @@ from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_domain import OrganizationContext
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.livestock_application.authorization import (
+    ANIMAL_REGISTRAR_SAIDA,
     LOT_CRIAR,
     MOVEMENT_REGISTRAR,
     PROPERTY_CRIAR,
     VETERINARIAN_CRIAR,
 )
 from packages.livestock_application.event_recorder import LivestockEventRecorder
+from packages.livestock_application.exit_service import AnimalExitService
 from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
 from packages.livestock_application.property_service import RuralPropertyService
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import VerificationStatus
+from packages.livestock_domain.exit import ExitType
 from packages.livestock_domain.lot import LotType
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
+)
+from packages.livestock_infrastructure.persistence.exit_repository import (
+    TransactionalAnimalExitRepository,
 )
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
@@ -55,7 +61,7 @@ from packages.livestock_infrastructure.persistence.property_repository import (
 from packages.livestock_infrastructure.persistence.veterinarian_repository import (
     TransactionalVeterinarianRepository,
 )
-from packages.shared_kernel import SystemClock
+from packages.shared_kernel import SystemClock, UniversalReference
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
 
@@ -457,4 +463,82 @@ def registrar_movimentacao(
         destination_property_id=str(movimentacao.destination_property_id.value),
         movement_time=movimentacao.movement_time,
         animal_ids=[str(a.value) for a in movimentacao.animal_ids],
+    )
+
+
+# -- Saída do rebanho --------------------------------------------------------
+
+
+class RegistrarSaidaRequest(BaseModel):
+    exit_type: ExitType
+    occurred_at: datetime
+    reason: str | None = Field(default=None, max_length=500)
+    destination: str | None = Field(default=None, max_length=255)
+    evidence_references: list[str] = Field(default_factory=list)
+
+
+class SaidaResponse(BaseModel):
+    exit_id: str
+    animal_id: str
+    exit_type: str
+    occurred_at: datetime
+    reason: str | None
+    destination: str | None
+
+
+@router.post(
+    "/animals/{animal_id}/exit",
+    response_model=SaidaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar a saída de um animal do rebanho",
+    description=(
+        "Morte, abate, venda ou transferência definitiva. A saída é terminal: a "
+        "segunda tentativa é recusada com 409. Fatos anteriores à data da saída "
+        "continuam aceitos — lançar hoje um tratamento da semana passada é "
+        "regularização, não contradição."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_saida(
+    animal_id: str,
+    corpo: RegistrarSaidaRequest,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
+) -> SaidaResponse:
+    servico = AnimalExitService(
+        exit_repository=TransactionalAnimalExitRepository(connection=connection),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    try:
+        saida = servico.register_exit(
+            context=operation_context(contexto),
+            animal_id=typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id"),
+            exit_type=corpo.exit_type,
+            occurred_at=corpo.occurred_at,
+            reason=corpo.reason,
+            destination=corpo.destination,
+            evidence_references=tuple(
+                UniversalReference(
+                    target_id=typed_id_or_problem(
+                        bruto, entity_type="evidence", campo="evidence_references"
+                    ),
+                    organization_id=contexto.organization_id,
+                    contract_version=1,
+                )
+                for bruto in corpo.evidence_references
+            ),
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return SaidaResponse(
+        exit_id=str(saida.exit_id.value),
+        animal_id=str(saida.animal_id.value),
+        exit_type=saida.exit_type.value,
+        occurred_at=saida.occurred_at,
+        reason=saida.reason,
+        destination=saida.destination,
     )
