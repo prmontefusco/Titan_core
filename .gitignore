@@ -29,3 +29,6 @@ Thumbs.db
 
 # Scripts de validação manual descartáveis
 scratch/
+
+# Artefatos gerados pela demonstracao (Passo 10.6): sao saida, nao fonte.
+artefatos-demonstracao/

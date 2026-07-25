@@ -2,7 +2,7 @@
 
 **Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 10.6 — cenário demonstrativo reproduzível (o 10.5, console web, é opcional pelo próprio PLANO)
+**Próximo passo planejado:** validar manualmente o Passo 10.6, que fecha o Marco 10
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -54,7 +54,7 @@ Estados utilizados:
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
 | 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.4 completos e validados; 10.5 opcional; 10.6 não iniciado | 10.1 a 10.4 aprovadas |
+| 10.1–10.6 | Demonstração vertical verificável | 10.1 a 10.4 e 10.6 completos; 10.5 dispensado (opcional no PLANO) | 10.1 a 10.4 aprovadas; 10.6 pendente |
 
 
 ## Registro dos passos executados
@@ -2566,6 +2566,38 @@ A API se comportou corretamente nos dois episódios — o 422 apontou o campo ex
 ### Ferramenta de validação (`apps/seed/`)
 
 O roteiro impresso pela semeadura cobre, com identificadores e datas reais: preparação do ambiente, o fluxo completo em cinco passos, a correção que não apaga, a leitura pelo auditor com o corte bitemporal, e as nove negações com seus `reason_code`. Fecha com o que o conjunto demonstra — que serve tanto para conferir quanto para apresentar.
+
+## Passo 10.6 — Cenário demonstrativo reproduzível
+
+**Data de conclusão:** 24 de julho de 2026 · **Estado:** IMPLEMENTADO (validação manual pendente). **Fecha o Marco 10**, já que o 10.5 é opcional pelo PLANO e a validação por Swagger se mostrou suficiente.
+
+### O que foi entregue
+
+`python -m apps.demo` executa, num comando, exatamente a sequência que o PLANO exige — **cadastro → tratamento → bloqueio → correção → reavaliação → dossiê** — e grava os artefatos em disco.
+
+**A narrativa escolhida é a que prova a tese do produto.** Um operador lança a data errada de uma aplicação; o animal é **barrado** pela regra de carência; o erro é corrigido por novo registro; a reavaliação **libera**. As duas decisões existem, as duas aplicações continuam legíveis, e o registro errado permanece marcado. O Titan não apenas bloqueia: ele **redecide sobre fatos corrigidos sem apagar o que decidiu antes**.
+
+Um cenário que apenas bloqueasse mostraria metade do produto — qualquer sistema recusa. O que é raro é recusar, aceitar correção e refazer a conta preservando as duas versões.
+
+**Artefatos:** o dossiê em JSON e em PDF, gravados em `artefatos-demonstracao/` (ignorado pelo git — é saída, não fonte). O JSON é a prova: quem o recebe recalcula o SHA-256 dos bytes canônicos e compara com `dossier_hash`, sem o Titan no ar.
+
+**Transação única:** ou o cenário inteiro existe, ou nada dele existe. Cenário pela metade confunde quem o inspeciona.
+
+**Dados fictícios**, como o PLANO exige — nenhuma pessoa, propriedade ou animal real, e um teste verifica que nem `@` nem CPF aparecem no dossiê produzido.
+
+### Testes (6)
+
+Um roteiro de demonstração que ninguém executa apodrece em silêncio: a API muda, o cenário quebra, e só se descobre na hora de mostrar a alguém. Por isso a demonstração inteira roda no portão, com rollback ao final.
+
+Cobrem: bloqueio seguido de aprovação sobre fatos corrigidos, com decisões distintas; o registro corrigido permanecendo legível e marcado; a sequência do PLANO percorrida inteira, na ordem; **o dossiê gravado em disco reconstruído e verificado sem o Titan**; o relatório narrando o essencial; e a ausência de dado pessoal.
+
+### Portão de verificação
+
+`646 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (362 arquivos) e `alembic check` sem erros.
+
+### Validação manual pendente
+
+Recriar o ambiente do zero — `docker compose down -v`, `docker compose up -d`, `alembic upgrade head` — e executar `python -m apps.demo`, conferindo os sete passos e inspecionando o JSON e o PDF gravados.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
