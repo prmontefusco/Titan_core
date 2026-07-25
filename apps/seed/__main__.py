@@ -70,6 +70,10 @@ TODAS_AS_PERMISSOES = (
 
 SENHA_DEMONSTRACAO = "titan_demo_local"  # noqa: S105 — ambiente local descartável
 
+# O padrão do Keycloak são cinco minutos, e o roteiro de validação manual não
+# cabe nisso: o token expira no meio e o 401 resultante parece defeito da API.
+DURACAO_DO_TOKEN_SEGUNDOS = 3600
+
 
 @dataclass(frozen=True, slots=True)
 class Semeado:
@@ -258,45 +262,194 @@ def semear(connection: Connection, *, issuer: str, subs: dict[str, str]) -> Seme
 
 
 def _roteiro(semeado: Semeado, keycloak_url: str) -> str:
+    # Datas prontas para colar. Placeholder em roteiro é convite a ser enviado
+    # literalmente — e a API, corretamente, responde 422 a `<hoje menos 10 dias>`.
+    hoje = datetime.now(UTC)
+    aplicado_em = (hoje - timedelta(days=10)).strftime("%Y-%m-%dT12:00:00Z")
+    corrigido_em = (hoje - timedelta(days=9)).strftime("%Y-%m-%dT12:00:00Z")
+    antes_do_tratamento = (hoje - timedelta(days=20)).strftime("%Y-%m-%dT00:00:00Z")
+    no_futuro = (hoje + timedelta(days=1)).strftime("%Y-%m-%dT12:00:00Z")
+    validade_do_lote = (hoje + timedelta(days=365)).strftime("%Y-%m-%dT00:00:00Z")
+    org_a = semeado.org_a.value
+    org_b = semeado.org_b.value
+    propriedade = semeado.property_id.value
     return f"""
 ================== CENÁRIO SEMEADO ==================
 
-Organização A (com vínculo) : {semeado.org_a.value}
-Organização B (sem vínculo) : {semeado.org_b.value}
+Organização A (com vínculo) : {org_a}
+Organização B (sem vínculo) : {org_b}
 Organização operadora       : {semeado.operadora.value}
-Propriedade na Org A        : {semeado.property_id.value}
+Propriedade na Org A        : {propriedade}
 
 Usuários no Keycloak ({keycloak_url}):
-  {semeado.operador_username} / {SENHA_DEMONSTRACAO}   -> OPERADOR_PECUARIO
+  {semeado.operador_username} / {SENHA_DEMONSTRACAO}   -> OPERADOR_PECUARIO (escreve)
   {semeado.auditor_username} / {SENHA_DEMONSTRACAO}    -> AUDITOR (somente leitura)
 
---------------- ROTEIRO DE VALIDAÇÃO ----------------
 
-Antes de subir a API, exporte:
-  $env:TITAN_OPERATOR_ORGANIZATION_ID = "{semeado.operadora.value}"
+=============== PREPARAR O AMBIENTE ================
 
-No Swagger (http://localhost:8000/docs), use "Authorize" para entrar como cada
-usuário. O cabeçalho X-Titan-Organization-Id é campo do próprio formulário.
+1. Suba a API numa janela dedicada, com as quatro variáveis:
 
-  1) operador + Org A, corpo válido .................... espera 201
-  2) sem Authorize ..................................... espera 401 NAO_AUTENTICADO
-  3) auditor + Org A ................................... espera 403 PERMISSAO_AUSENTE
-  4) operador + Org B .................................. espera 403 CONTEXTO_ORGANIZACIONAL_NEGADO
-  5) operador + Org A, sem o cabeçalho de organização ... espera 400 ORGANIZACAO_NAO_INFORMADA
-  6) operador + Org A, "sex": "INEXISTENTE" ............ espera 422 ENTRADA_INVALIDA
-  7) o mesmo SISBOV duas vezes ......................... espera 409 CONFLITO_DE_DOMINIO
+   $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+   $env:TITAN_OPERATOR_ORGANIZATION_ID = "{semeado.operadora.value}"
+   $env:TITAN_OIDC_ISSUER = "http://localhost:8080/realms/titan"
+   $env:TITAN_OIDC_AUDIENCE = "titan-api"
+   python -m uv run --locked uvicorn apps.api.main:app --port 8000
 
-Corpo para os casos 1, 3, 4 e 7:
+   Espere "Application startup complete".
 
-  {"{"}
-    "birth_property_id": "{semeado.property_id.value}",
-    "sex": "MALE",
-    "breed": "Nelore"
-  {"}"}
+2. Abra http://localhost:8000/docs — precisa ser localhost e porta 8000, que é
+   o endereço que o Keycloak aceita de volta.
 
-No caso 7, acrescente ao corpo e repita a chamada duas vezes:
-    "initial_identifier_type": "OFFICIAL_SISBOV",
-    "initial_identifier_value": "BR12345678"
+3. Clique em "Authorize", marque o escopo openid, e entre como
+   {semeado.operador_username}. Confira que o cadeado das rotas fechou.
+
+   O token vale {DURACAO_DO_TOKEN_SEGUNDOS}s neste realm local (o padrão do Keycloak são
+   5 minutos, curto demais para o roteiro). Se ainda assim vier 401
+   NAO_AUTENTICADO no meio do caminho, é a credencial vencendo: clique em
+   "Authorize" de novo e refaça o passo.
+
+Em toda chamada, o campo X-Titan-Organization-Id recebe:  {org_a}
+
+
+========= PARTE 1 — O FLUXO COMPLETO (operador) ==========
+
+Cada passo devolve um identificador que o passo seguinte usa. Anote-os.
+
+  1.1  POST /v1/livestock/animals ....................... espera 201
+       {{
+         "birth_property_id": "{propriedade}",
+         "sex": "FEMALE",
+         "breed": "Nelore"
+       }}
+       >>> anote  animal_id
+
+  1.2  POST /v1/livestock/medications ................... espera 201
+       {{
+         "trade_name": "Ivomec Gold",
+         "active_ingredient": "Ivermectina",
+         "manufacturer": "Boehringer",
+         "withdrawal_period_days": 30
+       }}
+       >>> anote  medication_id
+
+  1.3  POST /v1/livestock/medication-batches ............ espera 201
+       {{
+         "medication_id": "<medication_id do passo 1.2>",
+         "batch_number": "LOTE-2026-001",
+         "expiry_date": "{validade_do_lote}"
+       }}
+       >>> anote  batch_id
+
+  1.4  POST /v1/livestock/treatments .................... espera 201
+       A data abaixo é de dez dias atrás, e a carência é de 30 dias: o animal
+       tem de ficar bloqueado.
+       {{
+         "animal_id": "<animal_id>",
+         "medication_batch_id": "<batch_id>",
+         "applied_at": "{aplicado_em}",
+         "dose": "1 mL / 50 kg",
+         "evidence_notes": ["foto no celular do Joao"]
+       }}
+       >>> anote  application_id
+
+  1.5  POST /v1/livestock/animals/<animal_id>/eligibility ... espera 201
+       Sem corpo.
+       >>> CONFIRA:  "result": "rejeitada"
+       >>> CONFIRA:  "reasons" traz o motivo do bloqueio
+       >>> anote  dossier_id
+
+       Este é o coração do Marco 9: o animal foi barrado por uma regra
+       versionada, com motivo explícito.
+
+
+======== PARTE 2 — A CORREÇÃO NÃO APAGA (operador) ========
+
+  2.1  POST /v1/livestock/treatments/<application_id>/corrections ... espera 201
+       {{
+         "applied_at": "{corrigido_em}",
+         "dose": "2 mL / 50 kg"
+       }}
+       >>> CONFIRA: "application_id" é DIFERENTE do original
+       >>> CONFIRA: "corrects_application_id" aponta para o original
+
+       Não existe rota de edição. Corrigir cria registro novo, e o antigo
+       permanece — você vai vê-lo na linha do tempo, no passo 3.2.
+
+
+========== PARTE 3 — LEITURA (troque para o auditor) ==========
+
+O botão "Logout" do Swagger não encerra a sessão do Keycloak. Para trocar de
+usuário, abra uma JANELA ANÔNIMA em http://localhost:8000/docs e autorize como
+{semeado.auditor_username}. (Ou saia em {keycloak_url}/realms/titan/account.)
+
+  3.1  GET /v1/livestock/dossiers/<dossier_id> .......... espera 200
+       >>> CONFIRA: "dossier_hash" presente
+       >>> CONFIRA: document.vertical.namespace == "livestock"
+       >>> CONFIRA: document.vertical.content.subject traz o animal
+       >>> CONFIRA: document.vertical.content.withdrawal mostra a conta
+       >>> CONFIRA: document.vertical.content.timeline traz o histórico
+
+       Este JSON é a prova: quem o recebe consegue verificá-lo sem o Titan.
+
+  3.2  GET /v1/livestock/animals/<animal_id>/timeline ... espera 200
+       >>> CONFIRA: aparecem livestock.animal_registered,
+                    livestock.treatment_applied (DUAS vezes) e core.decision
+       >>> CONFIRA: uma das aplicações tem "superseded_by" preenchido
+
+       As duas aplicações provam que a correção não apagou o corrigido.
+
+  3.3  GET .../timeline?known_until={antes_do_tratamento}
+       >>> CONFIRA: o tratamento NÃO aparece
+
+       Este é o eixo de auditoria: reconstrói o que o Titan sabia naquele
+       instante, e não o que aconteceu até ele.
+
+
+============ PARTE 4 — AS NEGAÇÕES ============
+
+  4.1  auditor -> POST /v1/livestock/medications ........ espera 403
+       >>> CONFIRA: reason_code == "PERMISSAO_AUSENTE"
+       Auditor não escreve.
+
+  4.2  operador -> GET /v1/livestock/dossiers/<dossier_id> ... espera 403
+       >>> CONFIRA: reason_code == "PERMISSAO_AUSENTE"
+       A separação vale nos dois sentidos: quem opera não lê a prova.
+
+  4.3  qualquer usuário, cabeçalho com a Org B ({org_b}) ... espera 403
+       >>> CONFIRA: reason_code == "CONTEXTO_ORGANIZACIONAL_NEGADO"
+       A negação não revela se o recurso existe do outro lado.
+
+  4.4  sem "Authorize" (janela anônima, sem autorizar) ....... espera 401
+       >>> CONFIRA: reason_code == "NAO_AUTENTICADO"
+       401 é "não sei quem você é"; 403 é "sei, e você não pode".
+
+  4.5  operador, sem preencher X-Titan-Organization-Id ....... espera 400
+       >>> CONFIRA: reason_code == "ORGANIZACAO_NAO_INFORMADA"
+
+  4.6  operador, POST /animals com "sex": "INEXISTENTE" ...... espera 422
+       >>> CONFIRA: reason_code == "ENTRADA_INVALIDA" e a lista "errors"
+
+  4.7  operador, POST /animals duas vezes com o mesmo SISBOV . espera 409
+       Acrescente ao corpo do passo 1.1 e repita a chamada:
+         "initial_identifier_type": "OFFICIAL_SISBOV",
+         "initial_identifier_value": "BR12345678"
+       >>> CONFIRA: a segunda devolve reason_code == "CONFLITO_DE_DOMINIO"
+
+  4.8  operador, POST /medication-batches com medication_id inventado ... espera 404
+       >>> CONFIRA: reason_code == "RECURSO_NAO_ENCONTRADO"
+
+  4.9  operador, POST /treatments com "applied_at": "{no_futuro}" ... espera 409
+       >>> CONFIRA: reason_code == "CONFLITO_DE_DOMINIO"
+
+
+=========== O QUE ISTO DEMONSTRA NO FIM ===========
+
+  o animal foi bloqueado por uma regra versionada, com motivo;
+  a correção acrescentou sem apagar o que estava errado;
+  a prova é verificável por terceiro, sem acesso ao Titan;
+  papéis diferentes têm alcances diferentes, nos dois sentidos;
+  uma organização não enxerga a outra, e a negação não entrega pistas.
 
 =====================================================
 """
@@ -331,6 +484,8 @@ def main() -> None:
             usuario=_ambiente("TITAN_OIDC_ADMIN_USERNAME", "titan_admin"),
             senha=_ambiente("TITAN_OIDC_ADMIN_PASSWORD", "titan_oidc_local_admin_password"),
         )
+        duracao = admin.garantir_duracao_de_token(DURACAO_DO_TOKEN_SEGUNDOS)
+        print(f"Token    : validade de {duracao}s no realm local de demonstracao")
         subs = {
             "operador": admin.garantir_usuario(username="titan_operador", senha=SENHA_DEMONSTRACAO),
             "auditor": admin.garantir_usuario(username="titan_auditor", senha=SENHA_DEMONSTRACAO),

@@ -69,6 +69,31 @@ class AdminKeycloak:
         )
         return cls(base_url=base_url, realm=realm, token=corpo["access_token"])
 
+    def garantir_duracao_de_token(self, segundos: int) -> int:
+        """Amplia a validade do access token **no realm local de demonstração**.
+
+        O padrão do Keycloak é de cinco minutos, o que é correto em produção e
+        inviável numa validação manual: o token expira no meio do roteiro e a
+        resposta 401 parece defeito da API quando é só a credencial vencendo.
+
+        Só faz sentido aqui. Ampliar validade de token em ambiente real amplia a
+        janela em que uma credencial vazada continua servindo.
+        """
+        _, realm = _requisicao(
+            "GET", f"{self.base_url}/admin/realms/{self.realm}", token=self.token
+        )
+        atual = int(realm.get("accessTokenLifespan") or 0)
+        if atual >= segundos:
+            return atual
+        realm["accessTokenLifespan"] = segundos
+        _requisicao(
+            "PUT",
+            f"{self.base_url}/admin/realms/{self.realm}",
+            token=self.token,
+            json_body=realm,
+        )
+        return segundos
+
     def garantir_usuario(self, *, username: str, senha: str) -> str:
         """Cria o usuário se faltar, e devolve o `sub` — que é o id dele no Keycloak.
 

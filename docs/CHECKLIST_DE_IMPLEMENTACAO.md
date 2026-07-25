@@ -2,7 +2,7 @@
 
 **Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** validar manualmente o 10.4b e seguir para o Passo 10.6 — cenário demonstrativo reproduzível
+**Próximo passo planejado:** Passo 10.6 — cenário demonstrativo reproduzível (o 10.5, console web, é opcional pelo próprio PLANO)
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -54,7 +54,7 @@ Estados utilizados:
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
 | 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.3 completos; 10.4a validado; 10.4b implementado | 10.4a aprovada |
+| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.4 completos e validados; 10.5 opcional; 10.6 não iniciado | 10.1 a 10.4 aprovadas |
 
 
 ## Registro dos passos executados
@@ -2412,7 +2412,7 @@ Comparar JSON e PDF campo a campo, verificar legibilidade e recalcular a integri
 
 ## Passo 10.4 — API mínima do fluxo aprovado
 
-**Estado:** EM ANDAMENTO. O 10.4a está **concluído e validado**; o 10.4b está **implementado**, com validação manual pendente.
+**Data de conclusão:** 24 de julho de 2026 · **Estado:** CONCLUÍDO. 10.4a e 10.4b implementados e **validados manualmente**. **Fecha o Passo 10.4.**
 
 **Divisão adotada, com aprovação do responsável.** O 10.4 exige autenticação, autorização, teste positivo e negativo, tratamento de erro e validação com dois papéis e duas Organizations. A fundação não é detalhe de implementação: é pré-condição de todo endpoint. Separá-la isola um risco arquitetural transversal da simples exposição dos casos de uso — e se a raiz de composição estiver errada, todo endpoint construído sobre ela teria de ser refeito.
 
@@ -2507,9 +2507,9 @@ Dois itens têm o código escrito e **não têm teste**: o **rollback explícito
 
 A prova ponta a ponta da fundação foi aprovada, e o 10.4b está liberado para começar.
 
-### 10.4b — API mínima do fluxo · IMPLEMENTADO
+### 10.4b — API mínima do fluxo · CONCLUÍDO
 
-**Data:** 24 de julho de 2026. **Validação manual pendente.**
+**Data:** 24 de julho de 2026. **Estado: CONCLUÍDO — validação manual aprovada.**
 
 As sete rotas congeladas foram expostas, mais uma oitava que a decisão de escopo não previa e o domínio exige (ver abaixo). Todas sobre a fundação já aprovada no 10.4a.
 
@@ -2552,9 +2552,20 @@ O cliente de teste definia o override de autenticação na construção, e o ove
 
 `640 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (359 arquivos) e `alembic check` sem erros.
 
-### Validação manual pendente
+### Validação manual — APROVADA em 24 de julho de 2026
 
-Operar o fluxo completo pelo Swagger, com os dois papéis e as duas Organizations semeadas.
+O fluxo completo foi operado pelo Swagger, com os dois papéis e as duas Organizations semeadas: cadastro, medicamento, lote, tratamento, elegibilidade bloqueando, correção por novo registro, leitura do dossiê e da linha do tempo pelo auditor, e as nove negações. Todos os cenários responderam o esperado.
+
+**Dois defeitos de usabilidade encontrados, ambos na ferramenta de validação e não no produto:**
+
+1. **Token expirando no meio do roteiro.** O padrão do Keycloak é de cinco minutos, e o roteiro não cabe nisso — o 401 resultante parece defeito da API quando é a credencial vencendo. A semeadura passou a ampliar a validade para 3600s no realm local, via API de administração, e o `titan-realm.json` já nasce assim. Está escrito no código por que isso só vale em ambiente local: ampliar validade de token em ambiente real amplia a janela em que uma credencial vazada continua servindo.
+2. **Placeholders de data no roteiro** (`<hoje menos 10 dias>`) sendo enviados literalmente, com 422 correto em resposta. Todas as datas passaram a ser calculadas no instante da semeadura e impressas prontas para colar. A lição ficou registrada: placeholder em roteiro é convite a ser enviado literalmente.
+
+A API se comportou corretamente nos dois episódios — o 422 apontou o campo exato e o motivo, que é o mínimo para corrigir sem adivinhação.
+
+### Ferramenta de validação (`apps/seed/`)
+
+O roteiro impresso pela semeadura cobre, com identificadores e datas reais: preparação do ambiente, o fluxo completo em cinco passos, a correção que não apaga, a leitura pelo auditor com o corte bitemporal, e as nove negações com seus `reason_code`. Fecha com o que o conjunto demonstra — que serve tanto para conferir quanto para apresentar.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
