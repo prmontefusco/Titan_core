@@ -2881,7 +2881,7 @@ Roteiro executável completo, **38 passos passando**, com conferência independe
 
 **Não era imprevisto: era decidido e não implementado.** A **ADR-0026**, aceita em 21/07/2026, já colocava o PostGIS no caminho crítico do MVP, nomeava a EUDR com as datas de aplicação, e declarava que o go-to-market prioriza *"o comprador que precisa reconstruir fornecedores diretos e indiretos"*. O PostGIS 3.6.4 está ativo no banco desde o Passo 1.4A. O que não existe é uma única coluna espacial: `RuralProperty` guarda município e UF.
 
-**A pergunta certa não é "está conforme".** É "para quais mercados este animal é elegível" — conformidade é relação entre animal e destino, não propriedade do animal. Formalizado na **ADR-0041**.
+**A pergunta certa não é "está conforme".** É "para quais mercados este ativo é elegível" — elegibilidade é relação entre **um sujeito** e um destino, não propriedade do animal. Formalizado na **ADR-0041**, que na revisão do responsável teve a tese generalizada: **o Titan não atribui a um sujeito uma condição que pertence a outro.** Requisito de estabelecimento produz decisão sobre o estabelecimento; a matriz do animal declara `CONDICIONADO` e nomeia a dependência.
 
 **A percepção que barateia tudo:** conformidade territorial é a mesma máquina da carência. `PropertyStay × camada de restrição × regra versionada → bloqueio explicável` tem a mesma forma que `aplicação × medicamento × regra → bloqueio explicável`. O motor do Marco 9, a decisão explicável, a reavaliação do 9.6 e o dossiê já existem.
 
@@ -2889,7 +2889,7 @@ Roteiro executável completo, **38 passos passando**, com conferência independe
 
 **As camadas vêm do `Titan_geodata`**, aplicação paralela do responsável, que já entrega geometria da fazenda e dados do SICAR e receberá camadas ambientais e sociais. É o *"provider externo substituível por contrato versionado"* que a ADR-0026 previa. **Decisão: importar e guardar**, o que torna a reprodutibilidade responsabilidade do Titan e resolve o fato de a origem ainda não versionar consultas históricas.
 
-**Dívida descoberta:** `Medication.withdrawal_period_days` é número único, e o prazo varia por país de destino. Não foi erro — o escopo era mercado interno. A correção é aditiva.
+**Dívida descoberta:** `Medication.withdrawal_period_days` é número único, e o prazo varia por país de destino. Não foi erro — o escopo era mercado interno. **A correção não é transformar o campo em coleção:** prazo regulatório não é propriedade intrínseca do medicamento, e sim requisito normativo com fonte, vigência e condições próprias (espécie, via, dose, finalidade). A direção é uma entidade `WithdrawalRequirement`, registrada na ADR-0041 como consequência a detalhar.
 
 **O limite que já apareceu três vezes:** doadora de embrião de terceiro (13.2), fornecedor indireto (aqui) e frigorífico (abate). `UniversalRelation` recusa ponta fora da Organization, e com razão. Como representar **contraparte externa** sem furar o isolamento exige ADR própria.
 
