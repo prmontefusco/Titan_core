@@ -47,6 +47,10 @@ O Marco 9 existe para impedir exatamente isso, e não enxerga fora da própria o
 6. **Venda e abate são fatos distintos.**
 7. **Contraparte externa é representação local de terceiro**, e nunca implica acesso ao tenant representado.
 8. **Quando ambas as pontas usam Titan, o aceite fortalece a prova, mas não relaxa o isolamento.**
+9. **Integridade criptográfica do artefato não estabelece, por si só, identidade ou autoridade do emissor.**
+10. **Continuidade entre sujeitos é afirmação sustentada por evidência**, e nunca inferida apenas por identificador coincidente.
+11. **Todo artefato transferido declara até quando a sua cobertura histórica alcança.**
+12. **Fato importado chega ao motor pela mesma interface do fato local, com proveniência e confiança preservadas e disponíveis à Policy.**
 
 ## Dois modos, um mecanismo
 
@@ -127,6 +131,25 @@ O Titan passa a poder afirmar: *"este animal foi adquirido como continuidade doc
 
 Transformar `animal_id` em identidade global fura a fronteira de propriedade do registro: passaria a existir um identificador que atravessa tenants, e com ele a tentação de resolvê-lo do outro lado.
 
+### Identificador coincidente é evidência, não prova
+
+> **A continuidade entre sujeitos é uma afirmação sustentada por evidência, e não é inferida automaticamente pela igualdade de identificadores externos.**
+
+Dois animais com o mesmo SISBOV **provavelmente** são o mesmo indivíduo. Mas também podem ser erro de digitação, brinco reaproveitado indevidamente, importação equivocada ou fraude — e um sistema que funde os dois sozinho transforma qualquer um desses casos em histórico falso, com aparência de rastreabilidade impecável.
+
+A continuidade é declarada, com o que a sustenta:
+
+```text
+ContinuityAssertion
+    source_subject_reference     de quem se afirma continuidade
+    received_identifiers[]       os identificadores que vieram
+    source_artifact              o pacote que sustenta a afirmação
+    asserted_by                  quem afirma
+    verification_result          o que a verificação apurou
+```
+
+A coincidência de identificador **alimenta** a afirmação; não a substitui. Sem isso, o dia em que dois brincos colidirem produz um animal com duas histórias — e ninguém saberá qual delas é dele.
+
 ## Contraparte não é Organization
 
 `Counterparty` é a **representação local que uma organização mantém sobre um terceiro** — com nome, tipo, identificadores externos (CNPJ, CAR, SIF, código de estabelecimento, inscrição estadual), confiança e evidências.
@@ -134,6 +157,8 @@ Transformar `animal_id` em identidade global fura a fronteira de propriedade do 
 **Mesmo que a Fazenda Y também use o Titan**, a `Counterparty Y` registrada por A continua sendo o cadastro que A tem sobre Y, e não Y. Fundir as duas automaticamente faria o cadastro de A passar a depender do que Y edita, e daria a A uma janela para dentro de Y.
 
 Um vínculo verificado entre a contraparte e uma Organization do Titan é possível, e **deve ser tratado como afirmação verificável, e não como referência direta** — uma coisa é "A afirma, com prova, que esta contraparte é a Organization Y"; outra é uma chave estrangeira que o sistema resolve sozinho.
+
+**A contraparte permanece na vertical, e não sobe ao Core.** Logística e florestal provavelmente precisarão do mesmo conceito, e é só quando o segundo caso concreto existir que vale perguntar se há um `Counterparty` genérico — pela mesma cautela da ADR-0041: generalizar sem um segundo caso real produz abstração especulativa.
 
 ## Três camadas na importação
 
@@ -147,7 +172,11 @@ FactProvider       — entrega ao motor de regras, como qualquer outro fato
 
 A extração existe porque **o motor não pode abrir um dossiê a cada avaliação** — mas o vínculo com a fonte é permanente, e um fato importado sem artefato de origem não existe.
 
-Assim a carência recebida do vendedor chega ao motor pela mesma porta que a carência calculada em casa, e a regra de elegibilidade não precisa saber a diferença. Quem sabe a diferença é a proveniência que viaja junto.
+> **Fatos importados chegam ao motor pela mesma interface dos fatos locais, preservando proveniência, `FactOrigin` e `ConfidenceLevel`. A regra de domínio não precisa conhecer a implementação da importação, mas pode exigir níveis de origem ou de confiança conforme a Policy aplicável.**
+
+A distinção importa: uma Policy pode legitimamente exigir que, para determinado mercado, tratamento recebido de terceiro só sustente elegibilidade a partir de `DOCUMENTED`. Dizer que a regra "não precisa saber a diferença" apagaria justamente a informação de que ela pode depender.
+
+O que a interface esconde é **como** o fato chegou; o que ela preserva é **de onde** ele veio e **quanto** vale.
 
 ## Proveniência e confiança são dimensões diferentes
 
@@ -166,6 +195,16 @@ FactOrigin                    ConfidenceLevel
 
 Colapsá-las numa só faria o sistema confundir **"não fui eu que afirmei"** com **"não confio"**, e passaria a descontar confiança de prova boa só porque veio de fora. É o oposto do que uma cadeia de custódia precisa.
 
+### O que uma assinatura válida não prova
+
+> **Integridade criptográfica do artefato não estabelece, por si só, identidade ou autoridade do emissor.**
+
+A ADR-0039 já fixou essa semântica para os pacotes de verificação, e **esta ADR a herda inteira**: verificar uma assinatura contra uma âncora não demonstra que a chave pertence legitimamente a quem se alega emissor, nem que ele estava autorizado a emitir aquilo no instante em que emitiu.
+
+Portanto `CRYPTOGRAPHICALLY_ATTESTED` significa *"o material não foi adulterado desde a assinatura"*, e **nunca** *"o Titan confirmou que isto veio oficialmente da Fazenda X"*. Ler o primeiro como o segundo transformaria integridade em autenticidade institucional, que é o engano mais caro possível numa cadeia de custódia — porque um pacote forjado com par de chaves próprio verifica perfeitamente.
+
+Vincular o emissor a uma contraparte ou a uma Organization é afirmação separada, sustentada por evidência própria, e sujeita à mesma escala de confiança.
+
 ## Fato importado nunca vira fato próprio
 
 ```text
@@ -180,6 +219,34 @@ E quando B emitir o seu próprio dossiê, o tratamento continua declarando quem 
 
 Reescrever a autoria na importação destruiria a única coisa que a cadeia de custódia tem para oferecer.
 
+## Pacote íntegro pode estar desatualizado
+
+Este é o falso positivo mais perigoso da transferência, porque **todas as verificações passam**:
+
+```text
+10:00  A emite o pacote                    integridade: válida
+11:00  o animal recebe tratamento em A     assinatura:  válida
+14:00  o animal é carregado                cobertura:   até 10:00
+16:00  a venda se efetiva
+17:00  B importa o pacote das 10:00        → o tratamento das 11:00 não veio
+```
+
+Integridade e assinatura dizem que **o material não foi adulterado desde que foi emitido**. Não dizem nada sobre o que aconteceu **depois** de emitido. Um pacote perfeito pode estar três dias atrasado, e o tratamento que ficou de fora é justamente o que colocaria o animal em carência.
+
+Por isso todo artefato declara três instantes distintos, que costumam ser confundidos:
+
+```text
+bundle_issued_at            quando o pacote foi emitido
+coverage_until              até quando a história nele alcança
+transfer_effective_at       quando a custódia de fato mudou
+```
+
+E a regra decorre sozinha:
+
+```text
+coverage_until < transfer_effective_at   →   existe lacuna, e ela é nomeada
+```
+
 ## Lacuna declarada, nunca histórico vazio
 
 ```text
@@ -188,15 +255,57 @@ history_before_acquisition = UNKNOWN      ≠      history = []
 
 Se o vendedor não entregou dossiê, o animal entra com a história começando ali, e isso fica **declarado**. Lista vazia afirmaria que nada aconteceu antes; a verdade é que não se sabe.
 
-A cobertura é declarada explicitamente:
-
-```text
-COMPLETE_FROM_BIRTH · PARTIAL · UNKNOWN_BEFORE_ACQUISITION
-```
-
 > **Ausência de fatos anteriores não significa ausência de eventos anteriores.**
 
 É o mesmo princípio do `INDETERMINADO` da ADR-0041 e do "desconhecido permanece desconhecido" da ADR-0026, aplicado à cadeia.
+
+### Cobertura tem duas pontas, e um enum simples não a descreve
+
+```text
+        passado                                         presente
+──────────┬─────────────────────────────────────────────────┬──────►
+      nascimento                                       transferência
+```
+
+Conhecer tudo desde o nascimento e **faltar o último dia** é situação real, e a mais perigosa — porque parece completa. Um rótulo único como `COMPLETE_FROM_BIRTH` não consegue dizê-lo.
+
+Esta ADR **não congela** a forma da cobertura, e fixa o que ela precisa ser capaz de representar:
+
+```text
+known_from        desde quando a história é conhecida
+known_until       até quando ela alcança
+gaps[]            os intervalos ausentes no meio
+coverage_claim    o que se afirma sobre o conjunto
+```
+
+O que permite dizer o que importa:
+
+```text
+known_from   = 2024-03-10
+known_until  = 2026-07-24 18:00
+transfer_at  = 2026-07-25 09:00
+                              → lacuna de 15 horas, declarada
+```
+
+A entidade concreta fica fora de escopo; a semântica, não.
+
+## Lacuna não é inelegibilidade
+
+> **A existência de lacuna não determina sozinha a inelegibilidade. As Policies consumidoras decidem se a cobertura disponível é suficiente para a finalidade avaliada, e ausência de cobertura exigida não pode ser interpretada como ausência do fato.**
+
+É aqui que esta ADR e a ADR-0041 se encaixam:
+
+```text
+Mercado A   exige histórico farmacológico dos últimos 90 dias
+Animal      histórico verificável dos últimos 180 dias
+                                          → cobertura suficiente
+
+Mercado B   exige cadeia desde o nascimento
+Animal      histórico verificável dos últimos 180 dias
+                                          → INDETERMINADO
+```
+
+O mesmo animal, com a mesma cobertura, responde diferente conforme o destino — que é exatamente o que a ADR-0041 estabeleceu. A lacuna é insumo da avaliação, e não veredito.
 
 ## Venda não é abate
 
@@ -246,6 +355,14 @@ Também fora: a implementação do protocolo de aceite; o desenho do `HistoryCov
 
 **Histórico vazio para animal sem dossiê recebido.** Afirma que nada aconteceu, quando o que há é desconhecimento.
 
+**Inferir continuidade por identificador coincidente.** Transforma erro de digitação, brinco reaproveitado e fraude em histórico falso com aparência impecável.
+
+**Tratar integridade criptográfica como autenticidade do emissor.** Um pacote forjado com par de chaves próprio verifica perfeitamente.
+
+**Cobertura como rótulo único.** Não distingue "conheço desde o nascimento" de "conheço desde o nascimento, menos o último dia" — e a segunda é a mais perigosa, porque parece completa.
+
+**Lacuna como inelegibilidade automática.** Quem decide se a cobertura basta é a Policy do mercado avaliado, e não a ausência em si.
+
 **Amarrar a saída ao aceite do comprador.** Impediria registrar um fato que já ocorreu no mundo.
 
 **Venda para frigorífico como abate.** Registra como consumado o que ainda não ocorreu.
@@ -280,6 +397,10 @@ Também fora: a implementação do protocolo de aceite; o desenho do `HistoryCov
 | Dossiê adulterado ser importado | Verificação do pacote antes da extração; artefato guarda hash e emissor |
 | Venda a frigorífico contada como abate | Eventos distintos, com custódia entre eles |
 | Saída bloqueada por falta de aceite | Fato de negócio separado do protocolo de troca |
+| Pacote íntegro porém desatualizado | `coverage_until` comparado a `transfer_effective_at`; lacuna nomeada |
+| Assinatura válida lida como emissor confirmado | Semântica herdada da ADR-0039; vínculo do emissor é afirmação à parte |
+| Dois animais fundidos por identificador igual | Continuidade exige afirmação com evidência |
+| Lacuna virar reprovação automática | A Policy do mercado decide se a cobertura basta |
 
 ## Testes mínimos
 
@@ -292,11 +413,47 @@ Também fora: a implementação do protocolo de aceite; o desenho do `HistoryCov
 - venda para frigorífico não produz abate;
 - saída é registrável sem aceite do comprador;
 - artefato com hash que não confere não produz fato importado algum;
-- identidade de continuidade é verificável sem compartilhar `animal_id`.
+- identidade de continuidade é verificável sem compartilhar `animal_id`;
+- **pacote íntegro e corretamente assinado, cuja cobertura termina antes do instante efetivo da transferência, produz lacuna explícita** — e nunca cobertura completa;
+- **igualdade de identificador externo, sem afirmação de continuidade sustentada por evidência, não vincula dois animais como o mesmo sujeito histórico**;
+- assinatura válida não é apresentada como confirmação de que o emissor é quem alega ser;
+- Policy que exige confiança mínima para fato importado recusa o que não a atinge, sem recusar o que a atinge por ser importado.
 
 ## Critérios de aceitação
 
-A ADR pode ser aceita quando as oito invariantes estiverem refletidas no desenho, o mecanismo funcionar com destino fora do Titan, origem e confiança permanecerem dimensões independentes, lacuna de cadeia for declarada, e venda e abate continuarem eventos distintos.
+A ADR pode ser aceita quando as doze invariantes estiverem refletidas no desenho; o mecanismo funcionar com destino fora do Titan; origem e confiança permanecerem dimensões independentes e disponíveis às Policies; integridade criptográfica não for apresentada como autoridade do emissor; continuidade exigir evidência além de identificador coincidente; a cobertura declarar até quando alcança; lacuna for insumo da avaliação e não veredito; e venda e abate continuarem eventos distintos.
+
+## O padrão que está emergindo
+
+Vale registrar o que as ADRs 0041 e 0042 estão construindo em conjunto, sem que nenhuma das duas o tenha proposto isoladamente:
+
+```text
+              MUNDO REAL
+                  │
+               Subject
+                  │
+        ┌─────────┴─────────┐
+   fatos locais        fatos externos
+        │                   │
+        │            ReceivedArtifact
+        │                   │
+        │             ImportedFacts
+        └─────────┬─────────┘
+                  ▼
+             Provenance
+                  ▼
+             Confidence
+                  ▼
+               Policy
+                  ▼
+             Evaluation
+                  ▼
+              Decision
+```
+
+**O Titan não precisa possuir toda a realidade.** Precisa saber quem afirmou, o que afirmou, sobre qual sujeito, em qual instante, com base em qual evidência, com qual cobertura e com qual confiança.
+
+É por isso que a transferência de custódia cabe sem exceção ao isolamento: o que atravessa a fronteira não é acesso, é afirmação — e afirmação já é cidadã de primeira classe neste modelo.
 
 ## Relacionadas
 
