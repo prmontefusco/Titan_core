@@ -35,7 +35,9 @@ class PostgresqlIdentityAndAccessReader(IdentityAndAccessReader):
         self, user_id: TypedId, organization_id: OrganizationId, instant: datetime
     ) -> tuple[Membership, ...]:
         set_local_organization_context(self.connection, organization_id)
-        return MembershipRepository(self.connection).list_valid_for_user(user_id, instant)
+        return MembershipRepository(self.connection).list_valid_for_user(
+            user_id, organization_id, instant
+        )
 
     def effective_roles_and_permissions(
         self, membership_id: TypedId, instant: datetime

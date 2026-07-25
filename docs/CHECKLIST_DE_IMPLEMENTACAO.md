@@ -2,7 +2,7 @@
 
 **Atualizado em:** 24 de julho de 2026  
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 10.4b — os seis endpoints restantes, após aprovação manual do 10.4a
+**Próximo passo planejado:** Passo 10.4b — os seis endpoints restantes do fluxo
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -54,7 +54,7 @@ Estados utilizados:
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
 | 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.3 completos; 10.4a implementado; 10.4b congelado | Pendente |
+| 10.1–10.6 | Demonstração vertical verificável | EM ANDAMENTO — 10.1 a 10.3 completos; 10.4a concluído e validado; 10.4b liberado | 10.4a aprovada |
 
 
 ## Registro dos passos executados
@@ -2412,7 +2412,7 @@ Comparar JSON e PDF campo a campo, verificar legibilidade e recalcular a integri
 
 ## Passo 10.4 — API mínima do fluxo aprovado
 
-**Estado:** EM ANDAMENTO. O 10.4a está implementado; o 10.4b está congelado e não iniciado.
+**Estado:** EM ANDAMENTO. O 10.4a está **concluído e validado**; o 10.4b está congelado e liberado para começar.
 
 **Divisão adotada, com aprovação do responsável.** O 10.4 exige autenticação, autorização, teste positivo e negativo, tratamento de erro e validação com dois papéis e duas Organizations. A fundação não é detalhe de implementação: é pré-condição de todo endpoint. Separá-la isola um risco arquitetural transversal da simples exposição dos casos de uso — e se a raiz de composição estiver errada, todo endpoint construído sobre ela teria de ser refeito.
 
@@ -2447,9 +2447,9 @@ GET  /v1/livestock/dossiers/{id}
 
 O auditor não recebe **nenhuma** permissão de escrita. É o que torna o teste negativo inequívoco.
 
-### 10.4a — Fundação HTTP da vertical · IMPLEMENTADO
+### 10.4a — Fundação HTTP da vertical · CONCLUÍDO
 
-**Data:** 24 de julho de 2026. **Validação manual pendente.**
+**Data:** 24 de julho de 2026. **Estado: CONCLUÍDO — validação manual aprovada.**
 
 - **Raiz de composição (`apps/api/livestock_dependencies.py`):** conexão e **uma transação por requisição** — registro e evento nascem juntos ou não nascem; contexto organizacional resolvido a partir do cabeçalho `X-Titan-Organization-Id`; **RLS armado dentro da transação** com `set_config(..., true)`, para o isolamento acompanhar a unidade de trabalho e não sobrar para a próxima conexão do pool.
 - **`require_permission(código)`, nunca papel.** A cadeia é `User → Membership → Role → Permission → Endpoint`. Uma rota que perguntasse "é OPERADOR_PECUARIO?" congelaria a organização de papéis dentro do código HTTP; perguntando pela permissão, papéis novos entram sem tocar em rota alguma.
@@ -2467,6 +2467,30 @@ A ADR-0003 se chama "RLS **e defesa em profundidade**", e a segunda camada não 
 
 Além disso, as requisições da API no teste de integração passaram a rodar sob role `NOBYPASSRLS` criado por teste: sem isso, a prova de isolamento não valeria nada.
 
+### Validação manual do 10.4a — APROVADA em 24 de julho de 2026
+
+Os sete cenários foram operados pelo Swagger, com dois papéis e duas Organizations, contra o Keycloak e o PostgreSQL locais. Todos responderam o esperado.
+
+**Ela encontrou cinco defeitos que os testes automatizados não pegaram.** Vale registrar quais, porque explicam por que o portão de validação manual existe:
+
+1. **`reason_code` genérico no 401.** O handler devolvia `ERRO_HTTP`, e não havia como o cliente distinguir credencial ausente de qualquer outra falha HTTP. Corrigido com códigos por status conhecido (401, 403, 405, 409). O teste anterior afirmava apenas `status_code == 401` e passava com o corpo errado — passou a verificar código, mensagem, `www-authenticate` e content-type.
+2. **Segurança ausente no OpenAPI.** A autenticação era ligada por `dependency_overrides`, e override **não entra no esquema**: o endpoint não declarava segurança, e o Swagger não anexava o token do botão Authorize. Fiação de produção por override é erro de desenho — a autenticação foi extraída para `apps/api/authentication.py`, de onde o `main` e a raiz de composição da vertical dependem da mesma dependência declarada.
+3. **Configuração ausente reportada como credencial inválida.** Sem `TITAN_OIDC_ISSUER` e `TITAN_OIDC_AUDIENCE`, a API respondia 401 "Access Token ausente ou inválido" — mentira que manda o integrador caçar o defeito no lado errado. Agora responde 500 `AUTENTICACAO_NAO_CONFIGURADA`.
+4. **Consulta de vínculos sem filtro por Organization.** `list_valid_for_user` filtrava por usuário, status e validade, e dependia **inteiramente do RLS** para o resto. Com a API rodando como superusuário — que ignora RLS — a consulta devolvia os vínculos de todas as Organizations, e a regra "exatamente um vínculo" negava acesso legítimo. A Organization passou a ser parâmetro obrigatório e filtro explícito na cláusula `WHERE`.
+5. **Ruído no roteiro impresso** pela ferramenta de semeadura, e falha de codificação no console do Windows (cp1252 recusa `→`), que fazia a semeadura funcionar e o resultado se perder.
+
+Os itens 3 e 4 são **defesa em profundidade** (ADR-0003), e somam-se à conferência acrescentada ao `OrganizationContextService` durante a implementação. Nenhuma das três foi pega pelos testes automatizados, porque todos rodam sob RLS efetivo; foi a validação com superusuário que as expôs.
+
+### Ferramenta de semeadura (`apps/seed/`)
+
+Escrita para destravar esta validação, e reusável em toda validação seguinte — é o começo do Passo 10.6, antecipado. Cria os usuários no Keycloak pela API de administração, monta as duas Organizations, os dois papéis com suas permissões, os vínculos e uma propriedade, e imprime o roteiro com os sete cenários e o corpo JSON pronto.
+
+Usa apenas a biblioteca padrão: acrescentar dependência HTTP de produção por causa de uma ferramenta de desenvolvimento seria caro pelo motivo errado. É idempotente onde precisa ser — reusa usuário do Keycloak e vínculo externo, porque o par (emissor, subject) é único. Exige `TITAN_SEED_CONFIRM=1`, porque cria usuários com senha conhecida e isso só é aceitável em ambiente descartável.
+
+### Dívida registrada
+
+**A API não valida a própria configuração ao subir.** Ela inicia sem as variáveis de OIDC e só falha na primeira requisição autenticada. O certo é falhar no arranque, com mensagem clara. Some-se aos dois itens já anotados — rollback explícito da transação e 500 sanitizado — que têm código e não têm teste.
+
 ### Testes da prova ponta a ponta (8)
 
 Criação autorizada `201`; sem token `401`; sem a permissão exigida `403` com `PERMISSAO_AUSENTE`; organização sem vínculo `403` com `CONTEXTO_ORGANIZACIONAL_NEGADO`, negação indistinguível; cabeçalho de organização ausente `400`; entrada inválida `422` em `problem+json` com os campos; conflito de domínio `409`; e o animal criado nasce com o evento no log do Core, provando que a transação cobre entidade e prova.
@@ -2479,9 +2503,9 @@ Criação autorizada `201`; sem token `401`; sem a permissão exigida `403` com 
 
 Dois itens têm o código escrito e **não têm teste**: o **rollback explícito da transação** — a fixture já desfaz tudo, o que mascararia a prova — e o **500 sanitizado para erro inesperado**. Devem ser cobertos antes de o 10.4 fechar.
 
-### Validação manual pendente
+### Portão liberado
 
-Operar o fluxo com dois papéis e duas Organizations, validando negações, erros e isolamento.
+A prova ponta a ponta da fundação foi aprovada, e o 10.4b está liberado para começar.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 

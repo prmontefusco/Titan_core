@@ -49,3 +49,28 @@ def test_openapi_uses_authorization_code_flow() -> None:
     flow = scheme["OAuth2AuthorizationCodeBearer"]["flows"]["authorizationCode"]
     assert flow["authorizationUrl"].endswith("/protocol/openid-connect/auth")
     assert flow["tokenUrl"].endswith("/protocol/openid-connect/token")
+
+
+def test_configuracao_ausente_nao_e_reportada_como_credencial_invalida(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """Falha de configuração é nossa, não do cliente.
+
+    Responder 401 aqui manda o integrador conferir o token dele por horas
+    enquanto o defeito está do lado do servidor — foi o que aconteceu na
+    validação manual do Passo 10.4a.
+    """
+
+    def _sem_configuracao() -> None:
+        raise RuntimeError("TITAN_OIDC_ISSUER e TITAN_OIDC_AUDIENCE são obrigatórios.")
+
+    monkeypatch.setattr(authentication, "get_access_token_validator", _sem_configuracao)
+
+    resposta = client.post(
+        "/v1/livestock/animals",
+        json={"birth_property_id": "irrelevante", "sex": "MALE"},
+        headers={"Authorization": "Bearer token-qualquer"},
+    )
+
+    assert resposta.status_code == 500
+    assert resposta.json()["reason_code"] == "AUTENTICACAO_NAO_CONFIGURADA"

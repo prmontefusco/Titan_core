@@ -138,11 +138,24 @@ class MembershipRepository:
         ).one_or_none()
         return None if row is None else _from_row(row)
 
-    def list_valid_for_user(self, user_id: TypedId, instant: datetime) -> tuple[Membership, ...]:
+    def list_valid_for_user(
+        self, user_id: TypedId, organization_id: OrganizationId, instant: datetime
+    ) -> tuple[Membership, ...]:
+        """Vínculos ativos do usuário **naquela** Organization.
+
+        A Organization é filtro explícito, e não só do RLS. Defesa em profundidade
+        (ADR-0003): uma conexão com role privilegiado — superusuário, engano de
+        configuração — faria o RLS deixar passar vínculos de todas as
+        Organizations, e a resolução de contexto, que exige exatamente um, negaria
+        acesso legítimo ou o concederia sobre o vínculo errado. Com o filtro na
+        consulta, o isolamento não repousa apenas no banco.
+        """
         if not isinstance(user_id, TypedId):
             raise TypeError("user_id deve ser um TypedId.")
         if user_id.entity_type != "user":
             raise ValueError("user_id deve possuir tipo lógico 'user'.")
+        if not isinstance(organization_id, OrganizationId):
+            raise TypeError("organization_id deve ser um OrganizationId.")
         if not isinstance(instant, datetime):
             raise TypeError("instant deve ser datetime.")
         offset = instant.utcoffset()
@@ -152,6 +165,7 @@ class MembershipRepository:
             select(memberships_table)
             .where(
                 memberships_table.c.user_id == user_id.value,
+                memberships_table.c.organization_id == organization_id.value,
                 memberships_table.c.status == MembershipStatus.ATIVA.value,
                 memberships_table.c.valid_from <= instant,
                 or_(

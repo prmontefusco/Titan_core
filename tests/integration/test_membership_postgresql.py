@@ -75,7 +75,9 @@ def test_user_can_have_isolated_temporal_memberships_in_two_organizations() -> N
                     repository = MembershipRepository(connection)
                     repository.add(membership)
                     assert repository.get(membership.membership_id) == membership
-                    assert repository.list_valid_for_user(user.user_id, instant) == (membership,)
+                    assert repository.list_valid_for_user(
+                        user.user_id, organization.organization_id, instant
+                    ) == (membership,)
                     memberships.append(membership)
 
                 set_local_organization_context(connection, first_organization.organization_id)
@@ -102,7 +104,9 @@ def test_user_can_have_isolated_temporal_memberships_in_two_organizations() -> N
 
                 connection.execute(text("SELECT set_config('titan.organization_id', '', true)"))
                 assert (
-                    MembershipRepository(connection).list_valid_for_user(user.user_id, instant)
+                    MembershipRepository(connection).list_valid_for_user(
+                        user.user_id, first_organization.organization_id, instant
+                    )
                     == ()
                 )
             finally:

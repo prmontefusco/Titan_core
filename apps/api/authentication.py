@@ -17,6 +17,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2AuthorizationCodeBearer
 
+from apps.api.problem import DomainProblem
 from packages.core_domain import AuthenticatedPrincipal
 from packages.core_infrastructure.authentication import (
     AccessTokenValidationError,
@@ -50,8 +51,22 @@ def require_authenticated_principal(
     token: Annotated[str, Depends(oauth2_scheme)],
 ) -> AuthenticatedPrincipal:
     try:
-        return get_access_token_validator().validate(token)
-    except (AccessTokenValidationError, RuntimeError) as error:
+        validator = get_access_token_validator()
+    except RuntimeError as error:
+        # Servidor sem configuração de OIDC não é credencial ruim do cliente.
+        # Responder 401 aqui mandaria o integrador conferir o token dele durante
+        # horas, enquanto o defeito está do nosso lado — foi o que aconteceu na
+        # validação manual do Passo 10.4a.
+        raise DomainProblem(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            reason_code="AUTENTICACAO_NAO_CONFIGURADA",
+            title="Autenticação não configurada",
+            detail="O serviço de autenticação não está configurado neste ambiente.",
+        ) from error
+
+    try:
+        return validator.validate(token)
+    except AccessTokenValidationError as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Access Token ausente ou inválido.",
