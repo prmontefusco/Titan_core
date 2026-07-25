@@ -3065,6 +3065,78 @@ Policy      → isso é suficiente para esta finalidade?
 Decision    → qual é a conclusão?
 ```
 
+### NR-8 — Modelo de receita, porta de entrada e a ordem que ela impõe ao Marco 17
+
+**Data:** 25 de julho de 2026 · **Estado:** direção registrada; nenhuma decisão comercial fechada. **Quem paga ainda está indefinido** — o que segue são hipóteses avaliadas, não compromisso.
+
+#### O enquadramento correto: a EUDR não é embargo
+
+É regulação de acesso, e a responsabilidade legal é do **operador europeu que importa** — não do produtor, não do frigorífico brasileiro, não do software. Ninguém compra "o Titan me libera para exportar". Compram *"o Titan me dá com o que sustentar a declaração que eu assino, e me protege quando o auditor voltar dois anos depois"*.
+
+Isso confirma a ADR-0041 como acerto comercial, e não só de modelagem: **o Titan mostra a matriz com motivos; quem decide é o frigorífico.**
+
+Advertência operacional: o calendário da EUDR já foi adiado mais de uma vez. **Conferir o prazo vigente antes de usá-lo como argumento** — errar isso numa conversa comercial custa credibilidade. O que não muda é o marco de **31/12/2020**.
+
+#### Onde o Titan é forte, e onde não responde ainda
+
+Forte, e raro no mercado brasileiro:
+
+- **Rastreabilidade individual, não predial.** A EUDR para bovinos pede a geolocalização de **todos** os estabelecimentos onde o animal permaneceu, não do último. `PropertyStay × geometria` é essa pergunta; sistema predial não a responde sem inventar.
+- **Lacuna declarada em vez de silêncio** (ADR-0042). O modo de falhar do mercado é sinal verde onde o dado não existe — o bezerro veio de uma cria que ninguém mapeou, e o relatório não distingue "verifiquei e está limpo" de "não olhei".
+- **Reprodutibilidade da avaliação.** Como o embargo é retroativo, "o que o mapa dizia no dia do embarque" e "o que diz hoje" divergem justamente no caso que importa. Quem reconsulta a fonte responde a pergunta errada.
+
+Ainda não responde:
+
+1. **A série temporal.** O CAR dá o polígono; o marco de 2020 exige PRODES/DETER/MapBiomas. Hoje o Titan sabe **onde** a fazenda fica e não sabe o que aconteceu lá. É o 17.5.
+2. **O dado de fornecedor indireto.** A ADR-0042 modela a travessia entre organizations, mas o dado real da cadeia cria→recria→engorda está na **GTA**, estadual e heterogênea. Sem ingestão, é a melhor estrutura de proveniência do mercado com nada dentro.
+3. **O artefato final.** O comprador europeu precisa de DDS no TRACES, com geolocalização em formato próprio e referência que desce a cadeia. O dossiê do 10.2/10.3 chega perto e não é isso. Menor esforço, maior valor percebido.
+
+#### Consequência: o 17.5 passa na frente do 17.3
+
+A matriz de elegibilidade é a moldura; a avaliação territorial é o quadro. **Matriz cujas células dizem `INDETERMINADO` por falta de camada demonstra arquitetura, não valor.** Com as camadas ligadas, a mesma matriz vira demonstração.
+
+Isso inverte a ordem do PLANO, e a inversão é deliberada.
+
+#### Hipótese 1 — gratuito para o produtor, pago pelo frigorífico
+
+O defeito, se formulada como *"vendo a análise dos dados dele"*: a relação produtor↔frigorífico é adversarial no preço. Produtor que descobre que o software gratuito alimenta o comprador desinstala. Somem-se LGPD (muito pecuarista é pessoa física) e sigilo comercial.
+
+**A ADR-0042 já resolve.** O Titan transfere declarações verificáveis, não acesso — o produtor **autoriza** um dossiê sobre um lote específico, para um comprador específico, numa transação específica. Não é venda de dado: é o produtor usando a plataforma **contra** a assimetria. Mesma receita, incentivos alinhados em vez de opostos.
+
+**O escopo é o que mata a hipótese.** Gestão de fazenda — financeiro, estoque, pastagem, máquinas — é mercado disputado, de margem baixa e escopo infinito; construí-lo de graça consome o time e dilui o diferenciado. O gancho do pequeno produtor **não é gestão, é obrigação**:
+
+- **GTA** — obrigatória e dolorosa. Torná-la trivial constrói a linha do tempo **como efeito colateral**, e resolve com um único movimento a adoção do produtor **e** a lacuna (2) acima. É o melhor wedge identificado.
+- **PNIB** — obrigatória e individual; é onde os prediais não competem.
+- **Carência** — já implementada, e é dinheiro direto: lote barrado no abate é prejuízo.
+
+O gratuito precisa ser estreito a ponto de quase não gerar suporte. **Cada tela a mais é uma ligação por semana pelo resto do projeto.**
+
+#### Hipótese 2 — canal certo, pedido errado
+
+Garantia de compra não existe nesse mercado: o preço é spot, negociado por arroba, e pedi-la encerra a reunião. A desconfiança do responsável estava calibrada — garantia prometida e não honrada é pior que nenhuma.
+
+O que os frigoríficos **já fazem** serve igual: bonificação por arroba, prioridade na escala de abate, acesso a canal que paga mais. Então o pedido é outro: *reconheça o dossiê do Titan como suficiente na homologação de fornecedor, e faça-o qualificar para a bonificação que você já paga.* Risco baixo para eles; não se promete o que não se controla.
+
+#### A síntese: um frigorífico, uma região, a base de fornecedores dele
+
+Mercado de dois lados tem partida a frio. A saída é não tentar os dois lados ao mesmo tempo: **começar pela base de fornecedores de um único frigorífico** — ele já é obrigado a homologar aqueles produtores, já tem a lista, a dor e a alavanca.
+
+Isso dá **densidade numa geografia** em vez de cobertura fina em todas, e densidade é o que faz a cadeia cria→recria→engorda fechar. **Mato Grosso do Sul** é a região indicada: adiantada na PNIB, e os três CAR validados no 17.2 são de lá.
+
+**Preço por atestação** — por lote embarcado, por animal atestado — e não por assento: o lado do produtor pode ser gratuito com honestidade, a receita cresce com o volume verificado, e o frigorífico paga proporcional ao risco que transfere.
+
+#### Pagador não considerado: crédito e seguro
+
+Bancos já checam conformidade socioambiental para liberar crédito rural (há resolução do CMN restringindo financiamento a imóvel com embargo — **conferir o número antes de citar**). Precisam da mesma verificação, têm dinheiro e processo. Não é para agora, e é a razão para **não amarrar a arquitetura só ao frigorífico**.
+
+#### Advertência sobre "dado como ativo"
+
+O valor **não** está em revender o agregado: esse comprador quase não existe, e os que existem exigem escala de anos. Está na atestação no instante da transação. Agregado é opcionalidade, nunca plano.
+
+#### O mercado não está vazio
+
+Boi na Linha/Imaflora, Agrotools, Niceplanet, Safe Trace e as plataformas próprias de JBS, Marfrig e Minerva. **A vantagem do Titan não é chegar primeiro: é ser individual e auditável onde eles são prediais e recalculados.**
+
 ### NR-1 — Âncora temporal por documento de terceiro
 
 **Problema.** O `occurred_at` de um evento capturado offline é **tempo alegado** pelo relógio do dispositivo. Quem controla o aparelho controla a alegação. Isso é grave especificamente na carência: ela é calculada como `applied_at + dias`, então antedatar uma aplicação encurta a carência efetiva e libera o animal antes da hora — resíduo na carne, exatamente o dano que o Marco 9 existe para impedir. A ADR-0021, princípio 4, já veda tratar relógio de dispositivo como prova temporal, e o PLANO lista o risco na sua tabela ("relógio local apresentado como prova temporal").
