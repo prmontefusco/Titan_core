@@ -2875,6 +2875,26 @@ Roteiro executável completo, **38 passos passando**, com conferência independe
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
 
+### NR-6 — Conformidade socioambiental e elegibilidade por mercado
+
+**Registrada em 25 de julho de 2026**, a partir de questão levantada pelo responsável sobre embargos ambientais, terras indígenas e áreas de desmatamento.
+
+**Não era imprevisto: era decidido e não implementado.** A **ADR-0026**, aceita em 21/07/2026, já colocava o PostGIS no caminho crítico do MVP, nomeava a EUDR com as datas de aplicação, e declarava que o go-to-market prioriza *"o comprador que precisa reconstruir fornecedores diretos e indiretos"*. O PostGIS 3.6.4 está ativo no banco desde o Passo 1.4A. O que não existe é uma única coluna espacial: `RuralProperty` guarda município e UF.
+
+**A pergunta certa não é "está conforme".** É "para quais mercados este animal é elegível" — conformidade é relação entre animal e destino, não propriedade do animal. Formalizado na **ADR-0041**.
+
+**A percepção que barateia tudo:** conformidade territorial é a mesma máquina da carência. `PropertyStay × camada de restrição × regra versionada → bloqueio explicável` tem a mesma forma que `aplicação × medicamento × regra → bloqueio explicável`. O motor do Marco 9, a decisão explicável, a reavaliação do 9.6 e o dossiê já existem.
+
+**Três diferenças que a carência não tem:** o embargo é **retroativo** (publicado depois do fato, o que faz um animal aprovado ontem estar reprovado hoje sem nada nele ter mudado); a **prova negativa vence** (consulta de março não afirma nada sobre junho); e a **contaminação viaja pela cadeia** (fazenda limpa que compra de fazenda embargada herda o problema).
+
+**As camadas vêm do `Titan_geodata`**, aplicação paralela do responsável, que já entrega geometria da fazenda e dados do SICAR e receberá camadas ambientais e sociais. É o *"provider externo substituível por contrato versionado"* que a ADR-0026 previa. **Decisão: importar e guardar**, o que torna a reprodutibilidade responsabilidade do Titan e resolve o fato de a origem ainda não versionar consultas históricas.
+
+**Dívida descoberta:** `Medication.withdrawal_period_days` é número único, e o prazo varia por país de destino. Não foi erro — o escopo era mercado interno. A correção é aditiva.
+
+**O limite que já apareceu três vezes:** doadora de embrião de terceiro (13.2), fornecedor indireto (aqui) e frigorífico (abate). `UniversalRelation` recusa ponta fora da Organization, e com razão. Como representar **contraparte externa** sem furar o isolamento exige ADR própria.
+
+**Decomposição proposta — Marco 17:** 17.1 georreferenciamento da propriedade; 17.2 importação do CAR; 17.3 mercado de destino e matriz de elegibilidade; 17.4 carência por mercado; 17.5 avaliação territorial, quando as camadas existirem.
+
 ### NR-1 — Âncora temporal por documento de terceiro
 
 **Problema.** O `occurred_at` de um evento capturado offline é **tempo alegado** pelo relógio do dispositivo. Quem controla o aparelho controla a alegação. Isso é grave especificamente na carência: ela é calculada como `applied_at + dias`, então antedatar uma aplicação encurta a carência efetiva e libera o animal antes da hora — resíduo na carne, exatamente o dano que o Marco 9 existe para impedir. A ADR-0021, princípio 4, já veda tratar relógio de dispositivo como prova temporal, e o PLANO lista o risco na sua tabela ("relógio local apresentado como prova temporal").
