@@ -10,6 +10,7 @@ confirma no banco. Aceitar organização por parâmetro seria oferecer ao chamad
 a chance de pedir dados de outra.
 """
 
+import json
 from datetime import date, datetime
 from typing import Annotated, Any
 
@@ -34,11 +35,13 @@ from packages.livestock_application.authorization import (
     MEDICATION_LER,
     MOVEMENT_LER,
     PROPERTY_LER,
+    PROPERTY_LER_GEOMETRIA,
     REPRODUCTION_LER,
     TREATMENT_LER,
     VETERINARIAN_LER,
 )
 from packages.livestock_application.event_recorder import LivestockEventRecorder
+from packages.livestock_application.geometry_service import PropertyGeometryService
 from packages.livestock_application.parentage_service import (
     GERACOES_MAXIMAS,
     GERACOES_PADRAO,
@@ -46,6 +49,9 @@ from packages.livestock_application.parentage_service import (
 )
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
+)
+from packages.livestock_infrastructure.persistence.geometry_repository import (
+    TransactionalPropertyGeometryRepository,
 )
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
@@ -577,6 +583,95 @@ def consultar_origem(
     if encontrado is None or encontrado.organization_id != contexto.organization_id:
         return None
     return _evento_reprodutivo_resumo(encontrado)
+
+
+# -- Geometria da propriedade ------------------------------------------------
+
+
+class GeometriaResumo(BaseModel):
+    geometry_id: str
+    property_id: str
+    source: str
+    srid: int
+    source_digest: str
+    external_reference: str | None
+    version: int
+    captured_at: datetime | None
+    imported_at: datetime
+    geojson: dict[str, Any]
+
+
+def _geometria_resumo(registro: Any) -> GeometriaResumo:
+    return GeometriaResumo(
+        geometry_id=str(registro.geometry_id.value),
+        property_id=str(registro.property_id.value),
+        source=registro.source.value,
+        srid=registro.srid,
+        source_digest=registro.source_digest,
+        external_reference=registro.external_reference,
+        version=registro.version,
+        captured_at=registro.captured_at,
+        imported_at=registro.imported_at,
+        # O material como foi recebido, e não uma reserialização: é sobre ele que
+        # o digest foi calculado, e devolver outra coisa quebraria a conferência.
+        geojson=json.loads(registro.source_payload),
+    )
+
+
+def _geometria_servico(connection: Any) -> PropertyGeometryService:
+    return PropertyGeometryService(
+        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        recorder=LivestockEventRecorder(
+            event_log=DomainEventRepository(connection=connection), clock=SystemClock()
+        ),
+    )
+
+
+@router.get(
+    "/properties/{property_id}/geometry",
+    response_model=GeometriaResumo | None,
+    summary="Consultar a geometria vigente de uma propriedade",
+    description=(
+        "Devolve `null` quando a propriedade não tem limite registrado — resposta "
+        "honesta e não impeditiva: propriedade sem geometria continua operando, e "
+        "a lacuna aparece declarada em vez de bloquear.\n\n"
+        "Exige permissão própria: o polígono revela onde a operação fica, e ler o "
+        "cadastro da propriedade não implica ler o limite dela."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_geometria(
+    property_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+) -> GeometriaResumo | None:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    encontrada = _geometria_servico(connection).current_for(contexto.organization_id, alvo)
+    return None if encontrada is None else _geometria_resumo(encontrada)
+
+
+@router.get(
+    "/properties/{property_id}/geometry/history",
+    response_model=list[GeometriaResumo],
+    summary="Consultar todas as versões da geometria",
+    description=(
+        "Da mais antiga à mais recente. É por aqui que se responde qual polígono "
+        "uma avaliação passada usou — pergunta que uma tabela sobrescrita não "
+        "teria como responder."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_historico_de_geometria(
+    property_id: str,
+    connection: ConnectionDependency,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+) -> list[GeometriaResumo]:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    return [
+        _geometria_resumo(geometria)
+        for geometria in _geometria_servico(connection).history_of(contexto.organization_id, alvo)
+    ]
 
 
 # -- Propriedades ------------------------------------------------------------

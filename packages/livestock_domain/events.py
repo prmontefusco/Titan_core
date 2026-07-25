@@ -43,6 +43,7 @@ TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
 REPRODUCTIVE_EVENT_RECORDED = "livestock.reproductive_event_recorded"
+PROPERTY_GEOMETRY_RECORDED = "livestock.property_geometry_recorded"
 
 LIVESTOCK_EVENT_TYPES = frozenset(
     {
@@ -63,6 +64,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         ANIMAL_EXITED,
         PARENTAGE_REGISTERED,
         REPRODUCTIVE_EVENT_RECORDED,
+        PROPERTY_GEOMETRY_RECORDED,
     }
 )
 
@@ -389,6 +391,39 @@ def treatment_applied_payload(
             "evidence_references": [_id(r.target_id) for r in evidence_references],
             "medication_batch_id": _id(medication_batch_id),
             "prescription_id": None if prescription_id is None else _id(prescription_id),
+        },
+    )
+
+
+def property_geometry_recorded_payload(
+    *,
+    geometry_id: TypedId,
+    property_id: TypedId,
+    source: str,
+    srid: int,
+    source_digest: str,
+    external_reference: str | None,
+    version: int,
+    captured_at: datetime | None,
+) -> CanonicalPayload:
+    """O agregado é a geometria, e a propriedade a cita.
+
+    **O polígono não entra no payload — só o digest dele.** O evento diz que a
+    geometria foi registrada, de qual fonte e com que impressão digital; o
+    material fica na tabela, sob RLS. Copiá-lo para o log faria a coordenada
+    protegida existir em dois lugares com controles de acesso diferentes.
+    """
+    return _payload(
+        PROPERTY_GEOMETRY_RECORDED,
+        {
+            "captured_at": captured_at,
+            "external_reference": external_reference,
+            "geometry_id": _id(geometry_id),
+            "property_id": _id(property_id),
+            "source": source,
+            "source_digest": source_digest,
+            "srid": srid,
+            "version": version,
         },
     )
 

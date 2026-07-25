@@ -2871,6 +2871,62 @@ O agregado do evento é o **próprio evento reprodutivo**. A linha do tempo da m
 
 Roteiro executável completo, **38 passos passando**, com conferência independente no banco: dois partos e dois abortos registrados, dois nascidos vivos e dois natimortos, quatro eventos `livestock.reproductive_event_recorded` no log — e **nenhum natimorto com registro de saída**, que é a prova de que a distinção entre não nascer vivo e morrer depois sobreviveu até o banco.
 
+## Marco 17 — Elegibilidade por mercado e conformidade territorial
+
+**Fora do PLANO_DE_IMPLEMENTACAO_VALIDADO.** Priorizado pelo responsável sobre os Marcos 14 e 15, a partir da questão sobre embargos ambientais. Ver nota de rumo NR-6 e **ADR-0041**.
+
+### Passo 17.1 — Georreferenciamento da propriedade (ADR-0026)
+
+**Data:** 25 de julho de 2026 · **Estado:** CONCLUÍDO E VALIDADO.
+
+#### Por que existe
+
+A **ADR-0026** colocou o PostGIS no caminho crítico do MVP em 21/07/2026, nomeando a EUDR e as datas de aplicação. O PostGIS 3.6.4 está ativo no banco desde o Passo 1.4A. **E não havia uma única coluna espacial:** `RuralProperty` guardava município e UF. Este passo é a primeira vez que o espacial sai do `compose.yaml` e entra no domínio.
+
+#### Decisões
+
+**A geometria é entidade própria, e não campo da propriedade.** Cada registro cria uma **versão nova**; a anterior permanece. Sobrescrever faria a auditoria de 2027 ler a decisão de 2025 contra um polígono que não existia na época — que é o que a ADR-0026 proíbe ao dizer que geometria atual não substitui versão histórica usada por avaliação anterior.
+
+**O material recebido é preservado com digest, e nunca reserializado.** O digest é calculado sobre o texto exato que chegou. Reserializar normalizaria espaços e ordem de chaves, e o digest deixaria de identificar o que de fato veio do SICAR. Há teste provando que o mesmo GeoJSON com espaçamento diferente produz digest diferente — e a rota de leitura devolve o material original, para que a conferência feche.
+
+**Duas representações coexistem.** `source_payload` e `source_srid` guardam o declarado; a coluna `geom` guarda a normalização em 4326. A transformação é registrada, nunca silenciosa.
+
+**Geometria inválida é recusada com o motivo, e não reparada.** `ST_IsValidReason` viaja na mensagem — sem ele, achar onde o anel se rompe num polígono de trinta mil vértices é inviável. Reparo é derivado novo, com método e diferenças declarados, e fica fora deste passo.
+
+**Ponto não é limite de propriedade.** Só `Polygon` e `MultiPolygon` entram, e o `ST_Multi` uniformiza os dois numa forma só de coluna.
+
+**Propriedade sem geometria continua válida.** A leitura responde `null`, que é lacuna declarada e não erro — mesmo tratamento da propriedade de nascimento desconhecida na ADR-0040.
+
+**Permissão própria para ler o limite.** O polígono revela onde a operação fica, e derivados como bounding box e centroide revelam quase o mesmo. Ler o cadastro da propriedade não implica ler a geometria dela.
+
+**O evento leva o digest, nunca o polígono.** Copiar a coordenada protegida para o log a faria existir em dois lugares com controles de acesso diferentes.
+
+#### `geoalchemy2` não foi adicionada
+
+O SQLAlchemy só precisava **saber escrever `geometry(...)` no DDL** para o `alembic check` comparar metadata e banco. A geometria entra por expressão SQL, é comparada dentro do banco e nunca vira objeto Python — nada do que a biblioteca oferece seria usado. `spatial_types.py` tem doze linhas e resolve, pelo mesmo critério que manteve o cliente do Keycloak na biblioteca padrão.
+
+**Registrado no próprio módulo:** se o Titan passar a manipular geometria em Python, a dependência passa a valer o custo, e ampliar aquele arquivo é o sinal de que a decisão precisa ser revista.
+
+#### Testes
+
+`test_geometry_domain.py` (16), `test_property_geometry_postgresql.py` (7) e `test_livestock_api_geometria.py` (12). Os de PostgreSQL provam o que nenhum teste em memória provaria: transformação de SIRGAS 2000 / UTM 23S para 4326 conferida no banco, ampulheta recusada com o motivo do GEOS, versionamento preservando a versão 1 intacta, e isolamento sob papel `NOBYPASSRLS` — o usuário `titan` é superusuário e o teste passaria por acidente sem isso.
+
+#### Portão de verificação
+
+`796 testes aprovados, 0 pulados`; `ruff check`, `ruff format --check`, `mypy` (395 arquivos) e `alembic check` sem erros. Migration `20260725_0045`.
+
+#### Validação manual — APROVADA em 25 de julho de 2026
+
+Roteiro executável completo, **47 passos passando**, incluindo os nove da geometria.
+
+### Passo 17.2 — Importação do CAR pelo Titan_geodata
+
+**Estado:** NÃO INICIADO. Bloqueado apenas por decisão de sequência, não por dependência.
+
+O `Titan_geodata` expõe `/api/v1/sicar/properties/{cod_imovel}` com chave de API. A geometria importada entra como `GeometrySource.SICAR_CAR`, que já exige a referência externa, e cria versão nova — nunca substitui.
+
+**A chave de API não vive no repositório.** Entra por variável de ambiente, como as demais credenciais.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.

@@ -37,6 +37,11 @@ TREATMENT_REGISTRAR: Final = "LIVESTOCK_TREATMENT.REGISTRAR"
 TREATMENT_LER: Final = "LIVESTOCK_TREATMENT.LER"
 PROPERTY_CRIAR: Final = "LIVESTOCK_PROPERTY.CRIAR"
 PROPERTY_LER: Final = "LIVESTOCK_PROPERTY.LER"
+# A geometria é dado sensível de localização: o polígono revela onde a operação
+# fica, e derivados como bounding box e centroide revelam quase o mesmo. Ler o
+# cadastro da propriedade não deve implicar ler o limite dela.
+PROPERTY_REGISTRAR_GEOMETRIA: Final = "LIVESTOCK_PROPERTY.REGISTRAR_GEOMETRIA"
+PROPERTY_LER_GEOMETRIA: Final = "LIVESTOCK_PROPERTY.LER_GEOMETRIA"
 LOT_CRIAR: Final = "LIVESTOCK_LOT.CRIAR"
 LOT_LER: Final = "LIVESTOCK_LOT.LER"
 VETERINARIAN_CRIAR: Final = "LIVESTOCK_VETERINARIAN.CRIAR"
@@ -66,6 +71,7 @@ LEITURA: Final = frozenset(
         DOSSIER_LER,
         ANIMAL_LER_GENEALOGIA,
         REPRODUCTION_LER,
+        PROPERTY_LER_GEOMETRIA,
     }
 )
 
@@ -75,6 +81,7 @@ ESCRITA: Final = frozenset(
         ANIMAL_REGISTRAR_SAIDA,
         ANIMAL_REGISTRAR_GENEALOGIA,
         REPRODUCTION_REGISTRAR,
+        PROPERTY_REGISTRAR_GEOMETRIA,
         MEDICATION_CRIAR,
         TREATMENT_REGISTRAR,
         PROPERTY_CRIAR,

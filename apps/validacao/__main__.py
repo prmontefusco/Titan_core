@@ -100,6 +100,7 @@ def _exigir_permissoes_do_passo(cliente: Cliente) -> None:
         cliente.get(f"/v1/livestock/animals/{inexistente}/{rota}")
         for rota in ("ancestry", "origin")
     ]
+    sondas.append(cliente.get(f"/v1/livestock/properties/{inexistente}/geometry"))
     if all(sonda.status != 403 for sonda in sondas):
         return
     raise SystemExit(
@@ -384,7 +385,140 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, propriedade: str) -> Ro
     )
 
     _acrescentar_reproducao(roteiro, operador, auditor, propriedade, rebanho)
+    _acrescentar_geometria(roteiro, operador, auditor, propriedade)
     return roteiro
+
+
+QUADRADO = {
+    "type": "Polygon",
+    "coordinates": [
+        [[-47.9, -15.8], [-47.8, -15.8], [-47.8, -15.7], [-47.9, -15.7], [-47.9, -15.8]]
+    ],
+}
+
+MAIOR = {
+    "type": "Polygon",
+    "coordinates": [
+        [[-47.95, -15.85], [-47.75, -15.85], [-47.75, -15.65], [-47.95, -15.65], [-47.95, -15.85]]
+    ],
+}
+
+# Os lados se cruzam no meio: sintaticamente perfeita, topologicamente inválida.
+AMPULHETA = {
+    "type": "Polygon",
+    "coordinates": [
+        [[-47.9, -15.8], [-47.8, -15.7], [-47.8, -15.8], [-47.9, -15.7], [-47.9, -15.8]]
+    ],
+}
+
+
+def _acrescentar_geometria(
+    roteiro: Roteiro, operador: Cliente, auditor: Cliente, propriedade: str
+) -> None:
+    """Passo 17.1 — a primeira coluna espacial do Titan (ADR-0026)."""
+
+    roteiro.passo(
+        "7.1",
+        "Propriedade sem geometria responde nulo",
+        lambda: operador.get(f"/v1/livestock/properties/{propriedade}/geometry"),
+        200,
+        conferir=lambda r: None if r.corpo is None else "já havia geometria registrada",
+        porque="Lacuna declarada, e não erro: a propriedade opera sem limite.",
+    )
+
+    roteiro.passo(
+        "7.2",
+        "Registrar o limite da propriedade",
+        lambda: operador.post(
+            f"/v1/livestock/properties/{propriedade}/geometry",
+            {"source": "DECLARADA", "geojson": QUADRADO},
+        ),
+        201,
+        conferir=lambda r: (
+            None if len(str(r["source_digest"])) == 64 else "o digest não veio completo"
+        ),
+        porque="O digest identifica o material exatamente como foi recebido.",
+    )
+
+    roteiro.passo(
+        "7.3",
+        "Geometria com lados que se cruzam é recusada",
+        lambda: operador.post(
+            f"/v1/livestock/properties/{propriedade}/geometry",
+            {"source": "DECLARADA", "geojson": AMPULHETA},
+        ),
+        409,
+        conferir=lambda r: (
+            None if "ntersection" in str(r["detail"]) else "o motivo do PostGIS não veio"
+        ),
+        porque="Só o PostGIS pega isso — e o motivo diz onde o anel se rompe.",
+    )
+
+    roteiro.passo(
+        "7.4",
+        "Ponto não é limite de propriedade",
+        lambda: operador.post(
+            f"/v1/livestock/properties/{propriedade}/geometry",
+            {"source": "DECLARADA", "geojson": {"type": "Point", "coordinates": [-47.9, -15.8]}},
+        ),
+        409,
+    )
+
+    roteiro.passo(
+        "7.5",
+        "Geometria do SICAR sem o código do imóvel é recusada",
+        lambda: operador.post(
+            f"/v1/livestock/properties/{propriedade}/geometry",
+            {"source": "SICAR_CAR", "geojson": QUADRADO},
+        ),
+        409,
+        porque="Sem o código, a importação não é reproduzível.",
+    )
+
+    roteiro.passo(
+        "7.6",
+        "Registrar de novo cria versão 2",
+        lambda: operador.post(
+            f"/v1/livestock/properties/{propriedade}/geometry",
+            {"source": "DECLARADA", "geojson": MAIOR},
+        ),
+        201,
+        conferir=lambda r: None if r["version"] == 2 else f"veio versão {r['version']}",
+        porque="Nunca substitui: a versão 1 é o que reproduz a avaliação antiga.",
+    )
+
+    roteiro.passo(
+        "7.7",
+        "O histórico traz as duas versões, com a primeira intacta",
+        lambda: operador.get(f"/v1/livestock/properties/{propriedade}/geometry/history"),
+        200,
+        conferir=lambda r: (
+            None
+            if [item["version"] for item in r.corpo] == [1, 2]
+            and r.corpo[0]["geojson"]["coordinates"] == QUADRADO["coordinates"]
+            else "o histórico não preservou a versão 1 como ela entrou"
+        ),
+        porque="É o que responde qual polígono uma avaliação passada usou.",
+    )
+
+    roteiro.passo(
+        "7.8",
+        "A vigente é a última registrada",
+        lambda: operador.get(f"/v1/livestock/properties/{propriedade}/geometry"),
+        200,
+        conferir=lambda r: None if r["version"] == 2 else "a vigente não é a versão 2",
+    )
+
+    roteiro.passo(
+        "7.9",
+        "O auditor lê o limite, mas não o declara",
+        lambda: auditor.post(
+            f"/v1/livestock/properties/{propriedade}/geometry",
+            {"source": "DECLARADA", "geojson": QUADRADO},
+        ),
+        403,
+        porque="O polígono revela onde a operação fica; escrita é do operador.",
+    )
 
 
 def _acrescentar_reproducao(

@@ -9,6 +9,7 @@ do vínculo e acrescenta um fato; o vínculo anterior permanece. Um DELETE
 prometeria apagar o que o domínio preserva.
 """
 
+import json
 from datetime import datetime
 from typing import Annotated, Any
 
@@ -33,11 +34,13 @@ from packages.livestock_application.authorization import (
     LOT_CRIAR,
     MOVEMENT_REGISTRAR,
     PROPERTY_CRIAR,
+    PROPERTY_REGISTRAR_GEOMETRIA,
     REPRODUCTION_REGISTRAR,
     VETERINARIAN_CRIAR,
 )
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.exit_service import AnimalExitService
+from packages.livestock_application.geometry_service import PropertyGeometryService
 from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
 from packages.livestock_application.parentage_service import ParentageService
@@ -50,6 +53,7 @@ from packages.livestock_application.reproduction_service import (
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import AnimalSex, BirthOutcome, VerificationStatus
 from packages.livestock_domain.exit import ExitType
+from packages.livestock_domain.geometry import SRID_CANONICO, GeometrySource
 from packages.livestock_domain.lot import LotType
 from packages.livestock_domain.parentage import (
     ROLE_BY_RELATION_TYPE,
@@ -63,6 +67,9 @@ from packages.livestock_infrastructure.persistence.animal_repository import (
 )
 from packages.livestock_infrastructure.persistence.exit_repository import (
     TransactionalAnimalExitRepository,
+)
+from packages.livestock_infrastructure.persistence.geometry_repository import (
+    TransactionalPropertyGeometryRepository,
 )
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
@@ -899,3 +906,102 @@ def registrar_perda_gestacional(
         raise _conflito(error) from error
 
     return _evento_reprodutivo(evento, {})
+
+
+# -- Geometria da propriedade ------------------------------------------------
+
+
+class RegistrarGeometriaRequest(BaseModel):
+    source: GeometrySource
+    srid: int = Field(
+        default=SRID_CANONICO,
+        gt=0,
+        description=(
+            "Sistema de referência do material enviado. Coordenada sem SRID conhecido "
+            "não localiza nada, e adivinhá-lo produziria interseção falsa. O Titan "
+            "transforma para 4326 e preserva o original."
+        ),
+    )
+    geojson: dict[str, Any] = Field(
+        description="Polygon ou MultiPolygon. Ponto não é limite de propriedade."
+    )
+    external_reference: str | None = Field(default=None, max_length=120)
+    captured_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=1000)
+
+
+class GeometriaResponse(BaseModel):
+    geometry_id: str
+    property_id: str
+    source: str
+    srid: int
+    source_digest: str
+    external_reference: str | None
+    version: int
+    captured_at: datetime | None
+    imported_at: datetime
+
+
+def _geometria(registro: Any) -> GeometriaResponse:
+    return GeometriaResponse(
+        geometry_id=str(registro.geometry_id.value),
+        property_id=str(registro.property_id.value),
+        source=registro.source.value,
+        srid=registro.srid,
+        source_digest=registro.source_digest,
+        external_reference=registro.external_reference,
+        version=registro.version,
+        captured_at=registro.captured_at,
+        imported_at=registro.imported_at,
+    )
+
+
+@router.post(
+    "/properties/{property_id}/geometry",
+    response_model=GeometriaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar a geometria de uma propriedade",
+    description=(
+        "**Nunca substitui.** Cada registro cria uma versão nova, e a anterior "
+        "permanece — é ela que faz uma avaliação antiga continuar reproduzível "
+        "depois de o CAR ser retificado.\n\n"
+        "Geometria topologicamente inválida é **recusada**, com o motivo, e não "
+        "reparada em silêncio: reparo é derivado novo, com método e diferenças "
+        "declarados.\n\n"
+        "A resposta traz o digest do material, e não o polígono — quem quiser o "
+        "limite consulta a rota de leitura, que exige permissão própria."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_geometria(
+    property_id: str,
+    corpo: RegistrarGeometriaRequest,
+    connection: ConnectionDependency,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(PROPERTY_REGISTRAR_GEOMETRIA))
+    ],
+) -> GeometriaResponse:
+    servico = PropertyGeometryService(
+        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    try:
+        geometria = servico.register_geometry(
+            context=operation_context(contexto),
+            property_id=typed_id_or_problem(
+                property_id, entity_type="rural_property", campo="property_id"
+            ),
+            source=corpo.source,
+            source_payload=json.dumps(corpo.geojson, separators=(",", ":"), sort_keys=True),
+            srid=corpo.srid,
+            external_reference=corpo.external_reference,
+            captured_at=corpo.captured_at,
+            notes=corpo.notes,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Propriedade") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _geometria(geometria)

@@ -81,6 +81,12 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/reproductive-events/pregnancy-losses", "post"),
     ("/v1/livestock/animals/{animal_id}/reproductive-events", "get"),
     ("/v1/livestock/animals/{animal_id}/origin", "get"),
+    # Geometria da propriedade (Passo 17.1, ADR-0026). Leitura e escrita têm
+    # permissão própria: o polígono revela onde a operação fica, e ler o cadastro
+    # da propriedade não implica ler o limite dela.
+    ("/v1/livestock/properties/{property_id}/geometry", "post"),
+    ("/v1/livestock/properties/{property_id}/geometry", "get"),
+    ("/v1/livestock/properties/{property_id}/geometry/history", "get"),
 }
 
 

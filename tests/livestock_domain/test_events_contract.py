@@ -28,6 +28,7 @@ EXPECTED_EVENT_TYPES = frozenset(
         "livestock.medication_registered",
         "livestock.parentage_registered",
         "livestock.prescription_issued",
+        "livestock.property_geometry_recorded",
         "livestock.property_registered",
         "livestock.reproductive_event_recorded",
         "livestock.treatment_applied",
@@ -137,6 +138,20 @@ def test_every_event_type_is_namespaced_and_canonical() -> None:
                 "evidence_references": (),
             },
             events.REPRODUCTIVE_EVENT_RECORDED,
+        ),
+        (
+            events.property_geometry_recorded_payload,
+            {
+                "geometry_id": TypedId.new("property_geometry"),
+                "property_id": TypedId.new("rural_property"),
+                "source": "SICAR_CAR",
+                "srid": 4326,
+                "source_digest": "a" * 64,
+                "external_reference": "MG-3106200-ABC",
+                "version": 1,
+                "captured_at": None,
+            },
+            events.PROPERTY_GEOMETRY_RECORDED,
         ),
     ],
 )
