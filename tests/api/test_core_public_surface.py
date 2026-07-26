@@ -22,6 +22,10 @@ SUPERFICIE_ESPERADA = {
     ("/health", "get"),
     ("/technical/authentication", "get"),
     ("/v1/verification/bundles", "post"),
+    # Core - governanca auditavel de regras (ADR-0043).
+    ("/v1/rule-governance/rule-identities", "post"),
+    ("/v1/rule-governance/rule-identities/{rule_identity_id}/versions", "post"),
+    ("/v1/rule-governance/rule-identities/{rule_identity_id}/timeline", "get"),
     # Vertical Livestock — API mínima do fluxo aprovado (Passos 10.4a e 10.4b).
     # A lista é fechada por decisão: `POST /v1/livestock/prescriptions` NÃO entra,
     # porque `prescription_id` é opcional em TreatmentApplication e nenhuma regra
@@ -202,20 +206,26 @@ def test_nenhuma_rota_da_vertical_permite_edicao_destrutiva() -> None:
     assert not proibidos, f"Rotas destrutivas na vertical: {proibidos}"
 
 
-def test_toda_rota_da_vertical_declara_autenticacao_e_negacoes() -> None:
-    """Contrato que não publica a negação faz o integrador descobrir por tentativa.
+def test_nenhuma_rota_de_governanca_de_regras_permite_edicao_destrutiva() -> None:
+    proibidos = {
+        (caminho, metodo)
+        for caminho, metodo in _operacoes()
+        if caminho.startswith("/v1/rule-governance/") and metodo in {"put", "patch", "delete"}
+    }
 
-    A segurança precisa constar do esquema também porque é ela que faz o Swagger
-    anexar o token — sem isso, o botão Authorize não tem efeito na requisição.
-    """
+    assert not proibidos, f"Rotas destrutivas na governanca de regras: {proibidos}"
+
+
+def test_toda_rota_protegida_declara_autenticacao_e_negacoes() -> None:
+    """Contrato que nao publica negacao faz o integrador descobrir por tentativa."""
     esquema = _esquema()
 
     for caminho, operacoes in esquema["paths"].items():
-        if not caminho.startswith("/v1/livestock/"):
+        if not (caminho.startswith("/v1/livestock/") or caminho.startswith("/v1/rule-governance/")):
             continue
         for metodo, operacao in operacoes.items():
             rotulo = f"{metodo.upper()} {caminho}"
-            assert operacao.get("security"), f"{rotulo} não declara autenticação."
+            assert operacao.get("security"), f"{rotulo} nao declara autenticacao."
             respostas = operacao["responses"]
-            assert "401" in respostas, f"{rotulo} não declara 401."
-            assert "403" in respostas, f"{rotulo} não declara 403."
+            assert "401" in respostas, f"{rotulo} nao declara 401."
+            assert "403" in respostas, f"{rotulo} nao declara 403."

@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 
 from packages.core_application.rule_governance_service import RuleGovernanceService
+from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import (
     RuleIdentity,
     RuleSourceType,
@@ -19,9 +20,14 @@ from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 @dataclass
 class InMemoryRuleIdentityRepository:
     identities: dict[tuple[OrganizationId, str], RuleIdentity] = field(default_factory=dict)
+    by_id: dict[TypedId, RuleIdentity] = field(default_factory=dict)
 
     def save(self, identity: RuleIdentity) -> None:
         self.identities[(identity.organization_id, identity.code)] = identity
+        self.by_id[identity.rule_identity_id] = identity
+
+    def get_by_id(self, rule_identity_id: TypedId) -> RuleIdentity | None:
+        return self.by_id.get(rule_identity_id)
 
     def get_by_organization_and_code(
         self, organization_id: OrganizationId, code: str
@@ -35,6 +41,23 @@ class InMemoryRuleTimelineRepository:
 
     def append(self, event: RuleTimelineEvent) -> None:
         self.events.append(event)
+
+
+@dataclass
+class InMemoryRuleVersionRepository:
+    rules: dict[tuple[OrganizationId, TypedId, str, int], Rule] = field(default_factory=dict)
+
+    def save(self, rule: Rule) -> None:
+        self.rules[(rule.organization_id, rule.policy_id, rule.code, rule.version)] = rule
+
+    def get_by_policy_code_and_version(
+        self,
+        organization_id: OrganizationId,
+        policy_id: TypedId,
+        code: str,
+        version: int,
+    ) -> Rule | None:
+        return self.rules.get((organization_id, policy_id, code, version))
 
 
 def _actor(org_id: OrganizationId) -> UniversalReference:
@@ -132,3 +155,83 @@ def test_same_rule_code_can_exist_in_different_organizations() -> None:
 
     assert rule_a.rule_identity_id != rule_b.rule_identity_id
     assert len(identities.identities) == 2
+
+
+def test_publish_rule_version_uses_identity_code_and_records_timeline() -> None:
+    org_id = OrganizationId.new()
+    identities = InMemoryRuleIdentityRepository()
+    timeline = InMemoryRuleTimelineRepository()
+    rules = InMemoryRuleVersionRepository()
+    service = RuleGovernanceService(identities=identities, timeline=timeline, rules=rules)
+    actor = _actor(org_id)
+    identity = service.create_identity(
+        organization_id=org_id,
+        code="rule-carencia",
+        purpose="ELEGIBILIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    policy_id = TypedId.new("policy")
+    condition = RuleCondition(
+        fact_type="livestock.withdrawal",
+        payload_key="in_withdrawal",
+        operator=ComparisonOperator.EQUALS,
+        expected_value=False,
+    )
+
+    rule = service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        policy_id=policy_id,
+        name="Carencia farmacologica",
+        actor=actor,
+        severity=SeverityLevel.BLOCKING,
+        conditions=(condition,),
+    )
+
+    assert rule.code == identity.code
+    assert rule.policy_id == policy_id
+    assert rule.version == 1
+    assert rules.get_by_policy_code_and_version(org_id, policy_id, identity.code, 1) == rule
+    assert [event.event_type for event in timeline.events] == [
+        RuleTimelineEventType.RULE_IDENTITY_CREATED,
+        RuleTimelineEventType.RULE_VERSION_DRAFTED,
+        RuleTimelineEventType.RULE_VERSION_PUBLISHED,
+    ]
+    assert timeline.events[-1].rule_version_id == rule.rule_id
+
+
+def test_publish_rule_version_rejects_duplicate_version_for_policy() -> None:
+    org_id = OrganizationId.new()
+    service = RuleGovernanceService(
+        identities=InMemoryRuleIdentityRepository(),
+        timeline=InMemoryRuleTimelineRepository(),
+        rules=InMemoryRuleVersionRepository(),
+    )
+    actor = _actor(org_id)
+    identity = service.create_identity(
+        organization_id=org_id,
+        code="rule-carencia",
+        purpose="ELEGIBILIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    policy_id = TypedId.new("policy")
+    service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        policy_id=policy_id,
+        name="Carencia farmacologica",
+        actor=actor,
+    )
+
+    with pytest.raises(ValueError, match="Ja existe uma versao publicada"):
+        service.publish_rule_version(
+            organization_id=org_id,
+            rule_identity_id=identity.rule_identity_id,
+            policy_id=policy_id,
+            name="Carencia farmacologica v1 duplicada",
+            actor=actor,
+        )

@@ -24,6 +24,12 @@ from sqlalchemy import Connection, text
 
 from apps.api.authentication import require_authenticated_principal
 from apps.api.main import app
+from packages.core_application.rule_governance_authorization import (
+    RULE_GOVERNANCE_CRIAR,
+    RULE_GOVERNANCE_LER,
+    RULE_GOVERNANCE_PERMISSIONS,
+    RULE_GOVERNANCE_PUBLICAR,
+)
 from packages.core_domain import (
     Membership,
     MembershipRoleAssignment,
@@ -58,6 +64,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 ISSUER = "http://localhost:8080/realms/titan"
+TODAS_AS_PERMISSOES = LIVESTOCK_PERMISSIONS | RULE_GOVERNANCE_PERMISSIONS
+PERMISSOES_OPERADOR = ROLE_PERMISSIONS[OPERADOR_PECUARIO] | frozenset(
+    {RULE_GOVERNANCE_CRIAR, RULE_GOVERNANCE_LER, RULE_GOVERNANCE_PUBLICAR}
+)
+PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER})
 
 
 class Ambiente:
@@ -84,7 +95,7 @@ class Ambiente:
         # virgem — e falhar em qualquer ambiente já semeado.
         autorizacao = AuthorizationRepository(connection)
         self.permissoes: dict[str, TypedId] = {}
-        for codigo in sorted(LIVESTOCK_PERMISSIONS):
+        for codigo in sorted(TODAS_AS_PERMISSOES):
             existente = connection.execute(
                 text("SELECT permission_id FROM core_identity.permissions WHERE code = :c"),
                 {"c": codigo},
@@ -105,14 +116,14 @@ class Ambiente:
             subject=self.operador_subject,
             organizacao=self.org_a,
             nome_papel=f"{OPERADOR_PECUARIO}_{uuid4().hex[:8]}",
-            permissoes=tuple(sorted(ROLE_PERMISSIONS[OPERADOR_PECUARIO])),
+            permissoes=tuple(sorted(PERMISSOES_OPERADOR)),
             agora=agora,
         )
         self.auditor = self._principal_com_papel(
             subject=self.auditor_subject,
             organizacao=self.org_a,
             nome_papel=f"{AUDITOR}_{uuid4().hex[:8]}",
-            permissoes=tuple(sorted(ROLE_PERMISSIONS[AUDITOR])),
+            permissoes=tuple(sorted(PERMISSOES_AUDITOR)),
             agora=agora,
         )
 

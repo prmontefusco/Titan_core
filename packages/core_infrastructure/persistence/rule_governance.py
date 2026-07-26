@@ -161,6 +161,34 @@ class TransactionalRuleIdentityRepository:
             },
         )
 
+    def get_by_id(self, rule_identity_id: TypedId) -> RuleIdentity | None:
+        row = self.connection.execute(
+            text(
+                """
+                SELECT
+                    rule_identity_id,
+                    record_owner_organization_id,
+                    code,
+                    purpose,
+                    scope,
+                    source_type,
+                    created_by_target_type,
+                    created_by_target_id,
+                    created_by_organization_id,
+                    created_by_contract_version,
+                    created_at,
+                    vertical,
+                    description
+                FROM core_audit.rule_identities
+                WHERE rule_identity_id = :rule_identity_id
+                """
+            ),
+            {"rule_identity_id": rule_identity_id.value},
+        ).first()
+        if row is None:
+            return None
+        return _map_identity(row)
+
     def get_by_organization_and_code(
         self, organization_id: OrganizationId, code: str
     ) -> RuleIdentity | None:

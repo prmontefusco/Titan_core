@@ -1,0 +1,116 @@
+from uuid import uuid4
+
+from packages.core_application.policy_service import PolicyService
+from packages.core_infrastructure.persistence import set_local_organization_context
+from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from tests.livestock_api_support import _cliente
+
+
+def _criar_policy(ambiente) -> str:  # type: ignore[no-untyped-def]
+    set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
+    policy = PolicyService(TransactionalPolicyRepository(ambiente.connection)).create_draft(
+        organization_id=ambiente.org_a.organization_id,
+        code=f"politica-regras-{uuid4().hex[:8]}",
+        name="Politica de regras governadas",
+        description="Policy ficticia para validar publicacao de regra governada.",
+    )
+    return str(policy.policy_id.value)
+
+
+def test_fluxo_http_cria_publica_e_consulta_timeline_governada(ambiente) -> None:  # type: ignore[no-untyped-def]
+    cliente = _cliente(ambiente, ambiente.operador)
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+    policy_id = _criar_policy(ambiente)
+
+    identity_response = cliente.post(
+        "/v1/rule-governance/rule-identities",
+        headers=headers,
+        json={
+            "code": f"carencia-sanitaria-{uuid4().hex[:8]}",
+            "purpose": "Bloquear abate durante carencia sanitaria.",
+            "scope": "Animais com tratamento veterinario declarado.",
+            "source_type": "politica_interna",
+            "vertical": "livestock",
+            "description": "Regra propria do frigorifico para compra.",
+        },
+    )
+    assert identity_response.status_code == 201
+    identity = identity_response.json()
+
+    rule_response = cliente.post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/versions",
+        headers=headers,
+        json={
+            "policy_id": policy_id,
+            "name": "Carencia sanitaria minima",
+            "description": "Exige carencia completa antes do abate.",
+            "severity": "blocking",
+            "normative_source": "politica interna",
+            "required_evidence_types": ["livestock.treatment_applied"],
+            "conditions": [
+                {
+                    "fact_type": "livestock.treatment",
+                    "payload_key": "withdrawal_remaining_days",
+                    "operator": "less_or_equal",
+                    "expected_value": 0,
+                    "description": "Nao pode haver dias de carencia restantes.",
+                }
+            ],
+            "justification": "Compra somente de animal fora da carencia.",
+            "corrective_action": "Aguardar fim da carencia.",
+        },
+    )
+    assert rule_response.status_code == 201
+    rule = rule_response.json()
+    assert rule["code"] == identity["code"]
+    assert rule["version"] == 1
+
+    timeline_response = _cliente(ambiente, ambiente.auditor).get(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/timeline",
+        headers=headers,
+    )
+    assert timeline_response.status_code == 200
+    event_types = {event["event_type"] for event in timeline_response.json()}
+    assert event_types == {
+        "rule_identity_created",
+        "rule_version_drafted",
+        "rule_version_published",
+    }
+
+
+def test_auditor_nao_publica_versao_de_regra(ambiente) -> None:  # type: ignore[no-untyped-def]
+    cliente_operador = _cliente(ambiente, ambiente.operador)
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+    policy_id = _criar_policy(ambiente)
+    identity = cliente_operador.post(
+        "/v1/rule-governance/rule-identities",
+        headers=headers,
+        json={
+            "code": f"regra-auditoria-{uuid4().hex[:8]}",
+            "purpose": "Validar autorizacao.",
+            "scope": "Teste de API.",
+            "source_type": "politica_interna",
+        },
+    ).json()
+
+    resposta = _cliente(ambiente, ambiente.auditor).post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/versions",
+        headers=headers,
+        json={"policy_id": policy_id, "name": "Nao deve publicar"},
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_publicar_regra_para_identidade_inexistente_retorna_404(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.operador).post(
+        f"/v1/rule-governance/rule-identities/{uuid4()}/versions",
+        headers=headers,
+        json={"policy_id": _criar_policy(ambiente), "name": "Regra sem identidade"},
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.json()["reason_code"] == "RECURSO_NAO_ENCONTRADO"

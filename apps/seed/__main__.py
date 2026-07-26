@@ -23,6 +23,12 @@ from uuid import uuid4
 from sqlalchemy import Connection, text
 
 from apps.seed.keycloak import AdminKeycloak, KeycloakError
+from packages.core_application.rule_governance_authorization import (
+    RULE_GOVERNANCE_CRIAR,
+    RULE_GOVERNANCE_LER,
+    RULE_GOVERNANCE_PERMISSIONS,
+    RULE_GOVERNANCE_PUBLICAR,
+)
 from packages.core_domain import (
     Membership,
     MembershipRoleAssignment,
@@ -57,7 +63,11 @@ from packages.shared_kernel import OrganizationId, TypedId
 # Derivada da fonte única, e não repetida aqui. Uma lista paralela fica para trás
 # em silêncio quando uma permissão nova nasce — foi o que aconteceu ao acrescentar
 # as permissões de leitura.
-TODAS_AS_PERMISSOES = tuple(sorted(LIVESTOCK_PERMISSIONS))
+TODAS_AS_PERMISSOES = tuple(sorted(LIVESTOCK_PERMISSIONS | RULE_GOVERNANCE_PERMISSIONS))
+PERMISSOES_OPERADOR = ROLE_PERMISSIONS[OPERADOR_PECUARIO] | frozenset(
+    {RULE_GOVERNANCE_CRIAR, RULE_GOVERNANCE_LER, RULE_GOVERNANCE_PUBLICAR}
+)
+PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER})
 
 SENHA_DEMONSTRACAO = "titan_demo_local"  # noqa: S105 — ambiente local descartável
 
@@ -205,7 +215,7 @@ def semear(connection: Connection, *, issuer: str, subs: dict[str, str]) -> Seme
         user_id=operador_user,
         organizacao=organizacoes["a"],
         nome_papel=f"{OPERADOR_PECUARIO}_{sufixo}",
-        permissoes=tuple(permissoes[c] for c in sorted(ROLE_PERMISSIONS[OPERADOR_PECUARIO])),
+        permissoes=tuple(permissoes[c] for c in sorted(PERMISSOES_OPERADOR)),
         agora=agora,
     )
 
@@ -221,7 +231,7 @@ def semear(connection: Connection, *, issuer: str, subs: dict[str, str]) -> Seme
         user_id=auditor_user,
         organizacao=organizacoes["a"],
         nome_papel=f"{AUDITOR}_{sufixo}",
-        permissoes=tuple(permissoes[c] for c in sorted(ROLE_PERMISSIONS[AUDITOR])),
+        permissoes=tuple(permissoes[c] for c in sorted(PERMISSOES_AUDITOR)),
         agora=agora,
     )
 

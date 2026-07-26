@@ -15,6 +15,7 @@ from apps.api.authentication import (
     AuthenticatedPrincipalDependency,
 )
 from apps.api.configuration import exigir_configuracao
+from apps.api.core_rule_governance import router as core_rule_governance_router
 from apps.api.livestock_animals import router as livestock_animals_router
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
 from apps.api.livestock_medications import router as livestock_medications_router
@@ -83,6 +84,7 @@ if _origens:
 # Verificação externa é deliberadamente anônima: verifica apenas o material que o
 # próprio chamador enviou e não consulta registro algum do Titan.
 app.include_router(verification_router)
+app.include_router(core_rule_governance_router)
 
 
 def _openapi_com_contrato_publico() -> dict[str, Any]:

@@ -2,13 +2,17 @@
 
 import os
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import Connection, create_engine, text
 
+from packages.core_application.policy_service import PolicyService
 from packages.core_application.rule_governance_service import RuleGovernanceService
+from packages.core_domain.rule import ComparisonOperator, RuleCondition
 from packages.core_domain.rule_governance import RuleSourceType, RuleTimelineEventType
+from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.core_infrastructure.persistence.rule_governance import (
     TransactionalRuleIdentityRepository,
     TransactionalRuleTimelineRepository,
@@ -60,12 +64,19 @@ def test_rule_governance_persistence_and_rls() -> None:
 
         identity_repository = TransactionalRuleIdentityRepository(connection)
         timeline_repository = TransactionalRuleTimelineRepository(connection)
+        rule_repository = TransactionalRuleRepository(connection)
         service = RuleGovernanceService(
             identities=identity_repository,
             timeline=timeline_repository,
+            rules=rule_repository,
         )
         actor = _actor(org_1)
         occurred_at = datetime(2026, 7, 26, tzinfo=UTC)
+        policy = PolicyService(repository=TransactionalPolicyRepository(connection)).create_draft(
+            organization_id=org_1,
+            code="pol-elegibilidade",
+            name="Elegibilidade",
+        )
 
         identity = service.create_identity(
             organization_id=org_1,
@@ -90,6 +101,37 @@ def test_rule_governance_persistence_and_rls() -> None:
         assert events[0].event_type is RuleTimelineEventType.RULE_IDENTITY_CREATED
         assert events[0].actor == actor
         assert events[0].occurred_at == occurred_at
+
+        rule = service.publish_rule_version(
+            organization_id=org_1,
+            rule_identity_id=identity.rule_identity_id,
+            policy_id=policy.policy_id,
+            name="Carencia farmacologica",
+            actor=actor,
+            conditions=(
+                RuleCondition(
+                    fact_type="livestock.withdrawal",
+                    payload_key="in_withdrawal",
+                    operator=ComparisonOperator.EQUALS,
+                    expected_value=False,
+                ),
+            ),
+            occurred_at=occurred_at + timedelta(seconds=1),
+        )
+        persisted_rule = rule_repository.get_by_id(rule.rule_id)
+        assert persisted_rule == rule
+
+        events = timeline_repository.list_by_identity(org_1, identity.rule_identity_id)
+        assert events[0].event_type is RuleTimelineEventType.RULE_IDENTITY_CREATED
+        version_events = {event.event_type: event for event in events[1:]}
+        assert set(version_events) == {
+            RuleTimelineEventType.RULE_VERSION_DRAFTED,
+            RuleTimelineEventType.RULE_VERSION_PUBLISHED,
+        }
+        assert (
+            version_events[RuleTimelineEventType.RULE_VERSION_PUBLISHED].rule_version_id
+            == rule.rule_id
+        )
 
         connection.execute(
             text("SELECT set_config('titan.organization_id', :org_id, true)"),
