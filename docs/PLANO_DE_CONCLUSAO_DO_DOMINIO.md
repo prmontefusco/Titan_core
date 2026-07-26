@@ -157,7 +157,53 @@ Cada um exige decomposição própria:
 
 ---
 
-## 5. Protocolo
+## 5. Nota de rumo comercial e cadeia pós-abate
+
+### Nenhuma receita atrelada ao desfecho da elegibilidade
+
+Hipótese levantada e **recusada**: cobrar do produtor por negociação bem-sucedida. O defeito não é de preço, é estrutural.
+
+**O Titan passaria a ter interesse financeiro no animal ser elegível** — lucraria com o "sim" e não com o "não". É o arranjo das agências de rating pagas pelo emissor, e um auditor identifica isso em uma pergunta: *"recebem se o lote for reprovado?"*. Tudo no sistema foi construído para ser crível; receita que aposta no resultado destrói de fora o que a arquitetura protege por dentro. Não se corrige com política interna — a pergunta é sobre o incentivo, não sobre a intenção.
+
+**E taxaria justamente o evento que o sistema precisa capturar.** A venda é a transferência de custódia, a travessia de fronteira entre organizations — a coisa mais difícil e mais valiosa do modelo. Cobrar ali faz o produtor usar o Titan para a GTA e fechar a venda por fora.
+
+> **Nunca precifique o evento que você precisa que aconteça.**
+
+A regra reaparece no recall. Some-se a fricção de cobrar valores pequenos de milhares de produtores pulverizados, e o fato de que comissão sobre venda de boi já tem dono — o corretor, que ao menos traz o comprador.
+
+**O produtor é oferta, não demanda.** Se houver cobrança um dia, que seja assinatura plana por conveniência, **nunca vinculada ao desfecho da elegibilidade**.
+
+### As três linhas de receita do frigorífico
+
+1. **Homologação de fornecedor**, recorrente por fornecedor ativo. Substitui custo que eles já têm em gente — o mais fácil de vender.
+2. **Atestação por lote**, na compra, com a regra de desenho que resolve o conflito: **cobra-se pela resposta, não pelo "sim"** — lote reprovado custa exatamente o mesmo. Isso precisa estar na proposta comercial, não só na prática.
+3. **Arquivo e reprodução de auditoria**, recorrente.
+
+**A terceira é o negócio, não um acessório.** A pergunta do auditor não é "está conforme?", é *"o que você sabia no dia em que assinou aquela declaração?"*. O Titan responde porque guarda o texto exato com digest e nunca substitui; quem reconsulta a fonte responde o que o mapa diz hoje, que é a pergunta errada. Consequência: depois de alguns anos de declarações apoiadas em evidência que mora no Titan, **sair significa ficar sem lastro para o que já se assinou**. Precificar retenção barato no começo e jamais descartar dado.
+
+**Recall é capacidade incluída, nunca cobrada por uso.** Cobrar por consulta faz consultarem tarde, e recall tarde arruína a marca deles e, junto, a nossa. Não se precifica a emergência.
+
+### A jusante do abate: identidade vira conjunto
+
+No abate a cadeia deixa de ser linha e vira grafo: animal → carcaça (1:1), carcaça → cortes (1:N), cortes → **caixa (N:M)**, caixa → pallet → contêiner (agregação). A caixa quebra o elo — pode conter carne de vários animais, e moída de centenas.
+
+**Para a EUDR o conjunto basta.** A regulação pergunta se a mercadoria é livre de desmatamento, não qual boi virou qual bife: se todos os animais do conjunto declarado estão limpos, a caixa está limpa. Não é preciso 1:1 — é preciso que o conjunto seja **honesto e fechado**, que é o que a ADR-0042 já faz ao preservar a afirmação com sua incerteza.
+
+**Não inventar o modelo: é a NR-2, e o alvo é GS1 EPCIS** (transformação com entradas e saídas, agregação, GTIN/SSCC/GLN). A divisão fica limpa — **EPCIS diz o que aconteceu; o Titan diz quem afirmou, com base em quê, com que confiança e com qual lacuna**, que é o que falta ao EPCIS. Adotar o padrão entrega compatibilidade, não o ativo.
+
+**Não é preciso negociar com cada elo:** o frigorífico já é cliente e já precisa provar para frente; a atestação viaja como artefato verificável e não como acesso, então quem recebe não precisa ser tenant para consumir a prova; e a pressão vem do fim da cadeia, onde está a responsabilidade legal — **um comprador-farol no fim puxa o formato para trás** com mais alavanca do que vender elo a elo.
+
+**Sequência:** (1) fazenda → porteira, onde estamos, e parar aí de propósito; (2) animal → carcaça dentro do frigorífico, salto único e mais valioso, pegando carona na identificação de carcaça que o SIF já obriga; (3) carcaça → caixa com semântica de conjunto e saída EPCIS; (4) elos seguintes como tenants, se quiserem contribuir.
+
+**Alerta:** a montante — cria → recria → engorda — ainda não está resolvida, e é onde a EUDR morde. Descer para a jusante antes de a montante estar densa deixa as duas finas. **QR code no bife é marketing, não negócio**: encanta em feira e não sustenta receita.
+
+**Não prometer** rastreio do corte até o animal individual — na moída é falso, e promessa falsa em algo verificável derruba a credibilidade da parte que é verdadeira. A afirmação honesta é mais forte: *"a carne desta caixa veio deste conjunto declarado de animais, e todos satisfazem X"*.
+
+Cada elo à frente que cita uma referência do Titan torna o arquivo do frigorífico mais carregado de consequência: **o fosso cresce sozinho a cada elo.**
+
+---
+
+## 6. Protocolo
 
 Vale o mesmo do plano anterior: antes de cada passo, apresentar escopo, arquivos previstos, critérios de aceitação e riscos; ao final, executar o portão completo (`pytest` com `skipped == 0`, `ruff check`, `ruff format --check`, `mypy`, `alembic check`), registrar evidências no checklist e aguardar validação manual.
 
