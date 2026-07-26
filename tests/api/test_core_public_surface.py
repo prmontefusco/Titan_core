@@ -52,6 +52,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/medication-batches/{batch_id}", "get"),
     ("/v1/livestock/sanitary-campaigns", "get"),
     ("/v1/livestock/sanitary-campaigns/{campaign_id}", "get"),
+    ("/v1/livestock/animals/{animal_id}/sanitary-requirements/{campaign_code}", "get"),
     ("/v1/livestock/treatments", "get"),
     ("/v1/livestock/treatments/{application_id}", "get"),
     ("/v1/livestock/lots", "get"),

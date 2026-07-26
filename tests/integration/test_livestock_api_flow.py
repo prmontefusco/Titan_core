@@ -96,6 +96,8 @@ class Fluxo:
         elegibilidade = self._post(f"/v1/livestock/animals/{animal['animal_id']}/eligibility")
         return {
             "animal_id": animal["animal_id"],
+            "campaign_code": campanha["code"],
+            "campaign_id": campanha["campaign_id"],
             "batch_id": lote["batch_id"],
             "application_id": tratamento["application_id"],
             "decision_id": elegibilidade["decision_id"],
@@ -130,6 +132,25 @@ def test_fora_da_carencia_a_decisao_aprova(
     resultado = Fluxo(ambiente, operador).executar(dias_atras=100, carencia=30)
 
     assert resultado["result"] == "aprovada"
+
+
+def test_exigibilidade_sanitaria_minima_encontra_campanha_vinculada(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    resultado = Fluxo(ambiente, operador).executar(dias_atras=100, carencia=30)
+
+    resposta = operador.get(
+        "/v1/livestock/animals/"
+        f"{resultado['animal_id']}/sanitary-requirements/{resultado['campaign_code']}",
+        headers={ORGANIZATION_HEADER: str(ambiente.org_a.organization_id.value)},
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["status"] == "ATENDIDA"
+    assert corpo["campaign_id"] == resultado["campaign_id"]
+    assert corpo["application_id"] == resultado["application_id"]
+    assert corpo["gaps"] == []
 
 
 def test_o_dossie_devolvido_verifica_se_pelo_proprio_hash(

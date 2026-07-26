@@ -18,14 +18,25 @@ from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_domain import OrganizationContext
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.livestock_application.authorization import (
+    ANIMAL_LER,
     SANITARY_CAMPAIGN_CRIAR,
     SANITARY_CAMPAIGN_LER,
 )
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.sanitary_campaign_service import SanitaryCampaignService
+from packages.livestock_application.sanitary_requirement_service import (
+    SanitaryRequirementAssessment,
+    SanitaryRequirementService,
+)
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
+from packages.livestock_infrastructure.persistence.animal_repository import (
+    TransactionalAnimalRepository,
+)
 from packages.livestock_infrastructure.persistence.sanitary_campaign_repository import (
     TransactionalSanitaryCampaignRepository,
+)
+from packages.livestock_infrastructure.persistence.treatment_repository import (
+    TransactionalTreatmentApplicationRepository,
 )
 from packages.shared_kernel import SystemClock
 
@@ -52,6 +63,15 @@ class CampanhaSanitariaResponse(BaseModel):
     authority: str | None
 
 
+class ExigibilidadeSanitariaResponse(BaseModel):
+    animal_id: str
+    campaign_code: str
+    status: str
+    campaign_id: str | None
+    application_id: str | None
+    gaps: list[dict[str, str]]
+
+
 def _resposta(campaign: SanitaryCampaign) -> CampanhaSanitariaResponse:
     return CampanhaSanitariaResponse(
         campaign_id=str(campaign.campaign_id.value),
@@ -65,12 +85,35 @@ def _resposta(campaign: SanitaryCampaign) -> CampanhaSanitariaResponse:
     )
 
 
+def _resposta_exigibilidade(
+    assessment: SanitaryRequirementAssessment,
+) -> ExigibilidadeSanitariaResponse:
+    return ExigibilidadeSanitariaResponse(
+        animal_id=str(assessment.animal_id.value),
+        campaign_code=assessment.campaign_code,
+        status=assessment.status.value,
+        campaign_id=(None if assessment.campaign_id is None else str(assessment.campaign_id.value)),
+        application_id=(
+            None if assessment.application_id is None else str(assessment.application_id.value)
+        ),
+        gaps=[gap.to_dict() for gap in assessment.gaps],
+    )
+
+
 def _servico(connection: Connection) -> SanitaryCampaignService:
     return SanitaryCampaignService(
         campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
         recorder=LivestockEventRecorder(
             event_log=DomainEventRepository(connection=connection), clock=SystemClock()
         ),
+    )
+
+
+def _servico_exigibilidade(connection: Connection) -> SanitaryRequirementService:
+    return SanitaryRequirementService(
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
+        application_repository=TransactionalTreatmentApplicationRepository(connection=connection),
     )
 
 
@@ -148,3 +191,39 @@ def detalhar_campanha_sanitaria(
             detail="Campanha sanitaria nao encontrada nesta organizacao.",
         )
     return _resposta(encontrado)
+
+
+@router.get(
+    "/animals/{animal_id}/sanitary-requirements/{campaign_code}",
+    response_model=ExigibilidadeSanitariaResponse,
+    summary="Avaliar exigibilidade sanitaria minima por campanha",
+    responses=RESPOSTAS_PADRAO,
+)
+def avaliar_exigibilidade_sanitaria(
+    animal_id: str,
+    campaign_code: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
+    connection: ConnectionDependency,
+) -> ExigibilidadeSanitariaResponse:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    try:
+        assessment = _servico_exigibilidade(connection).assess_required_campaign(
+            organization_id=contexto.organization_id,
+            animal_id=alvo,
+            campaign_code=campaign_code,
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+    return _resposta_exigibilidade(assessment)
