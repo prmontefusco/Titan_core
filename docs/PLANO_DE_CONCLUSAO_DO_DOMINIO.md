@@ -1,12 +1,32 @@
-# Plano de Conclusão do Domínio Livestock — Marcos 13 a 16
+# Plano de Fechamento do Backend Livestock
 
 **Data:** 25 de julho de 2026
-**Estado:** PROPOSTO — aguarda aprovação antes de qualquer código
-**Relação com o plano anterior:** o `PLANO_DE_IMPLEMENTACAO_VALIDADO.md` encerrou-se no Marco 10 e declara que expansões exigem decomposição própria. Este documento é essa decomposição.
+**Atualizado em:** 26 de julho de 2026
+**Estado:** APROVADO COMO ORDEM DE TRABALHO — interface fica adiada até o backend estabilizar
+**Relação com o plano anterior:** o `PLANO_DE_IMPLEMENTACAO_VALIDADO.md` encerrou-se no Marco 10 e declara que expansões exigem decomposição própria. Este documento começou como decomposição dos Marcos 13 a 16 e agora também registra a ordem de fechamento do backend antes da interface Titan Livestock.
 
 ---
 
-## 1. Por que estes marcos, e não outros
+## 1. Decisão de sequência
+
+Em 26 de julho de 2026, após auditoria do backend, ficou decidido que a interface Titan Livestock **não começa agora**. A API já é ampla o suficiente para uma primeira tela, mas a UI passaria a cristalizar fluxos enquanto ainda faltam capacidades centrais de domínio. A prioridade passa a ser fechar o backend como produto auditável.
+
+### Ordem aprovada
+
+1. **Marco 14 — manejo sanitário.** Começar por `Medication` classificado como imunobiológico ou farmacológico, porque vacina reusa a máquina existente de medicamento, lote, tratamento e carência. Depois entram campanhas sanitárias e regras mínimas de exigibilidade.
+2. **NR-4 — prescrição obrigatória por regra.** Definir quando `VeterinaryPrescription` deixa de ser opcional, antes de ampliar fluxos sanitários que dependam de autoridade veterinária.
+3. **Marco 15 — manejo zootécnico.** Registrar pesagem e escore corporal; calcular ganho médio diário e derivados sem gravá-los como fatos.
+4. **Marco 16 — reprodução restante.** Implementar cobertura/inseminação, diagnóstico de gestação, desmame e vínculo opcional com o parto já entregue no 13.3.
+5. **Marco 17.5 — camadas territoriais temporais.** Ligar desmatamento, embargo, uso do solo e demais camadas necessárias para que a geometria/CAR vire avaliação territorial, não apenas cadastro espacial.
+6. **Elegibilidade por mercado e dossiê territorial.** Aplicar a ADR-0041 sobre mercado de destino e materializar decisões/dossiês por finalidade.
+
+### Critério para iniciar frontend
+
+A interface só deve começar quando os itens 1 a 4 estiverem implementados e validados, e quando houver ao menos um fluxo territorial demonstrável dos itens 5 e 6. Antes disso, qualquer tela corre o risco de virar interface de um backend ainda incompleto.
+
+---
+
+## 2. Por que estes marcos, e não outros
 
 O levantamento encontrou duas lacunas que não são funcionalidades faltando — são o modelo incompleto:
 
@@ -18,7 +38,7 @@ Vacinação e pesagem são acréscimos ao modelo. Estas duas são fechamento del
 
 ---
 
-## 2. Decisões de regra de negócio
+## 3. Decisões de regra de negócio
 
 O responsável delegou estas decisões, pedindo que fossem tomadas com base em pesquisa. Seguem decididas, com o raciocínio exposto para poderem ser contestadas.
 
@@ -69,7 +89,7 @@ E admite-se o caso do **touro do lote**: vários pais possíveis, nenhum confirm
 
 ---
 
-## 3. Marcos
+## 4. Marcos
 
 ### Marco 13 — Ciclo de vida completo do animal
 
@@ -109,6 +129,8 @@ Barato por causa de D-1: reusa medicamento, lote, carência e veterinário.
 
 **Entrega:** `Medication` distingue imunobiológico de farmacológico. A carência continua sendo a mesma. Consultas passam a poder responder "quais vacinas este animal recebeu".
 
+**Primeiro passo da nova ordem.** Este é o próximo incremento a implementar. O escopo deve ser pequeno: domínio, migration, persistência, API de criação/leitura ajustada, testes de contrato e atualização do seed quando necessário. Não criar entidade `Vaccine` enquanto a classificação em `Medication` resolver a pergunta.
+
 #### Passo 14.2 — Campanha de vacinação
 
 **Entrega:** campanha oficial (brucelose, aftosa) com janela de vigência, ligando aplicações ao programa que as exige. É o que o PNIB e o PNCEBT cobram.
@@ -116,6 +138,27 @@ Barato por causa de D-1: reusa medicamento, lote, carência e veterinário.
 **Portão:** confirmar com responsável técnico quais campanhas são obrigatórias e em que faixa etária, antes de codar a regra de exigibilidade.
 
 **Prazo externo:** a Etapa 3 do PNIB inicia em janeiro de 2027 e exige identificação e cadastro de animais submetidos a manejo sanitário.
+
+#### Passo 14.3 — Exigibilidade sanitária mínima
+
+**Entrega:** regra que verifica se uma vacinação/campanha exigida existe para o animal ou lote dentro da janela aplicável, preservando lacuna como `indeterminado` quando a regra exigir informação que o Titan ainda não possui. A decisão não deve misturar ausência de dado com reprovação automática.
+
+**Fronteira:** regras por mercado de destino pertencem à ADR-0041 e ao bloco de elegibilidade por mercado. Aqui entram apenas regras sanitárias internas suficientes para provar o mecanismo.
+
+---
+
+### NR-4 — Prescrição obrigatória por regra
+
+Esta nota deixa de ser "fora do plano" e entra como bloco obrigatório entre os Marcos 14 e 15.
+
+**Entrega:** definir classes de medicamento/tratamento que exigem prescrição, com regra explícita e versionada. `VeterinaryPrescription` já existe; o que falta é tornar sua exigência condicionada por regra de negócio, expor a API necessária e fazer o dossiê declarar quando a aplicação foi autorizada por prescrição.
+
+**Critérios:**
+
+- `prescription_id` continua opcional no modelo geral, mas passa a ser obrigatório para classes definidas pela regra vigente.
+- A aplicação sem prescrição exigida é recusada como conflito de domínio.
+- A decisão/dossiê mostram a autoridade veterinária usada ou a lacuna correspondente.
+- A regra é versionada para não reavaliar decisões antigas com norma nova.
 
 ---
 
@@ -133,6 +176,8 @@ Barato por causa de D-1: reusa medicamento, lote, carência e veterinário.
 
 **Entrega:** ganho médio diário e peso ajustado como **cálculo**, jamais como evento — mesma regra da carência no Passo 9.4, e a mesma distinção que o ICAR faz entre traço registrado e traço calculado.
 
+**Fronteira:** o registro de peso é fato; ganho médio diário, peso ajustado e indicadores de desempenho são leitura calculada ou fato derivado com snapshot, conforme a mesma disciplina usada em carência.
+
 ---
 
 ### Marco 16 — Reprodução
@@ -145,11 +190,33 @@ Depende do 13.2.
 
 ---
 
-## 4. Explicitamente fora deste plano
+### Marco 17 — Elegibilidade por mercado e conformidade territorial
+
+O Marco 17 já foi iniciado fora deste plano: georreferenciamento da propriedade e importação de geometria do CAR estão implementados. A auditoria de 26 de julho de 2026 confirmou que isso ainda é base, não valor final: o Titan sabe **onde** a fazenda fica, mas ainda não sabe o que aconteceu naquela área ao longo do tempo.
+
+#### Passo 17.5 — Camadas territoriais temporais
+
+**Entrega:** incorporar camadas externas com vigência e captura reproduzível, começando pelas necessárias à tese EUDR/embargo: desmatamento, embargo, uso do solo e demais restrições territoriais priorizadas. A geometria do imóvel vira insumo de interseção, não conclusão.
+
+**Critérios:**
+
+- cada camada tem fonte, instante de captura, vigência ou data de referência, digest e limitações;
+- ausência ou indisponibilidade vira lacuna declarada;
+- avaliação passada é reproduzível contra a camada usada na época;
+- erro do provider não vira aprovação nem reprovação silenciosa.
+
+#### Elegibilidade por mercado e dossiê territorial
+
+**Entrega:** aplicar a ADR-0041: uma avaliação por sujeito e finalidade de mercado, com matriz de estados e decisão/dossiê próprios. O primeiro caso-alvo deve ser uma finalidade territorial demonstrável, porque é onde CAR + camadas temporais viram valor auditável.
+
+**Fronteira:** não implementar frontend, nem transformação pós-abate/EPCIS aqui. A saída por abate já existe; o que o animal vira depois é outro plano.
+
+---
+
+## 5. Explicitamente fora deste plano
 
 Cada um exige decomposição própria:
 
-- **Prescrição obrigatória** (NR-4) — depende de definir em que casos a prescrição deixa de ser opcional.
 - **Autoria de regras pelo administrador** (NR-5) — `RuleCondition` já é declarativo e provavelmente resolve a maior parte; a ADR-0036 (Wasm) fica para o que não couber.
 - **Abate como transformação em produtos** (NR-2) — é DAG, não árvore, e o caminho é mapear para GS1 EPCIS. O Passo 13.1 registra que o animal **saiu** por abate; o que ele vira é outro marco.
 - **Carência de leite**, distinta da de carne.
@@ -157,7 +224,7 @@ Cada um exige decomposição própria:
 
 ---
 
-## 5. Nota de rumo comercial e cadeia pós-abate
+## 6. Nota de rumo comercial e cadeia pós-abate
 
 ### Nenhuma receita atrelada ao desfecho da elegibilidade
 
@@ -203,7 +270,7 @@ Cada elo à frente que cita uma referência do Titan torna o arquivo do frigorí
 
 ---
 
-## 6. Protocolo
+## 7. Protocolo
 
 Vale o mesmo do plano anterior: antes de cada passo, apresentar escopo, arquivos previstos, critérios de aceitação e riscos; ao final, executar o portão completo (`pytest` com `skipped == 0`, `ruff check`, `ruff format --check`, `mypy`, `alembic check`), registrar evidências no checklist e aguardar validação manual.
 
