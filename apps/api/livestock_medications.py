@@ -22,13 +22,14 @@ from apps.api.livestock_dependencies import (
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_domain import OrganizationContext
 from packages.core_infrastructure.persistence.events import DomainEventRepository
-from packages.livestock_application.authorization import MEDICATION_CRIAR
+from packages.livestock_application.authorization import MEDICATION_CRIAR, MEDICATION_LER
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.medication_service import (
     MedicationBatchService,
     MedicationService,
 )
 from packages.livestock_domain.medication import MedicationProductClass
+from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_infrastructure.persistence.medication_repository import (
     TransactionalMedicationBatchRepository,
     TransactionalMedicationRepository,
@@ -40,7 +41,7 @@ from packages.livestock_infrastructure.persistence.property_repository import (
 from packages.livestock_infrastructure.persistence.veterinarian_repository import (
     TransactionalVeterinarianRepository,
 )
-from packages.shared_kernel import SystemClock
+from packages.shared_kernel import SystemClock, TypedId
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
 
@@ -85,6 +86,68 @@ class LoteResponse(BaseModel):
     expiry_date: datetime
 
 
+class EmitirPrescricaoRequest(BaseModel):
+    veterinarian_id: str
+    medication_id: str
+    property_id: str
+    dosage: str = Field(min_length=1, max_length=255)
+    administration_route: str = Field(min_length=1, max_length=80)
+    target_type: PrescriptionTargetType
+    target_ids: list[str] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=500)
+    prescribed_date: datetime | None = None
+
+
+class PrescricaoResponse(BaseModel):
+    prescription_id: str
+    organization_id: str
+    veterinarian_id: str
+    medication_id: str
+    property_id: str
+    prescribed_date: datetime
+    dosage: str
+    administration_route: str
+    target_type: PrescriptionTargetType
+    target_ids: list[str]
+    reason: str
+
+
+def _servico_medicamento(connection: Connection) -> MedicationService:
+    return MedicationService(
+        medication_repository=TransactionalMedicationRepository(connection=connection),
+        prescription_repository=TransactionalPrescriptionRepository(connection=connection),
+        veterinarian_repository=TransactionalVeterinarianRepository(connection=connection),
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+
+
+def _prescricao(prescription: Prescription) -> PrescricaoResponse:
+    return PrescricaoResponse(
+        prescription_id=str(prescription.prescription_id.value),
+        organization_id=str(prescription.organization_id.value),
+        veterinarian_id=str(prescription.veterinarian_id.value),
+        medication_id=str(prescription.medication_id.value),
+        property_id=str(prescription.property_id.value),
+        prescribed_date=prescription.prescribed_date,
+        dosage=prescription.dosage,
+        administration_route=prescription.administration_route,
+        target_type=prescription.target_type,
+        target_ids=[str(target_id.value) for target_id in prescription.target_ids],
+        reason=prescription.reason,
+    )
+
+
+def _target_ids_or_problem(
+    target_type: PrescriptionTargetType, ids: list[str]
+) -> tuple[TypedId, ...]:
+    entity_type = "animal" if target_type is PrescriptionTargetType.ANIMAL else "livestock_lot"
+    return tuple(
+        typed_id_or_problem(target_id, entity_type=entity_type, campo="target_ids")
+        for target_id in ids
+    )
+
+
 @router.post(
     "/medications",
     response_model=MedicamentoResponse,
@@ -97,16 +160,8 @@ def registrar_medicamento(
     contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_CRIAR))],
     connection: ConnectionDependency,
 ) -> MedicamentoResponse:
-    servico = MedicationService(
-        medication_repository=TransactionalMedicationRepository(connection=connection),
-        prescription_repository=TransactionalPrescriptionRepository(connection=connection),
-        veterinarian_repository=TransactionalVeterinarianRepository(connection=connection),
-        property_repository=TransactionalRuralPropertyRepository(connection=connection),
-        recorder=_recorder(connection),
-    )
-
     try:
-        medicamento = servico.register_medication(
+        medicamento = _servico_medicamento(connection).register_medication(
             context=operation_context(contexto),
             trade_name=corpo.trade_name,
             active_ingredient=corpo.active_ingredient,
@@ -184,3 +239,74 @@ def registrar_lote(
         batch_number=lote.batch_number,
         expiry_date=lote.expiry_date,
     )
+
+
+@router.post(
+    "/prescriptions",
+    response_model=PrescricaoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Emitir uma prescricao veterinaria",
+    responses=RESPOSTAS_PADRAO,
+)
+def emitir_prescricao(
+    corpo: EmitirPrescricaoRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_CRIAR))],
+    connection: ConnectionDependency,
+) -> PrescricaoResponse:
+    try:
+        prescription = _servico_medicamento(connection).issue_prescription(
+            context=operation_context(contexto),
+            veterinarian_id=typed_id_or_problem(
+                corpo.veterinarian_id, entity_type="veterinarian", campo="veterinarian_id"
+            ),
+            medication_id=typed_id_or_problem(
+                corpo.medication_id, entity_type="medication", campo="medication_id"
+            ),
+            property_id=typed_id_or_problem(
+                corpo.property_id, entity_type="rural_property", campo="property_id"
+            ),
+            dosage=corpo.dosage,
+            administration_route=corpo.administration_route,
+            target_type=corpo.target_type,
+            target_ids=_target_ids_or_problem(corpo.target_type, corpo.target_ids),
+            reason=corpo.reason,
+            prescribed_date=corpo.prescribed_date,
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nÃ£o encontrado",
+            detail="Veterinario, medicamento ou propriedade nao encontrados nesta organizacao.",
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+    return _prescricao(prescription)
+
+
+@router.get(
+    "/prescriptions/{prescription_id}",
+    response_model=PrescricaoResponse,
+    summary="Detalhar uma prescricao veterinaria",
+    responses=RESPOSTAS_PADRAO,
+)
+def detalhar_prescricao(
+    prescription_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_LER))],
+    connection: ConnectionDependency,
+) -> PrescricaoResponse:
+    alvo = typed_id_or_problem(prescription_id, entity_type="prescription", campo="prescription_id")
+    prescription = TransactionalPrescriptionRepository(connection=connection).get_by_id(alvo)
+    if prescription is None or prescription.organization_id != contexto.organization_id:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Prescricao nao encontrada nesta organizacao.",
+        )
+    return _prescricao(prescription)

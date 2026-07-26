@@ -13,7 +13,7 @@ O ambiente reusa o do 10.4a, inclusive o role sem `BYPASSRLS`: sob o usuário
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -105,6 +105,26 @@ class Fluxo:
             "result": elegibilidade["result"],
         }
 
+    def registrar_veterinario(self, *, documentado: bool = True) -> dict[str, str]:
+        veterinario = self._post(
+            "/v1/livestock/veterinarians",
+            {
+                "name": f"Dra. Prescricao {datetime.now(UTC).timestamp()}",
+                "cpf": f"{datetime.now(UTC).timestamp():.0f}".zfill(11)[-11:],
+                "council_number": f"CRMV-{datetime.now(UTC).timestamp()}",
+                "council_state": "MT",
+            },
+        )
+        if not documentado:
+            return cast(dict[str, str], veterinario)
+        resposta = self.cliente.post(
+            f"/v1/livestock/veterinarians/{veterinario['veterinarian_id']}/verification",
+            json={"new_status": "DOCUMENTADO"},
+            headers=self.cabecalho,
+        )
+        assert resposta.status_code == 201, resposta.text
+        return cast(dict[str, str], resposta.json())
+
 
 @pytest.fixture
 def operador(ambiente: Ambiente) -> ClienteAutenticado:
@@ -151,6 +171,102 @@ def test_exigibilidade_sanitaria_minima_encontra_campanha_vinculada(
     assert corpo["campaign_id"] == resultado["campaign_id"]
     assert corpo["application_id"] == resultado["application_id"]
     assert corpo["gaps"] == []
+
+
+def test_prescricao_veterinaria_e_emitida_e_detalhada_pela_api(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    fluxo = Fluxo(ambiente, operador)
+    animal = fluxo._post(
+        "/v1/livestock/animals",
+        {"birth_property_id": str(ambiente.property_id.value), "sex": "FEMALE"},
+    )
+    medicamento = fluxo._post(
+        "/v1/livestock/medications",
+        {
+            "trade_name": f"PrescMed-{datetime.now(UTC).timestamp()}",
+            "active_ingredient": "Produto ficticio",
+            "manufacturer": "Fabricante ficticio",
+            "withdrawal_period_days": 7,
+        },
+    )
+    veterinario = fluxo.registrar_veterinario()
+
+    resposta = operador.post(
+        "/v1/livestock/prescriptions",
+        json={
+            "veterinarian_id": veterinario["veterinarian_id"],
+            "medication_id": medicamento["medication_id"],
+            "property_id": str(ambiente.property_id.value),
+            "dosage": "1 mL",
+            "administration_route": "subcutanea",
+            "target_type": "ANIMAL",
+            "target_ids": [animal["animal_id"]],
+            "reason": "Tratamento ficticio de validacao",
+        },
+        headers=fluxo.cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    prescricao = resposta.json()
+    assert prescricao["veterinarian_id"] == veterinario["veterinarian_id"]
+    assert prescricao["target_ids"] == [animal["animal_id"]]
+    assert prescricao["administration_route"] == "SUBCUTANEA"
+
+    detalhe = operador.get(
+        f"/v1/livestock/prescriptions/{prescricao['prescription_id']}",
+        headers=fluxo.cabecalho,
+    )
+    assert detalhe.status_code == 200, detalhe.text
+    assert detalhe.json() == prescricao
+
+
+def test_prescricao_recusa_veterinario_nao_documentado(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    fluxo = Fluxo(ambiente, operador)
+    animal = fluxo._post(
+        "/v1/livestock/animals",
+        {"birth_property_id": str(ambiente.property_id.value), "sex": "MALE"},
+    )
+    medicamento = fluxo._post(
+        "/v1/livestock/medications",
+        {
+            "trade_name": f"PrescNeg-{datetime.now(UTC).timestamp()}",
+            "active_ingredient": "Produto ficticio",
+            "manufacturer": "Fabricante ficticio",
+            "withdrawal_period_days": 7,
+        },
+    )
+    veterinario = fluxo.registrar_veterinario(documentado=False)
+
+    resposta = operador.post(
+        "/v1/livestock/prescriptions",
+        json={
+            "veterinarian_id": veterinario["veterinarian_id"],
+            "medication_id": medicamento["medication_id"],
+            "property_id": str(ambiente.property_id.value),
+            "dosage": "1 mL",
+            "administration_route": "subcutanea",
+            "target_type": "ANIMAL",
+            "target_ids": [animal["animal_id"]],
+            "reason": "Tentativa ficticia",
+        },
+        headers=fluxo.cabecalho,
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["reason_code"] == "CONFLITO_DE_DOMINIO"
+
+
+def test_auditor_nao_emite_prescricao(ambiente: Ambiente, auditor: ClienteAutenticado) -> None:
+    resposta = auditor.post(
+        "/v1/livestock/prescriptions",
+        json={},
+        headers={ORGANIZATION_HEADER: str(ambiente.org_a.organization_id.value)},
+    )
+
+    assert resposta.status_code == 403
 
 
 def test_o_dossie_devolvido_verifica_se_pelo_proprio_hash(

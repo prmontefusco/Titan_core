@@ -28,12 +28,10 @@ SUPERFICIE_ESPERADA = {
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/adoptions", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/timeline", "get"),
     # Vertical Livestock — API mínima do fluxo aprovado (Passos 10.4a e 10.4b).
-    # A lista é fechada por decisão: `POST /v1/livestock/prescriptions` NÃO entra,
-    # porque `prescription_id` é opcional em TreatmentApplication e nenhuma regra
-    # do cenário aprovado depende de prescrição. Ver nota de rumo NR-4.
     ("/v1/livestock/animals", "post"),
     ("/v1/livestock/medications", "post"),
     ("/v1/livestock/medication-batches", "post"),
+    ("/v1/livestock/prescriptions", "post"),
     ("/v1/livestock/sanitary-campaigns", "post"),
     ("/v1/livestock/treatments", "post"),
     ("/v1/livestock/treatments/{application_id}/corrections", "post"),
@@ -50,6 +48,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/medications/{medication_id}", "get"),
     ("/v1/livestock/medication-batches", "get"),
     ("/v1/livestock/medication-batches/{batch_id}", "get"),
+    ("/v1/livestock/prescriptions/{prescription_id}", "get"),
     ("/v1/livestock/sanitary-campaigns", "get"),
     ("/v1/livestock/sanitary-campaigns/{campaign_id}", "get"),
     ("/v1/livestock/animals/{animal_id}/sanitary-requirements/{campaign_code}", "get"),
