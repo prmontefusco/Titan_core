@@ -25,6 +25,7 @@ from packages.livestock_domain.events import (
     PRESCRIPTION_ISSUED,
     PROPERTY_REGISTERED,
     SANITARY_CAMPAIGN_REGISTERED,
+    TRANSFER_ARTIFACT_RECEIVED,
     TREATMENT_APPLIED,
     VETERINARIAN_REGISTERED,
     VETERINARIAN_STATUS_UPDATED,
@@ -47,6 +48,12 @@ from packages.livestock_domain.parentage import ParentageConfidence, ParentageRo
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
+from packages.livestock_domain.transfer_artifact import (
+    HistoryCoverage,
+    ReceivedTransferArtifact,
+    TransferArtifactGap,
+    TransferArtifactGapCode,
+)
 from packages.livestock_domain.veterinarian import Veterinarian
 
 __all__ = [
@@ -67,6 +74,7 @@ __all__ = [
     "PROPERTY_REGISTERED",
     "SANITARY_CAMPAIGN_REGISTERED",
     "TREATMENT_APPLIED",
+    "TRANSFER_ARTIFACT_RECEIVED",
     "VETERINARIAN_REGISTERED",
     "VETERINARIAN_STATUS_UPDATED",
     "Animal",
@@ -91,8 +99,12 @@ __all__ = [
     "PrescriptionTargetType",
     "PropertyStay",
     "RuralProperty",
+    "HistoryCoverage",
+    "ReceivedTransferArtifact",
     "SanitaryCampaign",
     "StayStatus",
+    "TransferArtifactGap",
+    "TransferArtifactGapCode",
     "VerificationStatus",
     "Veterinarian",
 ]

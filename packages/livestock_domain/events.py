@@ -43,6 +43,7 @@ PRESCRIPTION_ISSUED = "livestock.prescription_issued"
 TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
 EXTERNAL_COUNTERPARTY_REGISTERED = "livestock.external_counterparty_registered"
+TRANSFER_ARTIFACT_RECEIVED = "livestock.transfer_artifact_received"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
 REPRODUCTIVE_EVENT_RECORDED = "livestock.reproductive_event_recorded"
 PROPERTY_GEOMETRY_RECORDED = "livestock.property_geometry_recorded"
@@ -66,6 +67,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         TREATMENT_APPLIED,
         ANIMAL_EXITED,
         EXTERNAL_COUNTERPARTY_REGISTERED,
+        TRANSFER_ARTIFACT_RECEIVED,
         PARENTAGE_REGISTERED,
         REPRODUCTIVE_EVENT_RECORDED,
         PROPERTY_GEOMETRY_RECORDED,
@@ -585,5 +587,35 @@ def external_counterparty_registered_payload(
             "identifiers": list(identifiers),
             "name": name,
             "notes": notes,
+        },
+    )
+
+
+def transfer_artifact_received_payload(
+    *,
+    artifact_id: TypedId,
+    animal_id: TypedId,
+    source_counterparty_id: TypedId,
+    bundle_digest: str,
+    bundle_issued_at: datetime,
+    transfer_effective_at: datetime,
+    coverage_known_from: datetime | None,
+    coverage_known_until: datetime | None,
+    gap_codes: tuple[str, ...],
+    issuer_name: str | None,
+) -> CanonicalPayload:
+    return _payload(
+        TRANSFER_ARTIFACT_RECEIVED,
+        {
+            "animal_id": _id(animal_id),
+            "artifact_id": _id(artifact_id),
+            "bundle_digest": bundle_digest,
+            "bundle_issued_at": bundle_issued_at,
+            "coverage_known_from": coverage_known_from,
+            "coverage_known_until": coverage_known_until,
+            "gap_codes": list(gap_codes),
+            "issuer_name": issuer_name,
+            "source_counterparty_id": _id(source_counterparty_id),
+            "transfer_effective_at": transfer_effective_at,
         },
     )

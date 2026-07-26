@@ -80,6 +80,9 @@ from packages.livestock_infrastructure.persistence.property_repository import (
 from packages.livestock_infrastructure.persistence.reproduction_repository import (
     TransactionalReproductiveEventRepository,
 )
+from packages.livestock_infrastructure.persistence.transfer_artifact_repository import (
+    TransactionalReceivedTransferArtifactRepository,
+)
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
@@ -208,6 +211,30 @@ class MovimentacaoResumo(BaseModel):
     movement_time: datetime
     animal_ids: list[str]
     reason: str | None
+
+
+class LacunaTransferenciaResumo(BaseModel):
+    code: str
+    starts_at: datetime | None
+    ends_at: datetime | None
+    description: str
+
+
+class CoberturaTransferenciaResumo(BaseModel):
+    known_from: datetime | None
+    known_until: datetime | None
+    gaps: list[LacunaTransferenciaResumo]
+
+
+class ArtefatoTransferenciaResumo(BaseModel):
+    artifact_id: str
+    animal_id: str
+    source_counterparty_id: str
+    bundle_digest: str
+    bundle_issued_at: datetime
+    transfer_effective_at: datetime
+    issuer_name: str | None
+    coverage: CoberturaTransferenciaResumo
 
 
 # -- Conversões --------------------------------------------------------------
@@ -354,6 +381,31 @@ def _contraparte_externa(entidade: Any) -> ContraparteExternaResumo:
     )
 
 
+def _artefato_transferencia(entidade: Any) -> ArtefatoTransferenciaResumo:
+    return ArtefatoTransferenciaResumo(
+        artifact_id=str(entidade.artifact_id.value),
+        animal_id=str(entidade.animal_id.value),
+        source_counterparty_id=str(entidade.source_counterparty_id.value),
+        bundle_digest=entidade.bundle_digest,
+        bundle_issued_at=entidade.bundle_issued_at,
+        transfer_effective_at=entidade.transfer_effective_at,
+        issuer_name=entidade.issuer_name,
+        coverage=CoberturaTransferenciaResumo(
+            known_from=entidade.coverage.known_from,
+            known_until=entidade.coverage.known_until,
+            gaps=[
+                LacunaTransferenciaResumo(
+                    code=gap.code.value,
+                    starts_at=gap.starts_at,
+                    ends_at=gap.ends_at,
+                    description=gap.description,
+                )
+                for gap in entidade.coverage.gaps
+            ],
+        ),
+    )
+
+
 # -- Contrapartes externas ---------------------------------------------------
 
 
@@ -372,6 +424,28 @@ def listar_contrapartes_externas(
     encontrados = repositorio.list_by_organization(contexto.organization_id)
     janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
     return montar_pagina([_contraparte_externa(item) for item in janela], paginacao)
+
+
+@router.get(
+    "/animals/{animal_id}/received-transfer-artifacts",
+    response_model=Pagina[ArtefatoTransferenciaResumo],
+    summary="Listar artefatos recebidos de transferência do animal",
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_artefatos_transferencia(
+    animal_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
+) -> Any:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    animal = TransactionalAnimalRepository(connection=connection).get_by_id(alvo)
+    if animal is None or animal.organization_id != contexto.organization_id:
+        raise _nao_encontrado("Animal")
+    repositorio = TransactionalReceivedTransferArtifactRepository(connection=connection)
+    encontrados = repositorio.list_by_animal(alvo)
+    janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
+    return montar_pagina([_artefato_transferencia(item) for item in janela], paginacao)
 
 
 # -- Animais -----------------------------------------------------------------

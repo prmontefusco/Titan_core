@@ -52,6 +52,10 @@ from packages.livestock_infrastructure.persistence.sanitary_campaign_repository 
     TransactionalSanitaryCampaignRepository,
     sanitary_campaigns_table,
 )
+from packages.livestock_infrastructure.persistence.transfer_artifact_repository import (
+    TransactionalReceivedTransferArtifactRepository,
+    received_transfer_artifacts_table,
+)
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
     treatment_applications_table,
@@ -81,6 +85,7 @@ __all__ = [
     "reproductive_events_table",
     "sanitary_campaigns_table",
     "TransactionalTreatmentApplicationRepository",
+    "TransactionalReceivedTransferArtifactRepository",
     "TransactionalVeterinarianRepository",
     "animal_identifiers_table",
     "animal_movement_items_table",
@@ -97,5 +102,6 @@ __all__ = [
     "animal_exits_table",
     "external_counterparties_table",
     "treatment_applications_table",
+    "received_transfer_artifacts_table",
     "veterinarians_table",
 ]

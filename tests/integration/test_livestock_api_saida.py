@@ -113,6 +113,41 @@ def test_saida_por_venda_referencia_contraparte_externa(
     assert saida.json()["destination_counterparty_id"] == contraparte.json()["counterparty_id"]
 
 
+def test_artefato_recebido_declara_lacuna_de_cobertura(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={
+            "name": "Fazenda Origem",
+            "counterparty_type": "FARM",
+            "identifiers": ["CAR:MT-1111111-1111"],
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+    transferencia = datetime.now(UTC) - timedelta(days=1)
+    conhecido_ate = transferencia - timedelta(hours=10)
+
+    registro = operador.post(
+        f"/v1/livestock/animals/{animal_id}/received-transfer-artifacts",
+        json={
+            "source_counterparty_id": contraparte.json()["counterparty_id"],
+            "bundle_digest": "a" * 64,
+            "bundle_issued_at": conhecido_ate.isoformat(),
+            "transfer_effective_at": transferencia.isoformat(),
+            "coverage_known_from": (transferencia - timedelta(days=300)).isoformat(),
+            "coverage_known_until": conhecido_ate.isoformat(),
+            "issuer_name": "Fazenda Origem",
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+    assert registro.status_code == 201, registro.text
+    assert registro.json()["coverage"]["gaps"][0]["code"] == "COVERAGE_BEFORE_TRANSFER"
+
+
 def test_o_levantamento_historico_traz_quem_saiu_com_a_saida_preenchida(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:

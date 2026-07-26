@@ -52,6 +52,9 @@ from packages.livestock_application.reproduction_service import (
     ReproductionService,
     StayBasedPropertyReader,
 )
+from packages.livestock_application.transfer_artifact_service import (
+    ReceivedTransferArtifactService,
+)
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import AnimalSex, BirthOutcome, VerificationStatus
 from packages.livestock_domain.exit import ExitType
@@ -99,6 +102,9 @@ from packages.livestock_infrastructure.persistence.property_repository import (
 )
 from packages.livestock_infrastructure.persistence.reproduction_repository import (
     TransactionalReproductiveEventRepository,
+)
+from packages.livestock_infrastructure.persistence.transfer_artifact_repository import (
+    TransactionalReceivedTransferArtifactRepository,
 )
 from packages.livestock_infrastructure.persistence.veterinarian_repository import (
     TransactionalVeterinarianRepository,
@@ -596,6 +602,65 @@ class SaidaResponse(BaseModel):
     destination_counterparty_id: str | None
 
 
+class RegistrarArtefatoTransferenciaRequest(BaseModel):
+    source_counterparty_id: str
+    bundle_digest: str = Field(min_length=1, max_length=128)
+    bundle_issued_at: datetime
+    transfer_effective_at: datetime
+    coverage_known_from: datetime | None = None
+    coverage_known_until: datetime | None = None
+    issuer_name: str | None = Field(default=None, max_length=255)
+
+
+class LacunaTransferenciaResponse(BaseModel):
+    code: str
+    starts_at: datetime | None
+    ends_at: datetime | None
+    description: str
+
+
+class CoberturaTransferenciaResponse(BaseModel):
+    known_from: datetime | None
+    known_until: datetime | None
+    gaps: list[LacunaTransferenciaResponse]
+
+
+class ArtefatoTransferenciaResponse(BaseModel):
+    artifact_id: str
+    animal_id: str
+    source_counterparty_id: str
+    bundle_digest: str
+    bundle_issued_at: datetime
+    transfer_effective_at: datetime
+    issuer_name: str | None
+    coverage: CoberturaTransferenciaResponse
+
+
+def _artefato_transferencia_response(artefato: Any) -> ArtefatoTransferenciaResponse:
+    return ArtefatoTransferenciaResponse(
+        artifact_id=str(artefato.artifact_id.value),
+        animal_id=str(artefato.animal_id.value),
+        source_counterparty_id=str(artefato.source_counterparty_id.value),
+        bundle_digest=artefato.bundle_digest,
+        bundle_issued_at=artefato.bundle_issued_at,
+        transfer_effective_at=artefato.transfer_effective_at,
+        issuer_name=artefato.issuer_name,
+        coverage=CoberturaTransferenciaResponse(
+            known_from=artefato.coverage.known_from,
+            known_until=artefato.coverage.known_until,
+            gaps=[
+                LacunaTransferenciaResponse(
+                    code=gap.code.value,
+                    starts_at=gap.starts_at,
+                    ends_at=gap.ends_at,
+                    description=gap.description,
+                )
+                for gap in artefato.coverage.gaps
+            ],
+        ),
+    )
+
+
 @router.post(
     "/animals/{animal_id}/exit",
     response_model=SaidaResponse,
@@ -667,6 +732,49 @@ def registrar_saida(
             else str(saida.destination_counterparty_id.value)
         ),
     )
+
+
+@router.post(
+    "/animals/{animal_id}/received-transfer-artifacts",
+    response_model=ArtefatoTransferenciaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar artefato recebido de transferência de custódia",
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_artefato_transferencia(
+    animal_id: str,
+    corpo: RegistrarArtefatoTransferenciaRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
+    connection: ConnectionDependency,
+) -> ArtefatoTransferenciaResponse:
+    servico = ReceivedTransferArtifactService(
+        repository=TransactionalReceivedTransferArtifactRepository(connection=connection),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        counterparty_repository=TransactionalExternalCounterpartyRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    try:
+        artefato = servico.register_received_artifact(
+            context=operation_context(contexto),
+            animal_id=typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id"),
+            source_counterparty_id=typed_id_or_problem(
+                corpo.source_counterparty_id,
+                entity_type="external_counterparty",
+                campo="source_counterparty_id",
+            ),
+            bundle_digest=corpo.bundle_digest,
+            bundle_issued_at=corpo.bundle_issued_at,
+            transfer_effective_at=corpo.transfer_effective_at,
+            coverage_known_from=corpo.coverage_known_from,
+            coverage_known_until=corpo.coverage_known_until,
+            issuer_name=corpo.issuer_name,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal ou contraparte") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _artefato_transferencia_response(artefato)
 
 
 # -- Genealogia --------------------------------------------------------------
