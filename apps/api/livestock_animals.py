@@ -60,8 +60,8 @@ class AnimalRegistradoResponse(BaseModel):
 )
 def registrar_animal(
     corpo: RegistrarAnimalRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_CRIAR))],
+    connection: ConnectionDependency,
 ) -> AnimalRegistradoResponse:
     event_log: DomainEventLog = DomainEventRepository(connection=connection)
     servico = AnimalService(

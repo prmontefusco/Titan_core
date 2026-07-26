@@ -188,7 +188,7 @@ def typed_id_or_problem(raw: str, *, entity_type: str, campo: str) -> TypedId:
         return TypedId.parse(entity_type, raw)
     except (ValueError, TypeError) as error:
         raise DomainProblem(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="IDENTIFICADOR_INVALIDO",
             title="Identificador inválido",
             detail=f"O campo {campo} deve conter um UUID.",
@@ -200,7 +200,7 @@ def uuid_or_problem(raw: str, *, campo: str) -> UUID:
         return UUID(raw)
     except (ValueError, AttributeError) as error:
         raise DomainProblem(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="IDENTIFICADOR_INVALIDO",
             title="Identificador inválido",
             detail=f"O campo {campo} deve conter um UUID.",

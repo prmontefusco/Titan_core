@@ -154,8 +154,8 @@ class PropriedadeCriadaResponse(BaseModel):
 )
 def registrar_propriedade(
     corpo: RegistrarPropriedadeRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_CRIAR))],
+    connection: ConnectionDependency,
 ) -> PropriedadeCriadaResponse:
     servico = RuralPropertyService(
         repository=TransactionalRuralPropertyRepository(connection=connection),
@@ -229,8 +229,8 @@ def _lote_servico(connection: Connection) -> LotService:
 )
 def criar_lote(
     corpo: CriarLoteRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(LOT_CRIAR))],
+    connection: ConnectionDependency,
 ) -> LoteCriadoResponse:
     try:
         lote = _lote_servico(connection).create_lot(
@@ -266,8 +266,8 @@ def criar_lote(
 def incluir_no_lote(
     lot_id: str,
     corpo: MembroDoLoteRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(LOT_CRIAR))],
+    connection: ConnectionDependency,
 ) -> VinculoResponse:
     try:
         vinculo = _lote_servico(connection).add_animal_to_lot(
@@ -304,8 +304,8 @@ def incluir_no_lote(
 def remover_do_lote(
     lot_id: str,
     corpo: MembroDoLoteRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(LOT_CRIAR))],
+    connection: ConnectionDependency,
 ) -> VinculoResponse:
     try:
         vinculo = _lote_servico(connection).remove_animal_from_lot(
@@ -358,8 +358,8 @@ class VeterinarioResponse(BaseModel):
 )
 def registrar_veterinario(
     corpo: RegistrarVeterinarioRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(VETERINARIAN_CRIAR))],
+    connection: ConnectionDependency,
 ) -> VeterinarioResponse:
     servico = VeterinarianService(
         repository=TransactionalVeterinarianRepository(connection=connection),
@@ -397,8 +397,8 @@ def registrar_veterinario(
 def atualizar_verificacao(
     veterinarian_id: str,
     corpo: PromoverVeterinarioRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(VETERINARIAN_CRIAR))],
+    connection: ConnectionDependency,
 ) -> VeterinarioResponse:
     servico = VeterinarianService(
         repository=TransactionalVeterinarianRepository(connection=connection),
@@ -458,8 +458,8 @@ class MovimentacaoResponse(BaseModel):
 )
 def registrar_movimentacao(
     corpo: RegistrarMovimentacaoRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MOVEMENT_REGISTRAR))],
+    connection: ConnectionDependency,
 ) -> MovimentacaoResponse:
     servico = MovementService(
         movement_repository=TransactionalAnimalMovementRepository(connection=connection),
@@ -539,8 +539,8 @@ class SaidaResponse(BaseModel):
 def registrar_saida(
     animal_id: str,
     corpo: RegistrarSaidaRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
+    connection: ConnectionDependency,
 ) -> SaidaResponse:
     servico = AnimalExitService(
         exit_repository=TransactionalAnimalExitRepository(connection=connection),
@@ -653,10 +653,10 @@ def _parentage_service(connection: Connection) -> ParentageService:
 def registrar_maternidade(
     animal_id: str,
     corpo: RegistrarMaternidadeRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[
         OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_GENEALOGIA))
     ],
+    connection: ConnectionDependency,
 ) -> list[ParentescoResponse]:
     try:
         genetica, gestacional = _parentage_service(connection).register_maternity(
@@ -703,10 +703,10 @@ def registrar_maternidade(
 def registrar_paternidade(
     animal_id: str,
     corpo: RegistrarPaternidadeRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[
         OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_GENEALOGIA))
     ],
+    connection: ConnectionDependency,
 ) -> ParentescoResponse:
     try:
         relacao = _parentage_service(connection).register_parentage(
@@ -840,8 +840,8 @@ def _evento_reprodutivo(evento: Any, animais: dict[str, Any]) -> EventoReproduti
 )
 def registrar_parto(
     corpo: RegistrarPartoRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_REGISTRAR))],
+    connection: ConnectionDependency,
 ) -> EventoReprodutivoResponse:
     try:
         registrado = _reproduction_service(connection).register_parturition(
@@ -898,8 +898,8 @@ def registrar_parto(
 )
 def registrar_perda_gestacional(
     corpo: RegistrarAbortoRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_REGISTRAR))],
+    connection: ConnectionDependency,
 ) -> EventoReprodutivoResponse:
     try:
         evento = _reproduction_service(connection).register_pregnancy_loss(
@@ -1006,10 +1006,10 @@ def _geometria(registro: Any) -> GeometriaResponse:
 def registrar_geometria(
     property_id: str,
     corpo: RegistrarGeometriaRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[
         OrganizationContext, Depends(require_permission(PROPERTY_REGISTRAR_GEOMETRIA))
     ],
+    connection: ConnectionDependency,
 ) -> GeometriaResponse:
     try:
         geometria = _geometria_servico(connection).register_geometry(
@@ -1084,10 +1084,10 @@ class ImportarCarRequest(BaseModel):
 def importar_geometria_do_car(
     property_id: str,
     corpo: ImportarCarRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[
         OrganizationContext, Depends(require_permission(PROPERTY_REGISTRAR_GEOMETRIA))
     ],
+    connection: ConnectionDependency,
 ) -> ImportacaoResponse:
     try:
         resultado = _geometria_servico(connection).import_from_car(

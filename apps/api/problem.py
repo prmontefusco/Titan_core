@@ -99,7 +99,7 @@ async def validation_problem_handler(request: Request, exception: Exception) -> 
     ]
     return problem_response(
         request=request,
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         reason_code="ENTRADA_INVALIDA",
         title="Entrada inválida",
         detail="A requisição não atende ao contrato declarado.",

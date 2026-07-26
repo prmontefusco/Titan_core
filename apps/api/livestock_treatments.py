@@ -125,8 +125,8 @@ def _evidencias(contexto: OrganizationContext, ids: list[str]) -> tuple[Universa
 )
 def registrar_tratamento(
     corpo: RegistrarTratamentoRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(TREATMENT_REGISTRAR))],
+    connection: ConnectionDependency,
 ) -> TratamentoResponse:
     try:
         aplicacao = _servico(connection).register_application(
@@ -183,8 +183,8 @@ def registrar_tratamento(
 def corrigir_tratamento(
     application_id: str,
     corpo: CorrigirTratamentoRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(TREATMENT_REGISTRAR))],
+    connection: ConnectionDependency,
 ) -> TratamentoResponse:
     try:
         correcao = _servico(connection).correct_application(

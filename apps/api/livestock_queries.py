@@ -116,8 +116,8 @@ def _timeline_service(connection: Connection) -> LivestockTimelineService:
 )
 def executar_elegibilidade(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ELIGIBILITY_EXECUTAR))],
+    connection: ConnectionDependency,
 ) -> ElegibilidadeResponse:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     organizacao = contexto.organization_id
@@ -195,8 +195,8 @@ def executar_elegibilidade(
 )
 def consultar_linha_do_tempo(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(TIMELINE_LER))],
+    connection: ConnectionDependency,
     occurred_until: Annotated[datetime | None, Query()] = None,
     known_until: Annotated[datetime | None, Query()] = None,
 ) -> LinhaDoTempoResponse:
@@ -211,7 +211,7 @@ def consultar_linha_do_tempo(
     except ValueError as error:
         # Instante sem timezone nunca é tratado como UTC em silêncio.
         raise DomainProblem(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="ENTRADA_INVALIDA",
             title="Entrada inválida",
             detail=str(error),
@@ -251,8 +251,8 @@ def consultar_linha_do_tempo(
 )
 def listar_dossies(
     subject_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(DOSSIER_LER))],
+    connection: ConnectionDependency,
 ) -> dict[str, Any]:
     alvo = typed_id_or_problem(subject_id, entity_type="animal", campo="subject_id")
     encontrados = TransactionalDossierRepository(connection=connection).list_by_subject(
@@ -288,8 +288,8 @@ def listar_dossies(
 )
 def obter_dossie(
     dossier_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(DOSSIER_LER))],
+    connection: ConnectionDependency,
 ) -> dict[str, Any]:
     alvo = typed_id_or_problem(dossier_id, entity_type="dossier", campo="dossier_id")
     dossier = TransactionalDossierRepository(connection=connection).get_by_id(alvo)

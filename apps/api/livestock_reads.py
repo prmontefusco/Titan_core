@@ -336,9 +336,9 @@ def _movimentacao(entidade: Any) -> MovimentacaoResumo:
     responses=RESPOSTAS_PADRAO,
 )
 def listar_animais(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
     incluir_saidos: bool = False,
 ) -> Any:
     repositorio = TransactionalAnimalRepository(connection=connection)
@@ -368,8 +368,8 @@ def listar_animais(
 )
 def detalhar_animal(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
+    connection: ConnectionDependency,
 ) -> AnimalResumo:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     repositorio = TransactionalAnimalRepository(connection=connection)
@@ -457,8 +457,8 @@ def _genealogia(connection: Any) -> ParentageService:
 )
 def consultar_ascendencia(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER_GENEALOGIA))],
+    connection: ConnectionDependency,
     geracoes: int = Query(default=GERACOES_PADRAO, ge=1, le=GERACOES_MAXIMAS),
 ) -> AscendenciaResumo:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
@@ -476,8 +476,8 @@ def consultar_ascendencia(
 )
 def consultar_descendencia(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER_GENEALOGIA))],
+    connection: ConnectionDependency,
 ) -> list[VinculoResumo]:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     return [
@@ -497,8 +497,8 @@ def consultar_descendencia(
 )
 def consultar_historico_reprodutivo(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER_GENEALOGIA))],
+    connection: ConnectionDependency,
 ) -> list[VinculoResumo]:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     return [
@@ -557,8 +557,8 @@ def _evento_reprodutivo_resumo(evento: Any) -> EventoReprodutivoResumo:
 )
 def consultar_eventos_reprodutivos(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_LER))],
+    connection: ConnectionDependency,
 ) -> list[EventoReprodutivoResumo]:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     encontrados = TransactionalReproductiveEventRepository(connection=connection).list_by_dam(
@@ -580,8 +580,8 @@ def consultar_eventos_reprodutivos(
 )
 def consultar_origem(
     animal_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(REPRODUCTION_LER))],
+    connection: ConnectionDependency,
 ) -> EventoReprodutivoResumo | None:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     encontrado = TransactionalReproductiveEventRepository(connection=connection).get_by_offspring(
@@ -653,8 +653,8 @@ def _geometria_servico(connection: Any) -> PropertyGeometryService:
 )
 def consultar_geometria(
     property_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
     layer: str = Query(default=CAMADA_PERIMETRO, max_length=60),
 ) -> GeometriaResumo | None:
     alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
@@ -678,8 +678,8 @@ def consultar_geometria(
 )
 def consultar_camadas(
     property_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
 ) -> list[GeometriaResumo]:
     alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
     return [
@@ -701,8 +701,8 @@ def consultar_camadas(
 )
 def consultar_historico_de_geometria(
     property_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
     layer: str | None = Query(default=None, max_length=60),
 ) -> list[GeometriaResumo]:
     alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
@@ -746,8 +746,8 @@ class CarPreviewResumo(BaseModel):
     responses=RESPOSTAS_PADRAO,
 )
 def consultar_car(
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
     cod_imovel: str = Query(min_length=1, max_length=120),
     state: str = Query(min_length=2, max_length=2),
 ) -> CarPreviewResumo:
@@ -795,9 +795,9 @@ def consultar_car(
     responses=RESPOSTAS_PADRAO,
 )
 def listar_propriedades(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
 ) -> Any:
     encontrados = TransactionalRuralPropertyRepository(connection=connection).list_by_organization(
         contexto.organization_id, limit=paginacao.limite_de_sondagem, offset=paginacao.offset
@@ -813,8 +813,8 @@ def listar_propriedades(
 )
 def detalhar_propriedade(
     property_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER))],
+    connection: ConnectionDependency,
 ) -> PropriedadeResumo:
     alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
     encontrado = TransactionalRuralPropertyRepository(connection=connection).get_by_id(alvo)
@@ -833,9 +833,9 @@ def detalhar_propriedade(
     responses=RESPOSTAS_PADRAO,
 )
 def listar_medicamentos(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
 ) -> Any:
     encontrados = TransactionalMedicationRepository(connection=connection).list_by_organization(
         contexto.organization_id, limit=paginacao.limite_de_sondagem, offset=paginacao.offset
@@ -851,8 +851,8 @@ def listar_medicamentos(
 )
 def detalhar_medicamento(
     medication_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_LER))],
+    connection: ConnectionDependency,
 ) -> MedicamentoResumo:
     alvo = typed_id_or_problem(medication_id, entity_type="medication", campo="medication_id")
     encontrado = TransactionalMedicationRepository(connection=connection).get_by_id(alvo)
@@ -872,9 +872,9 @@ def detalhar_medicamento(
     responses=RESPOSTAS_PADRAO,
 )
 def listar_lotes_de_medicamento(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
     medication_id: str | None = None,
 ) -> Any:
     repositorio = TransactionalMedicationBatchRepository(connection=connection)
@@ -899,8 +899,8 @@ def listar_lotes_de_medicamento(
 )
 def detalhar_lote_de_medicamento(
     batch_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_LER))],
+    connection: ConnectionDependency,
 ) -> LoteResumo:
     alvo = typed_id_or_problem(batch_id, entity_type="medication_batch", campo="batch_id")
     encontrado = TransactionalMedicationBatchRepository(connection=connection).get_by_id(alvo)
@@ -923,9 +923,9 @@ def detalhar_lote_de_medicamento(
     responses=RESPOSTAS_PADRAO,
 )
 def listar_tratamentos(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(TREATMENT_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
     animal_id: str | None = None,
 ) -> Any:
     repositorio = TransactionalTreatmentApplicationRepository(connection=connection)
@@ -950,8 +950,8 @@ def listar_tratamentos(
 )
 def detalhar_tratamento(
     application_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(TREATMENT_LER))],
+    connection: ConnectionDependency,
 ) -> TratamentoResumo:
     alvo = typed_id_or_problem(
         application_id, entity_type="treatment_application", campo="application_id"
@@ -972,9 +972,9 @@ def detalhar_tratamento(
     responses=RESPOSTAS_PADRAO,
 )
 def listar_lotes(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(LOT_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
 ) -> Any:
     encontrados = TransactionalLivestockLotRepository(connection=connection).list_by_organization(
         contexto.organization_id, limit=paginacao.limite_de_sondagem, offset=paginacao.offset
@@ -990,8 +990,8 @@ def listar_lotes(
 )
 def detalhar_lote(
     lot_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(LOT_LER))],
+    connection: ConnectionDependency,
 ) -> LoteAnimaisResumo:
     alvo = typed_id_or_problem(lot_id, entity_type="livestock_lot", campo="lot_id")
     encontrado = TransactionalLivestockLotRepository(connection=connection).get_by_id(alvo)
@@ -1011,8 +1011,8 @@ def detalhar_lote(
 )
 def composicao_do_lote(
     lot_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(LOT_LER))],
+    connection: ConnectionDependency,
     at_time: datetime | None = None,
 ) -> dict[str, Any]:
     alvo = typed_id_or_problem(lot_id, entity_type="livestock_lot", campo="lot_id")
@@ -1049,9 +1049,9 @@ def composicao_do_lote(
     responses=RESPOSTAS_PADRAO,
 )
 def listar_veterinarios(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(VETERINARIAN_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
 ) -> Any:
     encontrados = TransactionalVeterinarianRepository(connection=connection).list_by_organization(
         contexto.organization_id, limit=paginacao.limite_de_sondagem, offset=paginacao.offset
@@ -1067,8 +1067,8 @@ def listar_veterinarios(
 )
 def detalhar_veterinario(
     veterinarian_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(VETERINARIAN_LER))],
+    connection: ConnectionDependency,
 ) -> VeterinarioResumo:
     alvo = typed_id_or_problem(veterinarian_id, entity_type="veterinarian", campo="veterinarian_id")
     encontrado = TransactionalVeterinarianRepository(connection=connection).get_by_id(alvo)
@@ -1087,9 +1087,9 @@ def detalhar_veterinario(
     responses=RESPOSTAS_PADRAO,
 )
 def listar_movimentacoes(
-    connection: ConnectionDependency,
-    paginacao: PaginacaoDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MOVEMENT_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
     animal_id: str | None = None,
 ) -> Any:
     repositorio = TransactionalAnimalMovementRepository(connection=connection)
@@ -1114,8 +1114,8 @@ def listar_movimentacoes(
 )
 def detalhar_movimentacao(
     movement_id: str,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MOVEMENT_LER))],
+    connection: ConnectionDependency,
 ) -> MovimentacaoResumo:
     alvo = typed_id_or_problem(movement_id, entity_type="animal_movement", campo="movement_id")
     encontrado = TransactionalAnimalMovementRepository(connection=connection).get_by_id(alvo)

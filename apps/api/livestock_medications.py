@@ -91,8 +91,8 @@ class LoteResponse(BaseModel):
 )
 def registrar_medicamento(
     corpo: RegistrarMedicamentoRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_CRIAR))],
+    connection: ConnectionDependency,
 ) -> MedicamentoResponse:
     servico = MedicationService(
         medication_repository=TransactionalMedicationRepository(connection=connection),
@@ -137,8 +137,8 @@ def registrar_medicamento(
 )
 def registrar_lote(
     corpo: RegistrarLoteRequest,
-    connection: ConnectionDependency,
     contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_CRIAR))],
+    connection: ConnectionDependency,
 ) -> LoteResponse:
     servico = MedicationBatchService(
         batch_repository=TransactionalMedicationBatchRepository(connection=connection),
