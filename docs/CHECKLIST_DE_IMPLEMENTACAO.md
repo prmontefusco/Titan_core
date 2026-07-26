@@ -62,6 +62,7 @@ Estados utilizados:
 | NR-4 / ADR-0043 | Governança e linha do tempo imutável de regras | CONCLUÍDO | Aprovada em 26/07/2026 |
 | NR-4 / ADR-0044 | Matriz de elegibilidade por mercado com regras governadas | CONCLUÍDO | Aprovada em 26/07/2026 |
 | NR-4 sanitário | Campanhas sanitárias, exigibilidade mínima, prescrição e tratamento autorizado | CONCLUÍDO | Aprovada em 26/07/2026 |
+| ADR-0042a | Contraparte externa local e saída com destino estruturado | CONCLUÍDO | Aprovada em 26/07/2026 |
 
 ## Fila atual do backend
 
@@ -69,7 +70,7 @@ Esta fila substitui a indicação antiga "validar Marco 12 e iniciar o frontend"
 
 | Ordem | Criticidade | Incremento | Motivo | Estado atual | Critério de saída |
 |---|---|---|---|---|---|
-| 1 | Alta | Continuidade de proveniência e lacuna auditável (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | Contraparte externa local e saída com destino estruturado implementadas; transferência/importação de prova ainda pendentes | Registrar aquisição/importação de artefato, fatos importados e lacuna de cobertura sem furar isolamento |
+| 1 | Alta | Continuidade de proveniência e lacuna auditável (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | Contraparte externa local e saída com destino estruturado aprovadas em 26/07/2026; transferência/importação de prova ainda pendentes | Registrar aquisição/importação de artefato, fatos importados e lacuna de cobertura sem furar isolamento |
 | 2 | Alta | Leitura completa da matriz por regra governada | A resposta comercial precisa explicar destino, regra, versão, adoção, lacuna e ação corretiva | Parcialmente implementado | Cada célula da matriz expõe adoption/version/reasons/gaps/requirements de forma suficiente para auditoria e UI |
 | 3 | Média-alta | Requisitos sanitários e medicamentos/vacinas como regras adotáveis | Hoje há campanha, prescrição e tratamento; falta transformar obrigações sanitárias em regra governada por mercado | Parcialmente implementado | Regras governadas conseguem exigir campanha, vacinação/tratamento, prescrição ou evidência sanitária |
 | 4 | Média | Roteiros executáveis de cenário comercial ponta a ponta | Demonstração precisa mostrar "China/EUA sim, UE não, por motivo X" sem colagem manual de IDs | Parcialmente implementado | Um roteiro cria dados, adota regras, avalia mercados e imprime explicações comparáveis |
@@ -83,6 +84,7 @@ Esta fila substitui a indicação antiga "validar Marco 12 e iniciar o frontend"
 |---|---|---|---|
 | 24/07/2026 | API mínima do fluxo farmacológico e roteiro de validação | CONCLUÍDO | `89ebf7d feat(api): api minima do fluxo farmacologico e roteiro de validacao` |
 | 26/07/2026 | Governança Core de regras, versionamento, publicação e adoção | CONCLUÍDO | ADR-0043; `apps/api/core_rule_governance.py`; `apps/validacao/governanca_regras.py`; roteiro aprovado em 26/07/2026 |
+| 26/07/2026 | Contraparte externa local e saída com destino estruturado | CONCLUÍDO | ADR-0042; `apps/validacao/contraparte_externa.py`; roteiro de 5 passos aprovado em 26/07/2026 |
 | 26/07/2026 | Matriz de elegibilidade por mercado de destino | CONCLUÍDO | ADR-0044; `packages/livestock_application/market_eligibility.py`; `apps/validacao/matriz_elegibilidade_mercados.py`; roteiro aprovado em 26/07/2026 |
 | 26/07/2026 | Requisitos por perfil de mercado e diferenciação UE/China/EUA | IMPLEMENTADO | `880882e feat(livestock): suportar requisitos por perfil de mercado`; `09d3417 feat(livestock): diferenciar requisito de rastreabilidade na UE` |
 | 26/07/2026 | Exigibilidade sanitária mínima | CONCLUÍDO | `5bc1cc7 feat(livestock): avaliar exigibilidade sanitaria minima`; `apps/validacao/exigibilidade_sanitaria_minima.py`; roteiro aprovado em 26/07/2026 |
