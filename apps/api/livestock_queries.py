@@ -309,7 +309,7 @@ def executar_matriz_de_mercado(
     ).evaluate(
         organization_id=organizacao,
         base_result=decision.result,
-        base_reasons=[razao.message for razao in decision.reasons],
+        base_reasons=decision.reasons,
     )
 
     return MatrizMercadoResponse(

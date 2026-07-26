@@ -3,10 +3,11 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision import DecisionReason, DecisionReasonCode, DecisionResult
 from packages.core_domain.rule_governance import RuleAdoption
 from packages.livestock_application.eligibility import ELIGIBILITY_RULE_ADOPTION_SCOPE
 from packages.livestock_application.market_eligibility import (
+    MarketEligibilityGapCode,
     MarketEligibilityService,
     MarketEligibilityStatus,
 )
@@ -47,18 +48,29 @@ class InMemoryAdoptions:
         return self.items.get((organization_id, code, purpose, scope))
 
 
+def _reason(message: str = "Animal em carencia.") -> DecisionReason:
+    return DecisionReason(
+        code=DecisionReasonCode.REGRA_NAO_ATENDIDA,
+        message=message,
+        rule_code="rule-carencia-farmacologica",
+        rule_id=TypedId.new("rule"),
+        rule_version=1,
+    )
+
+
 def test_market_without_adopted_rule_is_absent() -> None:
     org_id = OrganizationId.new()
 
     matrix = MarketEligibilityService(
         adoption_reader=InMemoryAdoptions(),
         markets=("exportacao-uniao-europeia",),
-    ).evaluate(org_id, DecisionResult.APROVADA, ["Regra atendida."])
+    ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
     entry = matrix.entries[0]
     assert entry.status is MarketEligibilityStatus.AUSENTE
     assert entry.governed_rule is None
-    assert entry.reasons == ("Nenhuma regra governada adotada para este mercado.",)
+    assert entry.reasons == ()
+    assert entry.gaps[0].code is MarketEligibilityGapCode.REGRA_GOVERNADA_AUSENTE
 
 
 def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
@@ -73,13 +85,16 @@ def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
         markets=("exportacao-uniao-europeia",),
-    ).evaluate(org_id, DecisionResult.REJEITADA, ["Animal em carencia."])
+    ).evaluate(org_id, DecisionResult.REJEITADA, [_reason()])
 
     entry = matrix.entries[0]
     assert entry.status is MarketEligibilityStatus.NAO_ELEGIVEL
     assert entry.governed_rule is not None
     assert entry.governed_rule.adoption_id == adoption.adoption_id
-    assert entry.reasons == ("Animal em carencia.",)
+    assert entry.reasons[0].code == "regra_nao_atendida"
+    assert entry.reasons[0].message == "Animal em carencia."
+    assert entry.reasons[0].rule_code == "rule-carencia-farmacologica"
+    assert entry.gaps == ()
 
 
 def test_adopted_markets_can_differ_side_by_side() -> None:
@@ -95,7 +110,7 @@ def test_adopted_markets_can_differ_side_by_side() -> None:
             "exportacao-china",
             "exportacao-estados-unidos",
         ),
-    ).evaluate(org_id, DecisionResult.APROVADA, ["Regra atendida."])
+    ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
     statuses = {entry.market: entry.status for entry in matrix.entries}
     assert statuses == {

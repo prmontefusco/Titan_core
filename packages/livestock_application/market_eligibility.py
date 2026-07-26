@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision import DecisionReason, DecisionResult
 from packages.core_domain.rule_governance import RuleAdoption
 from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
@@ -29,6 +29,10 @@ class MarketEligibilityStatus(Enum):
     AUSENTE = "AUSENTE"
 
 
+class MarketEligibilityGapCode(Enum):
+    REGRA_GOVERNADA_AUSENTE = "REGRA_GOVERNADA_AUSENTE"
+
+
 class MarketRuleAdoptionReaderPort(Protocol):
     def get_active_by_code_purpose_and_scope(
         self,
@@ -40,10 +44,51 @@ class MarketRuleAdoptionReaderPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class MarketEligibilityReason:
+    code: str
+    message: str
+    rule_code: str
+    rule_id: str | None
+    rule_version: int | None
+
+    @classmethod
+    def from_decision_reason(cls, reason: DecisionReason) -> "MarketEligibilityReason":
+        return cls(
+            code=reason.code.value,
+            message=reason.message,
+            rule_code=reason.rule_code,
+            rule_id=None if reason.rule_id is None else str(reason.rule_id.value),
+            rule_version=reason.rule_version,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "message": self.message,
+            "rule_code": self.rule_code,
+            "rule_id": self.rule_id,
+            "rule_version": self.rule_version,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MarketEligibilityGap:
+    code: MarketEligibilityGapCode
+    message: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "code": self.code.value,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MarketEligibilityEntry:
     market: str
     status: MarketEligibilityStatus
-    reasons: tuple[str, ...]
+    reasons: tuple[MarketEligibilityReason, ...]
+    gaps: tuple[MarketEligibilityGap, ...] = ()
     governed_rule: GovernedRuleReference | None = None
 
     def to_dict(self) -> dict[str, object]:
@@ -51,7 +96,8 @@ class MarketEligibilityEntry:
             "market": self.market,
             "status": self.status.value,
             "governed_rule": None if self.governed_rule is None else self.governed_rule.to_dict(),
-            "reasons": list(self.reasons),
+            "reasons": [reason.to_dict() for reason in self.reasons],
+            "gaps": [gap.to_dict() for gap in self.gaps],
         }
 
 
@@ -72,7 +118,7 @@ class MarketEligibilityService:
         self,
         organization_id: OrganizationId,
         base_result: DecisionResult,
-        base_reasons: Sequence[str],
+        base_reasons: Sequence[DecisionReason],
     ) -> MarketEligibilityMatrix:
         entries = tuple(
             self._entry_for_market(organization_id, market, base_result, base_reasons)
@@ -85,7 +131,7 @@ class MarketEligibilityService:
         organization_id: OrganizationId,
         market: str,
         base_result: DecisionResult,
-        base_reasons: Sequence[str],
+        base_reasons: Sequence[DecisionReason],
     ) -> MarketEligibilityEntry:
         adoption = self.adoption_reader.get_active_by_code_purpose_and_scope(
             organization_id,
@@ -97,7 +143,13 @@ class MarketEligibilityService:
             return MarketEligibilityEntry(
                 market=market,
                 status=MarketEligibilityStatus.AUSENTE,
-                reasons=("Nenhuma regra governada adotada para este mercado.",),
+                reasons=(),
+                gaps=(
+                    MarketEligibilityGap(
+                        code=MarketEligibilityGapCode.REGRA_GOVERNADA_AUSENTE,
+                        message="Nenhuma regra governada adotada para este mercado.",
+                    ),
+                ),
             )
 
         return MarketEligibilityEntry(
@@ -110,7 +162,9 @@ class MarketEligibilityService:
                 purpose=adoption.purpose,
                 scope=adoption.scope,
             ),
-            reasons=tuple(base_reasons),
+            reasons=tuple(
+                MarketEligibilityReason.from_decision_reason(reason) for reason in base_reasons
+            ),
         )
 
 

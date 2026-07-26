@@ -418,7 +418,16 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
     assert por_mercado["exportacao-uniao-europeia"]["status"] == "AUSENTE"
     assert por_mercado["exportacao-uniao-europeia"]["governed_rule"] is None
+    assert por_mercado["exportacao-uniao-europeia"]["reasons"] == []
+    assert por_mercado["exportacao-uniao-europeia"]["gaps"][0]["code"] == (
+        "REGRA_GOVERNADA_AUSENTE"
+    )
     assert por_mercado["exportacao-china"]["governed_rule"]["purpose"] == "exportacao-china"
+    assert por_mercado["exportacao-china"]["gaps"] == []
+    assert por_mercado["exportacao-china"]["reasons"][0]["code"] == "regra_atendida"
+    assert (
+        por_mercado["exportacao-china"]["reasons"][0]["rule_code"] == "rule-carencia-farmacologica"
+    )
 
 
 def test_listar_dossies_sem_sujeito_e_recusado(

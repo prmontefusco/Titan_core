@@ -163,13 +163,8 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
         201,
         conferir=lambda r: (
             None
-            if {
-                "exportacao-uniao-europeia",
-                "exportacao-china",
-                "exportacao-estados-unidos",
-            }
-            == {item["market"] for item in r["markets"]}
-            else "matriz nao trouxe os mercados iniciais"
+            if _matriz_tem_forma_esperada(r["markets"])
+            else "matriz nao trouxe mercados, gaps e razoes esperados"
         ),
         porque=(
             "China e Estados Unidos foram preparados com regra adotada; Uniao "
@@ -192,6 +187,27 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
         porque="Consultar auditoria nao concede autoridade para emitir nova decisao.",
     )
     return roteiro
+
+
+def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
+    by_market = {str(item["market"]): item for item in markets}
+    expected = {
+        "exportacao-uniao-europeia",
+        "exportacao-china",
+        "exportacao-estados-unidos",
+    }
+    if set(by_market) != expected:
+        return False
+    europe_gaps = by_market["exportacao-uniao-europeia"].get("gaps")
+    china_reasons = by_market["exportacao-china"].get("reasons")
+    return (
+        isinstance(europe_gaps, list)
+        and bool(europe_gaps)
+        and europe_gaps[0].get("code") == "REGRA_GOVERNADA_AUSENTE"
+        and isinstance(china_reasons, list)
+        and bool(china_reasons)
+        and china_reasons[0].get("code") == "regra_atendida"
+    )
 
 
 def main() -> int:
