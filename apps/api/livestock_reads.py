@@ -57,6 +57,9 @@ from packages.livestock_infrastructure.geodata import (
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
+from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
+    TransactionalExternalCounterpartyRepository,
+)
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
 )
@@ -111,6 +114,16 @@ class SaidaResumo(BaseModel):
     occurred_at: datetime
     reason: str | None
     destination: str | None
+    destination_counterparty_id: str | None
+
+
+class ContraparteExternaResumo(BaseModel):
+    counterparty_id: str
+    name: str
+    counterparty_type: str
+    identifiers: list[str]
+    notes: str | None
+    created_at: datetime
 
 
 class AnimalResumo(BaseModel):
@@ -209,6 +222,11 @@ def _saida(registro: Any) -> SaidaResumo | None:
         occurred_at=registro.occurred_at,
         reason=registro.reason,
         destination=registro.destination,
+        destination_counterparty_id=(
+            None
+            if registro.destination_counterparty_id is None
+            else str(registro.destination_counterparty_id.value)
+        ),
     )
 
 
@@ -323,6 +341,37 @@ def _movimentacao(entidade: Any) -> MovimentacaoResumo:
         animal_ids=[str(a.value) for a in entidade.animal_ids],
         reason=entidade.reason,
     )
+
+
+def _contraparte_externa(entidade: Any) -> ContraparteExternaResumo:
+    return ContraparteExternaResumo(
+        counterparty_id=str(entidade.counterparty_id.value),
+        name=entidade.name,
+        counterparty_type=entidade.counterparty_type.value,
+        identifiers=list(entidade.identifiers),
+        notes=entidade.notes,
+        created_at=entidade.created_at,
+    )
+
+
+# -- Contrapartes externas ---------------------------------------------------
+
+
+@router.get(
+    "/external-counterparties",
+    response_model=Pagina[ContraparteExternaResumo],
+    summary="Listar contrapartes externas locais",
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_contrapartes_externas(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
+) -> Any:
+    repositorio = TransactionalExternalCounterpartyRepository(connection=connection)
+    encontrados = repositorio.list_by_organization(contexto.organization_id)
+    janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
+    return montar_pagina([_contraparte_externa(item) for item in janela], paginacao)
 
 
 # -- Animais -----------------------------------------------------------------

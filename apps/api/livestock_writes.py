@@ -41,6 +41,7 @@ from packages.livestock_application.authorization import (
 )
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.exit_service import AnimalExitService
+from packages.livestock_application.external_counterparty_service import ExternalCounterpartyService
 from packages.livestock_application.geometry_service import PropertyGeometryService
 from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
@@ -54,6 +55,7 @@ from packages.livestock_application.reproduction_service import (
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import AnimalSex, BirthOutcome, VerificationStatus
 from packages.livestock_domain.exit import ExitType
+from packages.livestock_domain.external_counterparty import CounterpartyType
 from packages.livestock_domain.geometry import (
     CAMADA_PERIMETRO,
     SRID_CANONICO,
@@ -77,6 +79,9 @@ from packages.livestock_infrastructure.persistence.animal_repository import (
 )
 from packages.livestock_infrastructure.persistence.exit_repository import (
     TransactionalAnimalExitRepository,
+)
+from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
+    TransactionalExternalCounterpartyRepository,
 )
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
@@ -506,11 +511,78 @@ def registrar_movimentacao(
 # -- Saída do rebanho --------------------------------------------------------
 
 
+class RegistrarContraparteExternaRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    counterparty_type: CounterpartyType
+    identifiers: list[str] = Field(default_factory=list, max_length=20)
+    notes: str | None = Field(default=None, max_length=500)
+    evidence_references: list[str] = Field(default_factory=list)
+
+
+class ContraparteExternaResponse(BaseModel):
+    counterparty_id: str
+    name: str
+    counterparty_type: str
+    identifiers: list[str]
+    notes: str | None
+
+
+def _contraparte_response(contraparte: Any) -> ContraparteExternaResponse:
+    return ContraparteExternaResponse(
+        counterparty_id=str(contraparte.counterparty_id.value),
+        name=contraparte.name,
+        counterparty_type=contraparte.counterparty_type.value,
+        identifiers=list(contraparte.identifiers),
+        notes=contraparte.notes,
+    )
+
+
+@router.post(
+    "/external-counterparties",
+    response_model=ContraparteExternaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar uma contraparte externa local",
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_contraparte_externa(
+    corpo: RegistrarContraparteExternaRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
+    connection: ConnectionDependency,
+) -> ContraparteExternaResponse:
+    servico = ExternalCounterpartyService(
+        repository=TransactionalExternalCounterpartyRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    try:
+        contraparte = servico.register_counterparty(
+            context=operation_context(contexto),
+            name=corpo.name,
+            counterparty_type=corpo.counterparty_type,
+            identifiers=tuple(corpo.identifiers),
+            notes=corpo.notes,
+            evidence_references=tuple(
+                UniversalReference(
+                    target_id=typed_id_or_problem(
+                        bruto, entity_type="evidence", campo="evidence_references"
+                    ),
+                    organization_id=contexto.organization_id,
+                    contract_version=1,
+                )
+                for bruto in corpo.evidence_references
+            ),
+        )
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _contraparte_response(contraparte)
+
+
 class RegistrarSaidaRequest(BaseModel):
     exit_type: ExitType
     occurred_at: datetime
     reason: str | None = Field(default=None, max_length=500)
     destination: str | None = Field(default=None, max_length=255)
+    destination_counterparty_id: str | None = None
     evidence_references: list[str] = Field(default_factory=list)
 
 
@@ -521,6 +593,7 @@ class SaidaResponse(BaseModel):
     occurred_at: datetime
     reason: str | None
     destination: str | None
+    destination_counterparty_id: str | None
 
 
 @router.post(
@@ -546,6 +619,7 @@ def registrar_saida(
         exit_repository=TransactionalAnimalExitRepository(connection=connection),
         animal_repository=TransactionalAnimalRepository(connection=connection),
         recorder=_recorder(connection),
+        counterparty_repository=TransactionalExternalCounterpartyRepository(connection=connection),
     )
     try:
         saida = servico.register_exit(
@@ -555,6 +629,15 @@ def registrar_saida(
             occurred_at=corpo.occurred_at,
             reason=corpo.reason,
             destination=corpo.destination,
+            destination_counterparty_id=(
+                None
+                if corpo.destination_counterparty_id is None
+                else typed_id_or_problem(
+                    corpo.destination_counterparty_id,
+                    entity_type="external_counterparty",
+                    campo="destination_counterparty_id",
+                )
+            ),
             evidence_references=tuple(
                 UniversalReference(
                     target_id=typed_id_or_problem(
@@ -567,7 +650,7 @@ def registrar_saida(
             ),
         )
     except KeyError as error:
-        raise _nao_encontrado("Animal") from error
+        raise _nao_encontrado("Animal ou contraparte") from error
     except ValueError as error:
         raise _conflito(error) from error
 
@@ -578,6 +661,11 @@ def registrar_saida(
         occurred_at=saida.occurred_at,
         reason=saida.reason,
         destination=saida.destination,
+        destination_counterparty_id=(
+            None
+            if saida.destination_counterparty_id is None
+            else str(saida.destination_counterparty_id.value)
+        ),
     )
 
 

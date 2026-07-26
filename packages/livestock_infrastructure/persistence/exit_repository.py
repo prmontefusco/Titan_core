@@ -37,6 +37,7 @@ animal_exits_table = Table(
     Column("occurred_at", DateTime(timezone=True), nullable=False),
     Column("reason", String(500), nullable=True),
     Column("destination", String(255), nullable=True),
+    Column("destination_counterparty_id", PG_UUID(as_uuid=True), nullable=True),
     Column("evidence_references", JSONB, nullable=False, server_default="[]"),
     Column("created_at", DateTime(timezone=True), nullable=False),
     ForeignKeyConstraint(
@@ -48,6 +49,11 @@ animal_exits_table = Table(
         ["animal_id"],
         ["core_audit.animals.animal_id"],
         name="fk_animal_exits_animal",
+    ),
+    ForeignKeyConstraint(
+        ["destination_counterparty_id"],
+        ["core_audit.external_counterparties.counterparty_id"],
+        name="fk_animal_exits_destination_counterparty",
     ),
     # Sair é terminal: o banco recusa a segunda saída mesmo que o serviço falhe
     # em conferir. Invariante que só a aplicação garante é invariante que se perde
@@ -71,6 +77,11 @@ class TransactionalAnimalExitRepository(AnimalExitRepositoryPort):
                 occurred_at=exit_record.occurred_at,
                 reason=exit_record.reason,
                 destination=exit_record.destination,
+                destination_counterparty_id=(
+                    None
+                    if exit_record.destination_counterparty_id is None
+                    else exit_record.destination_counterparty_id.value
+                ),
                 evidence_references=json.dumps(
                     [reference_to_dict(r) for r in exit_record.evidence_references]
                 ),
@@ -99,6 +110,13 @@ class TransactionalAnimalExitRepository(AnimalExitRepositoryPort):
             occurred_at=_aware(row.occurred_at),
             reason=row.reason,
             destination=row.destination,
+            destination_counterparty_id=(
+                None
+                if row.destination_counterparty_id is None
+                else TypedId(
+                    entity_type="external_counterparty", value=row.destination_counterparty_id
+                )
+            ),
             evidence_references=tuple(
                 referencia
                 for referencia in (reference_from_dict(item) for item in referencias)

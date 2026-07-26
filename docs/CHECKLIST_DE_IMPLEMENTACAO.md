@@ -2,7 +2,7 @@
 
 **Atualizado em:** 26 de julho de 2026
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** fechar validação manual do backend Livestock e, em seguida, implementar continuidade de proveniência com contraparte externa.
+**Próximo passo planejado:** avançar a continuidade de proveniência da ADR-0042 com transferência/importação de prova e lacuna de cobertura auditável.
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -69,7 +69,7 @@ Esta fila substitui a indicação antiga "validar Marco 12 e iniciar o frontend"
 
 | Ordem | Criticidade | Incremento | Motivo | Estado atual | Critério de saída |
 |---|---|---|---|---|---|
-| 1 | Alta | Contraparte externa e continuidade de proveniência (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | ADR aceita, implementação pendente | Registrar contraparte, transferência/saída com destino estruturado e lacuna de proveniência auditável |
+| 1 | Alta | Continuidade de proveniência e lacuna auditável (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | Contraparte externa local e saída com destino estruturado implementadas; transferência/importação de prova ainda pendentes | Registrar aquisição/importação de artefato, fatos importados e lacuna de cobertura sem furar isolamento |
 | 2 | Alta | Leitura completa da matriz por regra governada | A resposta comercial precisa explicar destino, regra, versão, adoção, lacuna e ação corretiva | Parcialmente implementado | Cada célula da matriz expõe adoption/version/reasons/gaps/requirements de forma suficiente para auditoria e UI |
 | 3 | Média-alta | Requisitos sanitários e medicamentos/vacinas como regras adotáveis | Hoje há campanha, prescrição e tratamento; falta transformar obrigações sanitárias em regra governada por mercado | Parcialmente implementado | Regras governadas conseguem exigir campanha, vacinação/tratamento, prescrição ou evidência sanitária |
 | 4 | Média | Roteiros executáveis de cenário comercial ponta a ponta | Demonstração precisa mostrar "China/EUA sim, UE não, por motivo X" sem colagem manual de IDs | Parcialmente implementado | Um roteiro cria dados, adota regras, avalia mercados e imprime explicações comparáveis |

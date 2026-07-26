@@ -22,9 +22,13 @@ from packages.livestock_application.exit_service import (
     SaidaJaRegistrada,
     guard_animal_active,
 )
+from packages.livestock_application.external_counterparty_service import (
+    ExternalCounterpartyRepositoryPort,
+)
 from packages.livestock_domain.animal import Animal, AnimalSex, IdentifierType
 from packages.livestock_domain.events import ANIMAL_EXITED
 from packages.livestock_domain.exit import AnimalExit, ExitType
+from packages.livestock_domain.external_counterparty import CounterpartyType, ExternalCounterparty
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.conftest import FakeEventLog
 
@@ -77,11 +81,28 @@ class InMemoryAnimalRepo(AnimalRepositoryPort):
         return list(self.animals.values())
 
 
+class InMemoryCounterpartyRepo(ExternalCounterpartyRepositoryPort):
+    def __init__(self) -> None:
+        self.counterparties: dict[str, ExternalCounterparty] = {}
+
+    def save(self, counterparty: ExternalCounterparty) -> None:
+        self.counterparties[counterparty.counterparty_id.value.hex] = counterparty
+
+    def get_by_id(self, counterparty_id: TypedId) -> ExternalCounterparty | None:
+        return self.counterparties.get(counterparty_id.value.hex)
+
+    def list_by_organization(self, organization_id: OrganizationId) -> list[ExternalCounterparty]:
+        return [
+            item for item in self.counterparties.values() if item.organization_id == organization_id
+        ]
+
+
 def _cenario(
     recorder: LivestockEventRecorder, context: LivestockOperationContext
 ) -> tuple[AnimalExitService, InMemoryAnimalRepo, TypedId]:
     exit_repo = InMemoryExitRepo()
     animal_repo = InMemoryAnimalRepo(exit_repo)
+    counterparty_repo = InMemoryCounterpartyRepo()
     animal = Animal(
         animal_id=TypedId.new("animal"),
         organization_id=context.organization_id,
@@ -93,6 +114,7 @@ def _cenario(
         exit_repository=exit_repo,
         animal_repository=animal_repo,
         recorder=recorder,
+        counterparty_repository=counterparty_repo,
     )
     return service, animal_repo, animal.animal_id
 
@@ -119,6 +141,55 @@ def test_registra_a_saida_e_grava_o_fato(
     # O fato pertence ao fluxo do animal: é o fim da história dele.
     assert evento.aggregate_reference.target_id == animal_id
     assert evento.timestamps.occurred_at == momento
+
+
+def test_saida_pode_apontar_para_contraparte_externa_local(
+    recorder: LivestockEventRecorder,
+    context: LivestockOperationContext,
+) -> None:
+    service, _, animal_id = _cenario(recorder, context)
+    assert service.counterparty_repository is not None
+    contraparte = ExternalCounterparty(
+        counterparty_id=TypedId.new("external_counterparty"),
+        organization_id=context.organization_id,
+        name="Fazenda Destino",
+        counterparty_type=CounterpartyType.FARM,
+    )
+    service.counterparty_repository.save(contraparte)
+
+    saida = service.register_exit(
+        context=context,
+        animal_id=animal_id,
+        exit_type=ExitType.VENDA,
+        occurred_at=datetime.now(UTC) - timedelta(days=1),
+        destination_counterparty_id=contraparte.counterparty_id,
+    )
+
+    assert saida.destination_counterparty_id == contraparte.counterparty_id
+
+
+def test_saida_nao_alcanca_contraparte_de_outra_organizacao(
+    recorder: LivestockEventRecorder,
+    context: LivestockOperationContext,
+) -> None:
+    service, _, animal_id = _cenario(recorder, context)
+    assert service.counterparty_repository is not None
+    contraparte = ExternalCounterparty(
+        counterparty_id=TypedId.new("external_counterparty"),
+        organization_id=OrganizationId.new(),
+        name="Fazenda Fora",
+        counterparty_type=CounterpartyType.FARM,
+    )
+    service.counterparty_repository.save(contraparte)
+
+    with pytest.raises(KeyError, match="Contraparte"):
+        service.register_exit(
+            context=context,
+            animal_id=animal_id,
+            exit_type=ExitType.VENDA,
+            occurred_at=datetime.now(UTC) - timedelta(days=1),
+            destination_counterparty_id=contraparte.counterparty_id,
+        )
 
 
 def test_sair_e_terminal(

@@ -21,6 +21,7 @@ EXPECTED_EVENT_TYPES = frozenset(
         "livestock.animal_moved",
         "livestock.animal_registered",
         "livestock.animal_removed_from_lot",
+        "livestock.external_counterparty_registered",
         "livestock.identifier_attached",
         "livestock.identifier_deactivated",
         "livestock.lot_created",

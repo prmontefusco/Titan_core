@@ -14,6 +14,7 @@ from packages.livestock_domain.events import (
     ANIMAL_MOVED,
     ANIMAL_REGISTERED,
     ANIMAL_REMOVED_FROM_LOT,
+    EXTERNAL_COUNTERPARTY_REGISTERED,
     IDENTIFIER_ATTACHED,
     IDENTIFIER_DEACTIVATED,
     LIVESTOCK_EVENT_TYPES,
@@ -29,6 +30,7 @@ from packages.livestock_domain.events import (
     VETERINARIAN_STATUS_UPDATED,
 )
 from packages.livestock_domain.exit import AnimalExit, ExitType
+from packages.livestock_domain.external_counterparty import CounterpartyType, ExternalCounterparty
 from packages.livestock_domain.lot import (
     LivestockLot,
     LotMembership,
@@ -53,6 +55,7 @@ __all__ = [
     "ANIMAL_MOVED",
     "ANIMAL_REGISTERED",
     "ANIMAL_REMOVED_FROM_LOT",
+    "EXTERNAL_COUNTERPARTY_REGISTERED",
     "IDENTIFIER_ATTACHED",
     "IDENTIFIER_DEACTIVATED",
     "LIVESTOCK_EVENT_TYPES",
@@ -72,6 +75,7 @@ __all__ = [
     "AnimalMovement",
     "AnimalSex",
     "ExitType",
+    "ExternalCounterparty",
     "IdentifierState",
     "IdentifierType",
     "LivestockLot",
@@ -80,6 +84,7 @@ __all__ = [
     "LotType",
     "Medication",
     "MedicationProductClass",
+    "CounterpartyType",
     "ParentageConfidence",
     "ParentageRole",
     "Prescription",

@@ -9,6 +9,10 @@ from packages.livestock_infrastructure.persistence.exit_repository import (
     TransactionalAnimalExitRepository,
     animal_exits_table,
 )
+from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
+    TransactionalExternalCounterpartyRepository,
+    external_counterparties_table,
+)
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
     property_geometries_table,
@@ -68,6 +72,7 @@ __all__ = [
     "TransactionalPropertyStayRepository",
     "TransactionalRuralPropertyRepository",
     "TransactionalAnimalExitRepository",
+    "TransactionalExternalCounterpartyRepository",
     "TransactionalPropertyGeometryRepository",
     "TransactionalReproductiveEventRepository",
     "TransactionalSanitaryCampaignRepository",
@@ -90,6 +95,7 @@ __all__ = [
     "property_stays_table",
     "rural_properties_table",
     "animal_exits_table",
+    "external_counterparties_table",
     "treatment_applications_table",
     "veterinarians_table",
 ]

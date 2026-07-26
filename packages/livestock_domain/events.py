@@ -42,6 +42,7 @@ SANITARY_CAMPAIGN_REGISTERED = "livestock.sanitary_campaign_registered"
 PRESCRIPTION_ISSUED = "livestock.prescription_issued"
 TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
+EXTERNAL_COUNTERPARTY_REGISTERED = "livestock.external_counterparty_registered"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
 REPRODUCTIVE_EVENT_RECORDED = "livestock.reproductive_event_recorded"
 PROPERTY_GEOMETRY_RECORDED = "livestock.property_geometry_recorded"
@@ -64,6 +65,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         PRESCRIPTION_ISSUED,
         TREATMENT_APPLIED,
         ANIMAL_EXITED,
+        EXTERNAL_COUNTERPARTY_REGISTERED,
         PARENTAGE_REGISTERED,
         REPRODUCTIVE_EVENT_RECORDED,
         PROPERTY_GEOMETRY_RECORDED,
@@ -545,6 +547,7 @@ def animal_exited_payload(
     occurred_at: datetime,
     reason: str | None,
     destination: str | None,
+    destination_counterparty_id: TypedId | None,
     evidence_references: tuple[UniversalReference, ...],
 ) -> CanonicalPayload:
     return _payload(
@@ -552,10 +555,35 @@ def animal_exited_payload(
         {
             "animal_id": _id(animal_id),
             "destination": destination,
+            "destination_counterparty_id": (
+                None if destination_counterparty_id is None else _id(destination_counterparty_id)
+            ),
             "evidence_references": [_id(r.target_id) for r in evidence_references],
             "exit_id": _id(exit_id),
             "exit_type": exit_type,
             "occurred_at": occurred_at,
             "reason": reason,
+        },
+    )
+
+
+def external_counterparty_registered_payload(
+    *,
+    counterparty_id: TypedId,
+    name: str,
+    counterparty_type: str,
+    identifiers: tuple[str, ...],
+    notes: str | None,
+    evidence_references: tuple[UniversalReference, ...],
+) -> CanonicalPayload:
+    return _payload(
+        EXTERNAL_COUNTERPARTY_REGISTERED,
+        {
+            "counterparty_id": _id(counterparty_id),
+            "counterparty_type": counterparty_type,
+            "evidence_references": [_id(r.target_id) for r in evidence_references],
+            "identifiers": list(identifiers),
+            "name": name,
+            "notes": notes,
         },
     )

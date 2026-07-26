@@ -73,6 +73,10 @@ SUPERFICIE_ESPERADA = {
     # Saída do rebanho (Passo 13.1). É POST, e não DELETE: o animal não é apagado,
     # ganha um fato terminal que o tira do rebanho ativo sem tirá-lo da história.
     ("/v1/livestock/animals/{animal_id}/exit", "post"),
+    # Contraparte externa (ADR-0042). E cadastro local da Organization, nao
+    # referencia direta para outro tenant.
+    ("/v1/livestock/external-counterparties", "get"),
+    ("/v1/livestock/external-counterparties", "post"),
     # Genealogia (Passo 13.2). A maternidade é uma rota só porque é um ato só,
     # ainda que grave dois vínculos: o genético, que define a linhagem, e o
     # gestacional, que responde pela receptora na transferência de embrião.

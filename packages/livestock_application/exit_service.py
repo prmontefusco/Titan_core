@@ -16,6 +16,9 @@ from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
 )
+from packages.livestock_application.external_counterparty_service import (
+    ExternalCounterpartyRepositoryPort,
+)
 from packages.livestock_domain.events import ANIMAL_EXITED, animal_exited_payload
 from packages.livestock_domain.exit import AnimalExit, ExitType
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -75,6 +78,7 @@ class AnimalExitService:
     exit_repository: AnimalExitRepositoryPort
     animal_repository: AnimalRepositoryPort
     recorder: LivestockEventRecorder
+    counterparty_repository: ExternalCounterpartyRepositoryPort | None = None
 
     def register_exit(
         self,
@@ -84,6 +88,7 @@ class AnimalExitService:
         occurred_at: datetime,
         reason: str | None = None,
         destination: str | None = None,
+        destination_counterparty_id: TypedId | None = None,
         evidence_references: tuple[UniversalReference, ...] = (),
     ) -> AnimalExit:
         organization_id = context.organization_id
@@ -99,6 +104,13 @@ class AnimalExitService:
                 f"({ja_saiu.exit_type.value})."
             )
 
+        if destination_counterparty_id is not None:
+            if self.counterparty_repository is None:
+                raise ValueError("Repositorio de contraparte externa nao configurado.")
+            counterparty = self.counterparty_repository.get_by_id(destination_counterparty_id)
+            if counterparty is None or counterparty.organization_id != organization_id:
+                raise KeyError(f"Contraparte '{destination_counterparty_id.value}' nao encontrada.")
+
         registro = AnimalExit(
             exit_id=TypedId.new("animal_exit"),
             organization_id=organization_id,
@@ -107,6 +119,7 @@ class AnimalExitService:
             occurred_at=occurred_at,
             reason=reason,
             destination=destination,
+            destination_counterparty_id=destination_counterparty_id,
             evidence_references=evidence_references,
             created_at=datetime.now(UTC),
         )
@@ -122,6 +135,7 @@ class AnimalExitService:
                 occurred_at=occurred_at,
                 reason=reason,
                 destination=destination,
+                destination_counterparty_id=destination_counterparty_id,
                 evidence_references=evidence_references,
             ),
             occurred_at=occurred_at,

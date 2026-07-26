@@ -46,6 +46,7 @@ class AnimalExit:
     reason: str | None = None
     evidence_references: tuple[UniversalReference, ...] = ()
     destination: str | None = None
+    destination_counterparty_id: TypedId | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
@@ -66,6 +67,13 @@ class AnimalExit:
             raise ValueError("reason, quando informado, não pode ser vazio.")
         if self.destination is not None and not self.destination.strip():
             raise ValueError("destination, quando informado, não pode ser vazio.")
+        if (
+            self.destination_counterparty_id is not None
+            and self.destination_counterparty_id.entity_type != "external_counterparty"
+        ):
+            raise ValueError(
+                "destination_counterparty_id deve ter entity_type 'external_counterparty'."
+            )
         for referencia in self.evidence_references:
             if not isinstance(referencia, UniversalReference):
                 raise TypeError("evidence_references deve conter UniversalReference.")

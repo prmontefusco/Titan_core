@@ -83,6 +83,36 @@ def test_o_animal_que_saiu_deixa_o_rebanho_ativo(
     assert saida["destination"] == "Frigorífico Central"
 
 
+def test_saida_por_venda_referencia_contraparte_externa(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={
+            "name": "Fazenda Destino",
+            "counterparty_type": "FARM",
+            "identifiers": ["CAR:MT-0000000-0000"],
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+
+    saida = operador.post(
+        f"/v1/livestock/animals/{animal_id}/exit",
+        json={
+            "exit_type": "VENDA",
+            "occurred_at": (datetime.now(UTC) - timedelta(days=1)).isoformat(),
+            "reason": "Venda para recria",
+            "destination_counterparty_id": contraparte.json()["counterparty_id"],
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+    assert saida.status_code == 201, saida.text
+    assert saida.json()["destination_counterparty_id"] == contraparte.json()["counterparty_id"]
+
+
 def test_o_levantamento_historico_traz_quem_saiu_com_a_saida_preenchida(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:
