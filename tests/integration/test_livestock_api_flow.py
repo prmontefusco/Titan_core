@@ -243,6 +243,77 @@ def test_prescricao_veterinaria_e_emitida_e_detalhada_pela_api(
     assert tratamento.json()["prescription_id"] == prescricao["prescription_id"]
 
 
+def test_prescricao_por_lote_autoriza_tratamento_de_animal_membro(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    fluxo = Fluxo(ambiente, operador)
+    animal = fluxo._post(
+        "/v1/livestock/animals",
+        {"birth_property_id": str(ambiente.property_id.value), "sex": "FEMALE"},
+    )
+    lote_animais = fluxo._post(
+        "/v1/livestock/lots",
+        {
+            "property_id": str(ambiente.property_id.value),
+            "code": f"PRESC-LOT-{datetime.now(UTC).timestamp()}",
+            "name": "Lote prescricao",
+            "lot_type": "SANITARY",
+        },
+    )
+    membro = operador.post(
+        f"/v1/livestock/lots/{lote_animais['lot_id']}/members",
+        json={"animal_id": animal["animal_id"]},
+        headers=fluxo.cabecalho,
+    )
+    assert membro.status_code == 201, membro.text
+    medicamento = fluxo._post(
+        "/v1/livestock/medications",
+        {
+            "trade_name": f"PrescLotMed-{datetime.now(UTC).timestamp()}",
+            "active_ingredient": "Produto ficticio",
+            "manufacturer": "Fabricante ficticio",
+            "withdrawal_period_days": 7,
+        },
+    )
+    lote_medicamento = fluxo._post(
+        "/v1/livestock/medication-batches",
+        {
+            "medication_id": medicamento["medication_id"],
+            "batch_number": f"PRESC-LOT-{datetime.now(UTC).timestamp()}",
+            "expiry_date": (datetime.now(UTC) + timedelta(days=365)).isoformat(),
+        },
+    )
+    veterinario = fluxo.registrar_veterinario()
+    prescricao = fluxo._post(
+        "/v1/livestock/prescriptions",
+        {
+            "veterinarian_id": veterinario["veterinarian_id"],
+            "medication_id": medicamento["medication_id"],
+            "property_id": str(ambiente.property_id.value),
+            "dosage": "1 mL",
+            "administration_route": "subcutanea",
+            "target_type": "LOT",
+            "target_ids": [lote_animais["lot_id"]],
+            "reason": "Tratamento ficticio do lote",
+        },
+    )
+
+    tratamento = operador.post(
+        "/v1/livestock/treatments",
+        json={
+            "animal_id": animal["animal_id"],
+            "medication_batch_id": lote_medicamento["batch_id"],
+            "applied_at": datetime.now(UTC).isoformat(),
+            "dose": "1 mL",
+            "prescription_id": prescricao["prescription_id"],
+        },
+        headers=fluxo.cabecalho,
+    )
+
+    assert tratamento.status_code == 201, tratamento.text
+    assert tratamento.json()["prescription_id"] == prescricao["prescription_id"]
+
+
 def test_prescricao_recusa_veterinario_nao_documentado(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:

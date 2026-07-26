@@ -22,6 +22,7 @@ from packages.livestock_application.treatment_service import (
 from packages.livestock_domain.animal import Animal, AnimalSex, IdentifierType
 from packages.livestock_domain.events import TREATMENT_APPLIED
 from packages.livestock_domain.exit import AnimalExit, ExitType
+from packages.livestock_domain.lot import LotMembership
 from packages.livestock_domain.medication import MedicationBatch
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
@@ -136,6 +137,28 @@ class InMemoryCampaignLookup:
         return self.campaigns.get(campaign_id.value.hex)
 
 
+class InMemoryLotMembershipLookup:
+    def __init__(self) -> None:
+        self.memberships: list[LotMembership] = []
+
+    def get_memberships_for_lot(
+        self, lot_id: TypedId, at_time: datetime | None = None
+    ) -> list[LotMembership]:
+        result = []
+        for membership in self.memberships:
+            if membership.lot_id != lot_id:
+                continue
+            if at_time is None:
+                if membership.valid_until is None:
+                    result.append(membership)
+                continue
+            if membership.valid_from <= at_time and (
+                membership.valid_until is None or membership.valid_until > at_time
+            ):
+                result.append(membership)
+        return result
+
+
 def _scenario(
     recorder: LivestockEventRecorder, context: LivestockOperationContext
 ) -> tuple[TreatmentApplicationService, TypedId, TypedId, InMemoryApplicationRepo]:
@@ -179,6 +202,7 @@ def _prescription(
     context: LivestockOperationContext,
     medication_id: TypedId,
     target_ids: tuple[TypedId, ...],
+    target_type: PrescriptionTargetType = PrescriptionTargetType.ANIMAL,
 ) -> Prescription:
     return Prescription(
         prescription_id=TypedId.new("prescription"),
@@ -189,7 +213,7 @@ def _prescription(
         prescribed_date=datetime.now(UTC) - timedelta(days=1),
         dosage="1 mL",
         administration_route="SUBCUTANEA",
-        target_type=PrescriptionTargetType.ANIMAL,
+        target_type=target_type,
         target_ids=target_ids,
         reason="Tratamento ficticio.",
     )
@@ -281,6 +305,81 @@ def test_register_application_rejects_prescription_for_other_animal(
     prescription_repo.save(prescription)
 
     with pytest.raises(ValueError, match="este animal"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=datetime.now(UTC) - timedelta(hours=1),
+            prescription_id=prescription.prescription_id,
+        )
+
+    assert event_log.events == []
+
+
+def test_register_application_accepts_lot_prescription_when_animal_was_member(
+    recorder: LivestockEventRecorder,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    lot_id = TypedId.new("livestock_lot")
+    membership_lookup = InMemoryLotMembershipLookup()
+    applied_at = datetime.now(UTC) - timedelta(hours=1)
+    membership_lookup.memberships.append(
+        LotMembership(
+            membership_id=TypedId.new("lot_membership"),
+            lot_id=lot_id,
+            animal_id=animal_id,
+            valid_from=applied_at - timedelta(hours=1),
+        )
+    )
+    service = replace(service, lot_membership_lookup=membership_lookup)
+    batch_repo = service.batch_repository
+    prescription_repo = service.prescription_repository
+    assert isinstance(batch_repo, InMemoryBatchRepo)
+    assert isinstance(prescription_repo, InMemoryPrescriptionRepo)
+    batch = batch_repo.get_by_id(batch_id)
+    assert batch is not None
+    prescription = _prescription(
+        context,
+        batch.medication_id,
+        (lot_id,),
+        target_type=PrescriptionTargetType.LOT,
+    )
+    prescription_repo.save(prescription)
+
+    app = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=applied_at,
+        prescription_id=prescription.prescription_id,
+    )
+
+    assert app.prescription_id == prescription.prescription_id
+
+
+def test_register_application_rejects_lot_prescription_without_temporal_membership(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    service = replace(service, lot_membership_lookup=InMemoryLotMembershipLookup())
+    batch_repo = service.batch_repository
+    prescription_repo = service.prescription_repository
+    assert isinstance(batch_repo, InMemoryBatchRepo)
+    assert isinstance(prescription_repo, InMemoryPrescriptionRepo)
+    batch = batch_repo.get_by_id(batch_id)
+    assert batch is not None
+    prescription = _prescription(
+        context,
+        batch.medication_id,
+        (TypedId.new("livestock_lot"),),
+        target_type=PrescriptionTargetType.LOT,
+    )
+    prescription_repo.save(prescription)
+
+    with pytest.raises(ValueError, match="lote informado"):
         service.register_application(
             context=context,
             animal_id=animal_id,

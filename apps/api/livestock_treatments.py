@@ -30,6 +30,9 @@ from packages.livestock_domain.treatment import TreatmentApplication
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
+from packages.livestock_infrastructure.persistence.lot_repository import (
+    TransactionalLotMembershipRepository,
+)
 from packages.livestock_infrastructure.persistence.medication_repository import (
     TransactionalMedicationBatchRepository,
     TransactionalPrescriptionRepository,
@@ -95,6 +98,7 @@ def _servico(connection: Connection) -> TreatmentApplicationService:
         # estrutura: a vertical só precisa de `get_by_id`.
         evidence_lookup=TransactionalEvidenceRepository(connection=connection),
         campaign_lookup=TransactionalSanitaryCampaignRepository(connection=connection),
+        lot_membership_lookup=TransactionalLotMembershipRepository(connection=connection),
     )
 
 

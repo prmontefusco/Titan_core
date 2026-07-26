@@ -54,7 +54,7 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
     )
     roteiro.passo(
         "3",
-        "Operador emite uma prescricao para o animal",
+        "Operador emite uma prescricao para o lote do animal",
         lambda: operador.post(
             "/v1/livestock/prescriptions",
             {
@@ -63,15 +63,15 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
                 "property_id": ids["property_id"],
                 "dosage": "1 mL",
                 "administration_route": "subcutanea",
-                "target_type": "ANIMAL",
-                "target_ids": [ids["animal_id"]],
+                "target_type": "LOT",
+                "target_ids": [ids["livestock_lot_id"]],
                 "reason": "Validacao ficticia da prescricao.",
             },
         ),
         201,
         conferir=lambda r: (
             None
-            if r["target_ids"] == [ids["animal_id"]]
+            if r["target_ids"] == [ids["livestock_lot_id"]]
             and r["veterinarian_id"] == ids["veterinarian_id"]
             and r["administration_route"] == "SUBCUTANEA"
             else "prescricao nao preservou alvo, veterinario ou via"
@@ -100,7 +100,7 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
             {
                 "animal_id": ids["animal_id"],
                 "medication_batch_id": ids["batch_id"],
-                "applied_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+                "applied_at": datetime.now(UTC).isoformat(),
                 "dose": "1 mL",
                 "prescription_id": ids["prescription_id"],
             },
@@ -135,6 +135,20 @@ def _criar_base(operador: Cliente, ids: dict[str, str]) -> Resposta:
         },
     )
     ids["animal_id"] = str(animal["animal_id"])
+    lote_animais = operador.post(
+        "/v1/livestock/lots",
+        {
+            "property_id": ids["property_id"],
+            "code": f"PRESC-ANIMAIS-{uuid4().hex[:8]}",
+            "name": "Lote de prescricao",
+            "lot_type": "SANITARY",
+        },
+    )
+    ids["livestock_lot_id"] = str(lote_animais["lot_id"])
+    operador.post(
+        f"/v1/livestock/lots/{ids['livestock_lot_id']}/members",
+        {"animal_id": ids["animal_id"]},
+    )
     medicamento = operador.post(
         "/v1/livestock/medications",
         {

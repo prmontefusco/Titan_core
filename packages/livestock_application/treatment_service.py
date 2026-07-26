@@ -22,6 +22,7 @@ from packages.livestock_application.medication_service import (
     PrescriptionRepositoryPort,
 )
 from packages.livestock_domain.events import TREATMENT_APPLIED, treatment_applied_payload
+from packages.livestock_domain.lot import LotMembership
 from packages.livestock_domain.medication import MedicationBatch
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
@@ -54,6 +55,12 @@ class SanitaryCampaignLookupPort(Protocol):
     def get_by_id(self, campaign_id: TypedId) -> SanitaryCampaign | None: ...
 
 
+class LotMembershipLookupPort(Protocol):
+    def get_memberships_for_lot(
+        self, lot_id: TypedId, at_time: datetime | None = None
+    ) -> list[LotMembership]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class TreatmentApplicationService:
     application_repository: TreatmentApplicationRepositoryPort
@@ -63,6 +70,7 @@ class TreatmentApplicationService:
     recorder: LivestockEventRecorder
     evidence_lookup: EvidenceLookupPort | None = None
     campaign_lookup: SanitaryCampaignLookupPort | None = None
+    lot_membership_lookup: LotMembershipLookupPort | None = None
 
     def register_application(
         self,
@@ -77,7 +85,9 @@ class TreatmentApplicationService:
         sanitary_campaign_id: TypedId | None = None,
     ) -> TreatmentApplication:
         organization_id = context.organization_id
-        self._validate_references(organization_id, animal_id, medication_batch_id, prescription_id)
+        self._validate_references(
+            organization_id, animal_id, medication_batch_id, prescription_id, applied_at
+        )
         self._validate_campaign(organization_id, sanitary_campaign_id, applied_at)
         self._validate_evidences(organization_id, evidence_references)
         guard_animal_active(self.animal_repository, animal_id, applied_at)
@@ -130,7 +140,11 @@ class TreatmentApplicationService:
                 "a outra organização."
             )
         self._validate_references(
-            organization_id, original.animal_id, original.medication_batch_id, prescription_id
+            organization_id,
+            original.animal_id,
+            original.medication_batch_id,
+            prescription_id,
+            applied_at,
         )
         self._validate_campaign(organization_id, sanitary_campaign_id, applied_at)
         self._validate_evidences(organization_id, evidence_references)
@@ -190,6 +204,7 @@ class TreatmentApplicationService:
         animal_id: TypedId,
         medication_batch_id: TypedId,
         prescription_id: TypedId | None,
+        applied_at: datetime,
     ) -> None:
         animal = self.animal_repository.get_by_id(animal_id)
         if animal is None or animal.organization_id != organization_id:
@@ -213,13 +228,15 @@ class TreatmentApplicationService:
                 prescription=prescription,
                 batch=batch,
                 animal_id=animal_id,
+                applied_at=applied_at,
             )
 
-    @staticmethod
     def _validate_prescription_authorizes_application(
+        self,
         prescription: Prescription,
         batch: MedicationBatch,
         animal_id: TypedId,
+        applied_at: datetime,
     ) -> None:
         if prescription.medication_id != batch.medication_id:
             raise ValueError("Prescricao nao autoriza o medicamento aplicado.")
@@ -227,9 +244,29 @@ class TreatmentApplicationService:
             if animal_id not in prescription.target_ids:
                 raise ValueError("Prescricao nao autoriza este animal.")
             return
-        raise ValueError(
-            "Prescricao por lote ainda exige validacao de pertencimento do animal ao lote."
+        self._validate_lot_prescription_authorizes_animal(
+            prescription=prescription,
+            animal_id=animal_id,
+            applied_at=applied_at,
         )
+
+    def _validate_lot_prescription_authorizes_animal(
+        self,
+        prescription: Prescription,
+        animal_id: TypedId,
+        applied_at: datetime,
+    ) -> None:
+        if self.lot_membership_lookup is None:
+            raise RuntimeError(
+                "Prescricao por lote exige consulta temporal de pertencimento ao lote."
+            )
+        for lot_id in prescription.target_ids:
+            memberships = self.lot_membership_lookup.get_memberships_for_lot(
+                lot_id, at_time=applied_at
+            )
+            if any(membership.animal_id == animal_id for membership in memberships):
+                return
+        raise ValueError("Prescricao nao autoriza este animal no lote informado.")
 
     @staticmethod
     def _guard_applied_at(applied_at: datetime) -> None:
