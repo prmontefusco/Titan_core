@@ -54,6 +54,10 @@ from packages.livestock_application.eligibility_policy_provider import (
     EligibilityPolicyProvider,
 )
 from packages.livestock_application.fact_provider import LivestockFactProvider
+from packages.livestock_application.market_eligibility import (
+    EXPORT_MARKETS,
+    MarketEligibilityService,
+)
 from packages.livestock_application.timeline_service import (
     LivestockTimelineService,
     TimelineCutoff,
@@ -101,6 +105,14 @@ class LinhaDoTempoResponse(BaseModel):
     entries: list[dict[str, Any]]
 
 
+class MatrizMercadoResponse(BaseModel):
+    animal_id: str
+    evaluation_id: str
+    decision_id: str
+    dossier_id: str
+    markets: list[dict[str, Any]]
+
+
 def _timeline_service(connection: Connection) -> LivestockTimelineService:
     return LivestockTimelineService(
         event_reader=DomainEventRepository(connection=connection),
@@ -112,6 +124,31 @@ def _timeline_service(connection: Connection) -> LivestockTimelineService:
         decision_repository=TransactionalDecisionRepository(connection=connection),
         relation_repository=TransactionalRelationRepository(connection=connection),
     )
+
+
+def _eligibility_components(
+    connection: Connection,
+    animal_repository: TransactionalAnimalRepository,
+) -> tuple[
+    TransactionalTreatmentApplicationRepository,
+    TransactionalEvaluationRepository,
+    TransactionalDecisionRepository,
+    LivestockFactProvider,
+]:
+    application_repository = TransactionalTreatmentApplicationRepository(connection=connection)
+    batch_repository = TransactionalMedicationBatchRepository(connection=connection)
+    evaluations = TransactionalEvaluationRepository(connection=connection)
+    decisions = TransactionalDecisionRepository(connection=connection)
+    fact_provider = LivestockFactProvider(
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        animal_repository=animal_repository,
+        withdrawal_calculator=WithdrawalCalculator(
+            application_repository=application_repository,
+            batch_repository=batch_repository,
+            medication_repository=TransactionalMedicationRepository(connection=connection),
+        ),
+    )
+    return application_repository, evaluations, decisions, fact_provider
 
 
 def _governed_rule_reference(
@@ -162,19 +199,9 @@ def executar_elegibilidade(
             detail="Animal não encontrado nesta organização.",
         )
 
-    application_repository = TransactionalTreatmentApplicationRepository(connection=connection)
-    batch_repository = TransactionalMedicationBatchRepository(connection=connection)
-    evaluations = TransactionalEvaluationRepository(connection=connection)
-    decisions = TransactionalDecisionRepository(connection=connection)
-
-    fact_provider = LivestockFactProvider(
-        property_repository=TransactionalRuralPropertyRepository(connection=connection),
-        animal_repository=animal_repository,
-        withdrawal_calculator=WithdrawalCalculator(
-            application_repository=application_repository,
-            batch_repository=batch_repository,
-            medication_repository=TransactionalMedicationRepository(connection=connection),
-        ),
+    application_repository, evaluations, decisions, fact_provider = _eligibility_components(
+        connection,
+        animal_repository,
     )
     # A política e a regra são lidas da versão vigente, e gravadas na primeira
     # vez. Decisão só é reproduzível se a norma sob a qual foi tomada existir como
@@ -218,6 +245,79 @@ def executar_elegibilidade(
         dossier_id=str(dossier.dossier_id.value),
         reasons=[razao.message for razao in decision.reasons],
         governed_rule=None if governed_rule is None else governed_rule.to_dict(),
+    )
+
+
+@router.post(
+    "/animals/{animal_id}/eligibility/market-matrix",
+    response_model=MatrizMercadoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Executar matriz de elegibilidade por mercado",
+    description=(
+        "Executa a elegibilidade farmacologica base e compara o resultado com as "
+        "regras governadas adotadas para os mercados iniciais."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def executar_matriz_de_mercado(
+    animal_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ELIGIBILITY_EXECUTAR))],
+    connection: ConnectionDependency,
+) -> MatrizMercadoResponse:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    organizacao = contexto.organization_id
+
+    animal_repository = TransactionalAnimalRepository(connection=connection)
+    if animal_repository.get_by_id(alvo) is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail="Animal não encontrado nesta organização.",
+        )
+
+    application_repository, evaluations, decisions, fact_provider = _eligibility_components(
+        connection,
+        animal_repository,
+    )
+    policy, rule = EligibilityPolicyProvider(
+        policy_repository=TransactionalPolicyRepository(connection=connection),
+        rule_repository=TransactionalRuleRepository(connection=connection),
+    ).current(organizacao)
+
+    evaluation, decision = PharmacologicalEligibilityService(
+        fact_provider=fact_provider,
+        policy=policy,
+        rule=rule,
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+    ).evaluate_animal(organizacao, alvo, datetime.now(UTC))
+
+    dossier = LivestockDossierTemplate(
+        timeline_service=_timeline_service(connection),
+        application_repository=application_repository,
+        evidence_lookup=TransactionalEvidenceRepository(connection=connection),
+        dossier_service=DossierService(
+            repository=TransactionalDossierRepository(connection=connection)
+        ),
+    ).build(decision=decision, evaluation=evaluation, policy=policy, rules=[rule])
+    TransactionalDossierRepository(connection=connection).save(dossier)
+
+    matrix = MarketEligibilityService(
+        adoption_reader=TransactionalRuleAdoptionRepository(connection),
+        markets=EXPORT_MARKETS,
+    ).evaluate(
+        organization_id=organizacao,
+        base_result=decision.result,
+        base_reasons=[razao.message for razao in decision.reasons],
+    )
+
+    return MatrizMercadoResponse(
+        animal_id=str(alvo.value),
+        evaluation_id=str(evaluation.evaluation_id.value),
+        decision_id=str(decision.decision_id.value),
+        dossier_id=str(dossier.dossier_id.value),
+        markets=matrix.to_dict(),
     )
 
 

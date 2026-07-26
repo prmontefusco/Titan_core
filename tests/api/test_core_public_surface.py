@@ -38,6 +38,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/treatments", "post"),
     ("/v1/livestock/treatments/{application_id}/corrections", "post"),
     ("/v1/livestock/animals/{animal_id}/eligibility", "post"),
+    ("/v1/livestock/animals/{animal_id}/eligibility/market-matrix", "post"),
     ("/v1/livestock/animals/{animal_id}/timeline", "get"),
     ("/v1/livestock/dossiers/{dossier_id}", "get"),
     # Leitura acrescentada pelo Marco 12: sem listagem, nenhuma interface funciona.

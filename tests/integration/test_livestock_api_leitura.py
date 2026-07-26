@@ -6,11 +6,19 @@ enxergar o que é de outra organização.
 """
 
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
 from apps.api.pagination import LIMITE_MAXIMO
+from packages.core_application.policy_service import PolicyService
+from packages.core_infrastructure.persistence import set_local_organization_context
+from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from packages.livestock_application.eligibility import (
+    ELIGIBILITY_RULE_ADOPTION_SCOPE,
+    ELIGIBILITY_RULE_CODE,
+)
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
 
 pytestmark = pytest.mark.skipif(
@@ -46,6 +54,78 @@ def _criar_animais(ambiente: Ambiente, operador: ClienteAutenticado, quantos: in
         assert resposta.status_code == 201, resposta.text
         criados.append(resposta.json()["animal_id"])
     return criados
+
+
+def _criar_policy_de_regra(ambiente: Ambiente) -> str:
+    set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
+    policy = PolicyService(TransactionalPolicyRepository(ambiente.connection)).create_draft(
+        organization_id=ambiente.org_a.organization_id,
+        code=f"politica-mercado-{uuid4().hex[:8]}",
+        name="Politica de elegibilidade por mercado",
+        description="Policy ficticia para validar matriz comercial.",
+    )
+    return str(policy.policy_id.value)
+
+
+def _adotar_regra_de_carencia_para_mercados(
+    operador: ClienteAutenticado,
+    ambiente: Ambiente,
+    mercados: tuple[str, ...],
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    identity = operador.post(
+        "/v1/rule-governance/rule-identities",
+        json={
+            "code": ELIGIBILITY_RULE_CODE,
+            "purpose": "Elegibilidade farmacologica por mercado.",
+            "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            "source_type": "politica_interna",
+            "vertical": "livestock",
+            "description": "Regra ficticia para validar matriz comercial.",
+        },
+        headers=cabecalho,
+    )
+    assert identity.status_code == 201, identity.text
+    identity_id = identity.json()["rule_identity_id"]
+
+    rule = operador.post(
+        f"/v1/rule-governance/rule-identities/{identity_id}/versions",
+        json={
+            "policy_id": _criar_policy_de_regra(ambiente),
+            "name": "Carencia farmacologica",
+            "description": "Nao aceita animal em periodo de carencia.",
+            "severity": "blocking",
+            "normative_source": "politica interna ficticia",
+            "required_evidence_types": ["livestock.treatment_applied"],
+            "conditions": [
+                {
+                    "fact_type": "livestock.withdrawal",
+                    "payload_key": "in_withdrawal",
+                    "operator": "equals",
+                    "expected_value": False,
+                    "description": "Animal nao pode estar em periodo de carencia.",
+                }
+            ],
+            "justification": "Destino comercial exige carencia cumprida.",
+            "corrective_action": "Aguardar fim da carencia.",
+        },
+        headers=cabecalho,
+    )
+    assert rule.status_code == 201, rule.text
+    rule_id = rule.json()["rule_id"]
+
+    for mercado in mercados:
+        adoption = operador.post(
+            f"/v1/rule-governance/rule-identities/{identity_id}/adoptions",
+            json={
+                "rule_version_id": rule_id,
+                "purpose": mercado,
+                "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                "reason": f"Regra adotada para {mercado}.",
+            },
+            headers=cabecalho,
+        )
+        assert adoption.status_code == 201, adoption.text
 
 
 def test_o_animal_cadastrado_aparece_na_listagem(
@@ -309,6 +389,36 @@ def test_os_dossies_de_um_sujeito_sao_encontraveis_sem_saber_o_uuid(
     assert corpo["subject_id"] == animal
     assert elegibilidade.json()["dossier_id"] in [i["dossier_id"] for i in corpo["items"]]
     assert all(item["dossier_hash"] for item in corpo["items"])
+
+
+def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        ("exportacao-china", "exportacao-estados-unidos"),
+    )
+
+    resposta = operador.post(
+        f"/v1/livestock/animals/{animal}/eligibility/market-matrix",
+        json={},
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["animal_id"] == animal
+    assert corpo["evaluation_id"]
+    assert corpo["decision_id"]
+    por_mercado = {item["market"]: item for item in corpo["markets"]}
+    assert por_mercado["exportacao-china"]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-uniao-europeia"]["status"] == "AUSENTE"
+    assert por_mercado["exportacao-uniao-europeia"]["governed_rule"] is None
+    assert por_mercado["exportacao-china"]["governed_rule"]["purpose"] == "exportacao-china"
 
 
 def test_listar_dossies_sem_sujeito_e_recusado(
