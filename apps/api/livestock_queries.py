@@ -55,7 +55,7 @@ from packages.livestock_application.eligibility_policy_provider import (
 )
 from packages.livestock_application.fact_provider import LivestockFactProvider
 from packages.livestock_application.market_eligibility import (
-    EXPORT_MARKETS,
+    DEFAULT_MARKET_PROFILES,
     MarketEligibilityService,
 )
 from packages.livestock_application.timeline_service import (
@@ -305,7 +305,7 @@ def executar_matriz_de_mercado(
 
     matrix = MarketEligibilityService(
         adoption_reader=TransactionalRuleAdoptionRepository(connection),
-        markets=EXPORT_MARKETS,
+        profiles=DEFAULT_MARKET_PROFILES,
     ).evaluate(
         organization_id=organizacao,
         base_result=decision.result,

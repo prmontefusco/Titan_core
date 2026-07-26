@@ -33,6 +33,44 @@ class MarketEligibilityGapCode(Enum):
     REGRA_GOVERNADA_AUSENTE = "REGRA_GOVERNADA_AUSENTE"
 
 
+@dataclass(frozen=True, slots=True)
+class MarketRequirement:
+    rule_code: str
+    scope: str
+
+    def __post_init__(self) -> None:
+        if not self.rule_code.strip():
+            raise ValueError("rule_code do requisito de mercado nao pode ser vazio.")
+        if not self.scope.strip():
+            raise ValueError("scope do requisito de mercado nao pode ser vazio.")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketProfile:
+    market: str
+    requirements: tuple[MarketRequirement, ...]
+
+    def __post_init__(self) -> None:
+        if not self.market.strip():
+            raise ValueError("market do perfil nao pode ser vazio.")
+        if not self.requirements:
+            raise ValueError("perfil de mercado exige ao menos um requisito.")
+
+
+DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = tuple(
+    MarketProfile(
+        market=market,
+        requirements=(
+            MarketRequirement(
+                rule_code=ELIGIBILITY_RULE_CODE,
+                scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            ),
+        ),
+    )
+    for market in EXPORT_MARKETS
+)
+
+
 class MarketRuleAdoptionReaderPort(Protocol):
     def get_active_by_code_purpose_and_scope(
         self,
@@ -84,12 +122,33 @@ class MarketEligibilityGap:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketRequirementResult:
+    rule_code: str
+    scope: str
+    status: MarketEligibilityStatus
+    reasons: tuple[MarketEligibilityReason, ...]
+    gaps: tuple[MarketEligibilityGap, ...]
+    governed_rule: GovernedRuleReference | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "rule_code": self.rule_code,
+            "scope": self.scope,
+            "status": self.status.value,
+            "governed_rule": None if self.governed_rule is None else self.governed_rule.to_dict(),
+            "reasons": [reason.to_dict() for reason in self.reasons],
+            "gaps": [gap.to_dict() for gap in self.gaps],
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MarketEligibilityEntry:
     market: str
     status: MarketEligibilityStatus
     reasons: tuple[MarketEligibilityReason, ...]
     gaps: tuple[MarketEligibilityGap, ...] = ()
     governed_rule: GovernedRuleReference | None = None
+    requirements: tuple[MarketRequirementResult, ...] = ()
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -98,6 +157,7 @@ class MarketEligibilityEntry:
             "governed_rule": None if self.governed_rule is None else self.governed_rule.to_dict(),
             "reasons": [reason.to_dict() for reason in self.reasons],
             "gaps": [gap.to_dict() for gap in self.gaps],
+            "requirements": [requirement.to_dict() for requirement in self.requirements],
         }
 
 
@@ -112,7 +172,7 @@ class MarketEligibilityMatrix:
 @dataclass(frozen=True, slots=True)
 class MarketEligibilityService:
     adoption_reader: MarketRuleAdoptionReaderPort
-    markets: Sequence[str] = EXPORT_MARKETS
+    profiles: Sequence[MarketProfile] = DEFAULT_MARKET_PROFILES
 
     def evaluate(
         self,
@@ -121,27 +181,66 @@ class MarketEligibilityService:
         base_reasons: Sequence[DecisionReason],
     ) -> MarketEligibilityMatrix:
         entries = tuple(
-            self._entry_for_market(organization_id, market, base_result, base_reasons)
-            for market in self.markets
+            self._entry_for_profile(organization_id, profile, base_result, base_reasons)
+            for profile in self.profiles
         )
         return MarketEligibilityMatrix(entries=entries)
 
-    def _entry_for_market(
+    def _entry_for_profile(
         self,
         organization_id: OrganizationId,
-        market: str,
+        profile: MarketProfile,
         base_result: DecisionResult,
         base_reasons: Sequence[DecisionReason],
     ) -> MarketEligibilityEntry:
+        requirements = tuple(
+            self._requirement_result(
+                organization_id,
+                profile.market,
+                requirement,
+                base_result,
+                base_reasons,
+            )
+            for requirement in profile.requirements
+        )
+        status = _aggregate_requirement_status(requirements)
+        reasons = tuple(reason for requirement in requirements for reason in requirement.reasons)
+        gaps = tuple(gap for requirement in requirements for gap in requirement.gaps)
+        first_governed_rule = next(
+            (
+                requirement.governed_rule
+                for requirement in requirements
+                if requirement.governed_rule is not None
+            ),
+            None,
+        )
+        return MarketEligibilityEntry(
+            market=profile.market,
+            status=status,
+            governed_rule=first_governed_rule,
+            reasons=reasons,
+            gaps=gaps,
+            requirements=requirements,
+        )
+
+    def _requirement_result(
+        self,
+        organization_id: OrganizationId,
+        market: str,
+        requirement: MarketRequirement,
+        base_result: DecisionResult,
+        base_reasons: Sequence[DecisionReason],
+    ) -> MarketRequirementResult:
         adoption = self.adoption_reader.get_active_by_code_purpose_and_scope(
             organization_id,
-            ELIGIBILITY_RULE_CODE,
+            requirement.rule_code,
             market,
-            ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            requirement.scope,
         )
         if adoption is None:
-            return MarketEligibilityEntry(
-                market=market,
+            return MarketRequirementResult(
+                rule_code=requirement.rule_code,
+                scope=requirement.scope,
                 status=MarketEligibilityStatus.AUSENTE,
                 reasons=(),
                 gaps=(
@@ -152,9 +251,11 @@ class MarketEligibilityService:
                 ),
             )
 
-        return MarketEligibilityEntry(
-            market=market,
+        return MarketRequirementResult(
+            rule_code=requirement.rule_code,
+            scope=requirement.scope,
             status=_status_from_decision(base_result),
+            gaps=(),
             governed_rule=GovernedRuleReference(
                 adoption_id=adoption.adoption_id,
                 rule_identity_id=adoption.rule_identity_id,
@@ -176,3 +277,18 @@ def _status_from_decision(result: DecisionResult) -> MarketEligibilityStatus:
     if result is DecisionResult.APROVADA_COM_RESTRICOES:
         return MarketEligibilityStatus.CONDICIONADO
     return MarketEligibilityStatus.INDETERMINADO
+
+
+def _aggregate_requirement_status(
+    requirements: Sequence[MarketRequirementResult],
+) -> MarketEligibilityStatus:
+    statuses = {requirement.status for requirement in requirements}
+    for candidate in (
+        MarketEligibilityStatus.NAO_ELEGIVEL,
+        MarketEligibilityStatus.AUSENTE,
+        MarketEligibilityStatus.INDETERMINADO,
+        MarketEligibilityStatus.CONDICIONADO,
+    ):
+        if candidate in statuses:
+            return candidate
+    return MarketEligibilityStatus.ELEGIVEL

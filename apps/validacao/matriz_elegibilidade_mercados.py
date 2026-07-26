@@ -35,7 +35,7 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
     ELIGIBILITY_RULE_CODE,
 )
-from packages.livestock_application.market_eligibility import EXPORT_MARKETS
+from packages.livestock_application.market_eligibility import DEFAULT_MARKET_PROFILES
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
@@ -200,6 +200,7 @@ def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
         return False
     europe_gaps = by_market["exportacao-uniao-europeia"].get("gaps")
     china_reasons = by_market["exportacao-china"].get("reasons")
+    china_requirements = by_market["exportacao-china"].get("requirements")
     return (
         isinstance(europe_gaps, list)
         and bool(europe_gaps)
@@ -207,6 +208,9 @@ def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
         and isinstance(china_reasons, list)
         and bool(china_reasons)
         and china_reasons[0].get("code") == "regra_atendida"
+        and isinstance(china_requirements, list)
+        and bool(china_requirements)
+        and china_requirements[0].get("rule_code") == ELIGIBILITY_RULE_CODE
     )
 
 
@@ -255,7 +259,7 @@ def main() -> int:
     print(f"  API          : {api}")
     print(f"  Keycloak     : {keycloak_url} (realm {realm})")
     print(f"  Organization : {organizacao}")
-    print(f"  Mercados     : {', '.join(EXPORT_MARKETS)}")
+    print(f"  Mercados     : {', '.join(profile.market for profile in DEFAULT_MARKET_PROFILES)}")
     print(f"{CINZA}  Rode a semeadura novamente se vier 403 por permissao ausente.{FIM}")
 
     codigo = _montar_roteiro(

@@ -10,6 +10,8 @@ from packages.livestock_application.market_eligibility import (
     MarketEligibilityGapCode,
     MarketEligibilityService,
     MarketEligibilityStatus,
+    MarketProfile,
+    MarketRequirement,
 )
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
@@ -63,7 +65,17 @@ def test_market_without_adopted_rule_is_absent() -> None:
 
     matrix = MarketEligibilityService(
         adoption_reader=InMemoryAdoptions(),
-        markets=("exportacao-uniao-europeia",),
+        profiles=(
+            MarketProfile(
+                market="exportacao-uniao-europeia",
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+            ),
+        ),
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
     entry = matrix.entries[0]
@@ -71,6 +83,8 @@ def test_market_without_adopted_rule_is_absent() -> None:
     assert entry.governed_rule is None
     assert entry.reasons == ()
     assert entry.gaps[0].code is MarketEligibilityGapCode.REGRA_GOVERNADA_AUSENTE
+    assert entry.requirements[0].rule_code == "rule-carencia-farmacologica"
+    assert entry.requirements[0].status is MarketEligibilityStatus.AUSENTE
 
 
 def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
@@ -84,7 +98,17 @@ def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
 
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
-        markets=("exportacao-uniao-europeia",),
+        profiles=(
+            MarketProfile(
+                market="exportacao-uniao-europeia",
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+            ),
+        ),
     ).evaluate(org_id, DecisionResult.REJEITADA, [_reason()])
 
     entry = matrix.entries[0]
@@ -95,6 +119,7 @@ def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
     assert entry.reasons[0].message == "Animal em carencia."
     assert entry.reasons[0].rule_code == "rule-carencia-farmacologica"
     assert entry.gaps == ()
+    assert entry.requirements[0].governed_rule is not None
 
 
 def test_adopted_markets_can_differ_side_by_side() -> None:
@@ -105,10 +130,34 @@ def test_adopted_markets_can_differ_side_by_side() -> None:
 
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
-        markets=(
-            "exportacao-uniao-europeia",
-            "exportacao-china",
-            "exportacao-estados-unidos",
+        profiles=(
+            MarketProfile(
+                market="exportacao-uniao-europeia",
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+            ),
+            MarketProfile(
+                market="exportacao-china",
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+            ),
+            MarketProfile(
+                market="exportacao-estados-unidos",
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+            ),
         ),
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
@@ -118,3 +167,37 @@ def test_adopted_markets_can_differ_side_by_side() -> None:
         "exportacao-china": MarketEligibilityStatus.ELEGIVEL,
         "exportacao-estados-unidos": MarketEligibilityStatus.ELEGIVEL,
     }
+
+
+def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent() -> None:
+    org_id = OrganizationId.new()
+    adoptions = InMemoryAdoptions()
+    adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-uniao-europeia")
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        profiles=(
+            MarketProfile(
+                market="exportacao-uniao-europeia",
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                    MarketRequirement(
+                        rule_code="rule-rastreabilidade-minima",
+                        scope="livestock.animal",
+                    ),
+                ),
+            ),
+        ),
+    ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.AUSENTE
+    assert [requirement.rule_code for requirement in entry.requirements] == [
+        "rule-carencia-farmacologica",
+        "rule-rastreabilidade-minima",
+    ]
+    assert entry.requirements[0].status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.requirements[1].status is MarketEligibilityStatus.AUSENTE

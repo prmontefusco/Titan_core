@@ -428,6 +428,11 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     assert (
         por_mercado["exportacao-china"]["reasons"][0]["rule_code"] == "rule-carencia-farmacologica"
     )
+    assert por_mercado["exportacao-china"]["requirements"][0]["rule_code"] == (
+        "rule-carencia-farmacologica"
+    )
+    assert por_mercado["exportacao-china"]["requirements"][0]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-uniao-europeia"]["requirements"][0]["status"] == "AUSENTE"
 
 
 def test_listar_dossies_sem_sujeito_e_recusado(
