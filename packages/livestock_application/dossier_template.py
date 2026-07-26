@@ -35,6 +35,7 @@ from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.evidence import Evidence
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import Rule
+from packages.livestock_application.eligibility import GovernedRuleReference
 from packages.livestock_application.fact_provider import WITHDRAWAL_FACT_TYPE
 from packages.livestock_application.timeline_service import (
     LivestockTimelineService,
@@ -68,6 +69,7 @@ class LivestockDossierTemplate:
         policy: Policy,
         rules: Sequence[Rule] = (),
         generated_at: datetime | None = None,
+        governed_rule: GovernedRuleReference | None = None,
     ) -> Dossier:
         if decision.subject_id.entity_type != "animal":
             raise ValueError(
@@ -80,10 +82,19 @@ class LivestockDossierTemplate:
             policy=policy,
             rules=rules,
             generated_at=generated_at,
-            vertical_section=self.build_section(decision, evaluation),
+            vertical_section=self.build_section(
+                decision,
+                evaluation,
+                governed_rule=governed_rule,
+            ),
         )
 
-    def build_section(self, decision: Decision, evaluation: Evaluation) -> VerticalSection:
+    def build_section(
+        self,
+        decision: Decision,
+        evaluation: Evaluation,
+        governed_rule: GovernedRuleReference | None = None,
+    ) -> VerticalSection:
         organization_id = decision.organization_id
         animal_id = decision.subject_id
         withdrawal = _fact_payload(evaluation, WITHDRAWAL_FACT_TYPE)
@@ -96,6 +107,7 @@ class LivestockDossierTemplate:
                 "withdrawal": withdrawal,
                 "evidence_chain": self._evidence_chain(organization_id, withdrawal),
                 "timeline": self._timeline(organization_id, animal_id, decision.issued_at),
+                "governed_rule": None if governed_rule is None else governed_rule.to_dict(),
             },
         )
 

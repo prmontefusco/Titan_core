@@ -443,19 +443,19 @@ class TransactionalRuleAdoptionRepository:
             text(
                 """
                 SELECT
-                    adoption_id,
-                    record_owner_organization_id,
-                    rule_identity_id,
-                    rule_version_id,
-                    purpose,
-                    scope,
-                    adopted_by_target_type,
-                    adopted_by_target_id,
-                    adopted_by_organization_id,
-                    adopted_by_contract_version,
-                    adopted_at,
-                    reason,
-                    status
+                    rule_adoptions.adoption_id,
+                    rule_adoptions.record_owner_organization_id,
+                    rule_adoptions.rule_identity_id,
+                    rule_adoptions.rule_version_id,
+                    rule_adoptions.purpose,
+                    rule_adoptions.scope,
+                    rule_adoptions.adopted_by_target_type,
+                    rule_adoptions.adopted_by_target_id,
+                    rule_adoptions.adopted_by_organization_id,
+                    rule_adoptions.adopted_by_contract_version,
+                    rule_adoptions.adopted_at,
+                    rule_adoptions.reason,
+                    rule_adoptions.status
                 FROM core_audit.rule_adoptions
                 WHERE record_owner_organization_id = :org_id
                   AND rule_identity_id = :rule_identity_id
@@ -467,6 +467,55 @@ class TransactionalRuleAdoptionRepository:
             {
                 "org_id": organization_id.value,
                 "rule_identity_id": rule_identity_id.value,
+                "purpose": purpose.strip(),
+                "scope": scope.strip(),
+            },
+        ).first()
+        if row is None:
+            return None
+        return _map_adoption(row)
+
+    def get_active_by_code_purpose_and_scope(
+        self,
+        organization_id: OrganizationId,
+        code: str,
+        purpose: str,
+        scope: str,
+    ) -> RuleAdoption | None:
+        row = self.connection.execute(
+            text(
+                """
+                SELECT
+                    rule_adoptions.adoption_id,
+                    rule_adoptions.record_owner_organization_id,
+                    rule_adoptions.rule_identity_id,
+                    rule_adoptions.rule_version_id,
+                    rule_adoptions.purpose,
+                    rule_adoptions.scope,
+                    rule_adoptions.adopted_by_target_type,
+                    rule_adoptions.adopted_by_target_id,
+                    rule_adoptions.adopted_by_organization_id,
+                    rule_adoptions.adopted_by_contract_version,
+                    rule_adoptions.adopted_at,
+                    rule_adoptions.reason,
+                    rule_adoptions.status
+                FROM core_audit.rule_adoptions
+                JOIN core_audit.rule_identities
+                  ON rule_identities.rule_identity_id = rule_adoptions.rule_identity_id
+                 AND rule_identities.record_owner_organization_id =
+                     rule_adoptions.record_owner_organization_id
+                WHERE rule_adoptions.record_owner_organization_id = :org_id
+                  AND rule_identities.code = :code
+                  AND rule_adoptions.purpose = :purpose
+                  AND rule_adoptions.scope = :scope
+                  AND rule_adoptions.status = 'active'
+                ORDER BY rule_adoptions.adopted_at DESC, rule_adoptions.adoption_id DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "org_id": organization_id.value,
+                "code": code.strip().lower(),
                 "purpose": purpose.strip(),
                 "scope": scope.strip(),
             },

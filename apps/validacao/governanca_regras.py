@@ -22,6 +22,10 @@ from apps.validacao.runner import AMARELO, CINZA, FIM, NEGRITO, Cliente, Requisi
 from packages.core_application.policy_service import PolicyService
 from packages.core_infrastructure.persistence import set_local_organization_context
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from packages.livestock_application.eligibility import (
+    ELIGIBILITY_PURPOSE,
+    ELIGIBILITY_RULE_ADOPTION_SCOPE,
+)
 from packages.shared_kernel import OrganizationId
 
 
@@ -82,11 +86,11 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, policy_id: str) -> Rote
                 "required_evidence_types": ["livestock.treatment_applied"],
                 "conditions": [
                     {
-                        "fact_type": "livestock.treatment",
-                        "payload_key": "withdrawal_remaining_days",
-                        "operator": "less_or_equal",
-                        "expected_value": 0,
-                        "description": "Carencia restante precisa ser zero.",
+                        "fact_type": "livestock.withdrawal",
+                        "payload_key": "in_withdrawal",
+                        "operator": "equals",
+                        "expected_value": False,
+                        "description": "Animal nao pode estar em periodo de carencia.",
                     }
                 ],
                 "justification": "Protege a decisao de compra com regra versionada.",
@@ -109,8 +113,8 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, policy_id: str) -> Rote
             f"/v1/rule-governance/rule-identities/{ids['rule_identity_id']}/adoptions",
             {
                 "rule_version_id": ids["rule_id"],
-                "purpose": "compra-abate",
-                "scope": "fornecedores-diretos",
+                "purpose": ELIGIBILITY_PURPOSE,
+                "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
                 "reason": "Politica do frigorifico.",
             },
         ),

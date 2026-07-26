@@ -31,6 +31,7 @@ ELIGIBILITY_POLICY_CODE = "pol-elegibilidade-farmacologica"
 ELIGIBILITY_RULE_CODE = "rule-carencia-farmacologica"
 LOT_ELIGIBILITY_RULE_CODE = "rule-carencia-lote"
 ELIGIBILITY_PURPOSE = "ELEGIBILIDADE_FARMACOLOGICA"
+ELIGIBILITY_RULE_ADOPTION_SCOPE = "livestock.animal"
 _CORRECTIVE_ACTION = (
     "Animal em carência: aguardar o fim do prazo (ver eligible_from) antes de "
     "destinar ou movimentar; conferir os lotes bloqueadores."
@@ -111,6 +112,38 @@ class EvaluationRepositoryPort(Protocol):
 
 class DecisionRepositoryPort(Protocol):
     def save(self, decision: Decision) -> None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class GovernedRuleReference:
+    """Referencia a versao de regra governada adotada para uma avaliacao."""
+
+    adoption_id: TypedId
+    rule_identity_id: TypedId
+    rule_version_id: TypedId
+    purpose: str
+    scope: str
+
+    def __post_init__(self) -> None:
+        if self.adoption_id.entity_type != "rule_adoption":
+            raise ValueError("adoption_id deve ser do tipo 'rule_adoption'.")
+        if self.rule_identity_id.entity_type != "rule_identity":
+            raise ValueError("rule_identity_id deve ser do tipo 'rule_identity'.")
+        if self.rule_version_id.entity_type != "rule":
+            raise ValueError("rule_version_id deve ser do tipo 'rule'.")
+        if not self.purpose.strip():
+            raise ValueError("purpose da regra governada nao pode ser vazio.")
+        if not self.scope.strip():
+            raise ValueError("scope da regra governada nao pode ser vazio.")
+
+    def to_dict(self) -> dict[str, str]:
+        return {
+            "adoption_id": str(self.adoption_id.value),
+            "rule_identity_id": str(self.rule_identity_id.value),
+            "rule_version_id": str(self.rule_version_id.value),
+            "purpose": self.purpose,
+            "scope": self.scope,
+        }
 
 
 @dataclass(frozen=True, slots=True)

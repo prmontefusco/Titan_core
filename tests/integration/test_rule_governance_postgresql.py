@@ -153,6 +153,13 @@ def test_rule_governance_persistence_and_rls() -> None:
             "fornecedores-diretos",
         )
         assert persisted_adoption == adoption
+        persisted_by_purpose = adoption_repository.get_active_by_code_purpose_and_scope(
+            org_1,
+            "rule-carencia-farmacologica",
+            "compra-abate",
+            "fornecedores-diretos",
+        )
+        assert persisted_by_purpose == adoption
         events = timeline_repository.list_by_identity(org_1, identity.rule_identity_id)
         assert events[-1].event_type is RuleTimelineEventType.RULE_ADOPTED
         assert events[-1].rule_version_id == rule.rule_id
@@ -177,6 +184,15 @@ def test_rule_governance_persistence_and_rls() -> None:
             org_2_adoption_repository.get_active_by_identity_and_scope(
                 org_2,
                 identity.rule_identity_id,
+                "compra-abate",
+                "fornecedores-diretos",
+            )
+            is None
+        )
+        assert (
+            org_2_adoption_repository.get_active_by_code_purpose_and_scope(
+                org_2,
+                "rule-carencia-farmacologica",
                 "compra-abate",
                 "fornecedores-diretos",
             )

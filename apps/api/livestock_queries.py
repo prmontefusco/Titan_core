@@ -34,13 +34,22 @@ from packages.core_infrastructure.persistence.evidence import TransactionalEvide
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
+from packages.core_infrastructure.persistence.rule_governance import (
+    TransactionalRuleAdoptionRepository,
+)
 from packages.livestock_application.authorization import (
     DOSSIER_LER,
     ELIGIBILITY_EXECUTAR,
     TIMELINE_LER,
 )
 from packages.livestock_application.dossier_template import LivestockDossierTemplate
-from packages.livestock_application.eligibility import PharmacologicalEligibilityService
+from packages.livestock_application.eligibility import (
+    ELIGIBILITY_PURPOSE,
+    ELIGIBILITY_RULE_ADOPTION_SCOPE,
+    ELIGIBILITY_RULE_CODE,
+    GovernedRuleReference,
+    PharmacologicalEligibilityService,
+)
 from packages.livestock_application.eligibility_policy_provider import (
     EligibilityPolicyProvider,
 )
@@ -69,6 +78,7 @@ from packages.livestock_infrastructure.persistence.property_repository import (
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
+from packages.shared_kernel import OrganizationId
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
 
@@ -81,6 +91,7 @@ class ElegibilidadeResponse(BaseModel):
     decision_id: str
     dossier_id: str
     reasons: list[str]
+    governed_rule: dict[str, str] | None = None
 
 
 class LinhaDoTempoResponse(BaseModel):
@@ -100,6 +111,26 @@ def _timeline_service(connection: Connection) -> LivestockTimelineService:
         evaluation_repository=TransactionalEvaluationRepository(connection=connection),
         decision_repository=TransactionalDecisionRepository(connection=connection),
         relation_repository=TransactionalRelationRepository(connection=connection),
+    )
+
+
+def _governed_rule_reference(
+    connection: Connection, organizacao: OrganizationId
+) -> GovernedRuleReference | None:
+    adoption = TransactionalRuleAdoptionRepository(connection).get_active_by_code_purpose_and_scope(
+        organizacao,
+        ELIGIBILITY_RULE_CODE,
+        ELIGIBILITY_PURPOSE,
+        ELIGIBILITY_RULE_ADOPTION_SCOPE,
+    )
+    if adoption is None:
+        return None
+    return GovernedRuleReference(
+        adoption_id=adoption.adoption_id,
+        rule_identity_id=adoption.rule_identity_id,
+        rule_version_id=adoption.rule_version_id,
+        purpose=adoption.purpose,
+        scope=adoption.scope,
     )
 
 
@@ -152,6 +183,7 @@ def executar_elegibilidade(
         policy_repository=TransactionalPolicyRepository(connection=connection),
         rule_repository=TransactionalRuleRepository(connection=connection),
     ).current(organizacao)
+    governed_rule = _governed_rule_reference(connection, organizacao)
 
     evaluation, decision = PharmacologicalEligibilityService(
         fact_provider=fact_provider,
@@ -168,7 +200,13 @@ def executar_elegibilidade(
         dossier_service=DossierService(
             repository=TransactionalDossierRepository(connection=connection)
         ),
-    ).build(decision=decision, evaluation=evaluation, policy=policy, rules=[rule])
+    ).build(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        rules=[rule],
+        governed_rule=governed_rule,
+    )
     TransactionalDossierRepository(connection=connection).save(dossier)
 
     return ElegibilidadeResponse(
@@ -179,6 +217,7 @@ def executar_elegibilidade(
         decision_id=str(decision.decision_id.value),
         dossier_id=str(dossier.dossier_id.value),
         reasons=[razao.message for razao in decision.reasons],
+        governed_rule=None if governed_rule is None else governed_rule.to_dict(),
     )
 
 

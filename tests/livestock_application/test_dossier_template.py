@@ -17,6 +17,7 @@ from packages.livestock_application.dossier_template import (
     LIVESTOCK_NAMESPACE,
     LivestockDossierTemplate,
 )
+from packages.livestock_application.eligibility import GovernedRuleReference
 from packages.livestock_application.event_recorder import LivestockOperationContext
 from packages.shared_kernel import TypedId
 from tests.livestock_application.test_dossier_template_scenario import Cenario
@@ -145,6 +146,37 @@ def test_the_vertical_section_declares_who_it_belongs_to(cenario: Cenario) -> No
 
     assert dossier.document["vertical"]["namespace"] == LIVESTOCK_NAMESPACE
     assert dossier.document["vertical"]["section_version"] >= 1
+
+
+def test_the_dossier_carries_the_governed_rule_that_sustained_the_decision(
+    cenario: Cenario,
+) -> None:
+    evaluation, decision = cenario.avaliar()
+    governed_rule = GovernedRuleReference(
+        adoption_id=TypedId.new("rule_adoption"),
+        rule_identity_id=TypedId.new("rule_identity"),
+        rule_version_id=cenario.rule.rule_id,
+        purpose="ELEGIBILIDADE_FARMACOLOGICA",
+        scope="livestock.animal",
+    )
+    template = LivestockDossierTemplate(
+        timeline_service=cenario.timeline_service(),
+        application_repository=cenario.application_repository,
+        evidence_lookup=cenario.evidence_lookup,
+        dossier_service=DossierService(),
+    )
+
+    dossier = template.build(
+        decision=decision,
+        evaluation=evaluation,
+        policy=cenario.policy,
+        rules=[cenario.rule],
+        governed_rule=governed_rule,
+    )
+
+    referencia = dossier.document["vertical"]["content"]["governed_rule"]
+    assert referencia == governed_rule.to_dict()
+    assert dossier.verify()
 
 
 def test_the_template_refuses_a_subject_that_is_not_an_animal(cenario: Cenario) -> None:
