@@ -105,6 +105,8 @@ def _criar_cenario(
             "sex": "FEMALE",
         },
     )
+    if animal.status != 201:
+        return animal
     ids["animal_id"] = str(animal["animal_id"])
     medicamento = operador.post(
         "/v1/livestock/medications",
@@ -116,6 +118,8 @@ def _criar_cenario(
             "product_class": "IMMUNOBIOLOGICAL",
         },
     )
+    if medicamento.status != 201:
+        return medicamento
     lote = operador.post(
         "/v1/livestock/medication-batches",
         {
@@ -124,6 +128,8 @@ def _criar_cenario(
             "expiry_date": (agora + timedelta(days=365)).isoformat(),
         },
     )
+    if lote.status != 201:
+        return lote
     campanha = operador.post(
         "/v1/livestock/sanitary-campaigns",
         {
@@ -135,6 +141,8 @@ def _criar_cenario(
             "authority": "Autoridade ficticia",
         },
     )
+    if campanha.status != 201:
+        return campanha
     ids["campaign_id"] = str(campanha["campaign_id"])
     tratamento = operador.post(
         "/v1/livestock/treatments",
@@ -146,6 +154,8 @@ def _criar_cenario(
             "sanitary_campaign_id": ids["campaign_id"],
         },
     )
+    if tratamento.status != 201:
+        return tratamento
     ids["application_id"] = str(tratamento["application_id"])
     return tratamento
 

@@ -146,7 +146,19 @@ class Roteiro:
                 print(f"{CINZA}  {passo.porque}{FIM}")
 
             marca = len(self.diario)
-            resposta = passo.executar()
+            try:
+                resposta = passo.executar()
+            except (KeyError, IndexError, TypeError) as erro:
+                self._mostrar_requisicao(marca)
+                falhas.append(
+                    f"[{passo.numero}] {passo.titulo}: roteiro sem dado esperado "
+                    f"para continuar ({erro!r})"
+                )
+                print(
+                    f"  {CINZA}<-{FIM} {NEGRITO}sem resposta{FIM}  "
+                    f"{VERMELHO}FALHOU{FIM} — roteiro sem dado esperado"
+                )
+                break
             self._mostrar_requisicao(marca)
             problema = self._avaliar(passo, resposta)
 
@@ -163,6 +175,9 @@ class Roteiro:
                     passo.guardar(resposta)
             else:
                 falhas.append(f"[{passo.numero}] {passo.titulo}: {problema}")
+                if pausar:
+                    input(f"{CINZA}  — ENTER para encerrar —{FIM}")
+                break
 
             if pausar:
                 input(f"{CINZA}  — ENTER para o próximo —{FIM}")
