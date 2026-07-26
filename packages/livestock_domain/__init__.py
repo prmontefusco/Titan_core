@@ -23,6 +23,7 @@ from packages.livestock_domain.events import (
     PARENTAGE_REGISTERED,
     PRESCRIPTION_ISSUED,
     PROPERTY_REGISTERED,
+    SANITARY_CAMPAIGN_REGISTERED,
     TREATMENT_APPLIED,
     VETERINARIAN_REGISTERED,
     VETERINARIAN_STATUS_UPDATED,
@@ -43,6 +44,7 @@ from packages.livestock_domain.movement import (
 from packages.livestock_domain.parentage import ParentageConfidence, ParentageRole
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.property import RuralProperty
+from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.veterinarian import Veterinarian
 
 __all__ = [
@@ -60,6 +62,7 @@ __all__ = [
     "PARENTAGE_REGISTERED",
     "PRESCRIPTION_ISSUED",
     "PROPERTY_REGISTERED",
+    "SANITARY_CAMPAIGN_REGISTERED",
     "TREATMENT_APPLIED",
     "VETERINARIAN_REGISTERED",
     "VETERINARIAN_STATUS_UPDATED",
@@ -83,6 +86,7 @@ __all__ = [
     "PrescriptionTargetType",
     "PropertyStay",
     "RuralProperty",
+    "SanitaryCampaign",
     "StayStatus",
     "VerificationStatus",
     "Veterinarian",

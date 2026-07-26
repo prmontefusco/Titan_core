@@ -34,6 +34,9 @@ from packages.livestock_infrastructure.persistence.medication_repository import 
     TransactionalMedicationBatchRepository,
     TransactionalPrescriptionRepository,
 )
+from packages.livestock_infrastructure.persistence.sanitary_campaign_repository import (
+    TransactionalSanitaryCampaignRepository,
+)
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
@@ -56,6 +59,7 @@ class RegistrarTratamentoRequest(BaseModel):
         description="Anotações do operador. Não são prova.",
     )
     prescription_id: str | None = None
+    sanitary_campaign_id: str | None = None
 
 
 class CorrigirTratamentoRequest(BaseModel):
@@ -64,6 +68,7 @@ class CorrigirTratamentoRequest(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     evidence_notes: list[str] = Field(default_factory=list)
     prescription_id: str | None = None
+    sanitary_campaign_id: str | None = None
 
 
 class TratamentoResponse(BaseModel):
@@ -72,6 +77,7 @@ class TratamentoResponse(BaseModel):
     medication_batch_id: str
     applied_at: datetime
     dose: str | None
+    sanitary_campaign_id: str | None
     corrects_application_id: str | None
 
 
@@ -87,6 +93,7 @@ def _servico(connection: Connection) -> TreatmentApplicationService:
         # O repositório de Evidence do Core satisfaz a porta de consulta por
         # estrutura: a vertical só precisa de `get_by_id`.
         evidence_lookup=TransactionalEvidenceRepository(connection=connection),
+        campaign_lookup=TransactionalSanitaryCampaignRepository(connection=connection),
     )
 
 
@@ -97,6 +104,11 @@ def _resposta(aplicacao: TreatmentApplication) -> TratamentoResponse:
         medication_batch_id=str(aplicacao.medication_batch_id.value),
         applied_at=aplicacao.applied_at,
         dose=aplicacao.dose,
+        sanitary_campaign_id=(
+            str(aplicacao.sanitary_campaign_id.value)
+            if aplicacao.sanitary_campaign_id is not None
+            else None
+        ),
         corrects_application_id=(
             str(aplicacao.corrects_application_id.value)
             if aplicacao.corrects_application_id is not None
@@ -146,6 +158,15 @@ def registrar_tratamento(
                     corpo.prescription_id, entity_type="prescription", campo="prescription_id"
                 )
                 if corpo.prescription_id
+                else None
+            ),
+            sanitary_campaign_id=(
+                typed_id_or_problem(
+                    corpo.sanitary_campaign_id,
+                    entity_type="sanitary_campaign",
+                    campo="sanitary_campaign_id",
+                )
+                if corpo.sanitary_campaign_id
                 else None
             ),
         )
@@ -203,6 +224,15 @@ def corrigir_tratamento(
                     corpo.prescription_id, entity_type="prescription", campo="prescription_id"
                 )
                 if corpo.prescription_id
+                else None
+            ),
+            sanitary_campaign_id=(
+                typed_id_or_problem(
+                    corpo.sanitary_campaign_id,
+                    entity_type="sanitary_campaign",
+                    campo="sanitary_campaign_id",
+                )
+                if corpo.sanitary_campaign_id
                 else None
             ),
         )

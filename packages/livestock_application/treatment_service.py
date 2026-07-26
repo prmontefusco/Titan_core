@@ -22,6 +22,7 @@ from packages.livestock_application.medication_service import (
     PrescriptionRepositoryPort,
 )
 from packages.livestock_domain.events import TREATMENT_APPLIED, treatment_applied_payload
+from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.treatment import TreatmentApplication
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
@@ -47,6 +48,10 @@ class TreatmentApplicationRepositoryPort(Protocol):
     ) -> list[TreatmentApplication]: ...
 
 
+class SanitaryCampaignLookupPort(Protocol):
+    def get_by_id(self, campaign_id: TypedId) -> SanitaryCampaign | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class TreatmentApplicationService:
     application_repository: TreatmentApplicationRepositoryPort
@@ -55,6 +60,7 @@ class TreatmentApplicationService:
     prescription_repository: PrescriptionRepositoryPort
     recorder: LivestockEventRecorder
     evidence_lookup: EvidenceLookupPort | None = None
+    campaign_lookup: SanitaryCampaignLookupPort | None = None
 
     def register_application(
         self,
@@ -66,9 +72,11 @@ class TreatmentApplicationService:
         evidence_references: tuple[UniversalReference, ...] = (),
         evidence_notes: tuple[str, ...] = (),
         prescription_id: TypedId | None = None,
+        sanitary_campaign_id: TypedId | None = None,
     ) -> TreatmentApplication:
         organization_id = context.organization_id
         self._validate_references(organization_id, animal_id, medication_batch_id, prescription_id)
+        self._validate_campaign(organization_id, sanitary_campaign_id, applied_at)
         self._validate_evidences(organization_id, evidence_references)
         guard_animal_active(self.animal_repository, animal_id, applied_at)
         self._guard_applied_at(applied_at)
@@ -86,6 +94,7 @@ class TreatmentApplicationService:
             evidence_references=evidence_references,
             evidence_notes=evidence_notes,
             prescription_id=prescription_id,
+            sanitary_campaign_id=sanitary_campaign_id,
             corrects_application_id=None,
             created_at=datetime.now(UTC),
         )
@@ -102,6 +111,7 @@ class TreatmentApplicationService:
         evidence_references: tuple[UniversalReference, ...] = (),
         evidence_notes: tuple[str, ...] = (),
         prescription_id: TypedId | None = None,
+        sanitary_campaign_id: TypedId | None = None,
     ) -> TreatmentApplication:
         """Corrige uma aplicação criando um NOVO registro que a supersede.
 
@@ -120,6 +130,7 @@ class TreatmentApplicationService:
         self._validate_references(
             organization_id, original.animal_id, original.medication_batch_id, prescription_id
         )
+        self._validate_campaign(organization_id, sanitary_campaign_id, applied_at)
         self._validate_evidences(organization_id, evidence_references)
         self._guard_applied_at(applied_at)
 
@@ -134,6 +145,7 @@ class TreatmentApplicationService:
             evidence_references=evidence_references,
             evidence_notes=evidence_notes,
             prescription_id=prescription_id,
+            sanitary_campaign_id=sanitary_campaign_id,
             corrects_application_id=original.application_id,
             created_at=datetime.now(UTC),
         )
@@ -162,6 +174,7 @@ class TreatmentApplicationService:
                 applied_at=application.applied_at,
                 dose=application.dose,
                 prescription_id=application.prescription_id,
+                sanitary_campaign_id=application.sanitary_campaign_id,
                 evidence_references=application.evidence_references,
                 evidence_notes=application.evidence_notes,
                 corrects_application_id=application.corrects_application_id,
@@ -215,3 +228,23 @@ class TreatmentApplicationService:
             evidence = self.evidence_lookup.get_by_id(reference.target_id)
             if evidence is None or evidence.organization_id != organization_id:
                 raise KeyError(f"Evidência '{reference.target_id.value}' não encontrada.")
+
+    def _validate_campaign(
+        self,
+        organization_id: OrganizationId,
+        campaign_id: TypedId | None,
+        applied_at: datetime,
+    ) -> None:
+        if campaign_id is None:
+            return
+        if self.campaign_lookup is None:
+            raise RuntimeError("Vincular campanha sanitaria exige a porta de consulta configurada.")
+        campaign = self.campaign_lookup.get_by_id(campaign_id)
+        if campaign is None or campaign.organization_id != organization_id:
+            raise KeyError(
+                f"Campanha sanitaria '{campaign_id.value}' nao encontrada nesta organizacao."
+            )
+        if not campaign.covers(applied_at):
+            raise ValueError(
+                "applied_at deve estar dentro da janela de vigencia da campanha sanitaria."
+            )

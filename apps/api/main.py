@@ -20,6 +20,7 @@ from apps.api.livestock_dependencies import ORGANIZATION_HEADER
 from apps.api.livestock_medications import router as livestock_medications_router
 from apps.api.livestock_queries import router as livestock_queries_router
 from apps.api.livestock_reads import router as livestock_reads_router
+from apps.api.livestock_sanitary_campaigns import router as livestock_sanitary_campaigns_router
 from apps.api.livestock_treatments import router as livestock_treatments_router
 from apps.api.livestock_writes import router as livestock_writes_router
 from apps.api.problem import (
@@ -110,6 +111,7 @@ app.openapi = _openapi_com_contrato_publico  # type: ignore[method-assign]
 for livestock_router in (
     livestock_animals_router,
     livestock_medications_router,
+    livestock_sanitary_campaigns_router,
     livestock_treatments_router,
     livestock_queries_router,
     livestock_reads_router,

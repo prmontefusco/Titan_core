@@ -37,6 +37,7 @@ class TreatmentApplication:
     evidence_references: tuple[UniversalReference, ...] = ()
     evidence_notes: tuple[str, ...] = ()
     prescription_id: TypedId | None = None
+    sanitary_campaign_id: TypedId | None = None
     corrects_application_id: TypedId | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -67,6 +68,14 @@ class TreatmentApplication:
             raise ValueError(
                 "prescription_id deve ter entity_type 'prescription', recebido "
                 f"'{self.prescription_id.entity_type}'."
+            )
+        if (
+            self.sanitary_campaign_id is not None
+            and self.sanitary_campaign_id.entity_type != "sanitary_campaign"
+        ):
+            raise ValueError(
+                "sanitary_campaign_id deve ter entity_type 'sanitary_campaign', recebido "
+                f"'{self.sanitary_campaign_id.entity_type}'."
             )
         if self.corrects_application_id is not None:
             if self.corrects_application_id.entity_type != "treatment_application":

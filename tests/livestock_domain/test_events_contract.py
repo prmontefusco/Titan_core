@@ -31,6 +31,7 @@ EXPECTED_EVENT_TYPES = frozenset(
         "livestock.property_geometry_recorded",
         "livestock.property_registered",
         "livestock.reproductive_event_recorded",
+        "livestock.sanitary_campaign_registered",
         "livestock.treatment_applied",
         "livestock.veterinarian_registered",
         "livestock.veterinarian_status_updated",
@@ -106,6 +107,19 @@ def test_every_event_type_is_namespaced_and_canonical() -> None:
             events.MEDICATION_BATCH_REGISTERED,
         ),
         (
+            events.sanitary_campaign_registered_payload,
+            {
+                "campaign_id": TypedId.new("sanitary_campaign"),
+                "code": "PNCEBT-BRUCELOSE-2026",
+                "name": "Campanha Brucelose 2026",
+                "starts_at": datetime(2026, 1, 1, tzinfo=UTC),
+                "ends_at": datetime(2026, 12, 31, tzinfo=UTC),
+                "disease": "Brucelose",
+                "authority": "MAPA",
+            },
+            events.SANITARY_CAMPAIGN_REGISTERED,
+        ),
+        (
             events.treatment_applied_payload,
             {
                 "application_id": TypedId.new("treatment_application"),
@@ -114,6 +128,7 @@ def test_every_event_type_is_namespaced_and_canonical() -> None:
                 "applied_at": datetime(2026, 7, 1, tzinfo=UTC),
                 "dose": None,
                 "prescription_id": None,
+                "sanitary_campaign_id": None,
                 "evidence_references": (),
                 "evidence_notes": (),
                 "corrects_application_id": None,

@@ -24,6 +24,7 @@ from packages.livestock_domain.events import TREATMENT_APPLIED
 from packages.livestock_domain.exit import AnimalExit, ExitType
 from packages.livestock_domain.medication import MedicationBatch
 from packages.livestock_domain.prescription import Prescription
+from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.treatment import TreatmentApplication
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from tests.livestock_application.conftest import FakeEventLog
@@ -127,6 +128,14 @@ class InMemoryPrescriptionRepo(PrescriptionRepositoryPort):
         return list(self.prescriptions.values())
 
 
+class InMemoryCampaignLookup:
+    def __init__(self, campaigns: dict[str, SanitaryCampaign]) -> None:
+        self.campaigns = campaigns
+
+    def get_by_id(self, campaign_id: TypedId) -> SanitaryCampaign | None:
+        return self.campaigns.get(campaign_id.value.hex)
+
+
 def _scenario(
     recorder: LivestockEventRecorder, context: LivestockOperationContext
 ) -> tuple[TreatmentApplicationService, TypedId, TypedId, InMemoryApplicationRepo]:
@@ -155,6 +164,17 @@ def _scenario(
     return service, animal.animal_id, batch.batch_id, app_repo
 
 
+def _campaign(context: LivestockOperationContext) -> SanitaryCampaign:
+    return SanitaryCampaign(
+        campaign_id=TypedId.new("sanitary_campaign"),
+        organization_id=context.organization_id,
+        code="PNCEBT-BRUCELOSE-2026",
+        name="Campanha Brucelose 2026",
+        starts_at=datetime(2026, 1, 1, tzinfo=UTC),
+        ends_at=datetime(2026, 12, 31, tzinfo=UTC),
+    )
+
+
 def test_register_application_success(
     recorder: LivestockEventRecorder,
     event_log: FakeEventLog,
@@ -175,6 +195,57 @@ def test_register_application_success(
     # A autoria do registro vem do contexto, e é a mesma do evento.
     assert app.actor_id == context.actor_reference.target_id
     assert event_log.only(TREATMENT_APPLIED).actor_reference == context.actor_reference
+
+
+def test_register_application_can_link_sanitary_campaign(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    campaign = _campaign(context)
+    service = replace(
+        service,
+        campaign_lookup=InMemoryCampaignLookup({campaign.campaign_id.value.hex: campaign}),
+    )
+
+    app = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=datetime(2026, 7, 1, tzinfo=UTC),
+        sanitary_campaign_id=campaign.campaign_id,
+    )
+
+    assert app.sanitary_campaign_id == campaign.campaign_id
+    assert (
+        str(campaign.campaign_id.value).encode()
+        in event_log.only(TREATMENT_APPLIED).payload.canonical_bytes
+    )
+
+
+def test_register_application_rejects_campaign_outside_window(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    campaign = _campaign(context)
+    service = replace(
+        service,
+        campaign_lookup=InMemoryCampaignLookup({campaign.campaign_id.value.hex: campaign}),
+    )
+
+    with pytest.raises(ValueError, match="janela de vigencia"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=datetime(2027, 1, 1, tzinfo=UTC),
+            sanitary_campaign_id=campaign.campaign_id,
+        )
+
+    assert event_log.events == []
 
 
 def test_correction_creates_new_record_preserving_original(

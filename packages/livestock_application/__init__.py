@@ -24,6 +24,10 @@ from packages.livestock_application.property_service import (
     RuralPropertyRepositoryPort,
     RuralPropertyService,
 )
+from packages.livestock_application.sanitary_campaign_service import (
+    SanitaryCampaignRepositoryPort,
+    SanitaryCampaignService,
+)
 from packages.livestock_application.veterinarian_service import (
     VeterinarianRepositoryPort,
     VeterinarianService,
@@ -44,6 +48,8 @@ __all__ = [
     "PropertyStayRepositoryPort",
     "RuralPropertyRepositoryPort",
     "RuralPropertyService",
+    "SanitaryCampaignRepositoryPort",
+    "SanitaryCampaignService",
     "VeterinarianRepositoryPort",
     "VeterinarianService",
 ]

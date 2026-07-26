@@ -38,6 +38,7 @@ VETERINARIAN_REGISTERED = "livestock.veterinarian_registered"
 VETERINARIAN_STATUS_UPDATED = "livestock.veterinarian_status_updated"
 MEDICATION_REGISTERED = "livestock.medication_registered"
 MEDICATION_BATCH_REGISTERED = "livestock.medication_batch_registered"
+SANITARY_CAMPAIGN_REGISTERED = "livestock.sanitary_campaign_registered"
 PRESCRIPTION_ISSUED = "livestock.prescription_issued"
 TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
@@ -59,6 +60,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         VETERINARIAN_STATUS_UPDATED,
         MEDICATION_REGISTERED,
         MEDICATION_BATCH_REGISTERED,
+        SANITARY_CAMPAIGN_REGISTERED,
         PRESCRIPTION_ISSUED,
         TREATMENT_APPLIED,
         ANIMAL_EXITED,
@@ -337,6 +339,30 @@ def medication_batch_registered_payload(
     )
 
 
+def sanitary_campaign_registered_payload(
+    *,
+    campaign_id: TypedId,
+    code: str,
+    name: str,
+    starts_at: datetime,
+    ends_at: datetime,
+    disease: str | None,
+    authority: str | None,
+) -> CanonicalPayload:
+    return _payload(
+        SANITARY_CAMPAIGN_REGISTERED,
+        {
+            "authority": authority,
+            "campaign_id": _id(campaign_id),
+            "code": code,
+            "disease": disease,
+            "ends_at": ends_at,
+            "name": name,
+            "starts_at": starts_at,
+        },
+    )
+
+
 def prescription_issued_payload(
     *,
     prescription_id: TypedId,
@@ -375,6 +401,7 @@ def treatment_applied_payload(
     applied_at: datetime,
     dose: str | None,
     prescription_id: TypedId | None,
+    sanitary_campaign_id: TypedId | None,
     evidence_references: tuple[UniversalReference, ...],
     evidence_notes: tuple[str, ...],
     corrects_application_id: TypedId | None,
@@ -393,6 +420,9 @@ def treatment_applied_payload(
             "evidence_references": [_id(r.target_id) for r in evidence_references],
             "medication_batch_id": _id(medication_batch_id),
             "prescription_id": None if prescription_id is None else _id(prescription_id),
+            "sanitary_campaign_id": (
+                None if sanitary_campaign_id is None else _id(sanitary_campaign_id)
+            ),
         },
     )
 

@@ -70,6 +70,17 @@ class Fluxo:
                 "expiry_date": (datetime.now(UTC) + timedelta(days=365)).isoformat(),
             },
         )
+        campanha = self._post(
+            "/v1/livestock/sanitary-campaigns",
+            {
+                "code": f"PNCEBT-BRUCELOSE-{datetime.now(UTC).timestamp()}",
+                "name": "Campanha Brucelose",
+                "starts_at": (datetime.now(UTC) - timedelta(days=dias_atras + 10)).isoformat(),
+                "ends_at": (datetime.now(UTC) + timedelta(days=60)).isoformat(),
+                "disease": "Brucelose",
+                "authority": "MAPA",
+            },
+        )
         tratamento = self._post(
             "/v1/livestock/treatments",
             {
@@ -77,9 +88,11 @@ class Fluxo:
                 "medication_batch_id": lote["batch_id"],
                 "applied_at": (datetime.now(UTC) - timedelta(days=dias_atras)).isoformat(),
                 "dose": "1 mL / 50 kg",
+                "sanitary_campaign_id": campanha["campaign_id"],
                 "evidence_notes": ["foto no celular do João"],
             },
         )
+        assert tratamento["sanitary_campaign_id"] == campanha["campaign_id"]
         elegibilidade = self._post(f"/v1/livestock/animals/{animal['animal_id']}/eligibility")
         return {
             "animal_id": animal["animal_id"],

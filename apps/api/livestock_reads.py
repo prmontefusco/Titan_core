@@ -165,6 +165,7 @@ class TratamentoResumo(BaseModel):
     applied_at: datetime
     dose: str | None
     prescription_id: str | None
+    sanitary_campaign_id: str | None
     corrects_application_id: str | None
     evidence_ids: list[str]
     evidence_notes: list[str]
@@ -278,6 +279,9 @@ def _tratamento(entidade: Any) -> TratamentoResumo:
         applied_at=entidade.applied_at,
         dose=entidade.dose,
         prescription_id=(str(entidade.prescription_id.value) if entidade.prescription_id else None),
+        sanitary_campaign_id=(
+            str(entidade.sanitary_campaign_id.value) if entidade.sanitary_campaign_id else None
+        ),
         corrects_application_id=(
             str(entidade.corrects_application_id.value)
             if entidade.corrects_application_id

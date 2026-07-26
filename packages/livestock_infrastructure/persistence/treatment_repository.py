@@ -40,6 +40,7 @@ treatment_applications_table = Table(
     Column("evidence_references", JSONB, nullable=False, server_default="[]"),
     Column("evidence_notes", JSONB, nullable=False, server_default="[]"),
     Column("prescription_id", PG_UUID(as_uuid=True), nullable=True),
+    Column("sanitary_campaign_id", PG_UUID(as_uuid=True), nullable=True),
     Column("corrects_application_id", PG_UUID(as_uuid=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     ForeignKeyConstraint(
@@ -61,6 +62,11 @@ treatment_applications_table = Table(
         ["prescription_id"],
         ["core_audit.prescriptions.prescription_id"],
         name="fk_treatment_applications_prescription",
+    ),
+    ForeignKeyConstraint(
+        ["sanitary_campaign_id"],
+        ["core_audit.sanitary_campaigns.campaign_id"],
+        name="fk_treatment_applications_sanitary_campaign",
     ),
     ForeignKeyConstraint(
         ["corrects_application_id"],
@@ -93,6 +99,9 @@ class TransactionalTreatmentApplicationRepository(TreatmentApplicationRepository
             evidence_notes=json.dumps(list(application.evidence_notes)),
             prescription_id=(
                 application.prescription_id.value if application.prescription_id else None
+            ),
+            sanitary_campaign_id=(
+                application.sanitary_campaign_id.value if application.sanitary_campaign_id else None
             ),
             corrects_application_id=(
                 application.corrects_application_id.value
@@ -202,6 +211,11 @@ class TransactionalTreatmentApplicationRepository(TreatmentApplicationRepository
             prescription_id=(
                 TypedId(entity_type="prescription", value=row.prescription_id)
                 if row.prescription_id is not None
+                else None
+            ),
+            sanitary_campaign_id=(
+                TypedId(entity_type="sanitary_campaign", value=row.sanitary_campaign_id)
+                if row.sanitary_campaign_id is not None
                 else None
             ),
             corrects_application_id=(
