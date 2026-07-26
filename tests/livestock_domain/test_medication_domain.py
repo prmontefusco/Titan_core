@@ -5,7 +5,11 @@ from uuid import uuid4
 
 import pytest
 
-from packages.livestock_domain.medication import Medication, MedicationBatch
+from packages.livestock_domain.medication import (
+    Medication,
+    MedicationBatch,
+    MedicationProductClass,
+)
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -61,6 +65,21 @@ def test_medication_creation_success() -> None:
 
     assert med.trade_name == "Ivomec Gold"
     assert med.withdrawal_period_days == 122
+    assert med.product_class == MedicationProductClass.PHARMACOLOGICAL
+
+
+def test_medication_can_be_classified_as_immunobiological() -> None:
+    med = Medication(
+        medication_id=TypedId.new("medication"),
+        organization_id=OrganizationId(uuid4()),
+        trade_name="Vacina Clostridial",
+        active_ingredient="Antigenos clostridiais",
+        manufacturer="Lab Saude Animal",
+        withdrawal_period_days=0,
+        product_class=MedicationProductClass.IMMUNOBIOLOGICAL,
+    )
+
+    assert med.product_class == MedicationProductClass.IMMUNOBIOLOGICAL
 
 
 def test_medication_withdrawal_validation() -> None:

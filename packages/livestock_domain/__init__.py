@@ -34,7 +34,7 @@ from packages.livestock_domain.lot import (
     LotStatus,
     LotType,
 )
-from packages.livestock_domain.medication import Medication
+from packages.livestock_domain.medication import Medication, MedicationProductClass
 from packages.livestock_domain.movement import (
     AnimalMovement,
     PropertyStay,
@@ -76,6 +76,7 @@ __all__ = [
     "LotStatus",
     "LotType",
     "Medication",
+    "MedicationProductClass",
     "ParentageConfidence",
     "ParentageRole",
     "Prescription",

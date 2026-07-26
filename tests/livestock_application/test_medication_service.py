@@ -23,7 +23,11 @@ from packages.livestock_domain.events import (
     MEDICATION_REGISTERED,
     PRESCRIPTION_ISSUED,
 )
-from packages.livestock_domain.medication import Medication, MedicationBatch
+from packages.livestock_domain.medication import (
+    Medication,
+    MedicationBatch,
+    MedicationProductClass,
+)
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.veterinarian import Veterinarian
@@ -359,3 +363,30 @@ def test_medication_event_freezes_the_withdrawal_period_declared_at_registration
     event = event_log.only(MEDICATION_REGISTERED)
     assert event.aggregate_reference.target_id == med.medication_id
     assert b"122" in event.payload.canonical_bytes
+
+
+def test_medication_registration_accepts_immunobiological_classification(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service = MedicationService(
+        medication_repository=InMemoryMedicationRepo(),
+        prescription_repository=InMemoryPrescriptionRepo(),
+        veterinarian_repository=InMemoryVetRepo(),
+        property_repository=InMemoryPropRepo(),
+        recorder=recorder,
+    )
+
+    med = service.register_medication(
+        context=context,
+        trade_name="Vacina Clostridial",
+        active_ingredient="Antigenos clostridiais",
+        manufacturer="Lab Saude Animal",
+        withdrawal_period_days=0,
+        product_class=MedicationProductClass.IMMUNOBIOLOGICAL,
+    )
+
+    event = event_log.only(MEDICATION_REGISTERED)
+    assert med.product_class == MedicationProductClass.IMMUNOBIOLOGICAL
+    assert b"IMMUNOBIOLOGICAL" in event.payload.canonical_bytes

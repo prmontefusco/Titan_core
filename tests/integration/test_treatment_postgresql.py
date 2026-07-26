@@ -84,8 +84,12 @@ def test_treatment_application_correction_and_rls(db_connection: Connection) -> 
             """
             INSERT INTO core_audit.medications (
                 medication_id, record_owner_organization_id, trade_name,
-                active_ingredient, manufacturer, withdrawal_period_days, created_at
-            ) VALUES (:m, :org, 'Ivomec', 'Ivermectina', 'Boehringer', 122, NOW())
+                active_ingredient, manufacturer, withdrawal_period_days,
+                product_class, created_at
+            ) VALUES (
+                :m, :org, 'Ivomec', 'Ivermectina', 'Boehringer', 122,
+                'PHARMACOLOGICAL', NOW()
+            )
             """
         ),
         {"m": med_id.value, "org": org_1.value},

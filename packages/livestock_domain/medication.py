@@ -2,9 +2,15 @@
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from enum import StrEnum
 
 from packages.shared_kernel import OrganizationId, TypedId
 from packages.shared_kernel.temporal import require_utc
+
+
+class MedicationProductClass(StrEnum):
+    PHARMACOLOGICAL = "PHARMACOLOGICAL"
+    IMMUNOBIOLOGICAL = "IMMUNOBIOLOGICAL"
 
 
 @dataclass(frozen=True, slots=True)
@@ -15,6 +21,7 @@ class Medication:
     active_ingredient: str
     manufacturer: str
     withdrawal_period_days: int
+    product_class: MedicationProductClass = MedicationProductClass.PHARMACOLOGICAL
     dosage_instruction: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 

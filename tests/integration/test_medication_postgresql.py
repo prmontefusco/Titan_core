@@ -12,6 +12,7 @@ from packages.livestock_application.medication_service import (
     MedicationBatchService,
     MedicationService,
 )
+from packages.livestock_domain.medication import MedicationProductClass
 from packages.livestock_domain.prescription import PrescriptionTargetType
 from packages.livestock_infrastructure.persistence.medication_repository import (
     TransactionalMedicationBatchRepository,
@@ -114,7 +115,11 @@ def test_medication_and_prescription_persistence_and_rls(
         active_ingredient="Ivermectina",
         manufacturer="Boehringer",
         withdrawal_period_days=122,
+        product_class=MedicationProductClass.IMMUNOBIOLOGICAL,
     )
+    recarregado = med_repo_1.get_by_id(med_1.medication_id)
+    assert recarregado is not None
+    assert recarregado.product_class == MedicationProductClass.IMMUNOBIOLOGICAL
 
     presc_1 = service_1.issue_prescription(
         context=context_1,

@@ -146,6 +146,7 @@ class MedicamentoResumo(BaseModel):
     active_ingredient: str
     manufacturer: str
     withdrawal_period_days: int
+    product_class: str
     dosage_instruction: str | None
 
 
@@ -254,6 +255,7 @@ def _medicamento(entidade: Any) -> MedicamentoResumo:
         active_ingredient=entidade.active_ingredient,
         manufacturer=entidade.manufacturer,
         withdrawal_period_days=entidade.withdrawal_period_days,
+        product_class=entidade.product_class.value,
         dosage_instruction=entidade.dosage_instruction,
     )
 

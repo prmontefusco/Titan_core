@@ -83,6 +83,18 @@ def test_every_event_type_is_namespaced_and_canonical() -> None:
             events.ANIMAL_REGISTERED,
         ),
         (
+            events.medication_registered_payload,
+            {
+                "medication_id": TypedId.new("medication"),
+                "trade_name": "Vacina Clostridial",
+                "active_ingredient": "Antigenos clostridiais",
+                "manufacturer": "Lab Saude Animal",
+                "withdrawal_period_days": 0,
+                "product_class": "IMMUNOBIOLOGICAL",
+            },
+            events.MEDICATION_REGISTERED,
+        ),
+        (
             events.medication_batch_registered_payload,
             {
                 "batch_id": TypedId.new("medication_batch"),

@@ -28,6 +28,7 @@ from packages.livestock_application.medication_service import (
     MedicationBatchService,
     MedicationService,
 )
+from packages.livestock_domain.medication import MedicationProductClass
 from packages.livestock_infrastructure.persistence.medication_repository import (
     TransactionalMedicationBatchRepository,
     TransactionalMedicationRepository,
@@ -57,6 +58,7 @@ class RegistrarMedicamentoRequest(BaseModel):
     withdrawal_period_days: int = Field(
         ge=0, description="Dias de carência declarados para o produto."
     )
+    product_class: MedicationProductClass = MedicationProductClass.PHARMACOLOGICAL
     dosage_instruction: str | None = None
 
 
@@ -66,6 +68,7 @@ class MedicamentoResponse(BaseModel):
     trade_name: str
     active_ingredient: str
     withdrawal_period_days: int
+    product_class: MedicationProductClass
 
 
 class RegistrarLoteRequest(BaseModel):
@@ -109,6 +112,7 @@ def registrar_medicamento(
             active_ingredient=corpo.active_ingredient,
             manufacturer=corpo.manufacturer,
             withdrawal_period_days=corpo.withdrawal_period_days,
+            product_class=corpo.product_class,
             dosage_instruction=corpo.dosage_instruction,
         )
     except ValueError as error:
@@ -125,6 +129,7 @@ def registrar_medicamento(
         trade_name=medicamento.trade_name,
         active_ingredient=medicamento.active_ingredient,
         withdrawal_period_days=medicamento.withdrawal_period_days,
+        product_class=medicamento.product_class,
     )
 
 

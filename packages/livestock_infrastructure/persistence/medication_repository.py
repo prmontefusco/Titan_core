@@ -26,7 +26,11 @@ from packages.livestock_application.medication_service import (
     MedicationRepositoryPort,
     PrescriptionRepositoryPort,
 )
-from packages.livestock_domain.medication import Medication, MedicationBatch
+from packages.livestock_domain.medication import (
+    Medication,
+    MedicationBatch,
+    MedicationProductClass,
+)
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
 from packages.shared_kernel import OrganizationId, TypedId
@@ -40,6 +44,7 @@ medications_table = Table(
     Column("active_ingredient", String(255), nullable=False),
     Column("manufacturer", String(255), nullable=False),
     Column("withdrawal_period_days", Integer, nullable=False),
+    Column("product_class", String(50), nullable=False),
     Column("dosage_instruction", Text, nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False),
     UniqueConstraint(
@@ -157,6 +162,7 @@ class TransactionalMedicationRepository(MedicationRepositoryPort):
             active_ingredient=medication.active_ingredient,
             manufacturer=medication.manufacturer,
             withdrawal_period_days=medication.withdrawal_period_days,
+            product_class=medication.product_class.value,
             dosage_instruction=medication.dosage_instruction,
             created_at=medication.created_at,
         )
@@ -210,6 +216,7 @@ class TransactionalMedicationRepository(MedicationRepositoryPort):
             active_ingredient=row.active_ingredient,
             manufacturer=row.manufacturer,
             withdrawal_period_days=row.withdrawal_period_days,
+            product_class=MedicationProductClass(row.product_class),
             dosage_instruction=row.dosage_instruction,
             created_at=c_at,
         )

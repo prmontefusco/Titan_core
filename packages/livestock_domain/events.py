@@ -302,6 +302,7 @@ def medication_registered_payload(
     active_ingredient: str,
     manufacturer: str,
     withdrawal_period_days: int,
+    product_class: str,
 ) -> CanonicalPayload:
     return _payload(
         MEDICATION_REGISTERED,
@@ -309,6 +310,7 @@ def medication_registered_payload(
             "active_ingredient": active_ingredient,
             "manufacturer": manufacturer,
             "medication_id": _id(medication_id),
+            "product_class": product_class,
             "trade_name": trade_name,
             "withdrawal_period_days": withdrawal_period_days,
         },

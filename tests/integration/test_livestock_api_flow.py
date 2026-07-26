@@ -61,6 +61,7 @@ class Fluxo:
                 "withdrawal_period_days": carencia,
             },
         )
+        assert medicamento["product_class"] == "PHARMACOLOGICAL"
         lote = self._post(
             "/v1/livestock/medication-batches",
             {

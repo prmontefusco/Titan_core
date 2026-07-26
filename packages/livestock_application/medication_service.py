@@ -19,7 +19,11 @@ from packages.livestock_domain.events import (
     medication_registered_payload,
     prescription_issued_payload,
 )
-from packages.livestock_domain.medication import Medication, MedicationBatch
+from packages.livestock_domain.medication import (
+    Medication,
+    MedicationBatch,
+    MedicationProductClass,
+)
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -136,6 +140,7 @@ class MedicationService:
         active_ingredient: str,
         manufacturer: str,
         withdrawal_period_days: int,
+        product_class: MedicationProductClass = MedicationProductClass.PHARMACOLOGICAL,
         dosage_instruction: str | None = None,
     ) -> Medication:
         organization_id = context.organization_id
@@ -155,6 +160,7 @@ class MedicationService:
             active_ingredient=active_ingredient.strip(),
             manufacturer=manufacturer.strip(),
             withdrawal_period_days=withdrawal_period_days,
+            product_class=product_class,
             dosage_instruction=dosage_instruction,
             created_at=created_at,
         )
@@ -172,6 +178,7 @@ class MedicationService:
                 active_ingredient=medication.active_ingredient,
                 manufacturer=medication.manufacturer,
                 withdrawal_period_days=medication.withdrawal_period_days,
+                product_class=medication.product_class.value,
             ),
             occurred_at=created_at,
         )
