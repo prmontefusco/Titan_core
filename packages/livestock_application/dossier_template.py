@@ -128,6 +128,20 @@ class LivestockDossierTemplate:
         """Uma entrada por contribuição, ligando o cálculo às provas que o sustentam."""
         chain: list[dict[str, Any]] = []
         for contribution in withdrawal.get("contributions", []):
+            if contribution.get("origin") == "IMPORTED_ASSERTION":
+                chain.append(
+                    {
+                        "imported_fact_id": contribution["imported_fact_id"],
+                        "source_artifact_id": contribution["source_artifact_id"],
+                        "status": "AFIRMACAO_IMPORTADA",
+                        "asserted_by": contribution.get("asserted_by"),
+                        "confidence_tier": contribution.get("confidence_tier"),
+                        "evidences": [],
+                        "notes": [],
+                    }
+                )
+                continue
+
             application_id = TypedId.parse(
                 "treatment_application", _uuid_text(contribution["application_id"])
             )

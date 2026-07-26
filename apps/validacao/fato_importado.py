@@ -74,7 +74,7 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         201,
         conferir=lambda r: (
             None
-            if r["result"] == "REJEITADA" and r["reasons"]
+            if r["result"] == "rejeitada" and r["reasons"]
             else "elegibilidade nao considerou a carencia importada"
         ),
         porque=(

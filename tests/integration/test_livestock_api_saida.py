@@ -190,6 +190,52 @@ def test_fato_importado_preserva_origem_externa(
     assert fato.json()["asserted_by"] == "Fazenda Origem"
 
 
+def test_fato_importado_alimenta_elegibilidade(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={"name": "Fazenda Origem", "counterparty_type": "FARM"},
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+    transferencia = datetime.now(UTC) - timedelta(days=1)
+    artefato = operador.post(
+        f"/v1/livestock/animals/{animal_id}/received-transfer-artifacts",
+        json={
+            "source_counterparty_id": contraparte.json()["counterparty_id"],
+            "bundle_digest": "e" * 64,
+            "bundle_issued_at": transferencia.isoformat(),
+            "transfer_effective_at": transferencia.isoformat(),
+            "coverage_known_until": transferencia.isoformat(),
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert artefato.status_code == 201, artefato.text
+    fato = operador.post(
+        f"/v1/livestock/animals/{animal_id}/imported-facts",
+        json={
+            "source_artifact_id": artefato.json()["artifact_id"],
+            "fact_type": "livestock.treatment_applied",
+            "occurred_at": (transferencia - timedelta(days=30)).isoformat(),
+            "asserted_by": "Fazenda Origem",
+            "confidence_tier": "CRYPTOGRAPHICALLY_ATTESTED",
+            "payload": {"withdrawal_period_days": 45},
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert fato.status_code == 201, fato.text
+
+    elegibilidade = operador.post(
+        f"/v1/livestock/animals/{animal_id}/eligibility",
+        headers=_cabecalho(ambiente),
+    )
+
+    assert elegibilidade.status_code == 201, elegibilidade.text
+    assert elegibilidade.json()["result"] == "rejeitada"
+
+
 def test_o_levantamento_historico_traz_quem_saiu_com_a_saida_preenchida(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:
