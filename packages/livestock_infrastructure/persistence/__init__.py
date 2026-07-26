@@ -17,6 +17,10 @@ from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
     property_geometries_table,
 )
+from packages.livestock_infrastructure.persistence.imported_fact_repository import (
+    TransactionalImportedLivestockFactRepository,
+    imported_livestock_facts_table,
+)
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
     TransactionalLotMembershipRepository,
@@ -77,6 +81,7 @@ __all__ = [
     "TransactionalRuralPropertyRepository",
     "TransactionalAnimalExitRepository",
     "TransactionalExternalCounterpartyRepository",
+    "TransactionalImportedLivestockFactRepository",
     "TransactionalPropertyGeometryRepository",
     "TransactionalReproductiveEventRepository",
     "TransactionalSanitaryCampaignRepository",
@@ -101,6 +106,7 @@ __all__ = [
     "rural_properties_table",
     "animal_exits_table",
     "external_counterparties_table",
+    "imported_livestock_facts_table",
     "treatment_applications_table",
     "received_transfer_artifacts_table",
     "veterinarians_table",

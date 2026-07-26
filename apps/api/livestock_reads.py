@@ -63,6 +63,9 @@ from packages.livestock_infrastructure.persistence.external_counterparty_reposit
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
 )
+from packages.livestock_infrastructure.persistence.imported_fact_repository import (
+    TransactionalImportedLivestockFactRepository,
+)
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
     TransactionalLotMembershipRepository,
@@ -237,6 +240,20 @@ class ArtefatoTransferenciaResumo(BaseModel):
     coverage: CoberturaTransferenciaResumo
 
 
+class FatoImportadoResumo(BaseModel):
+    imported_fact_id: str
+    animal_id: str
+    source_artifact_id: str
+    fact_type: str
+    occurred_at: datetime
+    asserted_by: str
+    received_by: str
+    origin: str
+    confidence_tier: str
+    payload: dict[str, Any]
+    imported_at: datetime
+
+
 # -- Conversões --------------------------------------------------------------
 
 
@@ -406,6 +423,22 @@ def _artefato_transferencia(entidade: Any) -> ArtefatoTransferenciaResumo:
     )
 
 
+def _fato_importado(entidade: Any) -> FatoImportadoResumo:
+    return FatoImportadoResumo(
+        imported_fact_id=str(entidade.imported_fact_id.value),
+        animal_id=str(entidade.animal_id.value),
+        source_artifact_id=str(entidade.source_artifact_id.value),
+        fact_type=entidade.fact_type,
+        occurred_at=entidade.occurred_at,
+        asserted_by=entidade.asserted_by,
+        received_by=str(entidade.received_by.value),
+        origin=entidade.origin.value,
+        confidence_tier=entidade.confidence_tier.value,
+        payload=dict(entidade.payload),
+        imported_at=entidade.imported_at,
+    )
+
+
 # -- Contrapartes externas ---------------------------------------------------
 
 
@@ -446,6 +479,28 @@ def listar_artefatos_transferencia(
     encontrados = repositorio.list_by_animal(alvo)
     janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
     return montar_pagina([_artefato_transferencia(item) for item in janela], paginacao)
+
+
+@router.get(
+    "/animals/{animal_id}/imported-facts",
+    response_model=Pagina[FatoImportadoResumo],
+    summary="Listar fatos importados do animal",
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_fatos_importados(
+    animal_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
+) -> Any:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    animal = TransactionalAnimalRepository(connection=connection).get_by_id(alvo)
+    if animal is None or animal.organization_id != contexto.organization_id:
+        raise _nao_encontrado("Animal")
+    repositorio = TransactionalImportedLivestockFactRepository(connection=connection)
+    encontrados = repositorio.list_by_animal(contexto.organization_id, alvo)
+    janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
+    return montar_pagina([_fato_importado(item) for item in janela], paginacao)
 
 
 # -- Animais -----------------------------------------------------------------

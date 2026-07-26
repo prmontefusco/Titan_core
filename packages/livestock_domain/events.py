@@ -44,6 +44,7 @@ TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
 EXTERNAL_COUNTERPARTY_REGISTERED = "livestock.external_counterparty_registered"
 TRANSFER_ARTIFACT_RECEIVED = "livestock.transfer_artifact_received"
+IMPORTED_FACT_RECORDED = "livestock.imported_fact_recorded"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
 REPRODUCTIVE_EVENT_RECORDED = "livestock.reproductive_event_recorded"
 PROPERTY_GEOMETRY_RECORDED = "livestock.property_geometry_recorded"
@@ -67,6 +68,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         TREATMENT_APPLIED,
         ANIMAL_EXITED,
         EXTERNAL_COUNTERPARTY_REGISTERED,
+        IMPORTED_FACT_RECORDED,
         TRANSFER_ARTIFACT_RECEIVED,
         PARENTAGE_REGISTERED,
         REPRODUCTIVE_EVENT_RECORDED,
@@ -617,5 +619,33 @@ def transfer_artifact_received_payload(
             "issuer_name": issuer_name,
             "source_counterparty_id": _id(source_counterparty_id),
             "transfer_effective_at": transfer_effective_at,
+        },
+    )
+
+
+def imported_fact_recorded_payload(
+    *,
+    imported_fact_id: TypedId,
+    animal_id: TypedId,
+    source_artifact_id: TypedId,
+    fact_type: str,
+    occurred_at: datetime,
+    asserted_by: str,
+    received_by: TypedId,
+    origin: str,
+    confidence_tier: str,
+) -> CanonicalPayload:
+    return _payload(
+        IMPORTED_FACT_RECORDED,
+        {
+            "animal_id": _id(animal_id),
+            "asserted_by": asserted_by,
+            "confidence_tier": confidence_tier,
+            "fact_type": fact_type,
+            "imported_fact_id": _id(imported_fact_id),
+            "occurred_at": occurred_at,
+            "origin": origin,
+            "received_by": _id(received_by),
+            "source_artifact_id": _id(source_artifact_id),
         },
     )

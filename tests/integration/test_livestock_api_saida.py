@@ -148,6 +148,48 @@ def test_artefato_recebido_declara_lacuna_de_cobertura(
     assert registro.json()["coverage"]["gaps"][0]["code"] == "COVERAGE_BEFORE_TRANSFER"
 
 
+def test_fato_importado_preserva_origem_externa(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={"name": "Fazenda Origem", "counterparty_type": "FARM"},
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+    transferencia = datetime.now(UTC) - timedelta(days=1)
+    artefato = operador.post(
+        f"/v1/livestock/animals/{animal_id}/received-transfer-artifacts",
+        json={
+            "source_counterparty_id": contraparte.json()["counterparty_id"],
+            "bundle_digest": "c" * 64,
+            "bundle_issued_at": transferencia.isoformat(),
+            "transfer_effective_at": transferencia.isoformat(),
+            "coverage_known_until": transferencia.isoformat(),
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert artefato.status_code == 201, artefato.text
+
+    fato = operador.post(
+        f"/v1/livestock/animals/{animal_id}/imported-facts",
+        json={
+            "source_artifact_id": artefato.json()["artifact_id"],
+            "fact_type": "livestock.treatment_applied",
+            "occurred_at": (transferencia - timedelta(days=30)).isoformat(),
+            "asserted_by": "Fazenda Origem",
+            "confidence_tier": "CRYPTOGRAPHICALLY_ATTESTED",
+            "payload": {"withdrawal_period_days": 45},
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+    assert fato.status_code == 201, fato.text
+    assert fato.json()["origin"] == "IMPORTED_ASSERTION"
+    assert fato.json()["asserted_by"] == "Fazenda Origem"
+
+
 def test_o_levantamento_historico_traz_quem_saiu_com_a_saida_preenchida(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:

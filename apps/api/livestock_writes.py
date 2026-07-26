@@ -27,6 +27,7 @@ from apps.api.livestock_dependencies import (
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_application.relation_service import RelationService
 from packages.core_domain import OrganizationContext
+from packages.core_domain.evidence import ConfidenceTier
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
 from packages.livestock_application.authorization import (
@@ -43,6 +44,7 @@ from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.exit_service import AnimalExitService
 from packages.livestock_application.external_counterparty_service import ExternalCounterpartyService
 from packages.livestock_application.geometry_service import PropertyGeometryService
+from packages.livestock_application.imported_fact_service import ImportedLivestockFactService
 from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
 from packages.livestock_application.parentage_service import ParentageService
@@ -88,6 +90,9 @@ from packages.livestock_infrastructure.persistence.external_counterparty_reposit
 )
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
+)
+from packages.livestock_infrastructure.persistence.imported_fact_repository import (
+    TransactionalImportedLivestockFactRepository,
 )
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
@@ -636,6 +641,29 @@ class ArtefatoTransferenciaResponse(BaseModel):
     coverage: CoberturaTransferenciaResponse
 
 
+class RegistrarFatoImportadoRequest(BaseModel):
+    source_artifact_id: str
+    fact_type: str = Field(min_length=1, max_length=120)
+    occurred_at: datetime
+    asserted_by: str = Field(min_length=1, max_length=255)
+    confidence_tier: ConfidenceTier
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class FatoImportadoResponse(BaseModel):
+    imported_fact_id: str
+    animal_id: str
+    source_artifact_id: str
+    fact_type: str
+    occurred_at: datetime
+    asserted_by: str
+    received_by: str
+    origin: str
+    confidence_tier: str
+    payload: dict[str, Any]
+    imported_at: datetime
+
+
 def _artefato_transferencia_response(artefato: Any) -> ArtefatoTransferenciaResponse:
     return ArtefatoTransferenciaResponse(
         artifact_id=str(artefato.artifact_id.value),
@@ -658,6 +686,22 @@ def _artefato_transferencia_response(artefato: Any) -> ArtefatoTransferenciaResp
                 for gap in artefato.coverage.gaps
             ],
         ),
+    )
+
+
+def _fato_importado_response(fato: Any) -> FatoImportadoResponse:
+    return FatoImportadoResponse(
+        imported_fact_id=str(fato.imported_fact_id.value),
+        animal_id=str(fato.animal_id.value),
+        source_artifact_id=str(fato.source_artifact_id.value),
+        fact_type=fato.fact_type,
+        occurred_at=fato.occurred_at,
+        asserted_by=fato.asserted_by,
+        received_by=str(fato.received_by.value),
+        origin=fato.origin.value,
+        confidence_tier=fato.confidence_tier.value,
+        payload=dict(fato.payload),
+        imported_at=fato.imported_at,
     )
 
 
@@ -775,6 +819,48 @@ def registrar_artefato_transferencia(
         raise _conflito(error) from error
 
     return _artefato_transferencia_response(artefato)
+
+
+@router.post(
+    "/animals/{animal_id}/imported-facts",
+    response_model=FatoImportadoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar fato importado de artefato recebido",
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_fato_importado(
+    animal_id: str,
+    corpo: RegistrarFatoImportadoRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
+    connection: ConnectionDependency,
+) -> FatoImportadoResponse:
+    servico = ImportedLivestockFactService(
+        repository=TransactionalImportedLivestockFactRepository(connection=connection),
+        artifact_repository=TransactionalReceivedTransferArtifactRepository(connection=connection),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    try:
+        fato = servico.record_imported_fact(
+            context=operation_context(contexto),
+            animal_id=typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id"),
+            source_artifact_id=typed_id_or_problem(
+                corpo.source_artifact_id,
+                entity_type="received_transfer_artifact",
+                campo="source_artifact_id",
+            ),
+            fact_type=corpo.fact_type,
+            occurred_at=corpo.occurred_at,
+            asserted_by=corpo.asserted_by,
+            confidence_tier=corpo.confidence_tier,
+            payload=corpo.payload,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal ou artefato") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _fato_importado_response(fato)
 
 
 # -- Genealogia --------------------------------------------------------------
