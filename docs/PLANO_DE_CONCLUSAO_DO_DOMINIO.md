@@ -275,3 +275,53 @@ Cada elo à frente que cita uma referência do Titan torna o arquivo do frigorí
 Vale o mesmo do plano anterior: antes de cada passo, apresentar escopo, arquivos previstos, critérios de aceitação e riscos; ao final, executar o portão completo (`pytest` com `skipped == 0`, `ruff check`, `ruff format --check`, `mypy`, `alembic check`), registrar evidências no checklist e aguardar validação manual.
 
 Decisão arquitetural nova interrompe o passo e vira ADR antes do código.
+
+---
+
+## 8. Ponto de retomada — 26/07/2026
+
+### Último estado validado
+
+Backend Livestock continuou antes da interface. Foram concluídos e commitados:
+
+- `8c23946 feat(livestock): classificar medicamentos sanitarios`
+  - `Medication` agora distingue `PHARMACOLOGICAL` e `IMMUNOBIOLOGICAL`.
+  - API de criação/leitura e evento `livestock.medication_registered` expõem a classificação.
+  - Migration `20260726_0047_add_medication_product_class.py`.
+
+- `cd95d44 feat(livestock): registrar campanhas sanitarias`
+  - Nova entidade `SanitaryCampaign`.
+  - API de campanha sanitária:
+    - `POST /v1/livestock/sanitary-campaigns`
+    - `GET /v1/livestock/sanitary-campaigns`
+    - `GET /v1/livestock/sanitary-campaigns/{campaign_id}`
+  - `TreatmentApplication` aceita `sanitary_campaign_id`.
+  - Aplicação vinculada à campanha precisa ocorrer dentro da janela de vigência.
+  - Evento `livestock.sanitary_campaign_registered`.
+  - Evento `livestock.treatment_applied` congela `sanitary_campaign_id`.
+  - Migration `20260726_0048_create_sanitary_campaigns.py`.
+
+### Validação executada
+
+No worktree `C:\programing\Titan\.claude\worktrees\proximos-passos-fae6d6`, com `TITAN_DATABASE_URL=postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan`:
+
+- `pytest`: 830 passed.
+- `ruff check`: ok.
+- `ruff format --check`: ok.
+- `mypy`: ok.
+- `uv lock --check`: ok.
+- `alembic upgrade head`: aplicado até `20260726_0048`.
+- `alembic check`: ok, apenas com o warning conhecido de PostGIS `geometry`.
+
+### Próxima fase
+
+Retomar pelo **Passo 14.3 — Exigibilidade sanitária mínima**.
+
+Escopo sugerido para o primeiro corte:
+
+- criar uma regra de leitura/serviço que responda se uma vacinação/campanha exigida existe para animal ou lote dentro da janela aplicável;
+- preservar lacuna como estado explícito quando faltar dado necessário;
+- não misturar regra sanitária interna com regra por mercado de destino, que fica para ADR-0041;
+- não iniciar frontend ainda.
+
+Antes de codar o 14.3, decidir o menor conjunto de campanhas obrigatórias para prova do mecanismo. Sem essa decisão, implementar apenas a infraestrutura de exigibilidade com regra configurável e teste usando campanha de exemplo.
