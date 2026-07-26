@@ -7,6 +7,8 @@ from packages.core_domain.decision import DecisionReason, DecisionReasonCode, De
 from packages.core_domain.rule_governance import RuleAdoption
 from packages.livestock_application.eligibility import ELIGIBILITY_RULE_ADOPTION_SCOPE
 from packages.livestock_application.market_eligibility import (
+    DEFAULT_MARKET_PROFILES,
+    TRACEABILITY_RULE_CODE,
     MarketEligibilityGapCode,
     MarketEligibilityService,
     MarketEligibilityStatus,
@@ -185,8 +187,8 @@ def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent(
                         scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
                     ),
                     MarketRequirement(
-                        rule_code="rule-rastreabilidade-minima",
-                        scope="livestock.animal",
+                        rule_code=TRACEABILITY_RULE_CODE,
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
                     ),
                 ),
             ),
@@ -197,7 +199,36 @@ def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent(
     assert entry.status is MarketEligibilityStatus.AUSENTE
     assert [requirement.rule_code for requirement in entry.requirements] == [
         "rule-carencia-farmacologica",
-        "rule-rastreabilidade-minima",
+        TRACEABILITY_RULE_CODE,
     ]
     assert entry.requirements[0].status is MarketEligibilityStatus.ELEGIVEL
     assert entry.requirements[1].status is MarketEligibilityStatus.AUSENTE
+
+
+def test_adopted_requirement_without_evaluator_is_indeterminate() -> None:
+    org_id = OrganizationId.new()
+    adoptions = InMemoryAdoptions()
+    adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-uniao-europeia")
+    traceability_adoption = adoptions.add(
+        org_id,
+        TRACEABILITY_RULE_CODE,
+        "exportacao-uniao-europeia",
+    )
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        profiles=(DEFAULT_MARKET_PROFILES[0],),
+    ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.INDETERMINADO
+    assert [requirement.status for requirement in entry.requirements] == [
+        MarketEligibilityStatus.ELEGIVEL,
+        MarketEligibilityStatus.INDETERMINADO,
+    ]
+    assert entry.requirements[1].governed_rule is not None
+    assert entry.requirements[1].governed_rule.adoption_id == traceability_adoption.adoption_id
+    assert entry.requirements[1].reasons == ()
+    assert entry.requirements[1].gaps[0].code is (
+        MarketEligibilityGapCode.AVALIADOR_DE_REQUISITO_AUSENTE
+    )

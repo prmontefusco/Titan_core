@@ -19,6 +19,8 @@ EXPORT_MARKETS: tuple[str, ...] = (
     "exportacao-china",
     "exportacao-estados-unidos",
 )
+TRACEABILITY_RULE_CODE = "rule-rastreabilidade-minima"
+SUPPORTED_BASE_DECISION_RULE_CODES = frozenset({ELIGIBILITY_RULE_CODE})
 
 
 class MarketEligibilityStatus(Enum):
@@ -31,6 +33,7 @@ class MarketEligibilityStatus(Enum):
 
 class MarketEligibilityGapCode(Enum):
     REGRA_GOVERNADA_AUSENTE = "REGRA_GOVERNADA_AUSENTE"
+    AVALIADOR_DE_REQUISITO_AUSENTE = "AVALIADOR_DE_REQUISITO_AUSENTE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,17 +60,38 @@ class MarketProfile:
             raise ValueError("perfil de mercado exige ao menos um requisito.")
 
 
-DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = tuple(
+DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = (
     MarketProfile(
-        market=market,
+        market="exportacao-uniao-europeia",
+        requirements=(
+            MarketRequirement(
+                rule_code=ELIGIBILITY_RULE_CODE,
+                scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            ),
+            MarketRequirement(
+                rule_code=TRACEABILITY_RULE_CODE,
+                scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            ),
+        ),
+    ),
+    MarketProfile(
+        market="exportacao-china",
         requirements=(
             MarketRequirement(
                 rule_code=ELIGIBILITY_RULE_CODE,
                 scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
             ),
         ),
-    )
-    for market in EXPORT_MARKETS
+    ),
+    MarketProfile(
+        market="exportacao-estados-unidos",
+        requirements=(
+            MarketRequirement(
+                rule_code=ELIGIBILITY_RULE_CODE,
+                scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            ),
+        ),
+    ),
 )
 
 
@@ -251,18 +275,37 @@ class MarketEligibilityService:
                 ),
             )
 
+        governed_rule = GovernedRuleReference(
+            adoption_id=adoption.adoption_id,
+            rule_identity_id=adoption.rule_identity_id,
+            rule_version_id=adoption.rule_version_id,
+            purpose=adoption.purpose,
+            scope=adoption.scope,
+        )
+        if requirement.rule_code not in SUPPORTED_BASE_DECISION_RULE_CODES:
+            return MarketRequirementResult(
+                rule_code=requirement.rule_code,
+                scope=requirement.scope,
+                status=MarketEligibilityStatus.INDETERMINADO,
+                gaps=(
+                    MarketEligibilityGap(
+                        code=MarketEligibilityGapCode.AVALIADOR_DE_REQUISITO_AUSENTE,
+                        message=(
+                            "Regra governada adotada, mas ainda sem avaliador para este "
+                            "requisito de mercado."
+                        ),
+                    ),
+                ),
+                governed_rule=governed_rule,
+                reasons=(),
+            )
+
         return MarketRequirementResult(
             rule_code=requirement.rule_code,
             scope=requirement.scope,
             status=_status_from_decision(base_result),
             gaps=(),
-            governed_rule=GovernedRuleReference(
-                adoption_id=adoption.adoption_id,
-                rule_identity_id=adoption.rule_identity_id,
-                rule_version_id=adoption.rule_version_id,
-                purpose=adoption.purpose,
-                scope=adoption.scope,
-            ),
+            governed_rule=governed_rule,
             reasons=tuple(
                 MarketEligibilityReason.from_decision_reason(reason) for reason in base_reasons
             ),

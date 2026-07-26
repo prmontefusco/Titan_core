@@ -35,7 +35,10 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
     ELIGIBILITY_RULE_CODE,
 )
-from packages.livestock_application.market_eligibility import DEFAULT_MARKET_PROFILES
+from packages.livestock_application.market_eligibility import (
+    DEFAULT_MARKET_PROFILES,
+    TRACEABILITY_RULE_CODE,
+)
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
@@ -199,12 +202,17 @@ def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
     if set(by_market) != expected:
         return False
     europe_gaps = by_market["exportacao-uniao-europeia"].get("gaps")
+    europe_requirements = by_market["exportacao-uniao-europeia"].get("requirements")
     china_reasons = by_market["exportacao-china"].get("reasons")
     china_requirements = by_market["exportacao-china"].get("requirements")
     return (
         isinstance(europe_gaps, list)
         and bool(europe_gaps)
         and europe_gaps[0].get("code") == "REGRA_GOVERNADA_AUSENTE"
+        and isinstance(europe_requirements, list)
+        and [item.get("rule_code") for item in europe_requirements]
+        == [ELIGIBILITY_RULE_CODE, TRACEABILITY_RULE_CODE]
+        and [item.get("status") for item in europe_requirements] == ["AUSENTE", "AUSENTE"]
         and isinstance(china_reasons, list)
         and bool(china_reasons)
         and china_reasons[0].get("code") == "regra_atendida"
