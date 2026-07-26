@@ -59,9 +59,9 @@ Estados utilizados:
 | 10.1–10.6 | Demonstração vertical verificável, timeline, dossiê e API operacional | CONCLUÍDO | Pendente consolidar validação manual do 10.6 |
 | 11–12 | API Livestock completa para validação técnica e fluxos operacionais | CONCLUÍDO | Pendente rodada manual final |
 | 13 | Ciclo de vida do animal: saída, genealogia e reprodução | CONCLUÍDO | Pendente rodada manual final |
-| NR-4 / ADR-0043 | Governança e linha do tempo imutável de regras | IMPLEMENTADO | Pendente validação manual |
-| NR-4 / ADR-0044 | Matriz de elegibilidade por mercado com regras governadas | IMPLEMENTADO | Pendente validação manual |
-| NR-4 sanitário | Campanhas sanitárias, exigibilidade mínima, prescrição e tratamento autorizado | IMPLEMENTADO | Pendente validação manual |
+| NR-4 / ADR-0043 | Governança e linha do tempo imutável de regras | CONCLUÍDO | Aprovada em 26/07/2026 |
+| NR-4 / ADR-0044 | Matriz de elegibilidade por mercado com regras governadas | CONCLUÍDO | Aprovada em 26/07/2026 |
+| NR-4 sanitário | Campanhas sanitárias, exigibilidade mínima, prescrição e tratamento autorizado | CONCLUÍDO | Aprovada em 26/07/2026 |
 
 ## Fila atual do backend
 
@@ -69,31 +69,29 @@ Esta fila substitui a indicação antiga "validar Marco 12 e iniciar o frontend"
 
 | Ordem | Criticidade | Incremento | Motivo | Estado atual | Critério de saída |
 |---|---|---|---|---|---|
-| 1 | Alta | Consolidar validação manual do backend existente | Sem isso, o código está verde, mas o produto ainda não tem aceite operacional registrado | Pendente | Rodar e aprovar os roteiros em `apps/validacao` para governança de regras, matriz de mercados, exigibilidade sanitária e prescrição |
-| 2 | Alta | Atualizar este checklist a cada incremento concluído | Evita nova divergência entre plano, commits e decisão de produto | Em andamento neste ajuste | Checklist refletindo commits recentes e próxima fila |
-| 3 | Alta | Contraparte externa e continuidade de proveniência (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | ADR aceita, implementação pendente | Registrar contraparte, transferência/saída com destino estruturado e lacuna de proveniência auditável |
-| 4 | Alta | Leitura completa da matriz por regra governada | A resposta comercial precisa explicar destino, regra, versão, adoção, lacuna e ação corretiva | Parcialmente implementado | Cada célula da matriz expõe adoption/version/reasons/gaps/requirements de forma suficiente para auditoria e UI |
-| 5 | Média-alta | Requisitos sanitários e medicamentos/vacinas como regras adotáveis | Hoje há campanha, prescrição e tratamento; falta transformar obrigações sanitárias em regra governada por mercado | Parcialmente implementado | Regras governadas conseguem exigir campanha, vacinação/tratamento, prescrição ou evidência sanitária |
-| 6 | Média | Roteiros executáveis de cenário comercial ponta a ponta | Demonstração precisa mostrar "China/EUA sim, UE não, por motivo X" sem colagem manual de IDs | Parcialmente implementado | Um roteiro cria dados, adota regras, avalia mercados e imprime explicações comparáveis |
-| 7 | Média | Hardening de API antes do frontend | Reduz retrabalho de UI em contratos instáveis | Pendente | Revisar OpenAPI, permissões, erros, paginação e respostas dos endpoints Livestock mais usados |
-| 8 | Média | Documentar corte MVP do backend | Ajuda a decidir o que fica fora sem parecer esquecido | Pendente | Lista explícita de incluído, excluído, riscos e próximos marcos |
-| 9 | Baixa neste momento | Frontend técnico/produto | Interface depende de contratos e narrativa do backend | Aguardando backend congelado | Iniciar somente após os itens 1-4 ou decisão explícita de protótipo |
+| 1 | Alta | Contraparte externa e continuidade de proveniência (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | ADR aceita, implementação pendente | Registrar contraparte, transferência/saída com destino estruturado e lacuna de proveniência auditável |
+| 2 | Alta | Leitura completa da matriz por regra governada | A resposta comercial precisa explicar destino, regra, versão, adoção, lacuna e ação corretiva | Parcialmente implementado | Cada célula da matriz expõe adoption/version/reasons/gaps/requirements de forma suficiente para auditoria e UI |
+| 3 | Média-alta | Requisitos sanitários e medicamentos/vacinas como regras adotáveis | Hoje há campanha, prescrição e tratamento; falta transformar obrigações sanitárias em regra governada por mercado | Parcialmente implementado | Regras governadas conseguem exigir campanha, vacinação/tratamento, prescrição ou evidência sanitária |
+| 4 | Média | Roteiros executáveis de cenário comercial ponta a ponta | Demonstração precisa mostrar "China/EUA sim, UE não, por motivo X" sem colagem manual de IDs | Parcialmente implementado | Um roteiro cria dados, adota regras, avalia mercados e imprime explicações comparáveis |
+| 5 | Média | Hardening de API antes do frontend | Reduz retrabalho de UI em contratos instáveis | Pendente | Revisar OpenAPI, permissões, erros, paginação e respostas dos endpoints Livestock mais usados |
+| 6 | Média | Documentar corte MVP do backend | Ajuda a decidir o que fica fora sem parecer esquecido | Pendente | Lista explícita de incluído, excluído, riscos e próximos marcos |
+| 7 | Baixa neste momento | Frontend técnico/produto | Interface depende de contratos e narrativa do backend | Aguardando backend congelado | Iniciar somente após os itens 1-2 ou decisão explícita de protótipo |
 
 ## Registro consolidado dos incrementos recentes
 
 | Data | Incremento | Estado | Evidência principal |
 |---|---|---|---|
 | 24/07/2026 | API mínima do fluxo farmacológico e roteiro de validação | CONCLUÍDO | `89ebf7d feat(api): api minima do fluxo farmacologico e roteiro de validacao` |
-| 26/07/2026 | Governança Core de regras, versionamento, publicação e adoção | IMPLEMENTADO | ADR-0043; `apps/api/core_rule_governance.py`; `apps/validacao/governanca_regras.py` |
-| 26/07/2026 | Matriz de elegibilidade por mercado de destino | IMPLEMENTADO | ADR-0044; `packages/livestock_application/market_eligibility.py`; `apps/validacao/matriz_elegibilidade_mercados.py` |
+| 26/07/2026 | Governança Core de regras, versionamento, publicação e adoção | CONCLUÍDO | ADR-0043; `apps/api/core_rule_governance.py`; `apps/validacao/governanca_regras.py`; roteiro aprovado em 26/07/2026 |
+| 26/07/2026 | Matriz de elegibilidade por mercado de destino | CONCLUÍDO | ADR-0044; `packages/livestock_application/market_eligibility.py`; `apps/validacao/matriz_elegibilidade_mercados.py`; roteiro aprovado em 26/07/2026 |
 | 26/07/2026 | Requisitos por perfil de mercado e diferenciação UE/China/EUA | IMPLEMENTADO | `880882e feat(livestock): suportar requisitos por perfil de mercado`; `09d3417 feat(livestock): diferenciar requisito de rastreabilidade na UE` |
-| 26/07/2026 | Exigibilidade sanitária mínima | IMPLEMENTADO | `5bc1cc7 feat(livestock): avaliar exigibilidade sanitaria minima`; `apps/validacao/exigibilidade_sanitaria_minima.py` |
-| 26/07/2026 | Prescrição veterinária operável pela API | IMPLEMENTADO | `57ad5c0 feat(livestock): expor prescricoes veterinarias`; `apps/validacao/prescricao_veterinaria.py` |
+| 26/07/2026 | Exigibilidade sanitária mínima | CONCLUÍDO | `5bc1cc7 feat(livestock): avaliar exigibilidade sanitaria minima`; `apps/validacao/exigibilidade_sanitaria_minima.py`; roteiro aprovado em 26/07/2026 |
+| 26/07/2026 | Prescrição veterinária operável pela API | CONCLUÍDO | `57ad5c0 feat(livestock): expor prescricoes veterinarias`; `apps/validacao/prescricao_veterinaria.py`; roteiro aprovado em 26/07/2026 |
 | 26/07/2026 | Prescrição validando medicamento, animal e lote no tratamento | CONCLUÍDO | `f9bf4b7 feat(livestock): validar prescricao no tratamento`; `f55b007 feat(livestock): autorizar tratamento por prescricao de lote` |
 
-## Roteiros de validação manual pendentes
+## Roteiros de validação manual aprovados
 
-Rodar estes roteiros com a stack local, API e Keycloak ativos, após `python -m uv run --locked python -m apps.seed` quando houver mudança de permissões:
+Rodados em 26/07/2026 com stack local, API e Keycloak ativos, após nova semeadura para atualizar permissões:
 
 ```powershell
 python -m uv run --locked python -m apps.validacao.governanca_regras --pausar
@@ -102,7 +100,7 @@ python -m uv run --locked python -m apps.validacao.exigibilidade_sanitaria_minim
 python -m uv run --locked python -m apps.validacao.prescricao_veterinaria --pausar
 ```
 
-O aceite desses roteiros fecha o backend já implementado para demonstração. Falha real em regra, permissão, isolamento ou contrato volta para a fila como incremento de alta criticidade.
+O aceite desses roteiros fecha o backend já implementado para demonstração. Nova falha real em regra, permissão, isolamento ou contrato volta para a fila como incremento de alta criticidade.
 
 
 ## Registro dos passos executados
