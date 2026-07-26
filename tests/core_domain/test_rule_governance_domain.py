@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 
 from packages.core_domain.rule_governance import (
+    RuleAdoption,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -56,6 +57,29 @@ def test_rule_identity_rejects_missing_governance_fields() -> None:
             source_type=RuleSourceType.INTERNAL_POLICY,
             created_by=_actor(org_id),
         )
+
+
+def test_rule_adoption_links_identity_version_and_operational_scope() -> None:
+    org_id = OrganizationId.new()
+    identity_id = TypedId.new("rule_identity")
+    rule_id = TypedId.new("rule")
+    actor = _actor(org_id)
+
+    adoption = RuleAdoption.adopt(
+        organization_id=org_id,
+        rule_identity_id=identity_id,
+        rule_version_id=rule_id,
+        purpose="compra-abate",
+        scope="fornecedores-diretos",
+        adopted_by=actor,
+        reason="Politica comercial vigente.",
+    )
+
+    assert adoption.adoption_id.entity_type == "rule_adoption"
+    assert adoption.rule_identity_id == identity_id
+    assert adoption.rule_version_id == rule_id
+    assert adoption.status == "active"
+    assert adoption.adopted_by == actor
 
 
 def test_rule_timeline_event_records_version_lifecycle() -> None:

@@ -9,6 +9,7 @@ import pytest
 from packages.core_application.rule_governance_service import RuleGovernanceService
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import (
+    RuleAdoption,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -46,9 +47,11 @@ class InMemoryRuleTimelineRepository:
 @dataclass
 class InMemoryRuleVersionRepository:
     rules: dict[tuple[OrganizationId, TypedId, str, int], Rule] = field(default_factory=dict)
+    by_id: dict[TypedId, Rule] = field(default_factory=dict)
 
     def save(self, rule: Rule) -> None:
         self.rules[(rule.organization_id, rule.policy_id, rule.code, rule.version)] = rule
+        self.by_id[rule.rule_id] = rule
 
     def get_by_policy_code_and_version(
         self,
@@ -58,6 +61,37 @@ class InMemoryRuleVersionRepository:
         version: int,
     ) -> Rule | None:
         return self.rules.get((organization_id, policy_id, code, version))
+
+    def get_by_id(self, rule_id: TypedId) -> Rule | None:
+        return self.by_id.get(rule_id)
+
+
+@dataclass
+class InMemoryRuleAdoptionRepository:
+    adoptions: dict[tuple[OrganizationId, TypedId, str, str], RuleAdoption] = field(
+        default_factory=dict
+    )
+
+    def save(self, adoption: RuleAdoption) -> None:
+        self.adoptions[
+            (
+                adoption.organization_id,
+                adoption.rule_identity_id,
+                adoption.purpose,
+                adoption.scope,
+            )
+        ] = adoption
+
+    def get_active_by_identity_and_scope(
+        self,
+        organization_id: OrganizationId,
+        rule_identity_id: TypedId,
+        purpose: str,
+        scope: str,
+    ) -> RuleAdoption | None:
+        return self.adoptions.get(
+            (organization_id, rule_identity_id, purpose.strip(), scope.strip())
+        )
 
 
 def _actor(org_id: OrganizationId) -> UniversalReference:
@@ -233,5 +267,100 @@ def test_publish_rule_version_rejects_duplicate_version_for_policy() -> None:
             rule_identity_id=identity.rule_identity_id,
             policy_id=policy_id,
             name="Carencia farmacologica v1 duplicada",
+            actor=actor,
+        )
+
+
+def test_adopt_rule_version_records_adoption_and_timeline_event() -> None:
+    org_id = OrganizationId.new()
+    identities = InMemoryRuleIdentityRepository()
+    timeline = InMemoryRuleTimelineRepository()
+    rules = InMemoryRuleVersionRepository()
+    adoptions = InMemoryRuleAdoptionRepository()
+    service = RuleGovernanceService(
+        identities=identities,
+        timeline=timeline,
+        rules=rules,
+        adoptions=adoptions,
+    )
+    actor = _actor(org_id)
+    identity = service.create_identity(
+        organization_id=org_id,
+        code="rule-carencia",
+        purpose="ELEGIBILIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    rule = service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        policy_id=TypedId.new("policy"),
+        name="Carencia farmacologica",
+        actor=actor,
+    )
+
+    adoption = service.adopt_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        rule_version_id=rule.rule_id,
+        purpose="compra-abate",
+        scope="fornecedores-diretos",
+        reason="Politica do frigorifico.",
+        actor=actor,
+    )
+
+    assert adoption.rule_version_id == rule.rule_id
+    assert adoption.status == "active"
+    assert (
+        adoptions.get_active_by_identity_and_scope(
+            org_id, identity.rule_identity_id, "compra-abate", "fornecedores-diretos"
+        )
+        == adoption
+    )
+    assert timeline.events[-1].event_type is RuleTimelineEventType.RULE_ADOPTED
+    assert timeline.events[-1].rule_version_id == rule.rule_id
+
+
+def test_adopt_rule_version_rejects_duplicate_active_scope() -> None:
+    org_id = OrganizationId.new()
+    service = RuleGovernanceService(
+        identities=InMemoryRuleIdentityRepository(),
+        timeline=InMemoryRuleTimelineRepository(),
+        rules=InMemoryRuleVersionRepository(),
+        adoptions=InMemoryRuleAdoptionRepository(),
+    )
+    actor = _actor(org_id)
+    identity = service.create_identity(
+        organization_id=org_id,
+        code="rule-carencia",
+        purpose="ELEGIBILIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    rule = service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        policy_id=TypedId.new("policy"),
+        name="Carencia farmacologica",
+        actor=actor,
+    )
+    service.adopt_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        rule_version_id=rule.rule_id,
+        purpose="compra-abate",
+        scope="fornecedores-diretos",
+        actor=actor,
+    )
+
+    with pytest.raises(ValueError, match="Ja existe uma adocao ativa"):
+        service.adopt_rule_version(
+            organization_id=org_id,
+            rule_identity_id=identity.rule_identity_id,
+            rule_version_id=rule.rule_id,
+            purpose="compra-abate",
+            scope="fornecedores-diretos",
             actor=actor,
         )

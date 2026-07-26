@@ -65,6 +65,22 @@ def test_fluxo_http_cria_publica_e_consulta_timeline_governada(ambiente) -> None
     assert rule["code"] == identity["code"]
     assert rule["version"] == 1
 
+    adoption_response = cliente.post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/adoptions",
+        headers=headers,
+        json={
+            "rule_version_id": rule["rule_id"],
+            "purpose": "compra-abate",
+            "scope": "fornecedores-diretos",
+            "reason": "Politica do frigorifico.",
+        },
+    )
+    assert adoption_response.status_code == 201
+    adoption = adoption_response.json()
+    assert adoption["rule_identity_id"] == identity["rule_identity_id"]
+    assert adoption["rule_version_id"] == rule["rule_id"]
+    assert adoption["status"] == "active"
+
     timeline_response = _cliente(ambiente, ambiente.auditor).get(
         f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/timeline",
         headers=headers,
@@ -75,6 +91,7 @@ def test_fluxo_http_cria_publica_e_consulta_timeline_governada(ambiente) -> None
         "rule_identity_created",
         "rule_version_drafted",
         "rule_version_published",
+        "rule_adopted",
     }
 
 
@@ -97,6 +114,39 @@ def test_auditor_nao_publica_versao_de_regra(ambiente) -> None:  # type: ignore[
         f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/versions",
         headers=headers,
         json={"policy_id": policy_id, "name": "Nao deve publicar"},
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_auditor_nao_adota_regra(ambiente) -> None:  # type: ignore[no-untyped-def]
+    cliente_operador = _cliente(ambiente, ambiente.operador)
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+    identity = cliente_operador.post(
+        "/v1/rule-governance/rule-identities",
+        headers=headers,
+        json={
+            "code": f"regra-adocao-{uuid4().hex[:8]}",
+            "purpose": "Validar autorizacao.",
+            "scope": "Teste de API.",
+            "source_type": "politica_interna",
+        },
+    ).json()
+    rule = cliente_operador.post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/versions",
+        headers=headers,
+        json={"policy_id": _criar_policy(ambiente), "name": "Regra adotavel"},
+    ).json()
+
+    resposta = _cliente(ambiente, ambiente.auditor).post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/adoptions",
+        headers=headers,
+        json={
+            "rule_version_id": rule["rule_id"],
+            "purpose": "compra-abate",
+            "scope": "fornecedores-diretos",
+        },
     )
 
     assert resposta.status_code == 403

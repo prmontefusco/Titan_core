@@ -42,6 +42,66 @@ class RuleImpactAssessmentResult(Enum):
 
 
 @dataclass(frozen=True, slots=True)
+class RuleAdoption:
+    """Adoção de uma versão de regra por uma Organization."""
+
+    adoption_id: TypedId
+    organization_id: OrganizationId
+    rule_identity_id: TypedId
+    rule_version_id: TypedId
+    purpose: str
+    scope: str
+    adopted_by: UniversalReference
+    adopted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    reason: str = ""
+    status: str = "active"
+
+    def __post_init__(self) -> None:
+        if self.adoption_id.entity_type != "rule_adoption":
+            raise ValueError("adoption_id deve ser do tipo 'rule_adoption'.")
+        if not isinstance(self.organization_id, OrganizationId):
+            raise TypeError("organization_id deve ser OrganizationId.")
+        if self.rule_identity_id.entity_type != "rule_identity":
+            raise ValueError("rule_identity_id deve ser do tipo 'rule_identity'.")
+        if self.rule_version_id.entity_type != "rule":
+            raise ValueError("rule_version_id deve ser do tipo 'rule'.")
+        if not isinstance(self.adopted_by, UniversalReference):
+            raise TypeError("adopted_by deve ser UniversalReference.")
+
+        object.__setattr__(self, "purpose", _required_text(self.purpose, "purpose"))
+        object.__setattr__(self, "scope", _required_text(self.scope, "scope"))
+        object.__setattr__(self, "reason", self.reason.strip())
+        object.__setattr__(self, "status", self.status.strip().lower())
+
+        if self.status != "active":
+            raise ValueError("status inicial de RuleAdoption deve ser 'active'.")
+
+    @classmethod
+    def adopt(
+        cls,
+        organization_id: OrganizationId,
+        rule_identity_id: TypedId,
+        rule_version_id: TypedId,
+        purpose: str,
+        scope: str,
+        adopted_by: UniversalReference,
+        reason: str = "",
+        adopted_at: datetime | None = None,
+    ) -> "RuleAdoption":
+        return cls(
+            adoption_id=TypedId.new("rule_adoption"),
+            organization_id=organization_id,
+            rule_identity_id=rule_identity_id,
+            rule_version_id=rule_version_id,
+            purpose=purpose,
+            scope=scope,
+            adopted_by=adopted_by,
+            adopted_at=adopted_at or datetime.now(UTC),
+            reason=reason,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class RuleIdentity:
     """Identidade estavel de uma regra ao longo das suas versoes."""
 
@@ -100,9 +160,7 @@ class RuleIdentity:
 
     @staticmethod
     def _required_text(value: str, field_name: str) -> str:
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"{field_name} deve ser uma string nao vazia.")
-        return value.strip()
+        return _required_text(value, field_name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,3 +254,9 @@ _EVENTS_REQUIRING_REASON = frozenset(
         RuleTimelineEventType.RULE_IMPACT_ASSESSMENT_COMPLETED,
     }
 )
+
+
+def _required_text(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field_name} deve ser uma string nao vazia.")
+    return value.strip()

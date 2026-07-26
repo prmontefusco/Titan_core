@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy import (
+    CheckConstraint,
     Column,
     Connection,
     DateTime,
@@ -21,6 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from packages.core_domain.rule_governance import (
+    RuleAdoption,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -51,6 +53,7 @@ rule_identities_table = Table(
         "code",
         name="uq_rule_identities_organization_code",
     ),
+    CheckConstraint("created_by_contract_version >= 1", name="ck_rule_identities_actor_cv"),
     ForeignKeyConstraint(
         ["record_owner_organization_id"],
         ["core_identity.organizations.organization_id"],
@@ -90,6 +93,51 @@ rule_timeline_events_table = Table(
         ["rule_version_id"],
         ["core_audit.rules.rule_id"],
         name="fk_rule_timeline_rule_version",
+    ),
+    CheckConstraint("actor_contract_version >= 1", name="ck_rule_timeline_actor_cv"),
+    schema=CORE_AUDIT_SCHEMA,
+    comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
+)
+
+rule_adoptions_table = Table(
+    "rule_adoptions",
+    organization_metadata,
+    Column("adoption_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("rule_identity_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("rule_version_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("purpose", String(120), nullable=False),
+    Column("scope", String(160), nullable=False),
+    Column("adopted_by_target_type", String(100), nullable=False),
+    Column("adopted_by_target_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("adopted_by_organization_id", PG_UUID(as_uuid=True), nullable=True),
+    Column("adopted_by_contract_version", Integer, nullable=False),
+    Column("adopted_at", DateTime(timezone=True), nullable=False),
+    Column("reason", Text, nullable=False, server_default=""),
+    Column("status", String(30), nullable=False),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "rule_identity_id",
+        "purpose",
+        "scope",
+        "status",
+        name="uq_rule_adoptions_active_scope",
+    ),
+    CheckConstraint("adopted_by_contract_version >= 1", name="ck_rule_adoptions_actor_cv"),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id"],
+        ["core_identity.organizations.organization_id"],
+        name="fk_rule_adoptions_organization",
+    ),
+    ForeignKeyConstraint(
+        ["rule_identity_id"],
+        ["core_audit.rule_identities.rule_identity_id"],
+        name="fk_rule_adoptions_identity",
+    ),
+    ForeignKeyConstraint(
+        ["rule_version_id"],
+        ["core_audit.rules.rule_id"],
+        name="fk_rule_adoptions_rule_version",
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
@@ -320,6 +368,114 @@ class TransactionalRuleTimelineRepository:
         return [_map_timeline_event(row) for row in rows]
 
 
+@dataclass(frozen=True, slots=True)
+class TransactionalRuleAdoptionRepository:
+    connection: Connection
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.connection, Connection) or not self.connection.in_transaction():
+            raise RuntimeError("TransactionalRuleAdoptionRepository exige transacao ativa.")
+
+    def save(self, adoption: RuleAdoption) -> None:
+        self.connection.execute(
+            text(
+                """
+                INSERT INTO core_audit.rule_adoptions (
+                    adoption_id,
+                    record_owner_organization_id,
+                    rule_identity_id,
+                    rule_version_id,
+                    purpose,
+                    scope,
+                    adopted_by_target_type,
+                    adopted_by_target_id,
+                    adopted_by_organization_id,
+                    adopted_by_contract_version,
+                    adopted_at,
+                    reason,
+                    status
+                ) VALUES (
+                    :adoption_id,
+                    :org_id,
+                    :rule_identity_id,
+                    :rule_version_id,
+                    :purpose,
+                    :scope,
+                    :adopted_by_target_type,
+                    :adopted_by_target_id,
+                    :adopted_by_organization_id,
+                    :adopted_by_contract_version,
+                    :adopted_at,
+                    :reason,
+                    :status
+                )
+                """
+            ),
+            {
+                "adoption_id": adoption.adoption_id.value,
+                "org_id": adoption.organization_id.value,
+                "rule_identity_id": adoption.rule_identity_id.value,
+                "rule_version_id": adoption.rule_version_id.value,
+                "purpose": adoption.purpose,
+                "scope": adoption.scope,
+                "adopted_by_target_type": adoption.adopted_by.target_id.entity_type,
+                "adopted_by_target_id": adoption.adopted_by.target_id.value,
+                "adopted_by_organization_id": (
+                    adoption.adopted_by.organization_id.value
+                    if adoption.adopted_by.organization_id is not None
+                    else None
+                ),
+                "adopted_by_contract_version": adoption.adopted_by.contract_version,
+                "adopted_at": adoption.adopted_at,
+                "reason": adoption.reason,
+                "status": adoption.status,
+            },
+        )
+
+    def get_active_by_identity_and_scope(
+        self,
+        organization_id: OrganizationId,
+        rule_identity_id: TypedId,
+        purpose: str,
+        scope: str,
+    ) -> RuleAdoption | None:
+        row = self.connection.execute(
+            text(
+                """
+                SELECT
+                    adoption_id,
+                    record_owner_organization_id,
+                    rule_identity_id,
+                    rule_version_id,
+                    purpose,
+                    scope,
+                    adopted_by_target_type,
+                    adopted_by_target_id,
+                    adopted_by_organization_id,
+                    adopted_by_contract_version,
+                    adopted_at,
+                    reason,
+                    status
+                FROM core_audit.rule_adoptions
+                WHERE record_owner_organization_id = :org_id
+                  AND rule_identity_id = :rule_identity_id
+                  AND purpose = :purpose
+                  AND scope = :scope
+                  AND status = 'active'
+                """
+            ),
+            {
+                "org_id": organization_id.value,
+                "rule_identity_id": rule_identity_id.value,
+                "purpose": purpose.strip(),
+                "scope": scope.strip(),
+            },
+        ).first()
+        if row is None:
+            return None
+        return _map_adoption(row)
+
+
 def _normalize_required_datetime(value: Any) -> datetime:
     parsed = cast(datetime, value)
     if parsed.tzinfo is not None:
@@ -407,4 +563,24 @@ def _map_timeline_event(row: object) -> RuleTimelineEvent:
             if row.correlation_id is not None  # type: ignore[attr-defined]
             else None
         ),
+    )
+
+
+def _map_adoption(row: object) -> RuleAdoption:
+    return RuleAdoption(
+        adoption_id=TypedId(entity_type="rule_adoption", value=row.adoption_id),  # type: ignore[attr-defined]
+        organization_id=OrganizationId(row.record_owner_organization_id),  # type: ignore[attr-defined]
+        rule_identity_id=TypedId(entity_type="rule_identity", value=row.rule_identity_id),  # type: ignore[attr-defined]
+        rule_version_id=TypedId(entity_type="rule", value=row.rule_version_id),  # type: ignore[attr-defined]
+        purpose=row.purpose,  # type: ignore[attr-defined]
+        scope=row.scope,  # type: ignore[attr-defined]
+        adopted_by=_map_reference(
+            row.adopted_by_target_type,  # type: ignore[attr-defined]
+            row.adopted_by_target_id,  # type: ignore[attr-defined]
+            row.adopted_by_organization_id,  # type: ignore[attr-defined]
+            row.adopted_by_contract_version,  # type: ignore[attr-defined]
+        ),
+        adopted_at=_normalize_required_datetime(row.adopted_at),  # type: ignore[attr-defined]
+        reason=row.reason,  # type: ignore[attr-defined]
+        status=row.status,  # type: ignore[attr-defined]
     )

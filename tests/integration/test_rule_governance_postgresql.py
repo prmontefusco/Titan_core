@@ -14,6 +14,7 @@ from packages.core_domain.rule_governance import RuleSourceType, RuleTimelineEve
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.core_infrastructure.persistence.rule_governance import (
+    TransactionalRuleAdoptionRepository,
     TransactionalRuleIdentityRepository,
     TransactionalRuleTimelineRepository,
 )
@@ -65,10 +66,12 @@ def test_rule_governance_persistence_and_rls() -> None:
         identity_repository = TransactionalRuleIdentityRepository(connection)
         timeline_repository = TransactionalRuleTimelineRepository(connection)
         rule_repository = TransactionalRuleRepository(connection)
+        adoption_repository = TransactionalRuleAdoptionRepository(connection)
         service = RuleGovernanceService(
             identities=identity_repository,
             timeline=timeline_repository,
             rules=rule_repository,
+            adoptions=adoption_repository,
         )
         actor = _actor(org_1)
         occurred_at = datetime(2026, 7, 26, tzinfo=UTC)
@@ -133,6 +136,27 @@ def test_rule_governance_persistence_and_rls() -> None:
             == rule.rule_id
         )
 
+        adoption = service.adopt_rule_version(
+            organization_id=org_1,
+            rule_identity_id=identity.rule_identity_id,
+            rule_version_id=rule.rule_id,
+            purpose="compra-abate",
+            scope="fornecedores-diretos",
+            reason="Politica do frigorifico.",
+            actor=actor,
+            occurred_at=occurred_at + timedelta(seconds=2),
+        )
+        persisted_adoption = adoption_repository.get_active_by_identity_and_scope(
+            org_1,
+            identity.rule_identity_id,
+            "compra-abate",
+            "fornecedores-diretos",
+        )
+        assert persisted_adoption == adoption
+        events = timeline_repository.list_by_identity(org_1, identity.rule_identity_id)
+        assert events[-1].event_type is RuleTimelineEventType.RULE_ADOPTED
+        assert events[-1].rule_version_id == rule.rule_id
+
         connection.execute(
             text("SELECT set_config('titan.organization_id', :org_id, true)"),
             {"org_id": str(org_2.value)},
@@ -140,6 +164,7 @@ def test_rule_governance_persistence_and_rls() -> None:
 
         org_2_identity_repository = TransactionalRuleIdentityRepository(connection)
         org_2_timeline_repository = TransactionalRuleTimelineRepository(connection)
+        org_2_adoption_repository = TransactionalRuleAdoptionRepository(connection)
         assert (
             org_2_identity_repository.get_by_organization_and_code(
                 org_2,
@@ -148,3 +173,12 @@ def test_rule_governance_persistence_and_rls() -> None:
             is None
         )
         assert org_2_timeline_repository.list_by_identity(org_2, identity.rule_identity_id) == []
+        assert (
+            org_2_adoption_repository.get_active_by_identity_and_scope(
+                org_2,
+                identity.rule_identity_id,
+                "compra-abate",
+                "fornecedores-diretos",
+            )
+            is None
+        )

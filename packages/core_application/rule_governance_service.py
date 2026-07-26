@@ -6,6 +6,7 @@ from typing import Protocol
 
 from packages.core_domain.rule import Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import (
+    RuleAdoption,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -28,6 +29,18 @@ class RuleTimelineRepositoryPort(Protocol):
     def append(self, event: RuleTimelineEvent) -> None: ...
 
 
+class RuleAdoptionRepositoryPort(Protocol):
+    def save(self, adoption: RuleAdoption) -> None: ...
+
+    def get_active_by_identity_and_scope(
+        self,
+        organization_id: OrganizationId,
+        rule_identity_id: TypedId,
+        purpose: str,
+        scope: str,
+    ) -> RuleAdoption | None: ...
+
+
 class RuleVersionRepositoryPort(Protocol):
     def save(self, rule: Rule) -> None: ...
 
@@ -39,6 +52,8 @@ class RuleVersionRepositoryPort(Protocol):
         version: int,
     ) -> Rule | None: ...
 
+    def get_by_id(self, rule_id: TypedId) -> Rule | None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class RuleGovernanceService:
@@ -47,6 +62,7 @@ class RuleGovernanceService:
     identities: RuleIdentityRepositoryPort
     timeline: RuleTimelineRepositoryPort
     rules: RuleVersionRepositoryPort | None = None
+    adoptions: RuleAdoptionRepositoryPort | None = None
 
     def create_identity(
         self,
@@ -169,3 +185,60 @@ class RuleGovernanceService:
             )
         )
         return rule
+
+    def adopt_rule_version(
+        self,
+        organization_id: OrganizationId,
+        rule_identity_id: TypedId,
+        rule_version_id: TypedId,
+        purpose: str,
+        scope: str,
+        actor: UniversalReference,
+        reason: str = "",
+        occurred_at: datetime | None = None,
+    ) -> RuleAdoption:
+        if self.rules is None or self.adoptions is None:
+            raise RuntimeError(
+                "RuleGovernanceService exige repositorios de regras e adocoes para adotar regra."
+            )
+
+        identity = self.identities.get_by_id(rule_identity_id)
+        if identity is None or identity.organization_id != organization_id:
+            raise KeyError(f"Identidade de regra {rule_identity_id.value} nao encontrada.")
+
+        rule = self.rules.get_by_id(rule_version_id)
+        if rule is None or rule.organization_id != organization_id or rule.code != identity.code:
+            raise KeyError(f"Versao de regra {rule_version_id.value} nao encontrada.")
+
+        existing = self.adoptions.get_active_by_identity_and_scope(
+            organization_id=organization_id,
+            rule_identity_id=rule_identity_id,
+            purpose=purpose,
+            scope=scope,
+        )
+        if existing is not None:
+            raise ValueError("Ja existe uma adocao ativa para esta regra, finalidade e escopo.")
+
+        adoption = RuleAdoption.adopt(
+            organization_id=organization_id,
+            rule_identity_id=rule_identity_id,
+            rule_version_id=rule_version_id,
+            purpose=purpose,
+            scope=scope,
+            adopted_by=actor,
+            reason=reason,
+            adopted_at=occurred_at,
+        )
+        self.adoptions.save(adoption)
+        self.timeline.append(
+            RuleTimelineEvent.record(
+                organization_id=organization_id,
+                rule_identity_id=identity.rule_identity_id,
+                event_type=RuleTimelineEventType.RULE_ADOPTED,
+                actor=actor,
+                rule_version_id=rule.rule_id,
+                reason=reason,
+                occurred_at=occurred_at,
+            )
+        )
+        return adoption

@@ -99,10 +99,31 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, policy_id: str) -> Rote
             if r["code"] == ids["code"] and r["version"] == 1
             else "versao publicada nao preservou codigo e versao esperados"
         ),
+        guardar=lambda r: ids.update(rule_id=str(r["rule_id"])),
         porque="A regra aplicada por decisoes futuras deve apontar para uma versao imutavel.",
     )
     roteiro.passo(
         "3",
+        "Operador adota a versao publicada",
+        lambda: operador.post(
+            f"/v1/rule-governance/rule-identities/{ids['rule_identity_id']}/adoptions",
+            {
+                "rule_version_id": ids["rule_id"],
+                "purpose": "compra-abate",
+                "scope": "fornecedores-diretos",
+                "reason": "Politica do frigorifico.",
+            },
+        ),
+        201,
+        conferir=lambda r: (
+            None
+            if r["rule_version_id"] == ids["rule_id"] and r["status"] == "active"
+            else "adocao nao aponta para a versao publicada"
+        ),
+        porque="Adotar declara que esta Organization usa aquela versao para uma finalidade.",
+    )
+    roteiro.passo(
+        "4",
         "Auditor consulta a linha do tempo da regra",
         lambda: auditor.get(
             f"/v1/rule-governance/rule-identities/{ids['rule_identity_id']}/timeline"
@@ -114,14 +135,15 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, policy_id: str) -> Rote
                 "rule_identity_created",
                 "rule_version_drafted",
                 "rule_version_published",
+                "rule_adopted",
             }
             == {evento["event_type"] for evento in r.corpo}
-            else "timeline nao trouxe os tres eventos esperados"
+            else "timeline nao trouxe os quatro eventos esperados"
         ),
-        porque="A auditoria precisa reconstruir quem criou a regra e quando ela foi publicada.",
+        porque="A auditoria precisa reconstruir criacao, publicacao e adocao da regra.",
     )
     roteiro.passo(
-        "4",
+        "5",
         "Auditor nao publica regra",
         lambda: auditor.post(
             f"/v1/rule-governance/rule-identities/{ids['rule_identity_id']}/versions",
@@ -134,6 +156,25 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, policy_id: str) -> Rote
             else "negacao nao informou ausencia de permissao"
         ),
         porque="Ler a timeline nao concede autoridade para criar versao normativa.",
+    )
+    roteiro.passo(
+        "6",
+        "Auditor nao adota regra",
+        lambda: auditor.post(
+            f"/v1/rule-governance/rule-identities/{ids['rule_identity_id']}/adoptions",
+            {
+                "rule_version_id": ids["rule_id"],
+                "purpose": "compra-abate",
+                "scope": "fornecedores-indiretos",
+            },
+        ),
+        403,
+        conferir=lambda r: (
+            None
+            if r["reason_code"] == "PERMISSAO_AUSENTE"
+            else "negacao nao informou ausencia de permissao"
+        ),
+        porque="Consultar regras adotadas nao concede autoridade para definir uso operacional.",
     )
     return roteiro
 

@@ -25,6 +25,7 @@ from sqlalchemy import Connection, text
 from apps.api.authentication import require_authenticated_principal
 from apps.api.main import app
 from packages.core_application.rule_governance_authorization import (
+    RULE_GOVERNANCE_ADOTAR,
     RULE_GOVERNANCE_CRIAR,
     RULE_GOVERNANCE_LER,
     RULE_GOVERNANCE_PERMISSIONS,
@@ -66,7 +67,12 @@ pytestmark = pytest.mark.skipif(
 ISSUER = "http://localhost:8080/realms/titan"
 TODAS_AS_PERMISSOES = LIVESTOCK_PERMISSIONS | RULE_GOVERNANCE_PERMISSIONS
 PERMISSOES_OPERADOR = ROLE_PERMISSIONS[OPERADOR_PECUARIO] | frozenset(
-    {RULE_GOVERNANCE_CRIAR, RULE_GOVERNANCE_LER, RULE_GOVERNANCE_PUBLICAR}
+    {
+        RULE_GOVERNANCE_ADOTAR,
+        RULE_GOVERNANCE_CRIAR,
+        RULE_GOVERNANCE_LER,
+        RULE_GOVERNANCE_PUBLICAR,
+    }
 )
 PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER})
 

@@ -25,6 +25,7 @@ SUPERFICIE_ESPERADA = {
     # Core - governanca auditavel de regras (ADR-0043).
     ("/v1/rule-governance/rule-identities", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/versions", "post"),
+    ("/v1/rule-governance/rule-identities/{rule_identity_id}/adoptions", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/timeline", "get"),
     # Vertical Livestock — API mínima do fluxo aprovado (Passos 10.4a e 10.4b).
     # A lista é fechada por decisão: `POST /v1/livestock/prescriptions` NÃO entra,

@@ -14,6 +14,7 @@ from apps.api.livestock_dependencies import (
 )
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_application.rule_governance_authorization import (
+    RULE_GOVERNANCE_ADOTAR,
     RULE_GOVERNANCE_CRIAR,
     RULE_GOVERNANCE_LER,
     RULE_GOVERNANCE_PUBLICAR,
@@ -22,12 +23,14 @@ from packages.core_application.rule_governance_service import RuleGovernanceServ
 from packages.core_domain import OrganizationContext
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import (
+    RuleAdoption,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
 )
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.core_infrastructure.persistence.rule_governance import (
+    TransactionalRuleAdoptionRepository,
     TransactionalRuleIdentityRepository,
     TransactionalRuleTimelineRepository,
 )
@@ -98,6 +101,25 @@ class RuleVersionResponse(BaseModel):
     created_at: datetime
 
 
+class AdotarRegraRequest(BaseModel):
+    rule_version_id: str
+    purpose: str = Field(min_length=1, max_length=120)
+    scope: str = Field(min_length=1, max_length=160)
+    reason: str = Field(default="", max_length=2000)
+
+
+class RuleAdoptionResponse(BaseModel):
+    adoption_id: str
+    organization_id: str
+    rule_identity_id: str
+    rule_version_id: str
+    purpose: str
+    scope: str
+    adopted_at: datetime
+    reason: str
+    status: str
+
+
 class TimelineEventResponse(BaseModel):
     event_id: str
     rule_identity_id: str
@@ -123,6 +145,7 @@ def _servico(connection: Connection) -> RuleGovernanceService:
         identities=TransactionalRuleIdentityRepository(connection),
         timeline=TransactionalRuleTimelineRepository(connection),
         rules=TransactionalRuleRepository(connection),
+        adoptions=TransactionalRuleAdoptionRepository(connection),
     )
 
 
@@ -158,6 +181,20 @@ def _rule_response(rule: Rule) -> RuleVersionResponse:
         valid_from=rule.valid_from,
         valid_to=rule.valid_to,
         created_at=rule.created_at,
+    )
+
+
+def _adoption_response(adoption: RuleAdoption) -> RuleAdoptionResponse:
+    return RuleAdoptionResponse(
+        adoption_id=str(adoption.adoption_id.value),
+        organization_id=str(adoption.organization_id.value),
+        rule_identity_id=str(adoption.rule_identity_id.value),
+        rule_version_id=str(adoption.rule_version_id.value),
+        purpose=adoption.purpose,
+        scope=adoption.scope,
+        adopted_at=adoption.adopted_at,
+        reason=adoption.reason,
+        status=adoption.status,
     )
 
 
@@ -268,6 +305,52 @@ def publicar_versao_regra(
             detail=str(error),
         ) from error
     return _rule_response(rule)
+
+
+@router.post(
+    "/rule-identities/{rule_identity_id}/adoptions",
+    response_model=RuleAdoptionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Adotar uma versao de regra governada",
+    responses=RESPOSTAS_PADRAO,
+)
+def adotar_regra(
+    rule_identity_id: str,
+    corpo: AdotarRegraRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(RULE_GOVERNANCE_ADOTAR))],
+    connection: ConnectionDependency,
+) -> RuleAdoptionResponse:
+    identity_id = typed_id_or_problem(
+        rule_identity_id, entity_type="rule_identity", campo="rule_identity_id"
+    )
+    rule_version_id = typed_id_or_problem(
+        corpo.rule_version_id, entity_type="rule", campo="rule_version_id"
+    )
+    try:
+        adoption = _servico(connection).adopt_rule_version(
+            organization_id=contexto.organization_id,
+            rule_identity_id=identity_id,
+            rule_version_id=rule_version_id,
+            purpose=corpo.purpose,
+            scope=corpo.scope,
+            reason=corpo.reason,
+            actor=_actor(contexto),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+    return _adoption_response(adoption)
 
 
 @router.get(

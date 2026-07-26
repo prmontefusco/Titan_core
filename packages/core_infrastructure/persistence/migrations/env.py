@@ -42,6 +42,11 @@ from packages.core_infrastructure.persistence.projections import reference_proje
 from packages.core_infrastructure.persistence.recall import recalls_table
 from packages.core_infrastructure.persistence.relations import relations_table
 from packages.core_infrastructure.persistence.rule import rules_table
+from packages.core_infrastructure.persistence.rule_governance import (
+    rule_adoptions_table,
+    rule_identities_table,
+    rule_timeline_events_table,
+)
 from packages.core_infrastructure.persistence.synchronization import (
     offline_operations_table,
     synchronization_batches_table,
@@ -92,6 +97,9 @@ assert key_registry_table.metadata is target_metadata
 assert attachments_table.metadata is target_metadata
 assert policies_table.metadata is target_metadata
 assert rules_table.metadata is target_metadata
+assert rule_identities_table.metadata is target_metadata
+assert rule_timeline_events_table.metadata is target_metadata
+assert rule_adoptions_table.metadata is target_metadata
 assert evaluations_table.metadata is target_metadata
 assert decisions_table.metadata is target_metadata
 assert relations_table.metadata is target_metadata
