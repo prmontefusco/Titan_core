@@ -1,12 +1,14 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 24 de julho de 2026  
+**Atualizado em:** 26 de julho de 2026
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** validar o Marco 12 e iniciar o frontend
+**Próximo passo planejado:** fechar validação manual do backend Livestock e, em seguida, implementar continuidade de proveniência com contraparte externa.
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
 > **Nota sobre o 10.1a e o 10.1b:** o PLANO define um único Passo 10.1 (Timeline Livestock). Ele foi dividido em dois na execução, com aprovação do responsável, porque a timeline pressupõe eventos que a vertical ainda não emitia — o **10.1a** faz a vertical emitir, o **10.1b** entrega a consulta cronológica que o PLANO descreve. A divisão é de execução, não de escopo: o 10.1 do PLANO só estará cumprido ao fim do 10.1b.
+
+> **Nota de retomada em 26/07/2026:** o checklist estava defasado em relação ao código. Desde a última consolidação, o backend avançou além do Marco 12: genealogia, reprodução, saída do rebanho, governança de regras, matriz de elegibilidade por mercado, exigibilidade sanitária mínima, prescrição veterinária e autorização de tratamento por prescrição de animal ou lote já foram implementadas e commitadas. Este documento passa a refletir o estado real do backend e ordena os próximos incrementos por criticidade.
 
 
 
@@ -53,8 +55,54 @@ Estados utilizados:
 | 6.1–6.6 | Policy, Rule, Evaluation e Decision explicável | CONCLUÍDO | Aprovada |
 | 7.1–7.10 | Relações, recall, dossiê, bundle, sync e prova do Core | CONCLUÍDO (incluindo 7.8 e 7.9) | Aprovada |
 | 8.0–8.6 | Fundação Titan Livestock | CONCLUÍDO | Aprovada |
-| 9.1–9.6 | Medicamentos e elegibilidade | IMPLEMENTADO — 9.1 a 9.6 (numeração do PLANO) | Pendente |
-| 10.1–10.6 | Demonstração vertical verificável | 10.1 a 10.4 e 10.6 completos; 10.5 dispensado (opcional no PLANO) | 10.1 a 10.4 aprovadas; 10.6 pendente |
+| 9.1–9.6 | Medicamentos, prescrição, tratamento, carência e elegibilidade farmacológica | CONCLUÍDO | Pendente consolidar validação manual |
+| 10.1–10.6 | Demonstração vertical verificável, timeline, dossiê e API operacional | CONCLUÍDO | Pendente consolidar validação manual do 10.6 |
+| 11–12 | API Livestock completa para validação técnica e fluxos operacionais | CONCLUÍDO | Pendente rodada manual final |
+| 13 | Ciclo de vida do animal: saída, genealogia e reprodução | CONCLUÍDO | Pendente rodada manual final |
+| NR-4 / ADR-0043 | Governança e linha do tempo imutável de regras | IMPLEMENTADO | Pendente validação manual |
+| NR-4 / ADR-0044 | Matriz de elegibilidade por mercado com regras governadas | IMPLEMENTADO | Pendente validação manual |
+| NR-4 sanitário | Campanhas sanitárias, exigibilidade mínima, prescrição e tratamento autorizado | IMPLEMENTADO | Pendente validação manual |
+
+## Fila atual do backend
+
+Esta fila substitui a indicação antiga "validar Marco 12 e iniciar o frontend". O frontend deve começar somente depois de o backend principal abaixo estar validado ou conscientemente congelado para demonstração.
+
+| Ordem | Criticidade | Incremento | Motivo | Estado atual | Critério de saída |
+|---|---|---|---|---|---|
+| 1 | Alta | Consolidar validação manual do backend existente | Sem isso, o código está verde, mas o produto ainda não tem aceite operacional registrado | Pendente | Rodar e aprovar os roteiros em `apps/validacao` para governança de regras, matriz de mercados, exigibilidade sanitária e prescrição |
+| 2 | Alta | Atualizar este checklist a cada incremento concluído | Evita nova divergência entre plano, commits e decisão de produto | Em andamento neste ajuste | Checklist refletindo commits recentes e próxima fila |
+| 3 | Alta | Contraparte externa e continuidade de proveniência (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | ADR aceita, implementação pendente | Registrar contraparte, transferência/saída com destino estruturado e lacuna de proveniência auditável |
+| 4 | Alta | Leitura completa da matriz por regra governada | A resposta comercial precisa explicar destino, regra, versão, adoção, lacuna e ação corretiva | Parcialmente implementado | Cada célula da matriz expõe adoption/version/reasons/gaps/requirements de forma suficiente para auditoria e UI |
+| 5 | Média-alta | Requisitos sanitários e medicamentos/vacinas como regras adotáveis | Hoje há campanha, prescrição e tratamento; falta transformar obrigações sanitárias em regra governada por mercado | Parcialmente implementado | Regras governadas conseguem exigir campanha, vacinação/tratamento, prescrição ou evidência sanitária |
+| 6 | Média | Roteiros executáveis de cenário comercial ponta a ponta | Demonstração precisa mostrar "China/EUA sim, UE não, por motivo X" sem colagem manual de IDs | Parcialmente implementado | Um roteiro cria dados, adota regras, avalia mercados e imprime explicações comparáveis |
+| 7 | Média | Hardening de API antes do frontend | Reduz retrabalho de UI em contratos instáveis | Pendente | Revisar OpenAPI, permissões, erros, paginação e respostas dos endpoints Livestock mais usados |
+| 8 | Média | Documentar corte MVP do backend | Ajuda a decidir o que fica fora sem parecer esquecido | Pendente | Lista explícita de incluído, excluído, riscos e próximos marcos |
+| 9 | Baixa neste momento | Frontend técnico/produto | Interface depende de contratos e narrativa do backend | Aguardando backend congelado | Iniciar somente após os itens 1-4 ou decisão explícita de protótipo |
+
+## Registro consolidado dos incrementos recentes
+
+| Data | Incremento | Estado | Evidência principal |
+|---|---|---|---|
+| 24/07/2026 | API mínima do fluxo farmacológico e roteiro de validação | CONCLUÍDO | `89ebf7d feat(api): api minima do fluxo farmacologico e roteiro de validacao` |
+| 26/07/2026 | Governança Core de regras, versionamento, publicação e adoção | IMPLEMENTADO | ADR-0043; `apps/api/core_rule_governance.py`; `apps/validacao/governanca_regras.py` |
+| 26/07/2026 | Matriz de elegibilidade por mercado de destino | IMPLEMENTADO | ADR-0044; `packages/livestock_application/market_eligibility.py`; `apps/validacao/matriz_elegibilidade_mercados.py` |
+| 26/07/2026 | Requisitos por perfil de mercado e diferenciação UE/China/EUA | IMPLEMENTADO | `880882e feat(livestock): suportar requisitos por perfil de mercado`; `09d3417 feat(livestock): diferenciar requisito de rastreabilidade na UE` |
+| 26/07/2026 | Exigibilidade sanitária mínima | IMPLEMENTADO | `5bc1cc7 feat(livestock): avaliar exigibilidade sanitaria minima`; `apps/validacao/exigibilidade_sanitaria_minima.py` |
+| 26/07/2026 | Prescrição veterinária operável pela API | IMPLEMENTADO | `57ad5c0 feat(livestock): expor prescricoes veterinarias`; `apps/validacao/prescricao_veterinaria.py` |
+| 26/07/2026 | Prescrição validando medicamento, animal e lote no tratamento | CONCLUÍDO | `f9bf4b7 feat(livestock): validar prescricao no tratamento`; `f55b007 feat(livestock): autorizar tratamento por prescricao de lote` |
+
+## Roteiros de validação manual pendentes
+
+Rodar estes roteiros com a stack local, API e Keycloak ativos, após `python -m uv run --locked python -m apps.seed` quando houver mudança de permissões:
+
+```powershell
+python -m uv run --locked python -m apps.validacao.governanca_regras --pausar
+python -m uv run --locked python -m apps.validacao.matriz_elegibilidade_mercados --pausar
+python -m uv run --locked python -m apps.validacao.exigibilidade_sanitaria_minima --pausar
+python -m uv run --locked python -m apps.validacao.prescricao_veterinaria --pausar
+```
+
+O aceite desses roteiros fecha o backend já implementado para demonstração. Falha real em regra, permissão, isolamento ou contrato volta para a fila como incremento de alta criticidade.
 
 
 ## Registro dos passos executados
