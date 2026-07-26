@@ -67,6 +67,21 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         ),
         porque="A auditoria precisa reencontrar quem afirmou, quem recebeu e a prova fonte.",
     )
+    roteiro.passo(
+        "4",
+        "Operador executa elegibilidade usando o fato importado",
+        lambda: operador.post(f"/v1/livestock/animals/{ids['animal_id']}/eligibility"),
+        201,
+        conferir=lambda r: (
+            None
+            if r["result"] == "REJEITADA" and r["reasons"]
+            else "elegibilidade nao considerou a carencia importada"
+        ),
+        porque=(
+            "O fato importado nao fica apenas arquivado: ele alimenta a decisao, "
+            "mantendo a autoria no snapshot auditavel."
+        ),
+    )
     return roteiro
 
 

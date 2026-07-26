@@ -66,6 +66,9 @@ from packages.livestock_application.withdrawal_service import WithdrawalCalculat
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
+from packages.livestock_infrastructure.persistence.imported_fact_repository import (
+    TransactionalImportedLivestockFactRepository,
+)
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLotMembershipRepository,
 )
@@ -142,6 +145,9 @@ def _eligibility_components(
     fact_provider = LivestockFactProvider(
         property_repository=TransactionalRuralPropertyRepository(connection=connection),
         animal_repository=animal_repository,
+        imported_fact_repository=TransactionalImportedLivestockFactRepository(
+            connection=connection
+        ),
         withdrawal_calculator=WithdrawalCalculator(
             application_repository=application_repository,
             batch_repository=batch_repository,

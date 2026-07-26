@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, Protocol
 
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.facts import Fact, FactSnapshot
@@ -10,13 +11,21 @@ from packages.livestock_application.lot_service import LotMembershipRepositoryPo
 from packages.livestock_application.movement_service import PropertyStayRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
-from packages.livestock_domain.withdrawal import WITHDRAWAL_RULE_VERSION
+from packages.livestock_domain.imported_fact import FactOrigin, ImportedLivestockFact
+from packages.livestock_domain.withdrawal import WITHDRAWAL_RULE_VERSION, compute_withdrawal_ends
 from packages.shared_kernel import OrganizationId, TypedId
 
 # Fato de carência consumido pela regra de elegibilidade farmacológica (Passo 9.5).
 WITHDRAWAL_FACT_TYPE = "livestock.withdrawal"
 # Fato de elegibilidade do lote, consumido pela regra de bloqueio de lote (Passo 9.6).
 LOT_ELIGIBILITY_FACT_TYPE = "livestock.lot_eligibility"
+IMPORTED_TREATMENT_FACT_TYPE = "livestock.treatment_applied"
+
+
+class ImportedFactReaderPort(Protocol):
+    def list_by_animal(
+        self, organization_id: OrganizationId, animal_id: TypedId
+    ) -> list[ImportedLivestockFact]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +35,7 @@ class LivestockFactProvider(FactProviderPort):
     stay_repository: PropertyStayRepositoryPort | None = None
     withdrawal_calculator: WithdrawalCalculator | None = None
     membership_repository: LotMembershipRepositoryPort | None = None
+    imported_fact_repository: ImportedFactReaderPort | None = None
 
     def get_snapshot(
         self,
@@ -102,11 +112,6 @@ class LivestockFactProvider(FactProviderPort):
 
                 if self.withdrawal_calculator is not None:
                     status = self.withdrawal_calculator.assess_animal(organization_id, target_id)
-                    blocking = [
-                        contribution.medication_batch_id.value.hex
-                        for contribution in status.contributions
-                        if contribution.withdrawal_ends_at > at_time
-                    ]
                     # As contribuições viajam no fato, com o prazo congelado em cada
                     # uma. Sem elas o fato afirmaria a carência sem mostrar a conta,
                     # e um dossiê não teria como percorrer fato -> aplicação ->
@@ -118,22 +123,33 @@ class LivestockFactProvider(FactProviderPort):
                             "applied_at": contribution.applied_at.isoformat(),
                             "withdrawal_period_days": contribution.withdrawal_period_days,
                             "withdrawal_ends_at": contribution.withdrawal_ends_at.isoformat(),
+                            "origin": "LOCAL_OBSERVATION",
                         }
                         for contribution in status.contributions
+                    ]
+                    all_contributions = [
+                        *contribuicoes,
+                        *self._imported_withdrawal_contributions(organization_id, target_id),
+                    ]
+                    eligible_from = _latest_withdrawal_end(all_contributions)
+                    blocking = [
+                        _blocking_contribution_id(contribution)
+                        for contribution in all_contributions
+                        if datetime.fromisoformat(str(contribution["withdrawal_ends_at"])) > at_time
                     ]
                     fact_list.append(
                         Fact.create(
                             fact_type=WITHDRAWAL_FACT_TYPE,
                             payload={
-                                "in_withdrawal": status.is_in_withdrawal_at(at_time),
+                                "in_withdrawal": (
+                                    eligible_from is not None and at_time < eligible_from
+                                ),
                                 "eligible_from": (
-                                    status.eligible_from.isoformat()
-                                    if status.eligible_from is not None
-                                    else None
+                                    None if eligible_from is None else eligible_from.isoformat()
                                 ),
                                 "rule_version": status.rule_version,
                                 "blocking_batches": blocking,
-                                "contributions": contribuicoes,
+                                "contributions": all_contributions,
                             },
                             observed_at=at_time,
                         )
@@ -172,3 +188,43 @@ class LivestockFactProvider(FactProviderPort):
             as_of=at_time,
             facts=tuple(fact_list),
         )
+
+    def _imported_withdrawal_contributions(
+        self, organization_id: OrganizationId, animal_id: TypedId
+    ) -> list[dict[str, Any]]:
+        if self.imported_fact_repository is None:
+            return []
+        contributions: list[dict[str, Any]] = []
+        for fact in self.imported_fact_repository.list_by_animal(organization_id, animal_id):
+            if fact.fact_type != IMPORTED_TREATMENT_FACT_TYPE:
+                continue
+            withdrawal_days = fact.payload.get("withdrawal_period_days")
+            if not isinstance(withdrawal_days, int) or withdrawal_days < 0:
+                continue
+            withdrawal_ends_at = compute_withdrawal_ends(fact.occurred_at, withdrawal_days)
+            contributions.append(
+                {
+                    "imported_fact_id": fact.imported_fact_id.value.hex,
+                    "source_artifact_id": fact.source_artifact_id.value.hex,
+                    "applied_at": fact.occurred_at.isoformat(),
+                    "withdrawal_period_days": withdrawal_days,
+                    "withdrawal_ends_at": withdrawal_ends_at.isoformat(),
+                    "origin": fact.origin.value,
+                    "asserted_by": fact.asserted_by,
+                    "confidence_tier": fact.confidence_tier.value,
+                }
+            )
+        return contributions
+
+
+def _latest_withdrawal_end(contributions: list[dict[str, Any]]) -> datetime | None:
+    return max(
+        (datetime.fromisoformat(str(item["withdrawal_ends_at"])) for item in contributions),
+        default=None,
+    )
+
+
+def _blocking_contribution_id(contribution: dict[str, Any]) -> str:
+    if contribution.get("origin") == FactOrigin.IMPORTED_ASSERTION.value:
+        return str(contribution["imported_fact_id"])
+    return str(contribution["medication_batch_id"])

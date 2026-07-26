@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from packages.core_domain.decision import DecisionResult
+from packages.core_domain.evidence import ConfidenceTier
 from packages.livestock_application.eligibility import (
     PharmacologicalEligibilityService,
     build_eligibility_policy,
@@ -20,6 +21,7 @@ from packages.livestock_application.property_service import RuralPropertyReposit
 from packages.livestock_application.treatment_service import TreatmentApplicationService
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
 from packages.livestock_domain.animal import Animal, AnimalSex
+from packages.livestock_domain.imported_fact import ImportedLivestockFact
 from packages.livestock_domain.medication import Medication, MedicationBatch
 from packages.livestock_domain.property import RuralProperty
 from packages.shared_kernel import OrganizationId, TypedId
@@ -34,6 +36,20 @@ from tests.livestock_application.test_treatment_service import (
     InMemoryPrescriptionRepo,
 )
 from tests.livestock_application.test_withdrawal_service import InMemoryMedicationRepo
+
+
+class _InMemoryImportedFactRepo:
+    def __init__(self, facts: list[ImportedLivestockFact] | None = None) -> None:
+        self.facts = facts or []
+
+    def list_by_animal(
+        self, organization_id: OrganizationId, animal_id: TypedId
+    ) -> list[ImportedLivestockFact]:
+        return [
+            fact
+            for fact in self.facts
+            if fact.organization_id == organization_id and fact.animal_id == animal_id
+        ]
 
 
 class _NullPropertyRepo(RuralPropertyRepositoryPort):
@@ -246,3 +262,59 @@ def test_animal_without_treatment_has_no_contributions(
     fato = evaluation.fact_snapshot.get_latest_fact_by_type(WITHDRAWAL_FACT_TYPE)
     assert fato is not None
     assert fato.payload["contributions"] == []
+
+
+def test_imported_treatment_fact_blocks_eligibility_with_provenance(
+    context: LivestockOperationContext,
+) -> None:
+    org_id = context.organization_id
+    animal_id = TypedId.new("animal")
+    animal = Animal(
+        animal_id=animal_id,
+        organization_id=org_id,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.MALE,
+    )
+    imported_fact = ImportedLivestockFact.create(
+        organization_id=org_id,
+        animal_id=animal_id,
+        source_artifact_id=TypedId.new("received_transfer_artifact"),
+        fact_type="livestock.treatment_applied",
+        occurred_at=datetime.now(UTC) - timedelta(days=10),
+        asserted_by="Fazenda Origem Importada",
+        received_by=context.actor_reference.target_id,
+        confidence_tier=ConfidenceTier.CRYPTOGRAPHICALLY_ATTESTED,
+        payload={"withdrawal_period_days": 45, "substance": "produto ficticio"},
+    )
+    fact_provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        withdrawal_calculator=WithdrawalCalculator(
+            application_repository=InMemoryApplicationRepo(),
+            batch_repository=InMemoryBatchRepo({}),
+            medication_repository=InMemoryMedicationRepo({}),
+        ),
+        imported_fact_repository=_InMemoryImportedFactRepo([imported_fact]),
+    )
+    policy = build_eligibility_policy(org_id)
+    service = PharmacologicalEligibilityService(
+        fact_provider=fact_provider,
+        policy=policy,
+        rule=build_eligibility_rule(policy.policy_id, org_id),
+        evaluation_repository=FakeEvaluationRepository(),
+        decision_repository=FakeDecisionRepository(),
+    )
+
+    evaluation, decision = service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
+
+    assert decision.result is DecisionResult.REJEITADA
+    fato = evaluation.fact_snapshot.get_latest_fact_by_type(WITHDRAWAL_FACT_TYPE)
+    assert fato is not None
+    assert fato.payload["in_withdrawal"] is True
+    assert fato.payload["blocking_batches"] == [imported_fact.imported_fact_id.value.hex]
+    contribuicao = fato.payload["contributions"][0]
+    assert contribuicao["imported_fact_id"] == imported_fact.imported_fact_id.value.hex
+    assert contribuicao["source_artifact_id"] == imported_fact.source_artifact_id.value.hex
+    assert contribuicao["origin"] == "IMPORTED_ASSERTION"
+    assert contribuicao["asserted_by"] == "Fazenda Origem Importada"
+    assert contribuicao["confidence_tier"] == "CRYPTOGRAPHICALLY_ATTESTED"
