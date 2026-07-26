@@ -101,6 +101,13 @@ from packages.core_domain.rule import (
     RuleCondition,
     SeverityLevel,
 )
+from packages.core_domain.rule_governance import (
+    RuleIdentity,
+    RuleImpactAssessmentResult,
+    RuleSourceType,
+    RuleTimelineEvent,
+    RuleTimelineEventType,
+)
 from packages.core_domain.synchronization import (
     BatchStructuralDefect,
     DeviceClockReading,
@@ -164,6 +171,11 @@ __all__ = [
     "PolicyStatus",
     "Rule",
     "RuleCondition",
+    "RuleIdentity",
+    "RuleImpactAssessmentResult",
+    "RuleSourceType",
+    "RuleTimelineEvent",
+    "RuleTimelineEventType",
     "ComparisonOperator",
     "ConditionOutcome",
     "RuleResult",

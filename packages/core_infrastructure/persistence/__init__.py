@@ -27,6 +27,10 @@ from packages.core_infrastructure.persistence.outbox import (
     OutboxPublicationStateRepository,
     TransactionalEventOutboxRepository,
 )
+from packages.core_infrastructure.persistence.rule_governance import (
+    TransactionalRuleIdentityRepository,
+    TransactionalRuleTimelineRepository,
+)
 from packages.core_infrastructure.persistence.timestamping import TimestampAuditRepository
 from packages.core_infrastructure.persistence.users import UserRepository
 
@@ -46,6 +50,8 @@ __all__ = [
     "StoredDomainEvent",
     "TimestampAuditRepository",
     "TransactionalEventOutboxRepository",
+    "TransactionalRuleIdentityRepository",
+    "TransactionalRuleTimelineRepository",
     "UserRepository",
     "check_database_connection",
     "create_database_engine",

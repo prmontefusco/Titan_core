@@ -1,0 +1,108 @@
+"""Testes PostgreSQL com RLS para governanca de regras (ADR-0043)."""
+
+import os
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from sqlalchemy import Connection, create_engine, text
+
+from packages.core_application.rule_governance_service import RuleGovernanceService
+from packages.core_domain.rule_governance import RuleSourceType, RuleTimelineEventType
+from packages.core_infrastructure.persistence.rule_governance import (
+    TransactionalRuleIdentityRepository,
+    TransactionalRuleTimelineRepository,
+)
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
+
+
+def _actor(org_id: OrganizationId) -> UniversalReference:
+    return UniversalReference(
+        target_id=TypedId(entity_type="actor", value=uuid4()),
+        organization_id=org_id,
+        contract_version=1,
+    )
+
+
+def db_connection() -> Iterator[Connection]:
+    db_url = os.getenv(
+        "TITAN_DATABASE_URL",
+        "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan",
+    )
+    engine = create_engine(db_url, pool_pre_ping=True)
+    with engine.connect() as conn:
+        with conn.begin():
+            yield conn
+
+
+def test_rule_governance_persistence_and_rls() -> None:
+    for connection in db_connection():
+        org_1 = OrganizationId.new()
+        org_2 = OrganizationId.new()
+        connection.execute(
+            text(
+                """
+                INSERT INTO core_identity.organizations (
+                    organization_id,
+                    record_owner_organization_id
+                )
+                VALUES
+                    (:org_1, :org_1),
+                    (:org_2, :org_2)
+                """
+            ),
+            {"org_1": org_1.value, "org_2": org_2.value},
+        )
+        connection.execute(
+            text("SELECT set_config('titan.organization_id', :org_id, true)"),
+            {"org_id": str(org_1.value)},
+        )
+
+        identity_repository = TransactionalRuleIdentityRepository(connection)
+        timeline_repository = TransactionalRuleTimelineRepository(connection)
+        service = RuleGovernanceService(
+            identities=identity_repository,
+            timeline=timeline_repository,
+        )
+        actor = _actor(org_1)
+        occurred_at = datetime(2026, 7, 26, tzinfo=UTC)
+
+        identity = service.create_identity(
+            organization_id=org_1,
+            code="rule-carencia-farmacologica",
+            purpose="ELEGIBILIDADE_FARMACOLOGICA",
+            scope="livestock.animal",
+            source_type=RuleSourceType.INTERNAL_POLICY,
+            actor=actor,
+            vertical="livestock",
+            description="Regra propria do frigorifico.",
+            occurred_at=occurred_at,
+        )
+
+        reloaded = identity_repository.get_by_organization_and_code(
+            org_1,
+            "rule-carencia-farmacologica",
+        )
+        assert reloaded == identity
+
+        events = timeline_repository.list_by_identity(org_1, identity.rule_identity_id)
+        assert len(events) == 1
+        assert events[0].event_type is RuleTimelineEventType.RULE_IDENTITY_CREATED
+        assert events[0].actor == actor
+        assert events[0].occurred_at == occurred_at
+
+        connection.execute(
+            text("SELECT set_config('titan.organization_id', :org_id, true)"),
+            {"org_id": str(org_2.value)},
+        )
+
+        org_2_identity_repository = TransactionalRuleIdentityRepository(connection)
+        org_2_timeline_repository = TransactionalRuleTimelineRepository(connection)
+        assert (
+            org_2_identity_repository.get_by_organization_and_code(
+                org_2,
+                "rule-carencia-farmacologica",
+            )
+            is None
+        )
+        assert org_2_timeline_repository.list_by_identity(org_2, identity.rule_identity_id) == []
