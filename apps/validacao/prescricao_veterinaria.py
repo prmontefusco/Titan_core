@@ -7,7 +7,7 @@ python -m uv run --locked python -m apps.validacao.prescricao_veterinaria --paus
 import argparse
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from apps.seed.__main__ import SENHA_DEMONSTRACAO
@@ -94,6 +94,27 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
     )
     roteiro.passo(
         "5",
+        "Operador usa a prescricao no tratamento do animal",
+        lambda: operador.post(
+            "/v1/livestock/treatments",
+            {
+                "animal_id": ids["animal_id"],
+                "medication_batch_id": ids["batch_id"],
+                "applied_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+                "dose": "1 mL",
+                "prescription_id": ids["prescription_id"],
+            },
+        ),
+        201,
+        conferir=lambda r: (
+            None
+            if r["prescription_id"] == ids["prescription_id"]
+            else "tratamento nao preservou a prescricao usada"
+        ),
+        porque="A prescricao so lastreia o tratamento se autorizar o medicamento e o animal.",
+    )
+    roteiro.passo(
+        "6",
         "Auditor nao emite prescricao",
         lambda: auditor.post("/v1/livestock/prescriptions", {}),
         403,
@@ -124,6 +145,15 @@ def _criar_base(operador: Cliente, ids: dict[str, str]) -> Resposta:
         },
     )
     ids["medication_id"] = str(medicamento["medication_id"])
+    lote = operador.post(
+        "/v1/livestock/medication-batches",
+        {
+            "medication_id": ids["medication_id"],
+            "batch_number": f"PRESC-{uuid4().hex[:8]}",
+            "expiry_date": (datetime.now(UTC) + timedelta(days=365)).isoformat(),
+        },
+    )
+    ids["batch_id"] = str(lote["batch_id"])
     veterinario = operador.post(
         "/v1/livestock/veterinarians",
         {

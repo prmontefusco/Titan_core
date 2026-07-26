@@ -22,6 +22,8 @@ from packages.livestock_application.medication_service import (
     PrescriptionRepositoryPort,
 )
 from packages.livestock_domain.events import TREATMENT_APPLIED, treatment_applied_payload
+from packages.livestock_domain.medication import MedicationBatch
+from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.treatment import TreatmentApplication
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -207,6 +209,27 @@ class TreatmentApplicationService:
                     f"Prescrição '{prescription_id.value}' não encontrada ou pertencente a "
                     "outra organização."
                 )
+            self._validate_prescription_authorizes_application(
+                prescription=prescription,
+                batch=batch,
+                animal_id=animal_id,
+            )
+
+    @staticmethod
+    def _validate_prescription_authorizes_application(
+        prescription: Prescription,
+        batch: MedicationBatch,
+        animal_id: TypedId,
+    ) -> None:
+        if prescription.medication_id != batch.medication_id:
+            raise ValueError("Prescricao nao autoriza o medicamento aplicado.")
+        if prescription.target_type is PrescriptionTargetType.ANIMAL:
+            if animal_id not in prescription.target_ids:
+                raise ValueError("Prescricao nao autoriza este animal.")
+            return
+        raise ValueError(
+            "Prescricao por lote ainda exige validacao de pertencimento do animal ao lote."
+        )
 
     @staticmethod
     def _guard_applied_at(applied_at: datetime) -> None:

@@ -190,6 +190,14 @@ def test_prescricao_veterinaria_e_emitida_e_detalhada_pela_api(
             "withdrawal_period_days": 7,
         },
     )
+    lote = fluxo._post(
+        "/v1/livestock/medication-batches",
+        {
+            "medication_id": medicamento["medication_id"],
+            "batch_number": f"PRESC-{datetime.now(UTC).timestamp()}",
+            "expiry_date": (datetime.now(UTC) + timedelta(days=365)).isoformat(),
+        },
+    )
     veterinario = fluxo.registrar_veterinario()
 
     resposta = operador.post(
@@ -219,6 +227,20 @@ def test_prescricao_veterinaria_e_emitida_e_detalhada_pela_api(
     )
     assert detalhe.status_code == 200, detalhe.text
     assert detalhe.json() == prescricao
+
+    tratamento = operador.post(
+        "/v1/livestock/treatments",
+        json={
+            "animal_id": animal["animal_id"],
+            "medication_batch_id": lote["batch_id"],
+            "applied_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
+            "dose": "1 mL",
+            "prescription_id": prescricao["prescription_id"],
+        },
+        headers=fluxo.cabecalho,
+    )
+    assert tratamento.status_code == 201, tratamento.text
+    assert tratamento.json()["prescription_id"] == prescricao["prescription_id"]
 
 
 def test_prescricao_recusa_veterinario_nao_documentado(

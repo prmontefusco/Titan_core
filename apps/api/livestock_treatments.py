@@ -77,6 +77,7 @@ class TratamentoResponse(BaseModel):
     medication_batch_id: str
     applied_at: datetime
     dose: str | None
+    prescription_id: str | None
     sanitary_campaign_id: str | None
     corrects_application_id: str | None
 
@@ -104,6 +105,9 @@ def _resposta(aplicacao: TreatmentApplication) -> TratamentoResponse:
         medication_batch_id=str(aplicacao.medication_batch_id.value),
         applied_at=aplicacao.applied_at,
         dose=aplicacao.dose,
+        prescription_id=(
+            str(aplicacao.prescription_id.value) if aplicacao.prescription_id is not None else None
+        ),
         sanitary_campaign_id=(
             str(aplicacao.sanitary_campaign_id.value)
             if aplicacao.sanitary_campaign_id is not None

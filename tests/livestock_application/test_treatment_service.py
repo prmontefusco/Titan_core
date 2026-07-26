@@ -23,7 +23,7 @@ from packages.livestock_domain.animal import Animal, AnimalSex, IdentifierType
 from packages.livestock_domain.events import TREATMENT_APPLIED
 from packages.livestock_domain.exit import AnimalExit, ExitType
 from packages.livestock_domain.medication import MedicationBatch
-from packages.livestock_domain.prescription import Prescription
+from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.treatment import TreatmentApplication
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -175,6 +175,26 @@ def _campaign(context: LivestockOperationContext) -> SanitaryCampaign:
     )
 
 
+def _prescription(
+    context: LivestockOperationContext,
+    medication_id: TypedId,
+    target_ids: tuple[TypedId, ...],
+) -> Prescription:
+    return Prescription(
+        prescription_id=TypedId.new("prescription"),
+        organization_id=context.organization_id,
+        veterinarian_id=TypedId.new("veterinarian"),
+        medication_id=medication_id,
+        property_id=TypedId.new("rural_property"),
+        prescribed_date=datetime.now(UTC) - timedelta(days=1),
+        dosage="1 mL",
+        administration_route="SUBCUTANEA",
+        target_type=PrescriptionTargetType.ANIMAL,
+        target_ids=target_ids,
+        reason="Tratamento ficticio.",
+    )
+
+
 def test_register_application_success(
     recorder: LivestockEventRecorder,
     event_log: FakeEventLog,
@@ -195,6 +215,81 @@ def test_register_application_success(
     # A autoria do registro vem do contexto, e é a mesma do evento.
     assert app.actor_id == context.actor_reference.target_id
     assert event_log.only(TREATMENT_APPLIED).actor_reference == context.actor_reference
+
+
+def test_register_application_accepts_prescription_for_same_medication_and_animal(
+    recorder: LivestockEventRecorder,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    batch_repo = service.batch_repository
+    prescription_repo = service.prescription_repository
+    assert isinstance(batch_repo, InMemoryBatchRepo)
+    assert isinstance(prescription_repo, InMemoryPrescriptionRepo)
+    batch = batch_repo.get_by_id(batch_id)
+    assert batch is not None
+    prescription = _prescription(context, batch.medication_id, (animal_id,))
+    prescription_repo.save(prescription)
+
+    app = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=datetime.now(UTC) - timedelta(hours=1),
+        prescription_id=prescription.prescription_id,
+    )
+
+    assert app.prescription_id == prescription.prescription_id
+
+
+def test_register_application_rejects_prescription_for_other_medication(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    prescription_repo = service.prescription_repository
+    assert isinstance(prescription_repo, InMemoryPrescriptionRepo)
+    prescription = _prescription(context, TypedId.new("medication"), (animal_id,))
+    prescription_repo.save(prescription)
+
+    with pytest.raises(ValueError, match="medicamento aplicado"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=datetime.now(UTC) - timedelta(hours=1),
+            prescription_id=prescription.prescription_id,
+        )
+
+    assert event_log.events == []
+
+
+def test_register_application_rejects_prescription_for_other_animal(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    batch_repo = service.batch_repository
+    prescription_repo = service.prescription_repository
+    assert isinstance(batch_repo, InMemoryBatchRepo)
+    assert isinstance(prescription_repo, InMemoryPrescriptionRepo)
+    batch = batch_repo.get_by_id(batch_id)
+    assert batch is not None
+    prescription = _prescription(context, batch.medication_id, (TypedId.new("animal"),))
+    prescription_repo.save(prescription)
+
+    with pytest.raises(ValueError, match="este animal"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=batch_id,
+            applied_at=datetime.now(UTC) - timedelta(hours=1),
+            prescription_id=prescription.prescription_id,
+        )
+
+    assert event_log.events == []
 
 
 def test_register_application_can_link_sanitary_campaign(
