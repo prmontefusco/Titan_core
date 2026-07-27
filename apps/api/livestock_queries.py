@@ -89,6 +89,9 @@ from packages.livestock_infrastructure.persistence.movement_repository import (
 from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
 )
+from packages.livestock_infrastructure.persistence.sanitary_campaign_repository import (
+    TransactionalSanitaryCampaignRepository,
+)
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
@@ -171,6 +174,8 @@ def _eligibility_components(
             batch_repository=batch_repository,
             medication_repository=TransactionalMedicationRepository(connection=connection),
         ),
+        sanitary_campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
+        treatment_application_repository=application_repository,
     )
     return application_repository, evaluations, decisions, fact_provider
 

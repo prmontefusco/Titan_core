@@ -17,6 +17,13 @@ from packages.livestock_application.external_counterparty_service import (
 from packages.livestock_application.lot_service import LotMembershipRepositoryPort
 from packages.livestock_application.movement_service import PropertyStayRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
+from packages.livestock_application.sanitary_campaign_service import (
+    SanitaryCampaignRepositoryPort,
+)
+from packages.livestock_application.sanitary_requirement_service import (
+    SanitaryRequirementService,
+)
+from packages.livestock_application.treatment_service import TreatmentApplicationRepositoryPort
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
 from packages.livestock_domain.imported_fact import FactOrigin, ImportedLivestockFact
 from packages.livestock_domain.withdrawal import WITHDRAWAL_RULE_VERSION, compute_withdrawal_ends
@@ -28,6 +35,22 @@ WITHDRAWAL_FACT_TYPE = "livestock.withdrawal"
 LOT_ELIGIBILITY_FACT_TYPE = "livestock.lot_eligibility"
 IMPORTED_TREATMENT_FACT_TYPE = "livestock.treatment_applied"
 EXTERNAL_COUNTERPARTY_FACT_TYPE = "livestock.external_counterparty"
+# Sem limite de paginação real na leitura para fatos: uma campanha sanitária
+# que exista e não seja lida aqui produziria uma matriz que finge que aquela
+# campanha nunca foi exigida — pior que uma consulta um pouco mais cara.
+_SANITARY_CAMPAIGNS_MAX = 1000
+
+
+def sanitary_requirement_fact_type(campaign_code: str) -> str:
+    """Nome do fato para a exigibilidade de uma campanha sanitária específica.
+
+    Uma regra governada por mercado (Item 4 da fila) referencia este fato na
+    sua `RuleCondition`, exatamente como `ESTABLISHMENT_RULE_CODE` já referencia
+    `establishment_qualification_fact_type`. Qual campanha cada mercado exige é
+    decisão de quem governa a regra, não deste fato.
+    """
+    sufixo = campaign_code.strip().lower().replace(".", "_")
+    return f"livestock.sanitary_requirement.{sufixo}"
 
 
 class ImportedFactReaderPort(Protocol):
@@ -46,6 +69,8 @@ class LivestockFactProvider(FactProviderPort):
     withdrawal_calculator: WithdrawalCalculator | None = None
     membership_repository: LotMembershipRepositoryPort | None = None
     imported_fact_repository: ImportedFactReaderPort | None = None
+    sanitary_campaign_repository: SanitaryCampaignRepositoryPort | None = None
+    treatment_application_repository: TreatmentApplicationRepositoryPort | None = None
 
     def get_snapshot(
         self,
@@ -164,6 +189,42 @@ class LivestockFactProvider(FactProviderPort):
                             observed_at=at_time,
                         )
                     )
+
+                if (
+                    self.sanitary_campaign_repository is not None
+                    and self.treatment_application_repository is not None
+                ):
+                    requirement_service = SanitaryRequirementService(
+                        animal_repository=self.animal_repository,
+                        campaign_repository=self.sanitary_campaign_repository,
+                        application_repository=self.treatment_application_repository,
+                    )
+                    campanhas = self.sanitary_campaign_repository.list_by_organization(
+                        organization_id, limit=_SANITARY_CAMPAIGNS_MAX
+                    )
+                    for campanha in campanhas:
+                        avaliacao = requirement_service.assess_required_campaign(
+                            organization_id, target_id, campanha.code
+                        )
+                        fact_list.append(
+                            Fact.create(
+                                fact_type=sanitary_requirement_fact_type(campanha.code),
+                                payload={
+                                    "status": avaliacao.status.value,
+                                    "campaign_id": (
+                                        None
+                                        if avaliacao.campaign_id is None
+                                        else avaliacao.campaign_id.value.hex
+                                    ),
+                                    "application_id": (
+                                        None
+                                        if avaliacao.application_id is None
+                                        else avaliacao.application_id.value.hex
+                                    ),
+                                },
+                                observed_at=at_time,
+                            )
+                        )
 
         elif target_id.entity_type == "external_counterparty":
             if self.external_counterparty_repository is not None:

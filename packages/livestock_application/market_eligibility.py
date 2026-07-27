@@ -26,6 +26,14 @@ from packages.shared_kernel import OrganizationId, TypedId
 
 TRACEABILITY_RULE_CODE = "rule-rastreabilidade-minima"
 ESTABLISHMENT_RULE_CODE = "rule-habilitacao-estabelecimento"
+# Regra governada de exigibilidade sanitária (Item 4 da fila do backend).
+# Qual campanha um mercado exige vive na RuleCondition da versão adotada
+# (fact_type=sanitary_requirement_fact_type("<campanha>")), não aqui — o
+# mesmo padrão já usado por ESTABLISHMENT_RULE_CODE com qualificação de
+# estabelecimento. Nenhum MarketProfile referencia este código ainda:
+# amarrar um mercado a uma campanha real é decisão normativa, não deste
+# mecanismo.
+SANITARY_RULE_CODE = "rule-exigibilidade-sanitaria"
 SUPPORTED_BASE_DECISION_RULE_CODES = frozenset({ELIGIBILITY_RULE_CODE})
 
 
