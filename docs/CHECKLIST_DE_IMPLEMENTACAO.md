@@ -1,8 +1,8 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 27 de julho de 2026
+**Atualizado em:** 27 de julho de 2026 (sessão finalizada)
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** validar a stack com banco ativo e então iniciar o roteiro de simulação comercial ponta a ponta até o frigorífico.
+**Próximo passo planejado:** Refatorar ADR-0045 conforme validação arquitetural (4 correções críticas), depois refatorar implementação.
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -17,6 +17,8 @@
 > **Ponto de parada em 27/07/2026:** a matriz passou a exercitar sujeito secundário de forma auditável no caso da China. O endpoint aceita `slaughterhouse_counterparty_id`, a célula chinesa só promove `ELEGIVEL` quando existe frigorífico selecionado e qualificação explícita do estabelecimento para `exportacao-china`, e essa qualificação fica registrada como dado append-only próprio. O roteiro `apps/validacao/simulacao_comercial.py` já percorre esse fluxo fim a fim. Na retomada, o próximo passo natural é substituir o cadastro manual dessa qualificação por importação ou reconciliação com fonte externa versionada.
 
 > **Revisão arquitetural em 27/07/2026 (pós-implementação):** ADR-0045 foi prototipada e depois revisada. A primeira versão incorretamente tipava `EstablishmentQualification` como `RuleAdoption`, violando ADR-0043. Decisão: `RuleAdoption` permanece representando a adoção de uma regra normativa, enquanto `EstablishmentQualificationAssertion` representa fato temporal verificável ("estabelecimento X possui habilitação Y segundo fonte Z, observado em data W"). Segunda correção: reconciliação não inventa `effective_until` — quando uma qualificação sai de lista, cria-se `Assertion` com `status=UNKNOWN` e `confidence=BAIXA`, registrando que mudança ocorreu mas data exata é desconhecida. Isso mantém rastreabilidade e honestidade temporal. A prototipagem em `EstablishmentQualificationImportService` servirá como base, mas a implementação será refatorada para criar `AssertionAssertion` (não `RuleAdoption`). A arquitetura resultante (Regra → Fato → Evaluation → Decision → Dossier) alinha-se com ADR-0041/0042/0043/0044 e especializa NR-7 (Assertion como conceito).
+
+> **Validação em 27/07/2026 (fim da sessão):** Responsável identificou 4 correções críticas antes de aceitar ADR-0045: (1) UNKNOWN não resulta em REJEITADO; resulta em INDETERMINADO (conforme ADR-0041). (2) Ausência em lista só tem significado se `SourceCoverage` declarar COMPLETE_SNAPSHOT — adicionar `snapshot_semantics` obrigatório. (3) Eliminar ALTO/MÉDIO/BAIXO; usar `ConfidenceLevel` canônico. (4) Formalizar effective time (quando ocorreu) vs knowledge time (quando soube) para reprodução histórica vs auditoria retrospectiva. Também: `source_artifact_id` obrigatório para importações externas (invariante de domínio). ADR-0045 fica em PENDENTE até refatoração com essas correções. Prototipagem de `EstablishmentQualificationImportService` foi consolidada em 7 commits, com 756/756 testes passando.
 
 
 
