@@ -1,202 +1,300 @@
 # ADR-0045 — Importação e Reconciliação de Qualificações de Estabelecimento
 
-**Status:** PENDENTE  
+**Status:** PENDENTE (aceito em conceito, requer revisão arquitetural)  
 **Data de criação:** 27 de julho de 2026  
+**Revisado:** 27 de julho de 2026  
 **Autores:** Claude Code, Paulo Roberto Montefusco  
 
 ## Problema
 
-Qualificações de estabelecimento (p. ex., `exportacao-china`, `processamento-basico`, `frigorífico-certificado`) hoje são cadastradas manualmente. O Marco 17.3 deixa as avaliações de elegibilidade por mercado dependentes dessas declarações, mas sem fonte versio nada que permita auditoria, rastreamento de mudança ou reconciliação.
+Qualificações de estabelecimento (p. ex., `exportacao-china`, `frigorífico-certificado`) hoje são cadastradas manualmente, sem fonte versionada que permita auditoria, rastreamento de mudança ou reconciliação temporal.
 
-**Cenário crítico:** um frigorífico perde a certificação de exportação para a China. Na API do Titan, o administrador remove manualmente a qualificação. Semanas depois, não há registro de quando foi perdida, quem a revogou ou por qual motivo — impossível distinguir entre auditoria e ocultação.
+**Cenário crítico:** um frigorífico perde a certificação de exportação para a China. Não há registro de quando foi perdida, quem a revogou ou por qual motivo — impossível distinguir entre auditoria e ocultação.
 
-**Consequência para a elegibilidade:** a matriz mostra `ELEGIVEL` com base numa qualificação que era válida no dia do embarque mas foi revogada meses depois. O dossiê não captura a mudança porque ela é mutação sem rastreabilidade.
+**Consequência para a elegibilidade:** a matriz mostra `ELEGIVEL` com base numa qualificação que era válida no dia do embarque mas foi revogada meses depois. O dossiê não captura a mudança.
 
 ## Restrições
 
-1. **Versão**: conforme ADR-0043, cada qualificação deve ser `RuleAdoption` com `valid_from`, `valid_to`, `normative_source`.
-2. **Isolamento**: qualificações de estabelecimento pertencem à Organization (isolamento RLS).
-3. **Idempotência**: importação da mesma fonte múltiplas vezes não duplica registros.
-4. **Rastreabilidade**: dossiê do Marco 7.5 deve capturar qual qualificação estava vigente no instante da decisão.
-5. **Cobertura**: deve suportar múltiplas fontes e múltiplos tipos de qualificação.
+1. **Consistência com ADR-0043**: regra e fato são conceitos distintos
+2. **Honestidade temporal**: ausência de conhecimento não vira precisão inventada
+3. **Rastreabilidade**: cada importação captura o instante, a fonte e o que ela afirmou
+4. **Isolamento RLS**: qualificações pertencem à Organization
+5. **Idempotência**: mesma versão de fonte importada 2x não duplica
 
 ## Solução
 
-### 1. Tipagem de Qualificação como `RuleAdoption`
+### 1. Separação Conceitual: Regra vs Fato
 
-Qualificação de estabelecimento não é um fato avulso. É **regra adotada pela Organization** — exatamente como a regra de carência por mercado ou a exigência sanitária.
-
+**REGRA (Governança — ADR-0043)**
 ```
-EstablishmentQualification:
-  - establishment_id: UUID
-  - qualification_type: "exportacao-china" | "frigorífico-certificado" | ...
-  - valid_from: datetime
-  - valid_to: datetime | null
-  - normative_source: "MAPA" | "FRIGORÍFICO" | "IMPORTADOR" | ...
-  - source_document_id: UUID  # aponta para artefato recebido (ADR-0042)
-```
-
-É `RuleAdoption` para a finalidade de `market_eligibility`, com a diferença de que a adoção diz respeito a **qualificação do estabelecimento**, não a **comportamento**.
-
-### 2. Origem da Importação
-
-As qualificações vêm de **três fontes possíveis**:
-
-#### 2a. **MAPA** — Ministério da Agricultura
-Listagem oficial de frigoríficos habilitados à exportação. Hoje não pública de forma versio nada. Quando estiver, será consumida via provider externo (similar ao `Titan_geodata` do 17.2).
-
-#### 2b. **Frigorífico** — Conforme contratos operacionais
-Um frigorífico parceiro fornece lista de seus estabelecimentos de origem qualificados para fornecimento (cabanhas de seleção, fazendas integradas, parceiros autoriza dos). Entrada via API, com assinatura e versão.
-
-#### 2c. **Importador** — Certificações de destino
-Um comprador europeu fornece lista de fornecedores que já auditou e qualificou (p. ex., "frigoríficos de Ponta Porã habilitados para exportação à UE"). Consolida-se como conhecimento recebido, com proveniência `IMPORTADOR` e confiança condicionada a verificação.
-
-### 3. Artefato de Transferência
-
-Conforme ADR-0042, cada importação gera um `Artifact` que viaja dentro do dossiê:
-
-```
-Artifact:
-  - type: "QUALIFICACAO_ESTABELECIMENTO_MAPA" | "QUALIFICACAO_ESTABELECIMENTO_FRIGORÍFICO"
-  - received_from: Organization | null (null = fonte oficial)
-  - captured_at: datetime
-  - source_id: string (referência na fonte original, p. ex. número de portaria)
-  - coverage_period_start: datetime
-  - coverage_period_end: datetime | null
-  - data_hash: string
+RuleIdentity: "Habilitação para exportação China"
+    ↓
+RuleVersion: "CN-v7, vigente desde 01/2026"
+    ↓
+RuleAdoption: "Organization XYZ adota CN-v7 para validação"
+    ↓
+RuleCondition: "estabelecimento.qualification = EXPORT_CN"
 ```
 
-### 4. Fluxo de Importação e Reconciliação
-
+**FATO (Asserção Temporal — ADR-0045)**
 ```
-1. [A cada ciclo, ex. 1x/mês]
-   API externa (MAPA, frigorífico) fornece lista versio nada
-
-2. [Validação]
-   - Assinatura (se de terceiro)
-   - Versão (se anterior já existe, compara)
-   - Integridade (campos obrigatórios, datas coerentes)
-
-3. [Reconciliação]
-   - Qualificações na versão anterior: marcadas como `valid_to = hoje - 1 dia`
-   - Qualificações na nova: criadas com `valid_from = hoje`, `valid_to = null`
-   - Qualificações que saíram da lista: `valid_to` atribuído
-
-4. [Gravação]
-   - Operação idempotente: mesma versão da fonte importada 2x segue
-   - Tudo em transação: falha na reconciliação reverte tudo
-   - Artefato gravado como testemunha
-
-5. [Dossiê]
-   - Quando elegibilidade for avaliada, dossiê cria snapshot das
-     qualificações vigentes naquele instante
+EstablishmentQualificationAssertion:
+  establishment_id: UUID
+  qualification_type: "EXPORT_CN"
+  
+  asserted_status: QUALIFIED | NOT_QUALIFIED | UNKNOWN
+  effective_from?: datetime
+  effective_until?: datetime
+  
+  observed_at: datetime (quando a fonte foi consultada)
+  source: "MAPA" | "FRIGORÍFICO" | ...
+  source_version: string (identificador único da versão capturada)
+  source_artifact_id: UUID (aponta para artefato que trouxe a informação)
+  
+  confidence: ALTO | MÉDIO | BAIXO
 ```
 
-### 5. Implementação Mínima — Marco 17.3a
+**Exemplo Concreto:**
 
-**Escopo:** suportar importação manual de qualificações (arquivo JSON versionado fornecido pelo administrador ou frigorífico).
+Source (MAPA em 27/07):
+```
+SIF 1234: EXPORT_CN = ACTIVE (válido até indefinido)
+SIF 1235: EXPORT_CN = ACTIVE (válido até indefinido)
+SIF 1236: não aparece na lista
+```
 
-**Fora do escopo:** integração automática com MAPA ou importador (requer provider, que é decisão futura).
+Registro no Titan:
+```
+Assertion 1:
+  SIF 1234, EXPORT_CN, status=QUALIFIED
+  effective_from: ?? (MAPA não informa)
+  effective_until: ?? (MAPA não informa)
+  observed_at: 27/07/2026
+  source: MAPA
+  source_version: "2026-07-27T15:30Z"
 
-#### Entidades
+Assertion 2:
+  SIF 1235, EXPORT_CN, status=QUALIFIED
+  effective_from: ?? 
+  effective_until: ??
+  observed_at: 27/07/2026
+  source: MAPA
+  source_version: "2026-07-27T15:30Z"
 
-- `EstablishmentQualification` — já existe em `packages/livestock_domain/establishment_qualification.py`
-- `EstablishmentQualificationImport` — novo, registro de cada importação com hash e versão
-- `ImportResult` — novo, relatório de o que foi criado, atualizado, revogado
+Assertion 3 (anterior):
+  SIF 1236, EXPORT_CN, status=QUALIFIED
+  effective_from: 2024-03-15 (registrada anteriormente)
+  effective_until: ?? (MAPA não informa quando revogou)
+  observed_at: 15/03/2024
+  source: MAPA
+  source_version: "2024-03-15T08:00Z"
 
-#### Serviço
+Assertion 4 (nova):
+  SIF 1236, EXPORT_CN, status=UNKNOWN
+  effective_from: null
+  effective_until: null
+  observed_at: 27/07/2026 (capturado como ausente em nova versão)
+  source: MAPA
+  source_version: "2026-07-27T15:30Z"
+  confidence: BAIXO (só sabemos que saiu da lista; não quando nem por quê)
+```
+
+**O que isso diz:**
+
+- SIF 1234 e 1235 estão habilitados conforme fonte de 27/07
+- SIF 1236 estava habilitado conforme fonte anterior, mas não aparece em 27/07
+- Titan sabe que ocorreu mudança entre 15/03/2024 e 27/07/2026
+- Titan **não inventa** a data exata da revogação
+- Dossiê reproduzível: qual assertion estava vigente no instante de cada decisão
+
+### 2. Fluxo de Reconciliação (sem Invenção de Datas)
+
+```
+1. [Entrada]
+   list = [SIF 1234, SIF 1235] (versão nova)
+
+2. [Carregamento]
+   anterior = [SIF 1234, SIF 1235, SIF 1236] (versão anterior)
+
+3. [Comparação]
+   Continua: SIF 1234, SIF 1235
+   Saiu: SIF 1236
+
+4. [Ação]
+   Para SIF 1236:
+   - NÃO marca effective_until = 26/07 (inventar)
+   - Cria nova Assertion com status=UNKNOWN
+   - observed_at = 27/07 (quando descobrimos a ausência)
+   - confidence = BAIXO
+```
+
+### 3. Arquitetura Unificada (Regra → Fato → Decisão)
+
+```
+                    GOVERNANÇA
+                        │
+                   RuleIdentity
+                        │
+                   RuleVersion
+                        │
+                   RuleAdoption
+                        │
+                        ▼
+                     Policy
+                        │
+        ┌───────────────┴───────────────┐
+        │                               │
+        ▼                               ▼
+   Animal Facts              Establishment Facts
+        │                               │
+        │                   QualificationAssertion
+        │                               │
+        │                         SourceArtifact
+        │                               │
+        └───────────┬───────────────────┘
+                    ▼
+                Evaluation
+                    │
+                 Decision
+                    │
+                    ▼
+            Market Eligibility
+                    │
+                    ▼
+                  Dossier
+```
+
+**Exemplo de Resposta (Dossiê de Elegibilidade):**
+
+```
+Animal A, Frigorífico F, Data 27/07/2026
+
+CHINA:
+  Policy: CN-v7 (RuleAdoption vigente)
+  Requisitos:
+    1. Animal sem medicamento residual (prazo carência)
+       Status: APROVADO
+       Evidência: TreatmentApplication de 05/07, fim de carência 24/07
+    
+    2. Estabelecimento habilitado (EXPORT_CN)
+       Status: REJEITADO
+       Razão: Qualificação não encontrada em versão de 27/07/2026
+       Última informação: SIF 1236 estava QUALIFIED em 15/03/2024
+                         Ausente em versão posterior
+                         Mudança ocorreu entre 15/03 e 27/07
+       Confiança: BAIXA (data exata desconhecida)
+       
+  Decisão: NÃO ELEGÍVEL (requisito 2 falhou)
+```
+
+### 4. Implementação
+
+**Domínio (`packages/livestock_domain/establishment_qualification_assertion.py`):**
 
 ```python
-# packages/livestock_application/establishment_qualification_import_service.py
-
-class EstablishmentQualificationImportService:
-    def import_qualifications(
-        self,
-        organization_id: OrganizationId,
-        qualifications: list[EstablishmentQualificationInput],
-        source_type: QualificationSourceType,
-        source_version: str,
-        artifact_id: ArtifactId | None,
-    ) -> ImportResult:
-        """
-        Importa lista versio nada de qualificações.
-        
-        - Válida formato e datas
-        - Reconcilia com versão anterior (marca revogadas, cria novas)
-        - Devolve relatório de mudanças
-        - Cria audit entry
-        
-        Idempotente: mesma source_version importada 2x não duplica.
-        """
+@dataclass(frozen=True)
+class EstablishmentQualificationAssertion:
+    assertion_id: TypedId
+    organization_id: OrganizationId
+    establishment_id: TypedId
+    qualification_type: str
+    
+    asserted_status: AssertionStatus  # QUALIFIED, NOT_QUALIFIED, UNKNOWN
+    effective_from: datetime | None
+    effective_until: datetime | None
+    
+    observed_at: datetime  # quando a fonte foi consultada
+    source: str
+    source_version: str
+    source_artifact_id: TypedId | None
+    confidence: ConfidenceLevel
+    
+    recorded_at: datetime
 ```
 
-#### API
+**Serviço (`packages/livestock_application/...`):**
+
+- `EstablishmentQualificationImportService.import_assertions()`
+- Não inventa `effective_until`
+- Cria Assertion com `status=UNKNOWN` quando item sai da lista
+- Mantém histórico completo de versões
+
+**API (`apps/api/livestock_writes.py`):**
 
 ```python
-# apps/api/livestock_writes.py (adicionar)
-
-@router.post("/v1/establishments/qualifications/import")
-async def import_establishment_qualifications(
-    organization: CurrentOrganization,
-    request: ImportQualificationsRequest,
-) -> ImportResult:
-    """
-    Importa lista versio nada de qualificações de estabelecimento.
-    
-    POST /v1/establishments/qualifications/import
+POST /v1/livestock/establishments/qualifications/import
+Body: {
+  "assertions": [
     {
-        "source_type": "FRIGORÍFICO",
-        "source_version": "2026-07-27T00:00Z",
-        "artifact_id": "...",  # opcional
-        "qualifications": [
-            {
-                "establishment_id": "...",
-                "qualification_type": "exportacao-china",
-                "valid_from": "2026-07-27",
-                "valid_to": null,
-                "normative_source": "FRIGORÍFICO"
-            }
-        ]
+      "establishment_id": "...",
+      "qualification_type": "EXPORT_CN",
+      "asserted_status": "QUALIFIED",
+      "effective_from": null,
+      "effective_until": null,
+      "source": "MAPA",
+      "confidence": "HIGH"
     }
-    
-    Response (200):
-    {
-        "imported": 42,
-        "revoked": 3,
-        "unchanged": 15,
-        "rejected": 0,
-        "errors": [],
-        "source_version": "...",
-        "applied_at": "..."
-    }
-    """
+  ],
+  "source_version": "2026-07-27T15:30Z"
+}
 ```
 
-#### Teste de Validação Manual
+### 5. Integração com Dossiê
 
-```bash
-python -m apps.validacao.importacao_qualificacao_estabelecimento --pausar
+Quando `EligibilityService` avalia um animal para um destino:
+
+```python
+assertions = repository.find_assertions_at(
+    organization=org,
+    establishment=frigorífico,
+    observed_at_or_before=evaluation_time
+)
+
+for assertion in assertions:
+    if assertion.asserted_status == QUALIFIED:
+        if assertion.effective_until is None or assertion.effective_until >= evaluation_time:
+            # Qualificação está vigente (ou vigência desconhecida)
+            result = APROVADO
+        else:
+            # Qualificação expirou
+            result = REJEITADO
+    elif assertion.asserted_status == NOT_QUALIFIED:
+        result = REJEITADO
+    else:  # UNKNOWN
+        result = INDETERMINADO
+        # Dossiê registra que houve mudança, mas data desconhecida
+        gap = CoverageGap(
+            type="QUALIFICATION_TEMPORAL_BOUNDARY",
+            last_known_status=anterior.status,
+            last_known_observed_at=anterior.observed_at,
+            current_observed_at=assertion.observed_at,
+            message="Qualificação não encontrada em versão posterior. "
+                    "Mudança ocorreu entre ... e ..., data exata desconhecida."
+        )
 ```
-
-Roteiro:
-1. Importar lista manual de qualificações com fontes diferentes
-2. Verificar versio namento e `valid_from`/`valid_to`
-3. Reimportar versão anterior → reconciliação e revogação
-4. Verificar dossiê captura qual qualificação estava vigente
-5. Testar idempotência: importação 2x da mesma versão
 
 ---
 
+## Por que essa estrutura é melhor
+
+1. **Honestidade temporal**: não inventa dados que a fonte não forneceu
+2. **Rastreabilidade**: cada asserção cita a versão exata da fonte
+3. **Auditoria**: é possível reconstruir por que uma decisão foi tomada
+4. **Consistência**: regra e fato mantêm papéis distintos (ADR-0043)
+5. **Escalabilidade**: padrão é reutilizável para outras asserções (NR-7)
+
 ## Próximos Passos
 
-- **ADR-0046** (futuro): Integração com MAPA via provider externo versionado
-- **ADR-0047** (futuro): Notificação e auditoria de revogação de qualificação
-- **Marco 17.4**: Carência por mercado (prazo de medicamento varia por país)
+1. Implementar `EstablishmentQualificationAssertion` no domínio
+2. Estender `EligibilityService` para consultar assertions
+3. Atualizar dossiê para registrar coverage gaps temporais
+4. Testes de reconciliação com histórico de versões
 
 ## Referências
 
-- **ADR-0041**: Elegibilidade por finalidade
-- **ADR-0042**: Contraparte externa e artefato recebido
-- **ADR-0043**: Governança e versionamento de regras
-- **ADR-0026**: Georreferenciamento e conformidade territorial
-- **Passo 7.5**: Dossiê e reprodutibilidade
+- **ADR-0041**: Elegibilidade por finalidade (requisitos sobre estabelecimento)
+- **ADR-0042**: Proveniência e artefato recebido (reutilizar modelo)
+- **ADR-0043**: Governança de regras (RuleAdoption separado de fato)
+- **ADR-0044**: Matriz de elegibilidade por mercado (consome assertions)
+- **NR-7**: Assertion como conceito emergente (esta ADR especializa)
+- **Passo 7.5**: Dossiê e reprodutibilidade (assertions no snapshot)
