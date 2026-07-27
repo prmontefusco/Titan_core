@@ -1,8 +1,8 @@
 # ADR-0045 — Importação e Reconciliação de Qualificações de Estabelecimento
 
-**Status:** ACEITA (após revisão arquitetural)  
+**Status:** ACEITA  
 **Data de criação:** 27 de julho de 2026  
-**Revisado:** 27 de julho de 2026  
+**Revisado:** 27 de julho de 2026 (duas rodadas de revisão arquitetural)  
 **Autores:** Claude Code, Paulo Roberto Montefusco  
 
 ## Problema
@@ -15,13 +15,15 @@ Qualificações de estabelecimento (p. ex., `exportacao-china`, `frigorífico-ce
 
 ## Restrições
 
-1. **Consistência com ADR-0043**: regra (RuleAdoption) e fato (Assertion) são conceitos distintos
-2. **Semântica de ausência**: ausência em lista só tem significado se a cobertura for declarada
+1. **Consistência com ADR-0043**: regra (`RuleAdoption`) e fato (`Assertion`) são conceitos distintos
+2. **Fato não carrega decisão escondida**: ausência em lista é observação; seu significado normativo pertence à Policy
 3. **Honestidade temporal**: não inventar datas que a fonte não forneceu
-4. **Rastreabilidade**: cada importação captura o instante, a fonte e o que ela afirmou
-5. **Isolamento RLS**: qualificações pertencem à Organization
-6. **Idempotência**: mesma versão de fonte importada 2x não duplica
-7. **Reprodutibilidade**: decisões podem ser refazidas com conhecimento contemporâneo
+4. **Bitemporalidade**: distinguir quando o fato ocorreu (valid time) de quando o Titan soube (transaction/knowledge time)
+5. **Rastreabilidade**: cada importação captura o instante, a fonte e o que ela afirmou, com identidade própria para idempotência
+6. **Confiança é resultado, não entrada**: `ConfidenceLevel` é computado pelo Titan a partir do caminho de proveniência, nunca declarado livremente pelo cliente
+7. **Isolamento RLS**: qualificações pertencem à Organization
+8. **Idempotência**: mesma versão de fonte importada 2x não duplica
+9. **Reprodutibilidade**: decisões podem ser refeitas com o conhecimento contemporâneo a elas, sem serem reescritas por conhecimento posterior
 
 ## Solução
 
@@ -40,262 +42,214 @@ RuleCondition: "estabelecimento.qualificacao = EXPORT_CN"
 
 **FATO (Asserção Temporal — ADR-0045)**
 ```
-SourceArtifact
+SourceArtifact (identidade da importação)
     ↓
-EstablishmentQualificationAssertion:
-  establishment_id: UUID
-  qualification_type: str
-  
-  asserted_status: QUALIFIED | NOT_QUALIFIED | UNKNOWN
-  effective_from?: datetime
-  effective_until?: datetime
-  
-  observed_at: datetime
-  source: str
-  source_artifact_id: UUID (obrigatório)
-  source_snapshot_semantics: COMPLETE_SNAPSHOT | DELTA | PARTIAL | UNKNOWN
-  confidence: ConfidenceLevel
-  
-  recorded_at: datetime
+EstablishmentQualificationAssertion (fato individual)
 ```
 
-### 2. Semântica de AssertionStatus
+### 2. `SourceArtifact` — Identidade da Importação
+
+A versão da fonte, o hash de conteúdo e a semântica de cobertura são propriedades **da importação como um todo**, não de cada Assertion individual. Persistir isso repetido em toda Assertion duplicaria informação e obscureceria onde vive a chave de idempotência.
+
+```python
+@dataclass(frozen=True)
+class SourceArtifact:
+    artifact_id: TypedId
+    organization_id: OrganizationId
+    source: str
+    source_version: str              # parte da chave de idempotência
+    content_hash: str                # SHA-256 do conteúdo bruto recebido
+    snapshot_semantics: SourceCoverage
+    observed_at: datetime
+    recorded_at: datetime
+```
+
+**Idempotência:** `(organization_id, source, source_version)` é único. Reimportar a mesma versão localiza o `SourceArtifact` existente e não cria um novo — nem novas Assertions.
+
+```
+SourceArtifact
+ ├── source = MAPA
+ ├── source_version = 2026-07-27T15:30Z
+ ├── content_hash = sha256:abc...
+ ├── snapshot_semantics = COMPLETE_SNAPSHOT
+ ├── observed_at = 2026-07-27T15:30:00Z
+          │
+          ├── Assertion (SIF 1234, QUALIFIED)
+          ├── Assertion (SIF 1235, QUALIFIED)
+          └── Assertion (SIF 1236, UNKNOWN)
+```
+
+### 3. `EstablishmentQualificationAssertion` — Fato Individual
+
+```python
+@dataclass(frozen=True)
+class EstablishmentQualificationAssertion:
+    assertion_id: TypedId
+    organization_id: OrganizationId
+    establishment_id: TypedId
+    qualification_type: str
+
+    asserted_status: AssertionStatus  # QUALIFIED, NOT_QUALIFIED, UNKNOWN
+    effective_from: datetime | None
+    effective_until: datetime | None
+
+    observed_at: datetime
+    source_artifact_id: TypedId       # OBRIGATÓRIO — referencia o SourceArtifact
+    confidence: ConfidenceLevel       # computado pelo Titan, nunca recebido do cliente
+
+    recorded_at: datetime
+```
+
+### 4. Semântica de `AssertionStatus`
 
 **QUALIFIED**
-- A fonte afirma positivamente a qualificação
-- Exemplo: `SIF 1234 consta na lista de habilitados para EXPORT_CN`
+- A fonte afirma positivamente a qualificação.
 
 **NOT_QUALIFIED**
-- A fonte afirma explicitamente que o estabelecimento NÃO possui a qualificação
-- Exemplo: `SIF 1236 foi explicitamente revogado do programa em 10/07`
-- Nota: ausência em lista NÃO produz NOT_QUALIFIED automaticamente
+- A fonte afirma **explicitamente** que o estabelecimento não possui a qualificação (p. ex., um código de status "REVOGADO" no próprio registro).
+- Ausência em uma lista **nunca**, por si, produz `NOT_QUALIFIED`.
 
 **UNKNOWN**
-- O material disponível não permite afirmar nenhum dos dois
-- Exemplo: `SIF 1236 não aparece em versão de 27/07, mas anterior aparecia em 15/03`
-- Conhecimento: mudança ocorreu entre os dois pontos; data exata desconhecida
+- O material disponível não permite afirmar nenhum dos dois.
+- Cobre tanto "desapareceu de um snapshot completo, sem explicação" quanto "recebemos boato sem fonte documental forte".
 
-### 3. SourceCoverage: Semântica do Snapshot
+### 5. `SourceCoverage` — Semântica do Snapshot (definição corrigida)
 
-Adicionado como campo obrigatório para interpretar corretamente o que ausência significa:
+O ponto de atenção da rodada anterior: `COMPLETE_SNAPSHOT` **não** converte ausência em `NOT_QUALIFIED`. Ele apenas habilita a observação de ausência a **significar algo** — o significado normativo dessa observação continua sendo decisão da Policy, nunca do fato.
 
 **COMPLETE_SNAPSHOT**
-- A fonte representa estado completo e exaustivo de todo o universo consultado
-- Ausência tem significado: o estabelecimento não está habilitado
-- Exemplo: MAPA publica lista oficial completa de todos os SIFs habilitados
+> A fonte declara representar integralmente o universo consultado. A ausência de um elemento é, portanto, uma observação significativa de não-presença naquele snapshot — mas essa observação não se converte automaticamente em `NOT_QUALIFIED`. Ela produz uma `Assertion` com `status=UNKNOWN` (a menos que a fonte também afirme negação explícita). O que essa ausência implica para a elegibilidade é decisão da Policy, não do fato.
 
 **DELTA**
-- A fonte representa apenas mudanças desde versão anterior
-- Ausência não informa nada sobre o estado anterior
-- Exemplo: "Estes 5 SIFs foram adicionados hoje"
+- A fonte representa apenas mudanças desde a versão anterior. Ausência não informa nada sobre o estado anterior.
 
 **PARTIAL**
-- A fonte representa apenas um subconjunto (região, programa, página)
-- Ausência não significa ausência no universo completo
-- Exemplo: "Lista de habilitados na região São Paulo, página 3 de 10"
+- A fonte representa apenas um subconjunto (região, programa, página). Ausência não significa ausência no universo completo. **Nenhuma Assertion derivada de ausência é criada.**
 
 **UNKNOWN**
-- Semântica da cobertura é desconhecida
-- Ausência não pode ser interpretada
-- Falha segura: nenhuma Assertion derivada pode ser feita
-
-### 4. Invariante: Ausência só Significa Algo com Cobertura
+- Semântica da cobertura é desconhecida. Falha segura: nenhuma Assertion derivada de ausência é criada.
 
 ```python
-# CORRETO
-if snapshot.source_snapshot_semantics == COMPLETE_SNAPSHOT:
+# Fato: apenas registra a observação, nunca decide
+if snapshot.snapshot_semantics == SourceCoverage.COMPLETE_SNAPSHOT:
     if sif not in current_list and sif in previous_list:
-        # Mudança ocorreu; cria Assertion UNKNOWN
-        assertion.status = UNKNOWN
-        assertion.confidence = VERIFIED_SOURCE  # confiamos na captura
-        assertion.observed_at = "27/07/2026"
+        assertion.status = AssertionStatus.UNKNOWN
+        assertion.confidence = titan_computes_confidence(source_artifact)
+        assertion.observed_at = snapshot.observed_at
 
-# INCORRETO
-if sif not in current_list:
-    # Nunca!
-    assertion.status = NOT_QUALIFIED
+elif snapshot.snapshot_semantics in (SourceCoverage.PARTIAL, SourceCoverage.UNKNOWN):
+    # Nenhuma inferência de ausência é feita
+    pass
+
+# Regra: decide o que a ausência significa para a finalidade
+# (isto vive em RuleCondition/Policy, não no serviço de importação)
 ```
 
-### 5. Tempo Efetivo vs Tempo do Conhecimento
+### 6. `ConfidenceLevel` — Computado pelo Titan, Nunca pelo Cliente
 
-Ambos são necessários para dois tipos de pergunta:
+O ponto mais importante desta rodada. `confidence` **não** é um campo do payload HTTP. Um cliente que pudesse declarar `CRYPTOGRAPHICALLY_ATTESTED` estaria escolhendo o próprio grau de confiança — o que a ADR-0042 já proíbe ao tratar confiança como resultado da qualidade e verificação da proveniência, não como afirmação livre.
 
-**Tempo Efetivo** (`effective_from`, `effective_until`)
-- Quando a afirmação se refere ao mundo
-- Preenchido apenas se a fonte declara explicitamente
-- Exemplo: "habilitação revogada em 10/07" → `effective_until = 10/07`
-
-**Tempo do Conhecimento** (`observed_at`, `recorded_at`)
-- Quando o Titan passou a conhecer a afirmação
-- Sempre preenchido
-- `observed_at`: quando consultamos a fonte (27/07/2026)
-- `recorded_at`: quando gravamos na transação
-
-**Pergunta 1: Reproduzir decisão de 20/07**
-```
-Qual era o conhecimento em 20/07?
-Resposta: consulte Assertions com observed_at <= 20/07
+**O que o HTTP envia:**
+```json
+{
+  "source": "MAPA",
+  "source_version": "2026-07-27T15:30Z",
+  "snapshot_semantics": "COMPLETE_SNAPSHOT",
+  "assertions": [
+    {"establishment_id": "...", "qualification_type": "EXPORT_CN", "asserted_status": "QUALIFIED"}
+  ]
+}
 ```
 
-**Pergunta 2: Auditoria retrospectiva hoje**
-```
-O que sabemos hoje sobre a habilitação em 15/07?
-Resposta: consulte Assertions com effective_from/until que cobrem 15/07
-        (independentemente de quando foram observadas)
+**O que o Titan computa** (a partir do caminho de proveniência da conexão, autenticação da fonte, e políticas de importação registradas):
+
+```python
+def compute_confidence(source_artifact: SourceArtifact, importer_context: ...) -> ConfidenceLevel:
+    """Confiança nasce da proveniência, não é declarada."""
+    if importer_context.is_manual_upload_without_verification():
+        return ConfidenceLevel.DOCUMENTED
+    if importer_context.is_authenticated_external_source():
+        return ConfidenceLevel.VERIFIED_SOURCE
+    if importer_context.has_valid_signature_per_profile():
+        return ConfidenceLevel.CRYPTOGRAPHICALLY_ATTESTED
+    return ConfidenceLevel.INFORMED
 ```
 
-Exemplo concreto:
-```
-15/07 → embarque (decisão feita com conhecimento de 15/07)
-20/07 → Titan toma decisão sobre elegibilidade
-27/07 → MAPA publica que habilitação havia sido revogada em 10/07
+Se um caso de uso legítimo precisar que o remetente **declare** uma confiança pretendida (p. ex., um frigorífico dizendo "isto vem de auditoria própria, trato como verificado"), esse valor entra como `claimed_confidence` — um dado observacional a mais — e nunca sobrescreve o `confidence` efetivo computado pelo Titan.
 
-Reproduzir 20/07:
-  Assertions com observed_at <= 20/07
-  → não havia informação de revogação
-  → status era QUALIFIED (ou UNKNOWN se versão anterior)
-  
+### 7. Exemplo Corrigido: `UNKNOWN` + `INFORMED`
+
+O exemplo da rodada anterior violava a própria invariante de `source_artifact_id` obrigatório ("não temos artefato que comprove"). Correção: o artefato **sempre existe** — o que pode faltar é força probatória do conteúdo dele, não o artefato em si.
+
+```
+SourceArtifact:
+    source = "relato informal recebido por e-mail do responsável técnico"
+    content_hash = sha256:...(do e-mail arquivado)
+    snapshot_semantics = UNKNOWN
+
+Assertion:
+    status = UNKNOWN
+    confidence = INFORMED
+
+Significado: existe um artefato que documenta a declaração recebida —
+o e-mail foi arquivado e tem hash. O que falta é uma fonte documental
+independente que comprove o conteúdo da alegação. O artefato prova que
+alguém declarou aquilo; não prova que a declaração é verdadeira.
+```
+
+### 8. Bitemporalidade: Valid Time × Knowledge Time
+
+```
+VALID TIME                          KNOWLEDGE / TRANSACTION TIME
+Quando aquilo era válido no mundo?  Quando o Titan soube disso?
+
+effective_from                      observed_at
+effective_until                     recorded_at
+```
+
+**Duas perguntas distintas, duas respostas distintas:**
+
+**Reprodução histórica** — "por que o Titan decidiu assim naquele dia?"
+```
+knowledge cutoff = 20/07
+→ usa apenas Assertions com observed_at <= 20/07
+```
+
+**Auditoria retrospectiva** — "com o que sabemos hoje, o que podemos afirmar sobre 15/07?"
+```
+knowledge cutoff = hoje
+effective time em análise = 15/07
+→ usa Assertions cujo effective_from/until cobre 15/07,
+  independentemente de quando foram observadas
+```
+
+**Exemplo:**
+```
+15/07 → embarque
+20/07 → Titan decide elegibilidade (Decision D1)
+27/07 → MAPA publica: habilitação foi revogada em 10/07
+
+Reprodução de D1 (cutoff = 20/07):
+  Nenhuma Assertion com observed_at <= 20/07 informa revogação.
+  D1 permanece reproduzível como APROVADA — o conhecimento
+  disponível naquele instante sustentava a decisão.
+
 Auditoria hoje (01/08):
-  Novo conhecimento: effective_until = 10/07
-  → habilitação não era válida em 15/07
-  → decisão de 20/07 foi tomada com informação incompleta
-  → Dossier registra: "conhecimento posterior revelou lacuna temporal"
+  Nova Assertion: effective_until = 10/07, observed_at = 27/07.
+  Conclusão: a habilitação já não era válida em 15/07, embora o
+  Titan não pudesse saber disso em 20/07.
+  D1 NÃO é reescrita. Um coverage gap retrospectivo é registrado,
+  e uma nova Evaluation pode ser solicitada se a Policy exigir.
 ```
 
-### 6. ConfidenceLevel Canônico
-
-Usar exclusivamente o `ConfidenceLevel` definido na ADR-0042:
-
-```python
-class ConfidenceLevel(StrEnum):
-    INFORMED = "INFORMED"                       # Recebimento declarado
-    DOCUMENTED = "DOCUMENTED"                   # Documentação interna
-    VERIFIED_SOURCE = "VERIFIED_SOURCE"         # Fonte externa verificada
-    HARDENED_SYSTEM = "HARDENED_SYSTEM"         # Sistema crítico auditado
-    CRYPTOGRAPHICALLY_ATTESTED = "CRYPTOGRAPHICALLY_ATTESTED"
-```
-
-**Nota importante:** `UNKNOWN` (status) ≠ baixa confiança
-
-```python
-# Ambas as afirmações são possíveis:
-
-Assertion(
-    status=UNKNOWN,
-    confidence=VERIFIED_SOURCE
-)
-# Significado: confiamos que SIF 1236 não consta em snapshot
-# oficial de 27/07, MAS não sabemos quando deixou de constar.
-
-Assertion(
-    status=UNKNOWN,
-    confidence=INFORMED
-)
-# Significado: ouvimos dizer que SIF mudou de status, mas
-# fonte é incerta e não temos artefato que comprove.
-```
-
-### 7. Fluxo de Reconciliação (com Cobertura)
-
-```
-1. [Entrada]
-   list = [SIF 1234, SIF 1235]
-   snapshot_semantics = COMPLETE_SNAPSHOT
-   source_version = "2026-07-27T15:30Z"
-
-2. [Carregamento]
-   anterior = [SIF 1234, SIF 1235, SIF 1236]
-   semantica_anterior = COMPLETE_SNAPSHOT
-
-3. [Comparação]
-   continua: SIF 1234, SIF 1235
-   saiu: SIF 1236
-
-4. [Ação - SIF 1236]
-   NÃO marca effective_until = 26/07 (inventar)
-   
-   Cria Assertion:
-     status = UNKNOWN
-     effective_from = null
-     effective_until = null
-     observed_at = 27/07 (captura atual)
-     source = MAPA
-     source_snapshot_semantics = COMPLETE_SNAPSHOT
-     confidence = VERIFIED_SOURCE (confiamos na fonte)
-     
-   Significado: "Observado ausente em snapshot completo oficial
-                de 27/07, após estar presente em 15/03.
-                Mudança ocorreu em algum ponto do intervalo,
-                data exata desconhecida."
-```
-
-### 8. Impacto na Elegibilidade (Exemplo Corrigido)
-
-**Policy CN:**
-```
-"Para exportar para China:
- estabelecimento deve ter habilitação EXPORT_CN vigente"
-```
-
-**Evaluation com dados:**
-```
-SIF 1236, China, 27/07/2026
-
-Assertions disponíveis:
-- 15/03/2024: QUALIFIED (observed_at=15/03/2024)
-- 27/07/2026: UNKNOWN (observed_at=27/07/2026)
-
-Conhecimento em 27/07:
-- Não existe Assertion positiva vigente
-- Última informação: UNKNOWN com confiança VERIFIED_SOURCE
-
-Decision:
-  Requisito: habilitação EXPORT_CN vigente
-  Status: INDETERMINADO
-  Razão: última afirmação positiva de 15/03/2024;
-         ausência observada em 27/07/2026 (snapshot completo);
-         mudança de status ocorreu entre os dois instantes,
-         data exata desconhecida.
-  Confiança: VERIFICADA (confiamos na fonte, não na data)
-
-Dossiê registra:
-  type: COVERAGE_GAP_TEMPORAL
-  message: "Mudança de status não datada. Última confirmação 
-            positiva anterior a atual ausência. Intervalo: 
-            15/03/2024 a 27/07/2026."
-```
-
-**Alternativa: se Policy fosse diferente**
-
-Policy X:
-```
-"Estabelecimentos presentes na lista oficial vigente
- estão habilitados. Ausência em snapshot completo implica
- não habilitação."
-```
-
-Neste caso:
-```
-Decision:
-  Requisito atende à Policy X
-  Status: REJEITADO
-  Razão: ausência confirmada em snapshot completo oficial vigente
-  Confiança: VERIFICADA
-```
-
-Observe: mesmo dado (ausência) + mesma fonte (MAPA snapshot completo)
-→ decisões DIFERENTES conforme a regra.
+Isso é consistente com a ADR-0043: conhecimento novo produz reavaliação, nunca reescreve a decisão histórica.
 
 ### 9. Arquitetura Unificada
 
 ```
              GOVERNANÇA
                  │
-          RuleIdentity
-                 │
-          RuleVersion
-                 │
-          RuleAdoption
+          RuleIdentity → RuleVersion → RuleAdoption
                  │
                  ▼
               Policy
@@ -305,14 +259,11 @@ Observe: mesmo dado (ausência) + mesma fonte (MAPA snapshot completo)
         ▼                 ▼
    Animal Facts    Establishment Facts
         │                 │
-        │      SourceArtifact
+        │           SourceArtifact
         │                 │
-        │      QualificationAssertion
-        │                 │
-        │       (asserted_status
-        │        effective_time
-        │        knowledge_time
-        │        confidence)
+        │     EstablishmentQualificationAssertion
+        │        (status, effective_*, observed_at,
+        │         confidence computado)
         │                 │
         └────────┬────────┘
                  ▼
@@ -322,97 +273,66 @@ Observe: mesmo dado (ausência) + mesma fonte (MAPA snapshot completo)
                  │
         Market Eligibility
                  │
-             Dossier
-            (com gaps)
+          Dossier (com coverage gaps)
 ```
 
-### 10. Implementação
+### 10. Impacto na Elegibilidade — Exemplo Final
 
-**Domínio** (`packages/livestock_domain/establishment_qualification_assertion.py`):
-```python
-@dataclass(frozen=True)
-class EstablishmentQualificationAssertion:
-    assertion_id: TypedId
-    organization_id: OrganizationId
-    establishment_id: TypedId
-    qualification_type: str
-    
-    asserted_status: AssertionStatus  # QUALIFIED, NOT_QUALIFIED, UNKNOWN
-    effective_from: datetime | None
-    effective_until: datetime | None
-    
-    observed_at: datetime
-    source: str
-    source_artifact_id: TypedId  # OBRIGATÓRIO
-    source_snapshot_semantics: SourceCoverage  # OBRIGATÓRIO
-    
-    confidence: ConfidenceLevel  # Canônico de ADR-0042
-    
-    recorded_at: datetime
+```
+SIF 1236, China, 27/07/2026
 
-class SourceCoverage(StrEnum):
-    COMPLETE_SNAPSHOT = "COMPLETE_SNAPSHOT"
-    DELTA = "DELTA"
-    PARTIAL = "PARTIAL"
-    UNKNOWN = "UNKNOWN"
+Assertions:
+- 15/03/2024: QUALIFIED (observed_at=15/03/2024, source_artifact=SA-1)
+- 27/07/2026: UNKNOWN (observed_at=27/07/2026, source_artifact=SA-2,
+              snapshot_semantics=COMPLETE_SNAPSHOT, confidence=VERIFIED_SOURCE)
 
-class AssertionStatus(StrEnum):
-    QUALIFIED = "QUALIFIED"
-    NOT_QUALIFIED = "NOT_QUALIFIED"
-    UNKNOWN = "UNKNOWN"
+Policy CN padrão ("habilitação positiva vigente deve estar demonstrada"):
+  Decision: INDETERMINADO
+  Razão: última afirmação positiva de 15/03/2024; ausência observada
+         em snapshot completo de 27/07/2026; mudança de status ocorreu
+         em algum ponto do intervalo, data exata desconhecida.
+
+Policy X alternativa ("ausência em snapshot completo vigente implica
+não habilitação"):
+  Decision: REJEITADO
+  Razão: ausência confirmada em snapshot completo oficial vigente.
+
+Mesmo fato, mesma fonte, decisões diferentes — porque a decisão vem
+da regra, nunca do fato isolado.
 ```
 
-**Serviço** (`packages/livestock_application/...`):
-- `EstablishmentQualificationImportService.import_assertions()`
-- Valida `source_snapshot_semantics`
-- Não inventa `effective_until`
-- Cria Assertion com `status=UNKNOWN` quando apropriado
-- Mantém histórico completo de versões
+### 11. Plano de Testes (inclui os dois testes recomendados na revisão)
 
-**API** (`apps/api/livestock_writes.py`):
-```python
-POST /v1/livestock/establishments/qualifications/import
-Body: {
-  "assertions": [
-    {
-      "establishment_id": "...",
-      "qualification_type": "EXPORT_CN",
-      "asserted_status": "QUALIFIED",
-      "effective_from": null,
-      "effective_until": null,
-      "source": "MAPA",
-      "source_snapshot_semantics": "COMPLETE_SNAPSHOT",
-      "confidence": "VERIFIED_SOURCE"
-    }
-  ],
-  "source_version": "2026-07-27T15:30Z"
-}
-```
+1. Importação básica cria Assertions corretas
+2. Reimportação da mesma `source_version` é idempotente (localiza `SourceArtifact` existente, não duplica)
+3. Ausência em `COMPLETE_SNAPSHOT` produz `UNKNOWN`, nunca `NOT_QUALIFIED`
+4. Ausência em `PARTIAL` ou `UNKNOWN` não produz nenhuma Assertion derivada
+5. **Conhecimento posterior não altera decisão histórica**: uma Decision tomada com cutoff `T1` permanece reproduzível com Assertions de `observed_at <= T1`, mesmo após nova Assertion com `observed_at > T1` revelar `effective_until` anterior a `T1`
+6. `confidence` nunca é aceito do payload HTTP; é sempre computado a partir da proveniência
+7. `source_artifact_id` é obrigatório em toda Assertion; a tentativa de criar uma sem artefato é rejeitada no domínio
 
----
+## Por que essa estrutura é sólida
 
-## Por que essa estrutura é mais sólida
-
-1. **Sem invenção de dados**: não cria datas que a fonte não forneceu
-2. **Interpretação honesta**: ausência só significa algo com cobertura declarada
-3. **Rastreabilidade temporal dupla**: sabe-se quando ocorreu (effective) e quando soube (observed)
-4. **Auditoria retrospectiva**: conhecimento posterior sobre fatos anteriores é capturado
-5. **Consistência com Core**: regra, fato, evidência, proveniência e decisão continuam distintos
-6. **Confiança semântica**: UNKNOWN com VERIFIED_SOURCE é válido e diferente de baixa confiança
-7. **Escalabilidade**: padrão é generalizável (NR-7: Assertion como conceito)
+1. **Fato não carrega decisão escondida**: `COMPLETE_SNAPSHOT` habilita significado, não o decide
+2. **Idempotência com identidade própria**: `SourceArtifact` concentra `source_version`/hash, não replicado em cada Assertion
+3. **Confiança é resultado da proveniência**: nunca um campo livre do cliente
+4. **Bitemporalidade explícita**: reprodução histórica e auditoria retrospectiva respondem perguntas diferentes, sem reescrever decisões
+5. **Consistência com o Core**: regra, fato, evidência, proveniência e decisão continuam distintos
+6. **Escalabilidade**: padrão bitemporal + Assertion é generalizável (NR-7), mas permanece na vertical até segunda ou terceira ocorrência comprovada em domínio distinto
 
 ## Próximos Passos
 
-1. ✅ Implementar `EstablishmentQualificationAssertion` no domínio
-2. ✅ Estender `EligibilityService` para consultar assertions
-3. ✅ Atualizar dossiê para registrar coverage gaps temporais
-4. ✅ Testes: unitários + integração PostgreSQL + E2E com dossiê
+1. Implementar `SourceArtifact` e `EstablishmentQualificationAssertion` no domínio
+2. Implementar `compute_confidence()` a partir do contexto de importação
+3. Estender `EligibilityService` para consultar Assertions por cutoff temporal
+4. Atualizar dossiê para registrar coverage gaps (incluindo o retrospectivo)
+5. Testes conforme seção 11
 
 ## Referências
 
 - **ADR-0041**: Elegibilidade por finalidade (requisitos sobre estabelecimento)
-- **ADR-0042**: Proveniência, artefato recebido, confidence level
-- **ADR-0043**: Governança de regras (RuleAdoption separado de fato)
-- **ADR-0044**: Matriz de elegibilidade por mercado (consome assertions)
-- **NR-7**: Assertion como conceito emergente (esta ADR especializa)
-- **Passo 7.5**: Dossiê e reprodutibilidade (assertions no snapshot)
+- **ADR-0042**: Proveniência, artefato recebido, `ConfidenceLevel` canônico
+- **ADR-0043**: Governança de regras (`RuleAdoption` separado de fato; reavaliação sem reescrita)
+- **ADR-0044**: Matriz de elegibilidade por mercado (consome Assertions)
+- **NR-7**: `Assertion` como conceito emergente (esta ADR especializa; bitemporalidade é candidata a novo padrão observado)
+- **Passo 7.5**: Dossiê e reprodutibilidade (Assertions no snapshot, coverage gaps)
