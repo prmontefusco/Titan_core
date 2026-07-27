@@ -26,6 +26,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/rule-governance/rule-identities", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/versions", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/adoptions", "post"),
+    ("/v1/rule-governance/rule-identities/{rule_identity_id}/adoptions/replace", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/timeline", "get"),
     # Vertical Livestock — API mínima do fluxo aprovado (Passos 10.4a e 10.4b).
     ("/v1/livestock/animals", "post"),
@@ -77,6 +78,10 @@ SUPERFICIE_ESPERADA = {
     # referencia direta para outro tenant.
     ("/v1/livestock/external-counterparties", "get"),
     ("/v1/livestock/external-counterparties", "post"),
+    (
+        "/v1/livestock/external-counterparties/{counterparty_id}/establishment-qualifications",
+        "post",
+    ),
     ("/v1/livestock/animals/{animal_id}/received-transfer-artifacts", "get"),
     ("/v1/livestock/animals/{animal_id}/received-transfer-artifacts", "post"),
     ("/v1/livestock/animals/{animal_id}/imported-facts", "get"),

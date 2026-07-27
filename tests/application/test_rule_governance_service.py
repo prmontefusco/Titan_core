@@ -10,6 +10,7 @@ from packages.core_application.rule_governance_service import RuleGovernanceServ
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import (
     RuleAdoption,
+    RuleAdoptionStatus,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -71,16 +72,35 @@ class InMemoryRuleAdoptionRepository:
     adoptions: dict[tuple[OrganizationId, TypedId, str, str], RuleAdoption] = field(
         default_factory=dict
     )
+    by_id: dict[TypedId, RuleAdoption] = field(default_factory=dict)
 
     def save(self, adoption: RuleAdoption) -> None:
-        self.adoptions[
-            (
-                adoption.organization_id,
-                adoption.rule_identity_id,
-                adoption.purpose,
-                adoption.scope,
-            )
-        ] = adoption
+        if adoption.status is RuleAdoptionStatus.ACTIVE:
+            self.adoptions[
+                (
+                    adoption.organization_id,
+                    adoption.rule_identity_id,
+                    adoption.purpose,
+                    adoption.scope,
+                )
+            ] = adoption
+        self.by_id[adoption.adoption_id] = adoption
+
+    def update(self, adoption: RuleAdoption) -> None:
+        chave = (
+            adoption.organization_id,
+            adoption.rule_identity_id,
+            adoption.purpose,
+            adoption.scope,
+        )
+        if adoption.status is RuleAdoptionStatus.ACTIVE:
+            self.adoptions[chave] = adoption
+        else:
+            self.adoptions.pop(chave, None)
+        self.by_id[adoption.adoption_id] = adoption
+
+    def get_by_id(self, adoption_id: TypedId) -> RuleAdoption | None:
+        return self.by_id.get(adoption_id)
 
     def get_active_by_identity_and_scope(
         self,
@@ -311,7 +331,7 @@ def test_adopt_rule_version_records_adoption_and_timeline_event() -> None:
     )
 
     assert adoption.rule_version_id == rule.rule_id
-    assert adoption.status == "active"
+    assert adoption.status is RuleAdoptionStatus.ACTIVE
     assert (
         adoptions.get_active_by_identity_and_scope(
             org_id, identity.rule_identity_id, "compra-abate", "fornecedores-diretos"
@@ -364,3 +384,68 @@ def test_adopt_rule_version_rejects_duplicate_active_scope() -> None:
             scope="fornecedores-diretos",
             actor=actor,
         )
+
+
+def test_replace_rule_adoption_supersedes_previous_and_records_timeline() -> None:
+    org_id = OrganizationId.new()
+    identities = InMemoryRuleIdentityRepository()
+    timeline = InMemoryRuleTimelineRepository()
+    rules = InMemoryRuleVersionRepository()
+    adoptions = InMemoryRuleAdoptionRepository()
+    service = RuleGovernanceService(
+        identities=identities,
+        timeline=timeline,
+        rules=rules,
+        adoptions=adoptions,
+    )
+    actor = _actor(org_id)
+    identity = service.create_identity(
+        organization_id=org_id,
+        code="rule-carencia",
+        purpose="ELEGIBILIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    policy_id = TypedId.new("policy")
+    original = service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        policy_id=policy_id,
+        name="Carencia v1",
+        actor=actor,
+    )
+    replacement = original.create_next_version(name="Carencia v2")
+    rules.save(replacement)
+    current = service.adopt_rule_version(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        rule_version_id=original.rule_id,
+        purpose="compra-abate",
+        scope="fornecedores-diretos",
+        actor=actor,
+        reason="Versao inicial.",
+    )
+
+    new_active = service.replace_rule_adoption(
+        organization_id=org_id,
+        rule_identity_id=identity.rule_identity_id,
+        current_adoption_id=current.adoption_id,
+        new_rule_version_id=replacement.rule_id,
+        actor=actor,
+        reason="Norma interna revisada.",
+    )
+
+    assert new_active.rule_version_id == replacement.rule_id
+    assert new_active.status is RuleAdoptionStatus.ACTIVE
+    superseded = adoptions.get_by_id(current.adoption_id)
+    assert superseded is not None
+    assert superseded.status is RuleAdoptionStatus.SUPERSEDED
+    assert (
+        adoptions.get_active_by_identity_and_scope(
+            org_id, identity.rule_identity_id, "compra-abate", "fornecedores-diretos"
+        )
+        == new_active
+    )
+    assert timeline.events[-1].event_type is RuleTimelineEventType.RULE_ADOPTION_CHANGED
+    assert timeline.events[-1].rule_version_id == replacement.rule_id

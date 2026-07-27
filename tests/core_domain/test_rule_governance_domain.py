@@ -7,6 +7,7 @@ import pytest
 
 from packages.core_domain.rule_governance import (
     RuleAdoption,
+    RuleAdoptionStatus,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -78,8 +79,33 @@ def test_rule_adoption_links_identity_version_and_operational_scope() -> None:
     assert adoption.adoption_id.entity_type == "rule_adoption"
     assert adoption.rule_identity_id == identity_id
     assert adoption.rule_version_id == rule_id
-    assert adoption.status == "active"
+    assert adoption.status is RuleAdoptionStatus.ACTIVE
     assert adoption.adopted_by == actor
+
+
+def test_rule_adoption_can_be_superseded_without_losing_identity() -> None:
+    org_id = OrganizationId.new()
+    actor = _actor(org_id)
+    adoption = RuleAdoption.adopt(
+        organization_id=org_id,
+        rule_identity_id=TypedId.new("rule_identity"),
+        rule_version_id=TypedId.new("rule"),
+        purpose="compra-abate",
+        scope="fornecedores-diretos",
+        adopted_by=actor,
+        reason="Versao inicial.",
+    )
+
+    superseded = adoption.supersede(
+        adopted_by=actor,
+        reason="Norma interna revisada.",
+        adopted_at=datetime(2026, 7, 27, tzinfo=UTC),
+    )
+
+    assert superseded.adoption_id == adoption.adoption_id
+    assert superseded.rule_identity_id == adoption.rule_identity_id
+    assert superseded.status is RuleAdoptionStatus.SUPERSEDED
+    assert superseded.reason == "Norma interna revisada."
 
 
 def test_rule_timeline_event_records_version_lifecycle() -> None:

@@ -95,6 +95,66 @@ def test_fluxo_http_cria_publica_e_consulta_timeline_governada(ambiente) -> None
     }
 
 
+def test_fluxo_http_substitui_adocao_ativa_por_nova_versao(ambiente) -> None:  # type: ignore[no-untyped-def]
+    cliente = _cliente(ambiente, ambiente.operador)
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+    policy_id = _criar_policy(ambiente)
+
+    identity = cliente.post(
+        "/v1/rule-governance/rule-identities",
+        headers=headers,
+        json={
+            "code": f"carencia-revisada-{uuid4().hex[:8]}",
+            "purpose": "Bloquear compra sob norma revisada.",
+            "scope": "fornecedores-diretos",
+            "source_type": "politica_interna",
+            "vertical": "livestock",
+        },
+    ).json()
+    rule_v1 = cliente.post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/versions",
+        headers=headers,
+        json={"policy_id": policy_id, "name": "Carencia v1"},
+    ).json()
+    adoption = cliente.post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/adoptions",
+        headers=headers,
+        json={
+            "rule_version_id": rule_v1["rule_id"],
+            "purpose": "compra-abate",
+            "scope": "fornecedores-diretos",
+            "reason": "Versao inicial.",
+        },
+    ).json()
+    rule_v2 = cliente.post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/versions",
+        headers=headers,
+        json={"policy_id": _criar_policy(ambiente), "name": "Carencia v2 revisada"},
+    ).json()
+
+    replaced = cliente.post(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/adoptions/replace",
+        headers=headers,
+        json={
+            "current_adoption_id": adoption["adoption_id"],
+            "new_rule_version_id": rule_v2["rule_id"],
+            "reason": "Norma interna revisada.",
+        },
+    )
+
+    assert replaced.status_code == 201, replaced.text
+    body = replaced.json()
+    assert body["rule_version_id"] == rule_v2["rule_id"]
+    assert body["status"] == "active"
+
+    timeline = cliente.get(
+        f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/timeline",
+        headers=headers,
+    ).json()
+    assert timeline[-1]["event_type"] == "rule_adoption_changed"
+    assert timeline[-1]["rule_version_id"] == rule_v2["rule_id"]
+
+
 def test_auditor_nao_publica_versao_de_regra(ambiente) -> None:  # type: ignore[no-untyped-def]
     cliente_operador = _cliente(ambiente, ambiente.operador)
     headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}

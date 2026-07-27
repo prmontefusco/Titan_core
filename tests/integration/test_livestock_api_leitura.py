@@ -19,6 +19,13 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
     ELIGIBILITY_RULE_CODE,
 )
+from packages.livestock_application.establishment_qualification_service import (
+    establishment_qualification_fact_type,
+)
+from packages.livestock_application.market_eligibility import (
+    ESTABLISHMENT_RULE_CODE,
+    MarketEligibilityPurpose,
+)
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
 
 pytestmark = pytest.mark.skipif(
@@ -70,7 +77,7 @@ def _criar_policy_de_regra(ambiente: Ambiente) -> str:
 def _adotar_regra_de_carencia_para_mercados(
     operador: ClienteAutenticado,
     ambiente: Ambiente,
-    mercados: tuple[str, ...],
+    mercados: tuple[MarketEligibilityPurpose, ...],
 ) -> None:
     cabecalho = _cabecalho(ambiente)
     identity = operador.post(
@@ -119,13 +126,106 @@ def _adotar_regra_de_carencia_para_mercados(
             f"/v1/rule-governance/rule-identities/{identity_id}/adoptions",
             json={
                 "rule_version_id": rule_id,
-                "purpose": mercado,
+                "purpose": mercado.code,
                 "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
-                "reason": f"Regra adotada para {mercado}.",
+                "reason": f"Regra adotada para {mercado.code}.",
             },
             headers=cabecalho,
         )
         assert adoption.status_code == 201, adoption.text
+    if MarketEligibilityPurpose.EXPORTACAO_CHINA in mercados:
+        identidade_estabelecimento = operador.post(
+            "/v1/rule-governance/rule-identities",
+            json={
+                "code": ESTABLISHMENT_RULE_CODE,
+                "purpose": "Habilitacao de estabelecimento por mercado.",
+                "scope": "livestock.slaughterhouse",
+                "source_type": "politica_interna",
+                "vertical": "livestock",
+                "description": "Regra ficticia de frigorifico para validar matriz comercial.",
+            },
+            headers=cabecalho,
+        )
+        assert identidade_estabelecimento.status_code == 201, identidade_estabelecimento.text
+        identity_id = identidade_estabelecimento.json()["rule_identity_id"]
+        rule = operador.post(
+            f"/v1/rule-governance/rule-identities/{identity_id}/versions",
+            json={
+                "policy_id": _criar_policy_de_regra(ambiente),
+                "name": "Habilitacao do estabelecimento",
+                "description": "Exige frigorifico com SIF.",
+                "severity": "blocking",
+                "normative_source": "politica interna ficticia",
+                "required_evidence_types": ["livestock.external_counterparty"],
+                "conditions": [
+                    {
+                        "fact_type": establishment_qualification_fact_type(
+                            MarketEligibilityPurpose.EXPORTACAO_CHINA.code
+                        ),
+                        "payload_key": "qualification_status",
+                        "operator": "equals",
+                        "expected_value": "HABILITADO",
+                        "description": "O estabelecimento deve estar habilitado para a China.",
+                    },
+                ],
+                "justification": "China exige habilitacao do estabelecimento escolhido.",
+                "corrective_action": "Selecionar frigorifico habilitado com SIF.",
+            },
+            headers=cabecalho,
+        )
+        assert rule.status_code == 201, rule.text
+        adoption = operador.post(
+            f"/v1/rule-governance/rule-identities/{identity_id}/adoptions",
+            json={
+                "rule_version_id": rule.json()["rule_id"],
+                "purpose": MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                "scope": "livestock.slaughterhouse",
+                "reason": "Regra adotada para a habilitacao do estabelecimento na China.",
+            },
+            headers=cabecalho,
+        )
+        assert adoption.status_code == 201, adoption.text
+
+
+def _criar_contraparte_externa(
+    operador: ClienteAutenticado,
+    ambiente: Ambiente,
+    *,
+    name: str,
+    counterparty_type: str,
+) -> str:
+    resposta = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={
+            "name": name,
+            "counterparty_type": counterparty_type,
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert resposta.status_code == 201, resposta.text
+    return str(resposta.json()["counterparty_id"])
+
+
+def _registrar_qualificacao_de_estabelecimento(
+    operador: ClienteAutenticado,
+    ambiente: Ambiente,
+    *,
+    counterparty_id: str,
+    market_purpose: str,
+    status: str = "HABILITADO",
+) -> None:
+    resposta = operador.post(
+        f"/v1/livestock/external-counterparties/{counterparty_id}/establishment-qualifications",
+        json={
+            "market_purpose": market_purpose,
+            "status": status,
+            "source_name": "lista-sif-ficticia",
+            "source_version": "2026-07",
+            "assessed_at": datetime.now(UTC).isoformat(),
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert resposta.status_code == 201, resposta.text
 
 
 def test_o_animal_cadastrado_aparece_na_listagem(
@@ -399,7 +499,10 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     _adotar_regra_de_carencia_para_mercados(
         operador,
         ambiente,
-        ("exportacao-china", "exportacao-estados-unidos"),
+        (
+            MarketEligibilityPurpose.EXPORTACAO_CHINA,
+            MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+        ),
     )
 
     resposta = operador.post(
@@ -414,30 +517,154 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     assert corpo["evaluation_id"]
     assert corpo["decision_id"]
     por_mercado = {item["market"]: item for item in corpo["markets"]}
-    assert por_mercado["exportacao-china"]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
+    assert por_mercado["exportacao-china"]["projection_status"] == "ATUAL"
     assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
     assert por_mercado["exportacao-uniao-europeia"]["status"] == "AUSENTE"
-    assert por_mercado["exportacao-uniao-europeia"]["governed_rule"] is None
-    assert por_mercado["exportacao-uniao-europeia"]["reasons"] == []
-    assert por_mercado["exportacao-uniao-europeia"]["gaps"][0]["code"] == (
-        "REGRA_GOVERNADA_AUSENTE"
-    )
     assert por_mercado["exportacao-china"]["governed_rule"]["purpose"] == "exportacao-china"
-    assert por_mercado["exportacao-china"]["gaps"] == []
+    assert por_mercado["exportacao-china"]["adoption"]["purpose"] == "exportacao-china"
+    assert por_mercado["exportacao-china"]["adoption"]["reason"] == (
+        "Regra adotada para exportacao-china."
+    )
+    assert por_mercado["exportacao-china"]["execution"]["evaluation_id"]
+    assert por_mercado["exportacao-china"]["execution"]["decision_id"]
+    assert por_mercado["exportacao-china"]["rule_version"]["code"] == (
+        "rule-carencia-farmacologica"
+    )
+    assert por_mercado["exportacao-china"]["rule_version"]["version"] == 1
+    assert por_mercado["exportacao-china"]["rule_version"]["justification"] == (
+        "Destino comercial exige carencia cumprida."
+    )
+    assert por_mercado["exportacao-china"]["rule_version"]["corrective_action"] == (
+        "Aguardar fim da carencia."
+    )
+    assert por_mercado["exportacao-china"]["dependency"] == {
+        "subject_key": "slaughterhouse",
+        "subject_label": "estabelecimento",
+        "selected_subject_id": None,
+    }
+    assert por_mercado["exportacao-china"]["gaps"][0]["code"] == (
+        "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+    )
     assert por_mercado["exportacao-china"]["reasons"][0]["code"] == "regra_atendida"
     assert (
         por_mercado["exportacao-china"]["reasons"][0]["rule_code"] == "rule-carencia-farmacologica"
     )
-    assert por_mercado["exportacao-china"]["requirements"][0]["rule_code"] == (
+    assert [
+        requisito["rule_code"] for requisito in por_mercado["exportacao-china"]["requirements"]
+    ] == ["rule-carencia-farmacologica", "rule-habilitacao-estabelecimento"]
+    assert por_mercado["exportacao-china"]["requirements"][0]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-china"]["requirements"][0]["projection_status"] == "ATUAL"
+    assert por_mercado["exportacao-china"]["requirements"][0]["execution"]["evaluation_id"]
+    assert por_mercado["exportacao-china"]["requirements"][0]["execution"]["decision_id"]
+    assert por_mercado["exportacao-china"]["requirements"][0]["adoption"]["purpose"] == (
+        "exportacao-china"
+    )
+    assert por_mercado["exportacao-china"]["requirements"][0]["rule_version"]["code"] == (
         "rule-carencia-farmacologica"
     )
-    assert por_mercado["exportacao-china"]["requirements"][0]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-china"]["requirements"][1]["status"] == "CONDICIONADO"
+    assert por_mercado["exportacao-china"]["requirements"][1]["dependency"] == {
+        "subject_key": "slaughterhouse",
+        "subject_label": "estabelecimento",
+        "selected_subject_id": None,
+    }
+    assert por_mercado["exportacao-china"]["requirements"][1]["gaps"][0]["code"] == (
+        "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+    )
+    assert (
+        por_mercado["exportacao-china"]["execution"]["decision_id"]
+        != por_mercado["exportacao-estados-unidos"]["execution"]["decision_id"]
+    )
     requisitos_europa = por_mercado["exportacao-uniao-europeia"]["requirements"]
     assert [requisito["rule_code"] for requisito in requisitos_europa] == [
         "rule-carencia-farmacologica",
         "rule-rastreabilidade-minima",
     ]
     assert [requisito["status"] for requisito in requisitos_europa] == ["AUSENTE", "AUSENTE"]
+    assert all(requisito["adoption"] is None for requisito in requisitos_europa)
+    assert all(requisito["rule_version"] is None for requisito in requisitos_europa)
+
+
+def test_matriz_de_mercado_falha_fechado_sem_carencia_declarada_por_mercado(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,),
+    )
+
+    resposta = operador.post(
+        f"/v1/livestock/animals/{animal}/eligibility/market-matrix",
+        json={},
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    europa = {item["market"]: item for item in resposta.json()["markets"]}[
+        "exportacao-uniao-europeia"
+    ]
+    assert europa["status"] == "INDETERMINADO"
+    assert europa["adoption"]["purpose"] == "exportacao-uniao-europeia"
+    assert europa["rule_version"]["code"] == "rule-carencia-farmacologica"
+    assert europa["reasons"] == []
+    assert europa["requirements"][0]["status"] == "INDETERMINADO"
+    assert europa["requirements"][0]["gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
+
+
+def test_matriz_de_mercado_mostra_sujeito_escolhido_e_falha_fechado_sem_avaliador(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+    slaughterhouse_id = _criar_contraparte_externa(
+        operador,
+        ambiente,
+        name="Frigorifico Escolhido",
+        counterparty_type="SLAUGHTERHOUSE",
+    )
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (
+            MarketEligibilityPurpose.EXPORTACAO_CHINA,
+            MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+        ),
+    )
+    _registrar_qualificacao_de_estabelecimento(
+        operador,
+        ambiente,
+        counterparty_id=slaughterhouse_id,
+        market_purpose=MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+    )
+
+    resposta = operador.post(
+        f"/v1/livestock/animals/{animal}/eligibility/market-matrix",
+        json={"slaughterhouse_counterparty_id": slaughterhouse_id},
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    china = {item["market"]: item for item in resposta.json()["markets"]}["exportacao-china"]
+    assert china["status"] == "ELEGIVEL"
+    assert china["dependency"] == {
+        "subject_key": "slaughterhouse",
+        "subject_label": "estabelecimento",
+        "selected_subject_id": slaughterhouse_id,
+    }
+    assert china["gaps"] == []
+    assert china["requirements"][0]["status"] == "ELEGIVEL"
+    assert china["requirements"][1]["rule_code"] == "rule-habilitacao-estabelecimento"
+    assert china["requirements"][1]["status"] == "ELEGIVEL"
+    assert china["requirements"][1]["dependency"] == {
+        "subject_key": "slaughterhouse",
+        "subject_label": "estabelecimento",
+        "selected_subject_id": slaughterhouse_id,
+    }
+    assert china["requirements"][1]["gaps"] == []
 
 
 def test_listar_dossies_sem_sujeito_e_recusado(

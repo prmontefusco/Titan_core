@@ -59,6 +59,7 @@ from packages.livestock_infrastructure.persistence import (
     animal_movement_items_table,
     animal_movements_table,
     animals_table,
+    establishment_qualifications_table,
     livestock_lots_table,
     lot_memberships_table,
     medication_batches_table,
@@ -130,6 +131,7 @@ assert prescriptions_table.metadata is target_metadata
 assert prescription_targets_table.metadata is target_metadata
 assert treatment_applications_table.metadata is target_metadata
 assert animal_exits_table.metadata is target_metadata
+assert establishment_qualifications_table.metadata is target_metadata
 assert reproductive_events_table.metadata is target_metadata
 assert reproductive_event_offspring_table.metadata is target_metadata
 assert property_geometries_table.metadata is target_metadata

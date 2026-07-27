@@ -41,6 +41,12 @@ class RuleImpactAssessmentResult(Enum):
     HUMAN_REVIEW_REQUIRED = "revisao_humana_necessaria"
 
 
+class RuleAdoptionStatus(Enum):
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
+    REVOKED = "revoked"
+
+
 @dataclass(frozen=True, slots=True)
 class RuleAdoption:
     """Adoção de uma versão de regra por uma Organization."""
@@ -54,7 +60,7 @@ class RuleAdoption:
     adopted_by: UniversalReference
     adopted_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     reason: str = ""
-    status: str = "active"
+    status: RuleAdoptionStatus = RuleAdoptionStatus.ACTIVE
 
     def __post_init__(self) -> None:
         if self.adoption_id.entity_type != "rule_adoption":
@@ -71,10 +77,8 @@ class RuleAdoption:
         object.__setattr__(self, "purpose", _required_text(self.purpose, "purpose"))
         object.__setattr__(self, "scope", _required_text(self.scope, "scope"))
         object.__setattr__(self, "reason", self.reason.strip())
-        object.__setattr__(self, "status", self.status.strip().lower())
-
-        if self.status != "active":
-            raise ValueError("status inicial de RuleAdoption deve ser 'active'.")
+        if not isinstance(self.status, RuleAdoptionStatus):
+            raise TypeError("status deve ser RuleAdoptionStatus.")
 
     @classmethod
     def adopt(
@@ -98,6 +102,28 @@ class RuleAdoption:
             adopted_by=adopted_by,
             adopted_at=adopted_at or datetime.now(UTC),
             reason=reason,
+        )
+
+    def supersede(
+        self,
+        *,
+        adopted_by: UniversalReference,
+        reason: str,
+        adopted_at: datetime | None = None,
+    ) -> "RuleAdoption":
+        if self.status is not RuleAdoptionStatus.ACTIVE:
+            raise ValueError("Somente adocao ativa pode ser substituida.")
+        return RuleAdoption(
+            adoption_id=self.adoption_id,
+            organization_id=self.organization_id,
+            rule_identity_id=self.rule_identity_id,
+            rule_version_id=self.rule_version_id,
+            purpose=self.purpose,
+            scope=self.scope,
+            adopted_by=adopted_by,
+            adopted_at=adopted_at or self.adopted_at,
+            reason=reason,
+            status=RuleAdoptionStatus.SUPERSEDED,
         )
 
 

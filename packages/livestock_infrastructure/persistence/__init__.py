@@ -5,6 +5,10 @@ from packages.livestock_infrastructure.persistence.animal_repository import (
     animal_identifiers_table,
     animals_table,
 )
+from packages.livestock_infrastructure.persistence.establishment_qualification_repository import (
+    TransactionalEstablishmentQualificationRepository,
+    establishment_qualifications_table,
+)
 from packages.livestock_infrastructure.persistence.exit_repository import (
     TransactionalAnimalExitRepository,
     animal_exits_table,
@@ -81,6 +85,7 @@ __all__ = [
     "TransactionalRuralPropertyRepository",
     "TransactionalAnimalExitRepository",
     "TransactionalExternalCounterpartyRepository",
+    "TransactionalEstablishmentQualificationRepository",
     "TransactionalImportedLivestockFactRepository",
     "TransactionalPropertyGeometryRepository",
     "TransactionalReproductiveEventRepository",
@@ -106,6 +111,7 @@ __all__ = [
     "rural_properties_table",
     "animal_exits_table",
     "external_counterparties_table",
+    "establishment_qualifications_table",
     "imported_livestock_facts_table",
     "treatment_applications_table",
     "received_transfer_artifacts_table",

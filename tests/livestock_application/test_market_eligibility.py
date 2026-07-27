@@ -4,15 +4,24 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from packages.core_domain.decision import DecisionReason, DecisionReasonCode, DecisionResult
-from packages.core_domain.rule_governance import RuleAdoption
+from packages.core_domain.facts import Fact, FactSnapshot
+from packages.core_domain.policy import Policy, PolicyStatus
+from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
+from packages.core_domain.rule_governance import RuleAdoption, RuleAdoptionStatus
 from packages.livestock_application.eligibility import ELIGIBILITY_RULE_ADOPTION_SCOPE
+from packages.livestock_application.establishment_qualification_service import (
+    establishment_qualification_fact_type,
+)
 from packages.livestock_application.market_eligibility import (
     DEFAULT_MARKET_PROFILES,
+    ESTABLISHMENT_RULE_CODE,
     TRACEABILITY_RULE_CODE,
     MarketEligibilityGapCode,
+    MarketEligibilityPurpose,
     MarketEligibilityService,
     MarketEligibilityStatus,
     MarketProfile,
+    MarketProjectionStatus,
     MarketRequirement,
 )
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -37,7 +46,7 @@ class InMemoryAdoptions:
             ),
             adopted_at=datetime.now(UTC),
             reason="Regra adotada para o mercado.",
-            status="active",
+            status=RuleAdoptionStatus.ACTIVE,
         )
         self.items[(organization_id, code, purpose, ELIGIBILITY_RULE_ADOPTION_SCOPE)] = adoption
         return adoption
@@ -50,6 +59,135 @@ class InMemoryAdoptions:
         scope: str,
     ) -> RuleAdoption | None:
         return self.items.get((organization_id, code, purpose, scope))
+
+
+@dataclass
+class InMemoryRules:
+    items: dict[TypedId, Rule] = field(default_factory=dict)
+
+    def add_from_adoption(
+        self,
+        adoption: RuleAdoption,
+        *,
+        code: str,
+        version: int = 1,
+        justification: str = "Destino comercial exige carencia cumprida.",
+        corrective_action: str = "Aguardar fim da carencia.",
+    ) -> Rule:
+        rule = Rule(
+            rule_id=adoption.rule_version_id,
+            policy_id=TypedId.new("policy"),
+            organization_id=adoption.organization_id,
+            code=code,
+            name="Carencia farmacologica",
+            description="Regra ficticia de mercado.",
+            version=version,
+            severity=SeverityLevel.BLOCKING,
+            normative_source="politica interna ficticia",
+            conditions=(
+                RuleCondition(
+                    fact_type="livestock.withdrawal",
+                    payload_key="in_withdrawal",
+                    operator=ComparisonOperator.EQUALS,
+                    expected_value=False,
+                    description="Animal nao pode estar em carencia.",
+                ),
+            ),
+            justification=justification,
+            corrective_action=corrective_action,
+        )
+        self.items[rule.rule_id] = rule
+        return rule
+
+    def get_by_id(self, rule_id: object) -> Rule | None:
+        if not isinstance(rule_id, TypedId):
+            return None
+        return self.items.get(rule_id)
+
+
+@dataclass
+class InMemoryPolicies:
+    items: dict[TypedId, Policy] = field(default_factory=dict)
+    by_code: dict[tuple[OrganizationId, str], Policy] = field(default_factory=dict)
+
+    def add_from_rule(self, rule: Rule) -> Policy:
+        policy = Policy(
+            policy_id=rule.policy_id,
+            organization_id=rule.organization_id,
+            code=f"policy-{rule.code}",
+            name="Policy ficticia de mercado",
+            description="Policy ficticia para regra governada.",
+            version=1,
+            status=PolicyStatus.PUBLISHED,
+            published_at=datetime.now(UTC),
+        )
+        self.items[policy.policy_id] = policy
+        self.by_code[(policy.organization_id, policy.code)] = policy
+        return policy
+
+    def get_by_id(self, policy_id: TypedId) -> Policy | None:
+        return self.items.get(policy_id)
+
+    def get_active_at(
+        self, organization_id: OrganizationId, code: str, at_time: datetime
+    ) -> Policy | None:
+        _ = at_time
+        return self.by_code.get((organization_id, code))
+
+
+@dataclass
+class InMemoryFactProvider:
+    def get_snapshot(
+        self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+    ) -> FactSnapshot:
+        if target_id.entity_type == "external_counterparty":
+            return FactSnapshot.create(
+                organization_id=organization_id,
+                target_id=target_id,
+                as_of=at_time,
+                facts=(
+                    Fact.create(
+                        fact_type=establishment_qualification_fact_type("exportacao-china"),
+                        payload={
+                            "qualification_status": "HABILITADO",
+                        },
+                        observed_at=at_time,
+                    ),
+                ),
+            )
+        return FactSnapshot.create(
+            organization_id=organization_id,
+            target_id=target_id,
+            as_of=at_time,
+            facts=(
+                Fact.create(
+                    fact_type="livestock.treatment_applied",
+                    payload={"source": "teste"},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="livestock.withdrawal",
+                    payload={"in_withdrawal": False},
+                    observed_at=at_time,
+                ),
+            ),
+        )
+
+
+@dataclass
+class InMemoryEvaluations:
+    saved: list[object] = field(default_factory=list)
+
+    def save(self, evaluation: object) -> None:
+        self.saved.append(evaluation)
+
+
+@dataclass
+class InMemoryDecisions:
+    saved: list[object] = field(default_factory=list)
+
+    def save(self, decision: object) -> None:
+        self.saved.append(decision)
 
 
 def _reason(message: str = "Animal em carencia.") -> DecisionReason:
@@ -67,9 +205,10 @@ def test_market_without_adopted_rule_is_absent() -> None:
 
     matrix = MarketEligibilityService(
         adoption_reader=InMemoryAdoptions(),
+        rule_reader=InMemoryRules(),
         profiles=(
             MarketProfile(
-                market="exportacao-uniao-europeia",
+                market=MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,
                 requirements=(
                     MarketRequirement(
                         rule_code="rule-carencia-farmacologica",
@@ -89,6 +228,45 @@ def test_market_without_adopted_rule_is_absent() -> None:
     assert entry.requirements[0].status is MarketEligibilityStatus.AUSENTE
 
 
+def test_adopted_market_without_declared_withdrawal_is_indeterminate() -> None:
+    org_id = OrganizationId.new()
+    adoptions = InMemoryAdoptions()
+    adoption = adoptions.add(
+        org_id,
+        "rule-carencia-farmacologica",
+        "exportacao-uniao-europeia",
+    )
+    rules = InMemoryRules()
+    rules.add_from_adoption(adoption, code="rule-carencia-farmacologica")
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=None,
+            ),
+        ),
+    ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.INDETERMINADO
+    assert entry.requirements[0].status is MarketEligibilityStatus.INDETERMINADO
+    assert entry.requirements[0].gaps[0].code is (
+        MarketEligibilityGapCode.CARENCIA_POR_MERCADO_AUSENTE
+    )
+    assert entry.requirements[0].adoption is not None
+    assert entry.requirements[0].rule_version is not None
+    assert entry.reasons == ()
+
+
 def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
     org_id = OrganizationId.new()
     adoptions = InMemoryAdoptions()
@@ -97,18 +275,22 @@ def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
         "rule-carencia-farmacologica",
         "exportacao-uniao-europeia",
     )
+    rules = InMemoryRules()
+    rules.add_from_adoption(adoption, code="rule-carencia-farmacologica")
 
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
+        rule_reader=rules,
         profiles=(
             MarketProfile(
-                market="exportacao-uniao-europeia",
+                market=MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,
                 requirements=(
                     MarketRequirement(
                         rule_code="rule-carencia-farmacologica",
                         scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
                     ),
                 ),
+                declared_withdrawal_period_days=30,
             ),
         ),
     ).evaluate(org_id, DecisionResult.REJEITADA, [_reason()])
@@ -121,49 +303,61 @@ def test_adopted_market_maps_rejected_decision_to_not_eligible() -> None:
     assert entry.reasons[0].message == "Animal em carencia."
     assert entry.reasons[0].rule_code == "rule-carencia-farmacologica"
     assert entry.gaps == ()
+    assert entry.adoption is not None
+    assert entry.adoption.reason == "Regra adotada para o mercado."
+    assert entry.rule_version is not None
+    assert entry.rule_version.code == "rule-carencia-farmacologica"
+    assert entry.rule_version.corrective_action == "Aguardar fim da carencia."
     assert entry.requirements[0].governed_rule is not None
 
 
 def test_adopted_markets_can_differ_side_by_side() -> None:
     org_id = OrganizationId.new()
     adoptions = InMemoryAdoptions()
-    adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
-    adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-estados-unidos")
+    rules = InMemoryRules()
+    china = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    eua = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-estados-unidos")
+    rules.add_from_adoption(china, code="rule-carencia-farmacologica")
+    rules.add_from_adoption(eua, code="rule-carencia-farmacologica")
 
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
+        rule_reader=rules,
         profiles=(
             MarketProfile(
-                market="exportacao-uniao-europeia",
+                market=MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,
                 requirements=(
                     MarketRequirement(
                         rule_code="rule-carencia-farmacologica",
                         scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
                     ),
                 ),
+                declared_withdrawal_period_days=None,
             ),
             MarketProfile(
-                market="exportacao-china",
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
                 requirements=(
                     MarketRequirement(
                         rule_code="rule-carencia-farmacologica",
                         scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
                     ),
                 ),
+                declared_withdrawal_period_days=30,
             ),
             MarketProfile(
-                market="exportacao-estados-unidos",
+                market=MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
                 requirements=(
                     MarketRequirement(
                         rule_code="rule-carencia-farmacologica",
                         scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
                     ),
                 ),
+                declared_withdrawal_period_days=30,
             ),
         ),
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
-    statuses = {entry.market: entry.status for entry in matrix.entries}
+    statuses = {entry.market.code: entry.status for entry in matrix.entries}
     assert statuses == {
         "exportacao-uniao-europeia": MarketEligibilityStatus.AUSENTE,
         "exportacao-china": MarketEligibilityStatus.ELEGIVEL,
@@ -171,16 +365,285 @@ def test_adopted_markets_can_differ_side_by_side() -> None:
     }
 
 
-def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent() -> None:
+def test_supported_markets_generate_independent_executions_side_by_side() -> None:
     org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
     adoptions = InMemoryAdoptions()
-    adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-uniao-europeia")
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+    china = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    eua = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-estados-unidos")
+    china_rule = rules.add_from_adoption(china, code="rule-carencia-farmacologica")
+    eua_rule = rules.add_from_adoption(eua, code="rule-carencia-farmacologica")
+    policies.add_from_rule(china_rule)
+    policies.add_from_rule(eua_rule)
 
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=InMemoryFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
         profiles=(
             MarketProfile(
-                market="exportacao-uniao-europeia",
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC),
+    )
+
+    assert len(evaluations.saved) == 2
+    assert len(decisions.saved) == 2
+    executions = [entry.requirements[0].execution for entry in matrix.entries]
+    assert executions[0] is not None
+    assert executions[1] is not None
+    assert executions[0].evaluation_id != executions[1].evaluation_id
+    assert executions[0].decision_id != executions[1].decision_id
+    assert all(entry.status is MarketEligibilityStatus.ELEGIVEL for entry in matrix.entries)
+
+
+def test_market_dependency_without_selected_subject_is_conditioned() -> None:
+    org_id = OrganizationId.new()
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    carencia = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    estabelecimento = RuleAdoption(
+        adoption_id=TypedId.new("rule_adoption"),
+        organization_id=org_id,
+        rule_identity_id=TypedId.new("rule_identity"),
+        rule_version_id=TypedId.new("rule"),
+        purpose="exportacao-china",
+        scope="livestock.slaughterhouse",
+        adopted_by=UniversalReference(
+            target_id=TypedId.new("actor"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        adopted_at=datetime.now(UTC),
+        reason="Regra adotada para o estabelecimento exigido pela China.",
+        status=RuleAdoptionStatus.ACTIVE,
+    )
+    adoptions.items[
+        (
+            org_id,
+            ESTABLISHMENT_RULE_CODE,
+            "exportacao-china",
+            "livestock.slaughterhouse",
+        )
+    ] = estabelecimento
+    rules.add_from_adoption(carencia, code="rule-carencia-farmacologica")
+    rules.add_from_adoption(
+        estabelecimento,
+        code=ESTABLISHMENT_RULE_CODE,
+        justification="Frigorifico precisa estar habilitado.",
+        corrective_action="Selecionar e comprovar o estabelecimento habilitado.",
+    )
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        profiles=(DEFAULT_MARKET_PROFILES[1],),
+    ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.CONDICIONADO
+    assert entry.dependency is not None
+    assert entry.dependency.subject_key == "slaughterhouse"
+    assert entry.dependency.subject_label == "estabelecimento"
+    assert entry.dependency.selected_subject_id is None
+    assert entry.requirements[0].status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.requirements[1].rule_code == ESTABLISHMENT_RULE_CODE
+    assert entry.requirements[1].status is MarketEligibilityStatus.CONDICIONADO
+    assert entry.requirements[1].dependency is not None
+    assert entry.requirements[1].gaps[0].code is (
+        MarketEligibilityGapCode.DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO
+    )
+
+
+def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    slaughterhouse_id = TypedId.new("external_counterparty")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+    carencia = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    estabelecimento = RuleAdoption(
+        adoption_id=TypedId.new("rule_adoption"),
+        organization_id=org_id,
+        rule_identity_id=TypedId.new("rule_identity"),
+        rule_version_id=TypedId.new("rule"),
+        purpose="exportacao-china",
+        scope="livestock.slaughterhouse",
+        adopted_by=UniversalReference(
+            target_id=TypedId.new("actor"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        adopted_at=datetime.now(UTC),
+        reason="Regra adotada para o estabelecimento exigido pela China.",
+        status=RuleAdoptionStatus.ACTIVE,
+    )
+    adoptions.items[
+        (
+            org_id,
+            ESTABLISHMENT_RULE_CODE,
+            "exportacao-china",
+            "livestock.slaughterhouse",
+        )
+    ] = estabelecimento
+    carencia_rule = rules.add_from_adoption(carencia, code="rule-carencia-farmacologica")
+    estabelecimento_rule = Rule(
+        rule_id=estabelecimento.rule_version_id,
+        policy_id=TypedId.new("policy"),
+        organization_id=org_id,
+        code=ESTABLISHMENT_RULE_CODE,
+        name="Habilitacao do estabelecimento",
+        description="Exige frigorifico do tipo correto e com identificador SIF.",
+        version=1,
+        severity=SeverityLevel.BLOCKING,
+        normative_source="politica interna ficticia",
+        conditions=(
+            RuleCondition(
+                fact_type=establishment_qualification_fact_type("exportacao-china"),
+                payload_key="qualification_status",
+                operator=ComparisonOperator.EQUALS,
+                expected_value="HABILITADO",
+                description="O estabelecimento deve estar habilitado para a China.",
+            ),
+        ),
+        justification="China exige habilitacao do estabelecimento escolhido.",
+        corrective_action="Selecionar frigorifico habilitado com SIF.",
+    )
+    rules.items[estabelecimento_rule.rule_id] = estabelecimento_rule
+    policies.add_from_rule(carencia_rule)
+    policies.add_from_rule(estabelecimento_rule)
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=InMemoryFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(DEFAULT_MARKET_PROFILES[1],),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC),
+        selected_subjects={"slaughterhouse": slaughterhouse_id},
+    )
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.dependency is not None
+    assert entry.dependency.selected_subject_id == str(slaughterhouse_id.value)
+    assert [requirement.status for requirement in entry.requirements] == [
+        MarketEligibilityStatus.ELEGIVEL,
+        MarketEligibilityStatus.ELEGIVEL,
+    ]
+    assert entry.requirements[1].execution is not None
+    assert entry.requirements[1].dependency is not None
+    assert entry.requirements[1].dependency.selected_subject_id == str(slaughterhouse_id.value)
+
+
+def test_market_projection_requires_reevaluation_when_policy_used_is_not_current() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+    china = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    china_rule = rules.add_from_adoption(china, code="rule-carencia-farmacologica")
+    used_policy = policies.add_from_rule(china_rule)
+    current_policy = Policy(
+        policy_id=TypedId.new("policy"),
+        organization_id=org_id,
+        code=used_policy.code,
+        name="Policy ficticia de mercado v2",
+        description="Versao mais nova da mesma policy.",
+        version=used_policy.version + 1,
+        status=PolicyStatus.PUBLISHED,
+        published_at=datetime.now(UTC),
+    )
+    policies.items[current_policy.policy_id] = current_policy
+    policies.by_code[(org_id, current_policy.code)] = current_policy
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=InMemoryFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC),
+    )
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.projection_status is MarketProjectionStatus.REAVALIACAO_NECESSARIA
+    assert entry.used_policy is not None
+    assert entry.current_policy is not None
+    assert entry.used_policy.version == 1
+    assert entry.current_policy.version == 2
+    assert entry.requirements[0].projection_status is MarketProjectionStatus.REAVALIACAO_NECESSARIA
+
+
+def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent() -> None:
+    org_id = OrganizationId.new()
+    adoptions = InMemoryAdoptions()
+    adoption = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-uniao-europeia")
+    rules = InMemoryRules()
+    rules.add_from_adoption(adoption, code="rule-carencia-farmacologica")
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,
                 requirements=(
                     MarketRequirement(
                         rule_code="rule-carencia-farmacologica",
@@ -191,6 +654,7 @@ def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent(
                         scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
                     ),
                 ),
+                declared_withdrawal_period_days=30,
             ),
         ),
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
@@ -208,26 +672,41 @@ def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent(
 def test_adopted_requirement_without_evaluator_is_indeterminate() -> None:
     org_id = OrganizationId.new()
     adoptions = InMemoryAdoptions()
-    adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-uniao-europeia")
+    rules = InMemoryRules()
+    carencia = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-uniao-europeia")
     traceability_adoption = adoptions.add(
         org_id,
         TRACEABILITY_RULE_CODE,
         "exportacao-uniao-europeia",
     )
+    rules.add_from_adoption(carencia, code="rule-carencia-farmacologica")
+    rules.add_from_adoption(
+        traceability_adoption,
+        code=TRACEABILITY_RULE_CODE,
+        justification="Rastreabilidade minima exigida.",
+        corrective_action="Completar a cadeia minima de proveniencia.",
+    )
 
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
+        rule_reader=rules,
         profiles=(DEFAULT_MARKET_PROFILES[0],),
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
     entry = matrix.entries[0]
     assert entry.status is MarketEligibilityStatus.INDETERMINADO
     assert [requirement.status for requirement in entry.requirements] == [
-        MarketEligibilityStatus.ELEGIVEL,
+        MarketEligibilityStatus.INDETERMINADO,
         MarketEligibilityStatus.INDETERMINADO,
     ]
+    assert entry.requirements[0].gaps[0].code is (
+        MarketEligibilityGapCode.CARENCIA_POR_MERCADO_AUSENTE
+    )
     assert entry.requirements[1].governed_rule is not None
     assert entry.requirements[1].governed_rule.adoption_id == traceability_adoption.adoption_id
+    assert entry.requirements[1].adoption is not None
+    assert entry.requirements[1].rule_version is not None
+    assert entry.requirements[1].rule_version.justification == "Rastreabilidade minima exigida."
     assert entry.requirements[1].reasons == ()
     assert entry.requirements[1].gaps[0].code is (
         MarketEligibilityGapCode.AVALIADOR_DE_REQUISITO_AUSENTE

@@ -11,6 +11,7 @@ A linha do tempo e o dossiê são GET de verdade: leem e não escrevem nada.
 
 from datetime import UTC, datetime
 from typing import Annotated, Any
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
@@ -66,6 +67,12 @@ from packages.livestock_application.withdrawal_service import WithdrawalCalculat
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
+from packages.livestock_infrastructure.persistence.establishment_qualification_repository import (
+    TransactionalEstablishmentQualificationRepository,
+)
+from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
+    TransactionalExternalCounterpartyRepository,
+)
 from packages.livestock_infrastructure.persistence.imported_fact_repository import (
     TransactionalImportedLivestockFactRepository,
 )
@@ -86,6 +93,7 @@ from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
 from packages.shared_kernel import OrganizationId
+from packages.shared_kernel import TypedId as SharedTypedId
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
 
@@ -114,6 +122,10 @@ class MatrizMercadoResponse(BaseModel):
     decision_id: str
     dossier_id: str
     markets: list[dict[str, Any]]
+
+
+class MatrizMercadoRequest(BaseModel):
+    slaughterhouse_counterparty_id: str | None = None
 
 
 def _timeline_service(connection: Connection) -> LivestockTimelineService:
@@ -145,6 +157,12 @@ def _eligibility_components(
     fact_provider = LivestockFactProvider(
         property_repository=TransactionalRuralPropertyRepository(connection=connection),
         animal_repository=animal_repository,
+        external_counterparty_repository=TransactionalExternalCounterpartyRepository(
+            connection=connection
+        ),
+        establishment_qualification_repository=TransactionalEstablishmentQualificationRepository(
+            connection=connection
+        ),
         imported_fact_repository=TransactionalImportedLivestockFactRepository(
             connection=connection
         ),
@@ -267,11 +285,24 @@ def executar_elegibilidade(
 )
 def executar_matriz_de_mercado(
     animal_id: str,
+    corpo: MatrizMercadoRequest,
     contexto: Annotated[OrganizationContext, Depends(require_permission(ELIGIBILITY_EXECUTAR))],
     connection: ConnectionDependency,
 ) -> MatrizMercadoResponse:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     organizacao = contexto.organization_id
+    instante = datetime.now(UTC)
+    selected_subjects = (
+        {}
+        if corpo.slaughterhouse_counterparty_id is None
+        else {
+            "slaughterhouse": typed_id_or_problem(
+                corpo.slaughterhouse_counterparty_id,
+                entity_type="external_counterparty",
+                campo="slaughterhouse_counterparty_id",
+            )
+        }
+    )
 
     animal_repository = TransactionalAnimalRepository(connection=connection)
     if animal_repository.get_by_id(alvo) is None:
@@ -291,13 +322,61 @@ def executar_matriz_de_mercado(
         rule_repository=TransactionalRuleRepository(connection=connection),
     ).current(organizacao)
 
-    evaluation, decision = PharmacologicalEligibilityService(
+    matrix = MarketEligibilityService(
+        adoption_reader=TransactionalRuleAdoptionRepository(connection),
+        rule_reader=TransactionalRuleRepository(connection=connection),
+        policy_reader=TransactionalPolicyRepository(connection=connection),
         fact_provider=fact_provider,
-        policy=policy,
-        rule=rule,
         evaluation_repository=evaluations,
         decision_repository=decisions,
-    ).evaluate_animal(organizacao, alvo, datetime.now(UTC))
+        profiles=DEFAULT_MARKET_PROFILES,
+    ).evaluate(
+        organization_id=organizacao,
+        subject_id=alvo,
+        at_time=instante,
+        selected_subjects=selected_subjects,
+    )
+
+    executed_requirement = matrix.first_executed_requirement()
+    if executed_requirement is None or executed_requirement.execution is None:
+        evaluation, decision = PharmacologicalEligibilityService(
+            fact_provider=fact_provider,
+            policy=policy,
+            rule=rule,
+            evaluation_repository=evaluations,
+            decision_repository=decisions,
+        ).evaluate_animal(organizacao, alvo, instante)
+    else:
+        persisted_evaluation = evaluations.get_by_id(
+            SharedTypedId(
+                entity_type="evaluation",
+                value=UUID(executed_requirement.execution.evaluation_id),
+            )
+        )
+        persisted_decision = decisions.get_by_id(
+            SharedTypedId(
+                entity_type="decision",
+                value=UUID(executed_requirement.execution.decision_id),
+            )
+        )
+        if persisted_evaluation is None or persisted_decision is None:
+            raise RuntimeError("A matriz registrou uma avaliacao por mercado sem persistencia.")
+        evaluation = persisted_evaluation
+        decision = persisted_decision
+        if executed_requirement.governed_rule is None:
+            raise RuntimeError("A matriz executou requisito sem regra governada associada.")
+        persisted_rule = TransactionalRuleRepository(connection=connection).get_by_id(
+            executed_requirement.governed_rule.rule_version_id
+        )
+        if persisted_rule is None:
+            raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
+        persisted_policy = TransactionalPolicyRepository(connection=connection).get_by_id(
+            persisted_rule.policy_id
+        )
+        if persisted_policy is None:
+            raise RuntimeError("A matriz executou requisito com policy ausente.")
+        policy = persisted_policy
+        rule = persisted_rule
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),
@@ -308,15 +387,6 @@ def executar_matriz_de_mercado(
         ),
     ).build(decision=decision, evaluation=evaluation, policy=policy, rules=[rule])
     TransactionalDossierRepository(connection=connection).save(dossier)
-
-    matrix = MarketEligibilityService(
-        adoption_reader=TransactionalRuleAdoptionRepository(connection),
-        profiles=DEFAULT_MARKET_PROFILES,
-    ).evaluate(
-        organization_id=organizacao,
-        base_result=decision.result,
-        base_reasons=decision.reasons,
-    )
 
     return MatrizMercadoResponse(
         animal_id=str(alvo.value),

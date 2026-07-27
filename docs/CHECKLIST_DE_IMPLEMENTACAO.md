@@ -1,8 +1,8 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 26 de julho de 2026
+**Atualizado em:** 27 de julho de 2026
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** enriquecer a matriz de elegibilidade por mercado e iniciar o roteiro de simulação comercial ponta a ponta até o frigorífico.
+**Próximo passo planejado:** validar a stack com banco ativo e então iniciar o roteiro de simulação comercial ponta a ponta até o frigorífico.
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -11,6 +11,10 @@
 > **Nota de retomada em 26/07/2026:** o checklist estava defasado em relação ao código. Desde a última consolidação, o backend avançou além do Marco 12: genealogia, reprodução, saída do rebanho, governança de regras, matriz de elegibilidade por mercado, exigibilidade sanitária mínima, prescrição veterinária e autorização de tratamento por prescrição de animal ou lote já foram implementadas e commitadas. Este documento passa a refletir o estado real do backend e ordena os próximos incrementos por criticidade.
 
 > **Ponto de parada em 26/07/2026:** a continuidade da ADR-0042 ficou validada até o ponto em que fato importado alimenta a elegibilidade farmacológica. O roteiro `apps.validacao.fato_importado` passou após a correção do dossiê para contribuição importada (`757370e fix(livestock): montar dossie com fato importado`). Para retomar, começar pela matriz de elegibilidade explicável por mercado: cada célula deve dizer mercado, regra/adoption/version, resultado, motivos, lacunas, requisitos e ação corretiva. Em seguida, criar um roteiro executável de simulação comercial que percorra fazenda → animal → histórico/tratamento/importação → frigorífico → elegibilidade por China/EUA/UE.
+
+> **Nota de revisão em 27/07/2026:** a matriz avançou em três pontos críticos: falha fechada quando o mercado não declara carência própria, substituição auditável de adoção governada e finalidade de mercado canonizada por `Value Object`. Isso reduz risco comercial e desalinha menos a implementação da ADR-0044. Ainda assim, o status continua parcial em relação à tese completa da ADR-0041: a avaliação segue projetando uma decisão farmacológica base para múltiplos mercados, sem `REAVALIACAO_NECESSARIA`, sem sujeito secundário exercitado e sem decisão independente por finalidade.
+
+> **Ponto de parada em 27/07/2026:** a matriz passou a exercitar sujeito secundário de forma auditável no caso da China. O endpoint aceita `slaughterhouse_counterparty_id`, a célula chinesa só promove `ELEGIVEL` quando existe frigorífico selecionado e qualificação explícita do estabelecimento para `exportacao-china`, e essa qualificação fica registrada como dado append-only próprio. O roteiro `apps/validacao/simulacao_comercial.py` já percorre esse fluxo fim a fim. Na retomada, o próximo passo natural é substituir o cadastro manual dessa qualificação por importação ou reconciliação com fonte externa versionada.
 
 
 
@@ -62,7 +66,7 @@ Estados utilizados:
 | 11–12 | API Livestock completa para validação técnica e fluxos operacionais | CONCLUÍDO | Pendente rodada manual final |
 | 13 | Ciclo de vida do animal: saída, genealogia e reprodução | CONCLUÍDO | Pendente rodada manual final |
 | NR-4 / ADR-0043 | Governança e linha do tempo imutável de regras | CONCLUÍDO | Aprovada em 26/07/2026 |
-| NR-4 / ADR-0044 | Matriz de elegibilidade por mercado com regras governadas | CONCLUÍDO | Aprovada em 26/07/2026 |
+| NR-4 / ADR-0044 | Matriz de elegibilidade por mercado com regras governadas | EM ANDAMENTO | Revisão documental em 27/07/2026; nova rodada manual pendente |
 | NR-4 sanitário | Campanhas sanitárias, exigibilidade mínima, prescrição e tratamento autorizado | CONCLUÍDO | Aprovada em 26/07/2026 |
 | ADR-0042a | Contraparte externa local e saída com destino estruturado | CONCLUÍDO | Aprovada em 26/07/2026 |
 | ADR-0042b | Artefato recebido e lacuna de cobertura | CONCLUÍDO | Aprovada em 26/07/2026 |
@@ -75,13 +79,14 @@ Esta fila substitui a indicação antiga "validar Marco 12 e iniciar o frontend"
 
 | Ordem | Criticidade | Incremento | Motivo | Estado atual | Critério de saída |
 |---|---|---|---|---|---|
-| 1 | Alta | Leitura completa da matriz por regra governada | A resposta comercial precisa explicar destino, regra, versão, adoção, lacuna e ação corretiva | Parcialmente implementado | Cada célula da matriz expõe adoption/version/reasons/gaps/requirements de forma suficiente para auditoria e UI, incluindo quando a causa vier de fato importado |
-| 2 | Alta | Roteiro de simulação comercial até frigorífico | Demonstração precisa mostrar a cadeia completa, da fazenda ao destino de mercado, sem colagem manual de IDs | Parcialmente implementado | Um roteiro cria fazendas, animais, histórico, tratamento/importação, lote/frigorífico e imprime China/EUA/UE com motivos comparáveis |
-| 3 | Média-alta | Requisitos sanitários e medicamentos/vacinas como regras adotáveis | Hoje há campanha, prescrição e tratamento; falta transformar obrigações sanitárias em regra governada por mercado | Parcialmente implementado | Regras governadas conseguem exigir campanha, vacinação/tratamento, prescrição ou evidência sanitária |
-| 4 | Média | Continuidade de proveniência e lacuna auditável (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | Contraparte externa, saída estruturada, artefato recebido, fato importado e uso na elegibilidade aprovados em 26/07/2026 | Próximo aprofundamento só quando a matriz precisar expor cobertura/lacuna com maior detalhe por mercado |
-| 5 | Média | Hardening de API antes do frontend | Reduz retrabalho de UI em contratos instáveis | Pendente | Revisar OpenAPI, permissões, erros, paginação e respostas dos endpoints Livestock mais usados |
-| 6 | Média | Documentar corte MVP do backend | Ajuda a decidir o que fica fora sem parecer esquecido | Pendente | Lista explícita de incluído, excluído, riscos e próximos marcos |
-| 7 | Baixa neste momento | Frontend técnico/produto | Interface depende de contratos e narrativa do backend | Aguardando backend congelado | Iniciar somente após os itens 1-2 ou decisão explícita de protótipo |
+| 1 | Alta | Leitura completa da matriz por regra governada | A resposta comercial precisa explicar destino, regra, versão, adoção, lacuna e ação corretiva | Implementado com lacunas estruturais | Cada célula da matriz expõe adoption/version/reasons/gaps/requirements de forma suficiente para auditoria e UI, incluindo quando a causa vier de fato importado, sem reaproveitar carência entre mercados |
+| 2 | Alta | Avaliação realmente independente por mercado | A ADR-0041/0044 só se cumpre por inteiro quando cada finalidade puder divergir por regra, vigência e sujeito próprios | Não iniciado | A matriz deixa de projetar um único `DecisionResult` farmacológico em várias colunas e passa a avaliar lado a lado por finalidade, com suporte futuro a sujeito secundário e reavaliação normativa |
+| 3 | Alta | Roteiro de simulação comercial até frigorífico | Demonstração precisa mostrar a cadeia completa, da fazenda ao destino de mercado, sem colagem manual de IDs | Implementado, pendente validação manual | Um roteiro cria fazendas, animais, histórico, tratamento/importação, lote/frigorífico e imprime China/EUA/UE com motivos comparáveis |
+| 4 | Média-alta | Requisitos sanitários e medicamentos/vacinas como regras adotáveis | Hoje há campanha, prescrição e tratamento; falta transformar obrigações sanitárias em regra governada por mercado | Parcialmente implementado | Regras governadas conseguem exigir campanha, vacinação/tratamento, prescrição ou evidência sanitária |
+| 5 | Média | Continuidade de proveniência e lacuna auditável (ADR-0042) | Elegibilidade para mercados e fornecedor indireto dependem de cadeia além da própria Organization | Contraparte externa, saída estruturada, artefato recebido, fato importado e uso na elegibilidade aprovados em 26/07/2026 | Próximo aprofundamento só quando a matriz precisar expor cobertura/lacuna com maior detalhe por mercado |
+| 6 | Média | Hardening de API antes do frontend | Reduz retrabalho de UI em contratos instáveis | Pendente | Revisar OpenAPI, permissões, erros, paginação e respostas dos endpoints Livestock mais usados |
+| 7 | Média | Documentar corte MVP do backend | Ajuda a decidir o que fica fora sem parecer esquecido | Pendente | Lista explícita de incluído, excluído, riscos e próximos marcos |
+| 8 | Baixa neste momento | Frontend técnico/produto | Interface depende de contratos e narrativa do backend | Aguardando backend congelado | Iniciar somente após os itens 1-3 ou decisão explícita de protótipo |
 
 ## Registro consolidado dos incrementos recentes
 
@@ -95,6 +100,10 @@ Esta fila substitui a indicação antiga "validar Marco 12 e iniciar o frontend"
 | 26/07/2026 | Fato importado alimentando elegibilidade farmacológica | CONCLUÍDO | `50f9b22 feat(livestock): usar fato importado na elegibilidade`; `757370e fix(livestock): montar dossie com fato importado`; roteiro aprovado em 26/07/2026 |
 | 26/07/2026 | Matriz de elegibilidade por mercado de destino | CONCLUÍDO | ADR-0044; `packages/livestock_application/market_eligibility.py`; `apps/validacao/matriz_elegibilidade_mercados.py`; roteiro aprovado em 26/07/2026 |
 | 26/07/2026 | Requisitos por perfil de mercado e diferenciação UE/China/EUA | IMPLEMENTADO | `880882e feat(livestock): suportar requisitos por perfil de mercado`; `09d3417 feat(livestock): diferenciar requisito de rastreabilidade na UE` |
+| 27/07/2026 | Falha fechada quando o mercado não declara carência própria | CONCLUÍDO | `tests/integration/test_livestock_api_leitura.py::test_matriz_de_mercado_falha_fechado_sem_carencia_declarada_por_mercado`; `apps/api/livestock_queries.py`; `packages/livestock_application/market_eligibility.py` |
+| 27/07/2026 | Substituição auditável de adoção governada | CONCLUÍDO | `packages/core_application/rule_governance_service.py`; `apps/api/core_rule_governance.py`; migration `20260727_0054_rule_adoptions_partial_unique_active.py` |
+| 27/07/2026 | Finalidade de mercado canonizada por Value Object | CONCLUÍDO | `packages/livestock_application/market_eligibility.py`; `apps/validacao/matriz_elegibilidade_mercados.py`; `tests/livestock_application/test_market_eligibility.py` |
+| 27/07/2026 | Simulação comercial ponta a ponta até o frigorífico | IMPLEMENTADO | `apps/validacao/simulacao_comercial.py`; `tests/unit/test_validacao_simulacao_comercial.py` |
 | 26/07/2026 | Exigibilidade sanitária mínima | CONCLUÍDO | `5bc1cc7 feat(livestock): avaliar exigibilidade sanitaria minima`; `apps/validacao/exigibilidade_sanitaria_minima.py`; roteiro aprovado em 26/07/2026 |
 | 26/07/2026 | Prescrição veterinária operável pela API | CONCLUÍDO | `57ad5c0 feat(livestock): expor prescricoes veterinarias`; `apps/validacao/prescricao_veterinaria.py`; roteiro aprovado em 26/07/2026 |
 | 26/07/2026 | Prescrição validando medicamento, animal e lote no tratamento | CONCLUÍDO | `f9bf4b7 feat(livestock): validar prescricao no tratamento`; `f55b007 feat(livestock): autorizar tratamento por prescricao de lote` |

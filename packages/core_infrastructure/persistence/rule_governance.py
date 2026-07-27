@@ -11,6 +11,7 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Table,
@@ -23,6 +24,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from packages.core_domain.rule_governance import (
     RuleAdoption,
+    RuleAdoptionStatus,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -115,14 +117,6 @@ rule_adoptions_table = Table(
     Column("adopted_at", DateTime(timezone=True), nullable=False),
     Column("reason", Text, nullable=False, server_default=""),
     Column("status", String(30), nullable=False),
-    UniqueConstraint(
-        "record_owner_organization_id",
-        "rule_identity_id",
-        "purpose",
-        "scope",
-        "status",
-        name="uq_rule_adoptions_active_scope",
-    ),
     CheckConstraint("adopted_by_contract_version >= 1", name="ck_rule_adoptions_actor_cv"),
     ForeignKeyConstraint(
         ["record_owner_organization_id"],
@@ -141,6 +135,15 @@ rule_adoptions_table = Table(
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
+)
+Index(
+    "ix_rule_adoptions_active_scope_unique",
+    rule_adoptions_table.c.record_owner_organization_id,
+    rule_adoptions_table.c.rule_identity_id,
+    rule_adoptions_table.c.purpose,
+    rule_adoptions_table.c.scope,
+    unique=True,
+    postgresql_where=rule_adoptions_table.c.status == "active",
 )
 
 
@@ -428,9 +431,71 @@ class TransactionalRuleAdoptionRepository:
                 "adopted_by_contract_version": adoption.adopted_by.contract_version,
                 "adopted_at": adoption.adopted_at,
                 "reason": adoption.reason,
-                "status": adoption.status,
+                "status": adoption.status.value,
             },
         )
+
+    def update(self, adoption: RuleAdoption) -> None:
+        self.connection.execute(
+            text(
+                """
+                UPDATE core_audit.rule_adoptions
+                SET
+                    rule_version_id = :rule_version_id,
+                    adopted_by_target_type = :adopted_by_target_type,
+                    adopted_by_target_id = :adopted_by_target_id,
+                    adopted_by_organization_id = :adopted_by_organization_id,
+                    adopted_by_contract_version = :adopted_by_contract_version,
+                    adopted_at = :adopted_at,
+                    reason = :reason,
+                    status = :status
+                WHERE adoption_id = :adoption_id
+                """
+            ),
+            {
+                "adoption_id": adoption.adoption_id.value,
+                "rule_version_id": adoption.rule_version_id.value,
+                "adopted_by_target_type": adoption.adopted_by.target_id.entity_type,
+                "adopted_by_target_id": adoption.adopted_by.target_id.value,
+                "adopted_by_organization_id": (
+                    adoption.adopted_by.organization_id.value
+                    if adoption.adopted_by.organization_id is not None
+                    else None
+                ),
+                "adopted_by_contract_version": adoption.adopted_by.contract_version,
+                "adopted_at": adoption.adopted_at,
+                "reason": adoption.reason,
+                "status": adoption.status.value,
+            },
+        )
+
+    def get_by_id(self, adoption_id: TypedId) -> RuleAdoption | None:
+        row = self.connection.execute(
+            text(
+                """
+                SELECT
+                    adoption_id,
+                    record_owner_organization_id,
+                    rule_identity_id,
+                    rule_version_id,
+                    purpose,
+                    scope,
+                    adopted_by_target_type,
+                    adopted_by_target_id,
+                    adopted_by_organization_id,
+                    adopted_by_contract_version,
+                    adopted_at,
+                    reason,
+                    status
+                FROM core_audit.rule_adoptions
+                WHERE adoption_id = :adoption_id
+                """
+            ),
+            {"adoption_id": adoption_id.value},
+        ).first()
+        if row is None:
+            return None
+        return _map_adoption(row)
 
     def get_active_by_identity_and_scope(
         self,
@@ -631,5 +696,5 @@ def _map_adoption(row: object) -> RuleAdoption:
         ),
         adopted_at=_normalize_required_datetime(row.adopted_at),  # type: ignore[attr-defined]
         reason=row.reason,  # type: ignore[attr-defined]
-        status=row.status,  # type: ignore[attr-defined]
+        status=RuleAdoptionStatus(row.status),  # type: ignore[attr-defined]
     )

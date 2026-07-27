@@ -7,6 +7,7 @@ from typing import Protocol
 from packages.core_domain.rule import Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import (
     RuleAdoption,
+    RuleAdoptionStatus,
     RuleIdentity,
     RuleSourceType,
     RuleTimelineEvent,
@@ -31,6 +32,10 @@ class RuleTimelineRepositoryPort(Protocol):
 
 class RuleAdoptionRepositoryPort(Protocol):
     def save(self, adoption: RuleAdoption) -> None: ...
+
+    def update(self, adoption: RuleAdoption) -> None: ...
+
+    def get_by_id(self, adoption_id: TypedId) -> RuleAdoption | None: ...
 
     def get_active_by_identity_and_scope(
         self,
@@ -242,3 +247,73 @@ class RuleGovernanceService:
             )
         )
         return adoption
+
+    def replace_rule_adoption(
+        self,
+        organization_id: OrganizationId,
+        rule_identity_id: TypedId,
+        current_adoption_id: TypedId,
+        new_rule_version_id: TypedId,
+        actor: UniversalReference,
+        reason: str,
+        occurred_at: datetime | None = None,
+    ) -> RuleAdoption:
+        if self.rules is None or self.adoptions is None:
+            raise RuntimeError(
+                "RuleGovernanceService exige repositorios de regras e adocoes "
+                "para substituir adocao."
+            )
+        if not reason.strip():
+            raise ValueError("Substituicao de adocao exige reason explicita.")
+
+        identity = self.identities.get_by_id(rule_identity_id)
+        if identity is None or identity.organization_id != organization_id:
+            raise KeyError(f"Identidade de regra {rule_identity_id.value} nao encontrada.")
+
+        active = self.adoptions.get_by_id(current_adoption_id)
+        if active is None or active.organization_id != organization_id:
+            raise KeyError(f"Adocao {current_adoption_id.value} nao encontrada.")
+        if active.rule_identity_id != rule_identity_id:
+            raise ValueError("A adocao informada nao pertence a identidade de regra indicada.")
+        if active.status is not RuleAdoptionStatus.ACTIVE:
+            raise ValueError("Somente adocao ativa pode ser substituida.")
+
+        replacement_rule = self.rules.get_by_id(new_rule_version_id)
+        if (
+            replacement_rule is None
+            or replacement_rule.organization_id != organization_id
+            or replacement_rule.code != identity.code
+        ):
+            raise KeyError(f"Versao de regra {new_rule_version_id.value} nao encontrada.")
+        if replacement_rule.rule_id == active.rule_version_id:
+            raise ValueError("A nova versao precisa ser diferente da adocao ativa.")
+
+        superseded = active.supersede(
+            adopted_by=actor,
+            reason=reason,
+            adopted_at=occurred_at,
+        )
+        replacement = RuleAdoption.adopt(
+            organization_id=organization_id,
+            rule_identity_id=rule_identity_id,
+            rule_version_id=new_rule_version_id,
+            purpose=active.purpose,
+            scope=active.scope,
+            adopted_by=actor,
+            reason=reason,
+            adopted_at=occurred_at,
+        )
+        self.adoptions.update(superseded)
+        self.adoptions.save(replacement)
+        self.timeline.append(
+            RuleTimelineEvent.record(
+                organization_id=organization_id,
+                rule_identity_id=identity.rule_identity_id,
+                event_type=RuleTimelineEventType.RULE_ADOPTION_CHANGED,
+                actor=actor,
+                rule_version_id=replacement_rule.rule_id,
+                reason=reason,
+                occurred_at=occurred_at,
+            )
+        )
+        return replacement

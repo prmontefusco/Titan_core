@@ -35,9 +35,14 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
     ELIGIBILITY_RULE_CODE,
 )
+from packages.livestock_application.establishment_qualification_service import (
+    establishment_qualification_fact_type,
+)
 from packages.livestock_application.market_eligibility import (
     DEFAULT_MARKET_PROFILES,
+    ESTABLISHMENT_RULE_CODE,
     TRACEABILITY_RULE_CODE,
+    MarketEligibilityPurpose,
 )
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
@@ -106,11 +111,60 @@ def _preparar_regras_de_mercado(database_url: str, organizacao: str) -> None:
                 justification="Destino comercial exige carencia cumprida.",
                 corrective_action="Aguardar fim da carencia.",
             )
-            for market in ("exportacao-china", "exportacao-estados-unidos"):
+            establishment_identity = identities.get_by_organization_and_code(
+                organization_id,
+                ESTABLISHMENT_RULE_CODE,
+            )
+            if establishment_identity is None:
+                establishment_identity = service.create_identity(
+                    organization_id=organization_id,
+                    code=ESTABLISHMENT_RULE_CODE,
+                    purpose="Habilitacao de estabelecimento por mercado.",
+                    scope="livestock.slaughterhouse",
+                    source_type=RuleSourceType.INTERNAL_POLICY,
+                    actor=actor,
+                    vertical="livestock",
+                    description="Regra ficticia de frigorifico para validar matriz comercial.",
+                )
+            establishment_policy = PolicyService(
+                TransactionalPolicyRepository(conexao)
+            ).create_draft(
+                organization_id=organization_id,
+                code=f"validacao-estabelecimento-{uuid4().hex[:8]}",
+                name="Policy de habilitacao do estabelecimento",
+                description="Registro ficticio criado pelo roteiro executavel.",
+            )
+            establishment_rule = service.publish_rule_version(
+                organization_id=organization_id,
+                rule_identity_id=establishment_identity.rule_identity_id,
+                policy_id=establishment_policy.policy_id,
+                name="Habilitacao do estabelecimento",
+                actor=actor,
+                severity=SeverityLevel.BLOCKING,
+                normative_source="politica interna ficticia",
+                required_evidence_types=("livestock.external_counterparty",),
+                conditions=(
+                    RuleCondition(
+                        fact_type=establishment_qualification_fact_type(
+                            MarketEligibilityPurpose.EXPORTACAO_CHINA.code
+                        ),
+                        payload_key="qualification_status",
+                        operator=ComparisonOperator.EQUALS,
+                        expected_value="HABILITADO",
+                        description="O estabelecimento deve estar habilitado para a China.",
+                    ),
+                ),
+                justification="China exige habilitacao do estabelecimento escolhido.",
+                corrective_action="Selecionar frigorifico habilitado com SIF.",
+            )
+            for market in (
+                MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+            ):
                 existing = adoptions.get_active_by_identity_and_scope(
                     organization_id,
                     identity.rule_identity_id,
-                    market,
+                    market.code,
                     ELIGIBILITY_RULE_ADOPTION_SCOPE,
                 )
                 if existing is not None:
@@ -119,9 +173,25 @@ def _preparar_regras_de_mercado(database_url: str, organizacao: str) -> None:
                     organization_id=organization_id,
                     rule_identity_id=identity.rule_identity_id,
                     rule_version_id=rule.rule_id,
-                    purpose=market,
+                    purpose=market.code,
                     scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
-                    reason=f"Regra adotada para {market}.",
+                    reason=f"Regra adotada para {market.code}.",
+                    actor=actor,
+                )
+            existing_establishment = adoptions.get_active_by_identity_and_scope(
+                organization_id,
+                establishment_identity.rule_identity_id,
+                MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                "livestock.slaughterhouse",
+            )
+            if existing_establishment is None:
+                service.adopt_rule_version(
+                    organization_id=organization_id,
+                    rule_identity_id=establishment_identity.rule_identity_id,
+                    rule_version_id=establishment_rule.rule_id,
+                    purpose=MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                    scope="livestock.slaughterhouse",
+                    reason="Regra adotada para a habilitacao do estabelecimento na China.",
                     actor=actor,
                 )
     finally:
@@ -170,8 +240,9 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
             else "matriz nao trouxe mercados, gaps e razoes esperados"
         ),
         porque=(
-            "China e Estados Unidos foram preparados com regra adotada; Uniao "
-            "Europeia deve aparecer como ausencia declarada."
+            "China e Estados Unidos foram preparados; sem estabelecimento "
+            "selecionado, a China deve aparecer como condicionada e a Uniao "
+            "Europeia como ausencia declarada."
         ),
     )
     roteiro.passo(
@@ -195,16 +266,22 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
 def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
     by_market = {str(item["market"]): item for item in markets}
     expected = {
-        "exportacao-uniao-europeia",
-        "exportacao-china",
-        "exportacao-estados-unidos",
+        MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code,
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
     }
     if set(by_market) != expected:
         return False
-    europe_gaps = by_market["exportacao-uniao-europeia"].get("gaps")
-    europe_requirements = by_market["exportacao-uniao-europeia"].get("requirements")
-    china_reasons = by_market["exportacao-china"].get("reasons")
-    china_requirements = by_market["exportacao-china"].get("requirements")
+    europe = MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code
+    china = MarketEligibilityPurpose.EXPORTACAO_CHINA.code
+    europe_gaps = by_market[europe].get("gaps")
+    europe_requirements = by_market[europe].get("requirements")
+    china_reasons = by_market[china].get("reasons")
+    china_requirements = by_market[china].get("requirements")
+    china_adoption = by_market[china].get("adoption")
+    china_rule_version = by_market[china].get("rule_version")
+    china_dependency = by_market[china].get("dependency")
+    china_gaps = by_market[china].get("gaps")
     return (
         isinstance(europe_gaps, list)
         and bool(europe_gaps)
@@ -213,12 +290,27 @@ def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
         and [item.get("rule_code") for item in europe_requirements]
         == [ELIGIBILITY_RULE_CODE, TRACEABILITY_RULE_CODE]
         and [item.get("status") for item in europe_requirements] == ["AUSENTE", "AUSENTE"]
+        and by_market[china].get("status") == "CONDICIONADO"
         and isinstance(china_reasons, list)
         and bool(china_reasons)
         and china_reasons[0].get("code") == "regra_atendida"
         and isinstance(china_requirements, list)
-        and bool(china_requirements)
+        and len(china_requirements) == 2
         and china_requirements[0].get("rule_code") == ELIGIBILITY_RULE_CODE
+        and china_requirements[0].get("status") == "ELEGIVEL"
+        and china_requirements[1].get("rule_code") == ESTABLISHMENT_RULE_CODE
+        and china_requirements[1].get("status") == "CONDICIONADO"
+        and isinstance(china_dependency, dict)
+        and china_dependency.get("subject_key") == "slaughterhouse"
+        and china_dependency.get("selected_subject_id") is None
+        and isinstance(china_gaps, list)
+        and bool(china_gaps)
+        and china_gaps[0].get("code") == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+        and isinstance(china_adoption, dict)
+        and china_adoption.get("purpose") == china
+        and isinstance(china_rule_version, dict)
+        and china_rule_version.get("code") == ELIGIBILITY_RULE_CODE
+        and bool(china_rule_version.get("corrective_action"))
     )
 
 
@@ -267,7 +359,9 @@ def main() -> int:
     print(f"  API          : {api}")
     print(f"  Keycloak     : {keycloak_url} (realm {realm})")
     print(f"  Organization : {organizacao}")
-    print(f"  Mercados     : {', '.join(profile.market for profile in DEFAULT_MARKET_PROFILES)}")
+    print(
+        f"  Mercados     : {', '.join(profile.market.code for profile in DEFAULT_MARKET_PROFILES)}"
+    )
     print(f"{CINZA}  Rode a semeadura novamente se vier 403 por permissao ausente.{FIM}")
 
     codigo = _montar_roteiro(

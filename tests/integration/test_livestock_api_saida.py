@@ -236,6 +236,88 @@ def test_fato_importado_alimenta_elegibilidade(
     assert elegibilidade.json()["result"] == "rejeitada"
 
 
+def test_qualificacao_de_estabelecimento_e_registrada_por_mercado(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={
+            "name": "Frigorifico Habilitado",
+            "counterparty_type": "SLAUGHTERHOUSE",
+            "identifiers": ["SIF:1234"],
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+
+    resposta = operador.post(
+        f"/v1/livestock/external-counterparties/{contraparte.json()['counterparty_id']}/establishment-qualifications",
+        json={
+            "market_purpose": "exportacao-china",
+            "status": "HABILITADO",
+            "source_name": "lista-sif-ficticia",
+            "source_version": "2026-07",
+            "assessed_at": datetime.now(UTC).isoformat(),
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    assert resposta.json()["counterparty_id"] == contraparte.json()["counterparty_id"]
+    assert resposta.json()["market_purpose"] == "exportacao-china"
+    assert resposta.json()["status"] == "HABILITADO"
+
+
+def test_qualificacao_de_estabelecimento_recusa_contraparte_que_nao_e_frigorifico(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={"name": "Fazenda Origem", "counterparty_type": "FARM"},
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+
+    resposta = operador.post(
+        f"/v1/livestock/external-counterparties/{contraparte.json()['counterparty_id']}/establishment-qualifications",
+        json={
+            "market_purpose": "exportacao-china",
+            "status": "HABILITADO",
+            "source_name": "lista-sif-ficticia",
+            "assessed_at": datetime.now(UTC).isoformat(),
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 409
+    assert resposta.json()["reason_code"] == "CONFLITO_DE_DOMINIO"
+
+
+def test_auditor_nao_registra_qualificacao_de_estabelecimento(
+    ambiente: Ambiente, operador: ClienteAutenticado, auditor: ClienteAutenticado
+) -> None:
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={"name": "Frigorifico", "counterparty_type": "SLAUGHTERHOUSE"},
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+
+    resposta = auditor.post(
+        f"/v1/livestock/external-counterparties/{contraparte.json()['counterparty_id']}/establishment-qualifications",
+        json={
+            "market_purpose": "exportacao-china",
+            "status": "HABILITADO",
+            "source_name": "lista-sif-ficticia",
+            "assessed_at": datetime.now(UTC).isoformat(),
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
 def test_o_levantamento_historico_traz_quem_saiu_com_a_saida_preenchida(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:

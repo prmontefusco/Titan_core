@@ -10,7 +10,11 @@ from sqlalchemy import Connection, create_engine, text
 from packages.core_application.policy_service import PolicyService
 from packages.core_application.rule_governance_service import RuleGovernanceService
 from packages.core_domain.rule import ComparisonOperator, RuleCondition
-from packages.core_domain.rule_governance import RuleSourceType, RuleTimelineEventType
+from packages.core_domain.rule_governance import (
+    RuleAdoptionStatus,
+    RuleSourceType,
+    RuleTimelineEventType,
+)
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.core_infrastructure.persistence.rule_governance import (
@@ -163,6 +167,33 @@ def test_rule_governance_persistence_and_rls() -> None:
         events = timeline_repository.list_by_identity(org_1, identity.rule_identity_id)
         assert events[-1].event_type is RuleTimelineEventType.RULE_ADOPTED
         assert events[-1].rule_version_id == rule.rule_id
+
+        revised_rule = rule.create_next_version(name="Carencia farmacologica revisada")
+        rule_repository.save(revised_rule)
+        replacement = service.replace_rule_adoption(
+            organization_id=org_1,
+            rule_identity_id=identity.rule_identity_id,
+            current_adoption_id=adoption.adoption_id,
+            new_rule_version_id=revised_rule.rule_id,
+            actor=actor,
+            reason="Norma interna revisada.",
+            occurred_at=occurred_at + timedelta(seconds=3),
+        )
+        persisted_old = adoption_repository.get_by_id(adoption.adoption_id)
+        assert persisted_old is not None
+        assert persisted_old.status is RuleAdoptionStatus.SUPERSEDED
+        assert (
+            adoption_repository.get_active_by_identity_and_scope(
+                org_1,
+                identity.rule_identity_id,
+                "compra-abate",
+                "fornecedores-diretos",
+            )
+            == replacement
+        )
+        events = timeline_repository.list_by_identity(org_1, identity.rule_identity_id)
+        assert events[-1].event_type is RuleTimelineEventType.RULE_ADOPTION_CHANGED
+        assert events[-1].rule_version_id == revised_rule.rule_id
 
         connection.execute(
             text("SELECT set_config('titan.organization_id', :org_id, true)"),

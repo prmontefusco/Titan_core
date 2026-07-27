@@ -7,6 +7,13 @@ from typing import Any, Protocol
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.establishment_qualification_service import (
+    EstablishmentQualificationRepositoryPort,
+    establishment_qualification_fact_type,
+)
+from packages.livestock_application.external_counterparty_service import (
+    ExternalCounterpartyRepositoryPort,
+)
 from packages.livestock_application.lot_service import LotMembershipRepositoryPort
 from packages.livestock_application.movement_service import PropertyStayRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
@@ -20,6 +27,7 @@ WITHDRAWAL_FACT_TYPE = "livestock.withdrawal"
 # Fato de elegibilidade do lote, consumido pela regra de bloqueio de lote (Passo 9.6).
 LOT_ELIGIBILITY_FACT_TYPE = "livestock.lot_eligibility"
 IMPORTED_TREATMENT_FACT_TYPE = "livestock.treatment_applied"
+EXTERNAL_COUNTERPARTY_FACT_TYPE = "livestock.external_counterparty"
 
 
 class ImportedFactReaderPort(Protocol):
@@ -32,6 +40,8 @@ class ImportedFactReaderPort(Protocol):
 class LivestockFactProvider(FactProviderPort):
     property_repository: RuralPropertyRepositoryPort
     animal_repository: AnimalRepositoryPort
+    external_counterparty_repository: ExternalCounterpartyRepositoryPort | None = None
+    establishment_qualification_repository: EstablishmentQualificationRepositoryPort | None = None
     stay_repository: PropertyStayRepositoryPort | None = None
     withdrawal_calculator: WithdrawalCalculator | None = None
     membership_repository: LotMembershipRepositoryPort | None = None
@@ -154,6 +164,60 @@ class LivestockFactProvider(FactProviderPort):
                             observed_at=at_time,
                         )
                     )
+
+        elif target_id.entity_type == "external_counterparty":
+            if self.external_counterparty_repository is not None:
+                counterparty = self.external_counterparty_repository.get_by_id(target_id)
+                if counterparty is not None and counterparty.organization_id == organization_id:
+                    identifier_types = tuple(
+                        identifier.split(":", 1)[0].strip().upper()
+                        for identifier in counterparty.identifiers
+                        if ":" in identifier
+                    )
+                    fact_list.append(
+                        Fact.create(
+                            fact_type=EXTERNAL_COUNTERPARTY_FACT_TYPE,
+                            payload={
+                                "name": counterparty.name,
+                                "counterparty_type": counterparty.counterparty_type.value,
+                                "identifiers": list(counterparty.identifiers),
+                                "identifier_types": list(identifier_types),
+                                "has_sif_identifier": "SIF" in identifier_types,
+                            },
+                            observed_at=at_time,
+                        )
+                    )
+                    if self.establishment_qualification_repository is not None:
+                        latest_by_market: dict[str, Any] = {}
+                        qualifications = (
+                            self.establishment_qualification_repository.list_by_counterparty(
+                                organization_id,
+                                target_id,
+                            )
+                        )
+                        for qualification in qualifications:
+                            if qualification.assessed_at > at_time:
+                                continue
+                            previous = latest_by_market.get(qualification.market_purpose)
+                            if (
+                                previous is None
+                                or qualification.assessed_at >= previous.assessed_at
+                            ):
+                                latest_by_market[qualification.market_purpose] = qualification
+                        for qualification in latest_by_market.values():
+                            fact_list.append(
+                                Fact.create(
+                                    fact_type=establishment_qualification_fact_type(
+                                        qualification.market_purpose
+                                    ),
+                                    payload={
+                                        "qualification_status": qualification.status.value,
+                                        "source_name": qualification.source_name,
+                                        "source_version": qualification.source_version,
+                                    },
+                                    observed_at=qualification.assessed_at,
+                                )
+                            )
 
         elif target_id.entity_type == "livestock_lot":
             if self.membership_repository is not None and self.withdrawal_calculator is not None:

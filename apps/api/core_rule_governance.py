@@ -120,6 +120,12 @@ class RuleAdoptionResponse(BaseModel):
     status: str
 
 
+class SubstituirAdocaoRegraRequest(BaseModel):
+    current_adoption_id: str
+    new_rule_version_id: str
+    reason: str = Field(min_length=1, max_length=2000)
+
+
 class TimelineEventResponse(BaseModel):
     event_id: str
     rule_identity_id: str
@@ -194,7 +200,7 @@ def _adoption_response(adoption: RuleAdoption) -> RuleAdoptionResponse:
         scope=adoption.scope,
         adopted_at=adoption.adopted_at,
         reason=adoption.reason,
-        status=adoption.status,
+        status=adoption.status.value,
     )
 
 
@@ -333,6 +339,58 @@ def adotar_regra(
             rule_version_id=rule_version_id,
             purpose=corpo.purpose,
             scope=corpo.scope,
+            reason=corpo.reason,
+            actor=_actor(contexto),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+    return _adoption_response(adoption)
+
+
+@router.post(
+    "/rule-identities/{rule_identity_id}/adoptions/replace",
+    response_model=RuleAdoptionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Substituir a adocao ativa por outra versao da regra",
+    responses=RESPOSTAS_PADRAO,
+)
+def substituir_adocao_regra(
+    rule_identity_id: str,
+    corpo: SubstituirAdocaoRegraRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(RULE_GOVERNANCE_ADOTAR))],
+    connection: ConnectionDependency,
+) -> RuleAdoptionResponse:
+    identity_id = typed_id_or_problem(
+        rule_identity_id, entity_type="rule_identity", campo="rule_identity_id"
+    )
+    current_adoption_id = typed_id_or_problem(
+        corpo.current_adoption_id,
+        entity_type="rule_adoption",
+        campo="current_adoption_id",
+    )
+    new_rule_version_id = typed_id_or_problem(
+        corpo.new_rule_version_id,
+        entity_type="rule",
+        campo="new_rule_version_id",
+    )
+    try:
+        adoption = _servico(connection).replace_rule_adoption(
+            organization_id=contexto.organization_id,
+            rule_identity_id=identity_id,
+            current_adoption_id=current_adoption_id,
+            new_rule_version_id=new_rule_version_id,
             reason=corpo.reason,
             actor=_actor(contexto),
         )

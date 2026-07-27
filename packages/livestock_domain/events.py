@@ -43,6 +43,7 @@ PRESCRIPTION_ISSUED = "livestock.prescription_issued"
 TREATMENT_APPLIED = "livestock.treatment_applied"
 ANIMAL_EXITED = "livestock.animal_exited"
 EXTERNAL_COUNTERPARTY_REGISTERED = "livestock.external_counterparty_registered"
+ESTABLISHMENT_QUALIFICATION_RECORDED = "livestock.establishment_qualification_recorded"
 TRANSFER_ARTIFACT_RECEIVED = "livestock.transfer_artifact_received"
 IMPORTED_FACT_RECORDED = "livestock.imported_fact_recorded"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
@@ -68,6 +69,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         TREATMENT_APPLIED,
         ANIMAL_EXITED,
         EXTERNAL_COUNTERPARTY_REGISTERED,
+        ESTABLISHMENT_QUALIFICATION_RECORDED,
         IMPORTED_FACT_RECORDED,
         TRANSFER_ARTIFACT_RECEIVED,
         PARENTAGE_REGISTERED,
@@ -589,6 +591,32 @@ def external_counterparty_registered_payload(
             "identifiers": list(identifiers),
             "name": name,
             "notes": notes,
+        },
+    )
+
+
+def establishment_qualification_recorded_payload(
+    *,
+    qualification_id: TypedId,
+    counterparty_id: TypedId,
+    market_purpose: str,
+    status: str,
+    source_name: str,
+    source_version: str | None,
+    assessed_at: datetime,
+    evidence_references: tuple[UniversalReference, ...],
+) -> CanonicalPayload:
+    return _payload(
+        ESTABLISHMENT_QUALIFICATION_RECORDED,
+        {
+            "assessed_at": assessed_at,
+            "counterparty_id": _id(counterparty_id),
+            "evidence_references": [_id(r.target_id) for r in evidence_references],
+            "market_purpose": market_purpose,
+            "qualification_id": _id(qualification_id),
+            "source_name": source_name,
+            "source_version": source_version,
+            "status": status,
         },
     )
 

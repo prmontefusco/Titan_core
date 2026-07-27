@@ -40,6 +40,9 @@ from packages.livestock_application.authorization import (
     REPRODUCTION_REGISTRAR,
     VETERINARIAN_CRIAR,
 )
+from packages.livestock_application.establishment_qualification_service import (
+    EstablishmentQualificationService,
+)
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.exit_service import AnimalExitService
 from packages.livestock_application.external_counterparty_service import ExternalCounterpartyService
@@ -59,6 +62,9 @@ from packages.livestock_application.transfer_artifact_service import (
 )
 from packages.livestock_application.veterinarian_service import VeterinarianService
 from packages.livestock_domain.animal import AnimalSex, BirthOutcome, VerificationStatus
+from packages.livestock_domain.establishment_qualification import (
+    EstablishmentQualificationStatus,
+)
 from packages.livestock_domain.exit import ExitType
 from packages.livestock_domain.external_counterparty import CounterpartyType
 from packages.livestock_domain.geometry import (
@@ -81,6 +87,9 @@ from packages.livestock_infrastructure.geodata import (
 )
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
+)
+from packages.livestock_infrastructure.persistence.establishment_qualification_repository import (
+    TransactionalEstablishmentQualificationRepository,
 )
 from packages.livestock_infrastructure.persistence.exit_repository import (
     TransactionalAnimalExitRepository,
@@ -538,6 +547,25 @@ class ContraparteExternaResponse(BaseModel):
     notes: str | None
 
 
+class RegistrarQualificacaoEstabelecimentoRequest(BaseModel):
+    market_purpose: str = Field(min_length=1, max_length=120)
+    status: EstablishmentQualificationStatus
+    source_name: str = Field(min_length=1, max_length=255)
+    source_version: str | None = Field(default=None, max_length=120)
+    assessed_at: datetime
+    evidence_references: list[str] = Field(default_factory=list)
+
+
+class QualificacaoEstabelecimentoResponse(BaseModel):
+    qualification_id: str
+    counterparty_id: str
+    market_purpose: str
+    status: str
+    source_name: str
+    source_version: str | None
+    assessed_at: datetime
+
+
 def _contraparte_response(contraparte: Any) -> ContraparteExternaResponse:
     return ContraparteExternaResponse(
         counterparty_id=str(contraparte.counterparty_id.value),
@@ -545,6 +573,18 @@ def _contraparte_response(contraparte: Any) -> ContraparteExternaResponse:
         counterparty_type=contraparte.counterparty_type.value,
         identifiers=list(contraparte.identifiers),
         notes=contraparte.notes,
+    )
+
+
+def _qualificacao_response(qualificacao: Any) -> QualificacaoEstabelecimentoResponse:
+    return QualificacaoEstabelecimentoResponse(
+        qualification_id=str(qualificacao.qualification_id.value),
+        counterparty_id=str(qualificacao.counterparty_id.value),
+        market_purpose=qualificacao.market_purpose,
+        status=qualificacao.status.value,
+        source_name=qualificacao.source_name,
+        source_version=qualificacao.source_version,
+        assessed_at=qualificacao.assessed_at,
     )
 
 
@@ -586,6 +626,61 @@ def registrar_contraparte_externa(
         raise _conflito(error) from error
 
     return _contraparte_response(contraparte)
+
+
+@router.post(
+    "/external-counterparties/{counterparty_id}/establishment-qualifications",
+    response_model=QualificacaoEstabelecimentoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar qualificacao auditavel de estabelecimento por mercado",
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_qualificacao_de_estabelecimento(
+    counterparty_id: str,
+    corpo: RegistrarQualificacaoEstabelecimentoRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
+    connection: ConnectionDependency,
+) -> QualificacaoEstabelecimentoResponse:
+    servico = EstablishmentQualificationService(
+        repository=TransactionalEstablishmentQualificationRepository(connection=connection),
+        counterparty_repository=TransactionalExternalCounterpartyRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    try:
+        qualificacao = servico.record_qualification(
+            context=operation_context(contexto),
+            counterparty_id=typed_id_or_problem(
+                counterparty_id,
+                entity_type="external_counterparty",
+                campo="counterparty_id",
+            ),
+            market_purpose=corpo.market_purpose,
+            status=corpo.status,
+            source_name=corpo.source_name,
+            source_version=corpo.source_version,
+            assessed_at=corpo.assessed_at,
+            evidence_references=tuple(
+                UniversalReference(
+                    target_id=typed_id_or_problem(
+                        bruto, entity_type="evidence", campo="evidence_references"
+                    ),
+                    organization_id=contexto.organization_id,
+                    contract_version=1,
+                )
+                for bruto in corpo.evidence_references
+            ),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _qualificacao_response(qualificacao)
 
 
 class RegistrarSaidaRequest(BaseModel):
