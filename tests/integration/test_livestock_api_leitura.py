@@ -24,6 +24,7 @@ from packages.livestock_application.establishment_qualification_service import (
 )
 from packages.livestock_application.market_eligibility import (
     ESTABLISHMENT_RULE_CODE,
+    TRACEABILITY_RULE_CODE,
     MarketEligibilityPurpose,
 )
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
@@ -65,13 +66,17 @@ def _criar_animais(ambiente: Ambiente, operador: ClienteAutenticado, quantos: in
 
 def _criar_policy_de_regra(ambiente: Ambiente) -> str:
     set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
-    policy = PolicyService(TransactionalPolicyRepository(ambiente.connection)).create_draft(
+    servico = PolicyService(TransactionalPolicyRepository(ambiente.connection))
+    draft = servico.create_draft(
         organization_id=ambiente.org_a.organization_id,
         code=f"politica-mercado-{uuid4().hex[:8]}",
         name="Politica de elegibilidade por mercado",
         description="Policy ficticia para validar matriz comercial.",
     )
-    return str(policy.policy_id.value)
+    # Politica em draft nao e executavel: PolicyEvaluationService recusa
+    # avaliar qualquer coisa que nao esteja PUBLISHED ou SUPERSEDED.
+    publicada = servico.publish_policy(draft.policy_id)
+    return str(publicada.policy_id.value)
 
 
 def _adotar_regra_de_carencia_para_mercados(
@@ -103,7 +108,12 @@ def _adotar_regra_de_carencia_para_mercados(
             "description": "Nao aceita animal em periodo de carencia.",
             "severity": "blocking",
             "normative_source": "politica interna ficticia",
-            "required_evidence_types": ["livestock.treatment_applied"],
+            # Sem required_evidence_types: a regra real (build_eligibility_rule,
+            # eligibility.py) tambem nao declara nenhum. O fato WITHDRAWAL_FACT_TYPE
+            # e sempre emitido pelo fact_provider para qualquer animal (com
+            # in_withdrawal=False quando nao ha tratamento), entao exigir aqui um
+            # tipo de evidencia (ex.: fato importado de tratamento) que o cenario
+            # nunca produz faria esta regra ficar para sempre INDETERMINADA.
             "conditions": [
                 {
                     "fact_type": "livestock.withdrawal",
@@ -181,6 +191,62 @@ def _adotar_regra_de_carencia_para_mercados(
                 "purpose": MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
                 "scope": "livestock.slaughterhouse",
                 "reason": "Regra adotada para a habilitacao do estabelecimento na China.",
+            },
+            headers=cabecalho,
+        )
+        assert adoption.status_code == 201, adoption.text
+    if MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA in mercados:
+        # O perfil da UE (DEFAULT_MARKET_PROFILES) tem dois requisitos: carencia
+        # e rastreabilidade minima. Sem adotar tambem a rastreabilidade, esse
+        # segundo requisito fica AUSENTE, e AUSENTE tem precedencia sobre
+        # INDETERMINADO na agregacao (_aggregate_requirement_status) -- o
+        # status do mercado inteiro apareceria como AUSENTE em vez de refletir
+        # o requisito de carencia que o teste realmente quer exercitar.
+        identidade_rastreabilidade = operador.post(
+            "/v1/rule-governance/rule-identities",
+            json={
+                "code": TRACEABILITY_RULE_CODE,
+                "purpose": "Rastreabilidade minima por mercado.",
+                "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                "source_type": "politica_interna",
+                "vertical": "livestock",
+                "description": "Regra ficticia de rastreabilidade para validar matriz comercial.",
+            },
+            headers=cabecalho,
+        )
+        assert identidade_rastreabilidade.status_code == 201, identidade_rastreabilidade.text
+        identity_id = identidade_rastreabilidade.json()["rule_identity_id"]
+        rule = operador.post(
+            f"/v1/rule-governance/rule-identities/{identity_id}/versions",
+            json={
+                "policy_id": _criar_policy_de_regra(ambiente),
+                "name": "Rastreabilidade minima",
+                "description": "Exige historico rastreavel do animal.",
+                "severity": "blocking",
+                "normative_source": "politica interna ficticia",
+                "conditions": [
+                    {
+                        "fact_type": "livestock.withdrawal",
+                        "payload_key": "in_withdrawal",
+                        "operator": "equals",
+                        "expected_value": False,
+                        "description": "Fato sempre presente, usado apenas para "
+                        "exercitar o requisito de rastreabilidade na matriz.",
+                    }
+                ],
+                "justification": "UE exige rastreabilidade minima do animal.",
+                "corrective_action": "Completar o historico rastreavel do animal.",
+            },
+            headers=cabecalho,
+        )
+        assert rule.status_code == 201, rule.text
+        adoption = operador.post(
+            f"/v1/rule-governance/rule-identities/{identity_id}/adoptions",
+            json={
+                "rule_version_id": rule.json()["rule_id"],
+                "purpose": MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code,
+                "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                "reason": "Regra adotada para a rastreabilidade minima na UE.",
             },
             headers=cabecalho,
         )
@@ -610,9 +676,15 @@ def test_matriz_de_mercado_falha_fechado_sem_carencia_declarada_por_mercado(
     assert europa["status"] == "INDETERMINADO"
     assert europa["adoption"]["purpose"] == "exportacao-uniao-europeia"
     assert europa["rule_version"]["code"] == "rule-carencia-farmacologica"
-    assert europa["reasons"] == []
     assert europa["requirements"][0]["status"] == "INDETERMINADO"
     assert europa["requirements"][0]["gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
+    # requirements[0] (carencia) e curto-circuitado pela lacuna acima, sem
+    # reasons proprias. requirements[1] (rastreabilidade) e adotado e
+    # executado normalmente, entao as reasons agregadas do mercado vem dele --
+    # nao ha reasons "fantasma" nem confusao entre os dois requisitos.
+    assert [reason["rule_code"] for reason in europa["reasons"]] == ["rule-rastreabilidade-minima"]
+    assert europa["requirements"][1]["rule_code"] == "rule-rastreabilidade-minima"
+    assert europa["requirements"][1]["status"] == "ELEGIVEL"
 
 
 def test_matriz_de_mercado_mostra_sujeito_escolhido_e_falha_fechado_sem_avaliador(
