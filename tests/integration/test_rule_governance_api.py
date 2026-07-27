@@ -86,7 +86,7 @@ def test_fluxo_http_cria_publica_e_consulta_timeline_governada(ambiente) -> None
         headers=headers,
     )
     assert timeline_response.status_code == 200
-    event_types = {event["event_type"] for event in timeline_response.json()}
+    event_types = {event["event_type"] for event in timeline_response.json()["items"]}
     assert event_types == {
         "rule_identity_created",
         "rule_version_drafted",
@@ -150,7 +150,7 @@ def test_fluxo_http_substitui_adocao_ativa_por_nova_versao(ambiente) -> None:  #
     timeline = cliente.get(
         f"/v1/rule-governance/rule-identities/{identity['rule_identity_id']}/timeline",
         headers=headers,
-    ).json()
+    ).json()["items"]
     assert timeline[-1]["event_type"] == "rule_adoption_changed"
     assert timeline[-1]["rule_version_id"] == rule_v2["rule_id"]
 

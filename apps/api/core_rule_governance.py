@@ -12,6 +12,7 @@ from apps.api.livestock_dependencies import (
     require_permission,
     typed_id_or_problem,
 )
+from apps.api.pagination import Pagina, PaginacaoDependency, montar_pagina
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_application.rule_governance_authorization import (
     RULE_GOVERNANCE_ADOTAR,
@@ -413,15 +414,21 @@ def substituir_adocao_regra(
 
 @router.get(
     "/rule-identities/{rule_identity_id}/timeline",
-    response_model=list[TimelineEventResponse],
+    response_model=Pagina[TimelineEventResponse],
     summary="Consultar a linha do tempo imutavel de uma regra",
+    description=(
+        "Uma regra ativamente governada acumula evento a cada versao publicada, "
+        "adocao e substituicao de adocao, sem teto natural ao longo dos anos -- "
+        "por isso paginada como as demais listagens da API."
+    ),
     responses=RESPOSTAS_PADRAO,
 )
 def consultar_timeline_regra(
     rule_identity_id: str,
     contexto: Annotated[OrganizationContext, Depends(require_permission(RULE_GOVERNANCE_LER))],
     connection: ConnectionDependency,
-) -> list[TimelineEventResponse]:
+    paginacao: PaginacaoDependency,
+) -> dict[str, Any]:
     identity_id = typed_id_or_problem(
         rule_identity_id, entity_type="rule_identity", campo="rule_identity_id"
     )
@@ -434,6 +441,9 @@ def consultar_timeline_regra(
             detail="Identidade de regra nao encontrada nesta organizacao.",
         )
     events = TransactionalRuleTimelineRepository(connection).list_by_identity(
-        contexto.organization_id, identity_id
+        contexto.organization_id,
+        identity_id,
+        limit=paginacao.limite_de_sondagem,
+        offset=paginacao.offset,
     )
-    return [_timeline_response(event) for event in events]
+    return montar_pagina([_timeline_response(event) for event in events], paginacao)

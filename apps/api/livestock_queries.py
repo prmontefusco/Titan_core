@@ -22,6 +22,7 @@ from apps.api.livestock_dependencies import (
     require_permission,
     typed_id_or_problem,
 )
+from apps.api.pagination import PaginacaoDependency, montar_pagina
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_application.dossier_service import DossierService
 from packages.core_domain import OrganizationContext
@@ -473,16 +474,19 @@ def listar_dossies(
     subject_id: str,
     contexto: Annotated[OrganizationContext, Depends(require_permission(DOSSIER_LER))],
     connection: ConnectionDependency,
+    paginacao: PaginacaoDependency,
 ) -> dict[str, Any]:
     alvo = typed_id_or_problem(subject_id, entity_type="animal", campo="subject_id")
     encontrados = TransactionalDossierRepository(connection=connection).list_by_subject(
-        contexto.organization_id, alvo
+        contexto.organization_id,
+        alvo,
+        limit=paginacao.limite_de_sondagem,
+        offset=paginacao.offset,
     )
     # O resumo traz o suficiente para escolher qual dossiê abrir; o documento
     # inteiro vem na rota de detalhe, porque é grande e nem sempre necessário.
-    return {
-        "subject_id": str(alvo.value),
-        "items": [
+    pagina = montar_pagina(
+        [
             {
                 "dossier_id": str(dossie.dossier_id.value),
                 "purpose": dossie.purpose,
@@ -494,6 +498,11 @@ def listar_dossies(
             }
             for dossie in encontrados
         ],
+        paginacao,
+    )
+    return {
+        "subject_id": str(alvo.value),
+        **pagina,
     }
 
 

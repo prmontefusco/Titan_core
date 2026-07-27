@@ -341,7 +341,12 @@ class TransactionalRuleTimelineRepository:
         )
 
     def list_by_identity(
-        self, organization_id: OrganizationId, rule_identity_id: TypedId
+        self,
+        organization_id: OrganizationId,
+        rule_identity_id: TypedId,
+        *,
+        limit: int = 200,
+        offset: int = 0,
     ) -> list[RuleTimelineEvent]:
         rows = self.connection.execute(
             text(
@@ -364,9 +369,15 @@ class TransactionalRuleTimelineRepository:
                 WHERE record_owner_organization_id = :org_id
                   AND rule_identity_id = :rule_identity_id
                 ORDER BY occurred_at ASC, event_id ASC
+                LIMIT :limit OFFSET :offset
                 """
             ),
-            {"org_id": organization_id.value, "rule_identity_id": rule_identity_id.value},
+            {
+                "org_id": organization_id.value,
+                "rule_identity_id": rule_identity_id.value,
+                "limit": limit,
+                "offset": offset,
+            },
         ).fetchall()
         return [_map_timeline_event(row) for row in rows]
 

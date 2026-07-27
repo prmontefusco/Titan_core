@@ -141,7 +141,7 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, policy_id: str) -> Rote
                 "rule_version_published",
                 "rule_adopted",
             }
-            == {evento["event_type"] for evento in r.corpo}
+            == {evento["event_type"] for evento in r.corpo["items"]}
             else "timeline nao trouxe os quatro eventos esperados"
         ),
         porque="A auditoria precisa reconstruir criacao, publicacao e adocao da regra.",

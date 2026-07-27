@@ -129,7 +129,12 @@ class TransactionalDossierRepository:
         return self._map_row(row)
 
     def list_by_subject(
-        self, organization_id: OrganizationId, subject_id: TypedId
+        self,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+        *,
+        limit: int = 200,
+        offset: int = 0,
     ) -> list[Dossier]:
         rows = self.connection.execute(
             text(
@@ -139,9 +144,15 @@ class TransactionalDossierRepository:
                 WHERE record_owner_organization_id = :org_id
                   AND subject_id = :subject_id
                 ORDER BY generated_at DESC
+                LIMIT :limit OFFSET :offset
                 """
             ),
-            {"org_id": organization_id.value, "subject_id": subject_id.value},
+            {
+                "org_id": organization_id.value,
+                "subject_id": subject_id.value,
+                "limit": limit,
+                "offset": offset,
+            },
         ).fetchall()
         return [self._map_row(row) for row in rows]
 
