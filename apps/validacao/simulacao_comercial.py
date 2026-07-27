@@ -22,7 +22,13 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
     ids: dict[str, str] = {}
     agora = datetime.now(UTC)
     transferencia = agora - timedelta(days=1)
-    tratamento = transferencia - timedelta(days=30)
+    # A carencia importada no passo 4 declara withdrawal_period_days=45; o
+    # tratamento precisa ter ocorrido ha mais que isso para que o animal
+    # chegue elegivel na matriz do passo 5, como o roteiro pretende
+    # demonstrar. Com 30 dias antes da transferencia, o animal ainda estaria
+    # dentro da carencia (30 < 45) e a matriz corretamente diria NAO_ELEGIVEL
+    # -- resultado real, so nao o que este roteiro quer exercitar.
+    tratamento = transferencia - timedelta(days=60)
     roteiro = Roteiro(
         "Simulacao comercial - fazenda, prova recebida, elegibilidade e frigorifico",
         diario=operador.diario,

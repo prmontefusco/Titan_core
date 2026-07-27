@@ -84,12 +84,16 @@ def _preparar_regras_de_mercado(database_url: str, organizacao: str) -> None:
                     description="Regra ficticia para validar matriz comercial.",
                 )
 
-            policy = PolicyService(TransactionalPolicyRepository(conexao)).create_draft(
+            policy_service = PolicyService(TransactionalPolicyRepository(conexao))
+            policy_draft = policy_service.create_draft(
                 organization_id=organization_id,
                 code=f"validacao-mercado-{uuid4().hex[:8]}",
                 name="Policy de apoio para matriz de mercado",
                 description="Registro ficticio criado pelo roteiro executavel.",
             )
+            # Draft nao e executavel: PolicyEvaluationService recusa avaliar
+            # qualquer coisa que nao esteja PUBLISHED ou SUPERSEDED.
+            policy = policy_service.publish_policy(policy_draft.policy_id)
             rule = service.publish_rule_version(
                 organization_id=organization_id,
                 rule_identity_id=identity.rule_identity_id,
@@ -98,7 +102,14 @@ def _preparar_regras_de_mercado(database_url: str, organizacao: str) -> None:
                 actor=actor,
                 severity=SeverityLevel.BLOCKING,
                 normative_source="politica interna ficticia",
-                required_evidence_types=("livestock.treatment_applied",),
+                # Sem required_evidence_types: "livestock.treatment_applied" nunca
+                # aparece como Fact isolado no snapshot -- o fact_provider so o usa
+                # para compor o payload de "livestock.withdrawal" (contributions),
+                # nunca emite um Fact proprio com esse fact_type. Exigi-lo aqui
+                # fazia a regra ficar para sempre INDETERMINADA/evidencia_pendente,
+                # mesmo com o fato importado corretamente no passo anterior do
+                # roteiro. A regra real de producao (build_eligibility_rule,
+                # eligibility.py) tambem nao declara required_evidence_types algum.
                 conditions=(
                     RuleCondition(
                         fact_type="livestock.withdrawal",
@@ -126,13 +137,15 @@ def _preparar_regras_de_mercado(database_url: str, organizacao: str) -> None:
                     vertical="livestock",
                     description="Regra ficticia de frigorifico para validar matriz comercial.",
                 )
-            establishment_policy = PolicyService(
-                TransactionalPolicyRepository(conexao)
-            ).create_draft(
+            establishment_policy_service = PolicyService(TransactionalPolicyRepository(conexao))
+            establishment_policy_draft = establishment_policy_service.create_draft(
                 organization_id=organization_id,
                 code=f"validacao-estabelecimento-{uuid4().hex[:8]}",
                 name="Policy de habilitacao do estabelecimento",
                 description="Registro ficticio criado pelo roteiro executavel.",
+            )
+            establishment_policy = establishment_policy_service.publish_policy(
+                establishment_policy_draft.policy_id
             )
             establishment_rule = service.publish_rule_version(
                 organization_id=organization_id,
