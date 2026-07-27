@@ -99,32 +99,6 @@ class TransactionalEstablishmentQualificationRepository(EstablishmentQualificati
         ).all()
         return [self._map(row) for row in rows]
 
-    def find_by_source_version(
-        self, organization_id: OrganizationId, source_version: str
-    ) -> list[EstablishmentQualification]:
-        """Lista qualificacoes de uma versao de fonte especifica."""
-        rows = self.connection.execute(
-            select(establishment_qualifications_table).where(
-                establishment_qualifications_table.c.record_owner_organization_id
-                == organization_id.value,
-                establishment_qualifications_table.c.source_version == source_version,
-            )
-        ).all()
-        return [self._map(row) for row in rows]
-
-    def find_active_by_organization(
-        self, organization_id: OrganizationId
-    ) -> list[EstablishmentQualification]:
-        """Lista qualificacoes ativas (status HABILITADO) da Organization."""
-        rows = self.connection.execute(
-            select(establishment_qualifications_table).where(
-                establishment_qualifications_table.c.record_owner_organization_id
-                == organization_id.value,
-                establishment_qualifications_table.c.qualification_status == "HABILITADO",
-            )
-        ).all()
-        return [self._map(row) for row in rows]
-
     def _map(self, row: Row[Any]) -> EstablishmentQualification:
         def _aware(value: datetime) -> datetime:
             return value.replace(tzinfo=UTC) if value.tzinfo is None else value

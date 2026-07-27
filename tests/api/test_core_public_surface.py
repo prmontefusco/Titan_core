@@ -117,10 +117,11 @@ SUPERFICIE_ESPERADA = {
     # declaração dele. A importação grava, com proveniência SICAR_CAR.
     ("/v1/livestock/properties/car-preview", "get"),
     ("/v1/livestock/properties/{property_id}/geometry/import-car", "post"),
-    # Importação de qualificações de estabelecimento (Passo 17.3a, ADR-0045).
-    # Lista versionada com reconciliação: qualificações que saem são revogadas,
-    # novas são criadas, mesma versão importada 2x é idempotente.
-    ("/v1/livestock/establishments/qualifications/import", "post"),
+    # Importação de asserções de qualificação de estabelecimento (Passo 17.3a,
+    # ADR-0045). SourceArtifact + Assertion bitemporal: a mesma source_version
+    # importada 2x é idempotente; ausência em snapshot completo produz UNKNOWN,
+    # nunca NOT_QUALIFIED diretamente.
+    ("/v1/livestock/establishments/qualification-assertions/import", "post"),
 }
 
 

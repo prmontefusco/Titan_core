@@ -51,6 +51,12 @@ from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
     rural_properties_table,
 )
+from packages.livestock_infrastructure.persistence.qualification_assertion_repository import (
+    TransactionalEstablishmentQualificationAssertionRepository,
+    TransactionalQualificationSourceArtifactRepository,
+    establishment_qualification_assertions_table,
+    qualification_source_artifacts_table,
+)
 from packages.livestock_infrastructure.persistence.reproduction_repository import (
     TransactionalReproductiveEventRepository,
     reproductive_event_offspring_table,
@@ -90,6 +96,10 @@ __all__ = [
     "TransactionalPropertyGeometryRepository",
     "TransactionalReproductiveEventRepository",
     "TransactionalSanitaryCampaignRepository",
+    "TransactionalQualificationSourceArtifactRepository",
+    "TransactionalEstablishmentQualificationAssertionRepository",
+    "qualification_source_artifacts_table",
+    "establishment_qualification_assertions_table",
     "property_geometries_table",
     "reproductive_event_offspring_table",
     "reproductive_events_table",

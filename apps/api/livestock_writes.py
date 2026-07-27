@@ -33,6 +33,7 @@ from packages.core_infrastructure.persistence.relations import TransactionalRela
 from packages.livestock_application.authorization import (
     ANIMAL_REGISTRAR_GENEALOGIA,
     ANIMAL_REGISTRAR_SAIDA,
+    ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR,
     LOT_CRIAR,
     MOVEMENT_REGISTRAR,
     PROPERTY_CRIAR,
@@ -1506,116 +1507,155 @@ def importar_geometria_do_car(
     )
 
 
-# ===================== Importacao de Qualificacoes de Estabelecimento =====================
+# ============ Importacao de Asserções de Qualificação de Estabelecimento ============
+# ADR-0045: SourceArtifact + EstablishmentQualificationAssertion, bitemporal.
+# `confidence` NAO e campo de entrada -- e computado pelo Titan a partir da
+# proveniencia da chamada (ver compute_confidence). Ausencia em snapshot
+# completo produz UNKNOWN, nunca NOT_QUALIFIED: o fato nao decide o que a
+# ausencia significa para uma finalidade de mercado -- isso e da Policy.
 
 
-class QualificacaoImportItem(BaseModel):
-    """Um item da lista de qualificacoes a importar."""
+class AssercaoQualificacaoInput(BaseModel):
+    """Um item declarado pela fonte. Sem campo de confiança: o Titan a computa."""
 
-    counterparty_id: str = Field(description="UUID do estabelecimento externo")
-    market_purpose: str = Field(min_length=1, max_length=120, description="Ex: exportacao-china")
-    status: str = Field(
-        description="HABILITADO ou NAO_HABILITADO",
+    establishment_id: str = Field(description="UUID do estabelecimento (external_counterparty)")
+    qualification_type: str = Field(min_length=1, max_length=120, description="Ex: EXPORT_CN")
+    asserted_status: str = Field(description="QUALIFIED, NOT_QUALIFIED ou UNKNOWN")
+    effective_from: datetime | None = Field(
+        default=None, description="So preenchido se a fonte afirmar a data explicitamente"
     )
-    source_name: str = Field(min_length=1, max_length=255, description="Origem da qualificacao")
+    effective_until: datetime | None = Field(
+        default=None, description="So preenchido se a fonte afirmar a data explicitamente"
+    )
 
 
-class ImportarQualificacoesRequest(BaseModel):
-    """Requisicao para importar lista versionada de qualificacoes."""
+class ImportarAssercoesQualificacaoRequest(BaseModel):
+    """Requisicao para importar um lote versionado de asserções de qualificação."""
 
-    qualifications: list[QualificacaoImportItem]
+    source: str = Field(min_length=1, max_length=120, description="Ex: MAPA, FRIGORIFICO_XYZ")
     source_version: str = Field(
-        min_length=1, max_length=120, description="Identificador unico da versao (ex: data/hash)"
+        min_length=1, max_length=120, description="Identificador unico da versao consultada"
     )
+    content_hash: str = Field(
+        min_length=1, max_length=120, description="Hash do conteudo bruto recebido da fonte"
+    )
+    snapshot_semantics: str = Field(description="COMPLETE_SNAPSHOT, DELTA, PARTIAL ou UNKNOWN")
+    observed_at: datetime = Field(description="Quando a fonte foi consultada")
+    assertions: list[AssercaoQualificacaoInput] = Field(min_length=1)
 
 
-class ImportarQualificacoesResponse(BaseModel):
-    """Resultado da importacao."""
+class ImportarAssercoesQualificacaoResponse(BaseModel):
+    """Resultado da importação — nunca inclui confiança declarada pelo cliente."""
 
-    imported: int = Field(description="Quantas qualificacoes foram criadas")
-    revoked: int = Field(description="Quantas foram revogadas (sairao do novo)")
-    unchanged: int = Field(description="Quantas permaneceram iguais")
-    rejected: int = Field(description="Quantas foram rejeitadas")
-    errors: list[str] = Field(default_factory=list, description="Mensagens de erro, se houver")
-    source_version: str = Field(description="Versao que foi importada")
+    source_artifact_id: str
+    already_imported: bool = Field(
+        description="True quando a mesma source_version ja havia sido importada"
+    )
+    created_assertions: int
+    inferred_absence_assertions: int = Field(
+        description="Asserções UNKNOWN derivadas de ausência em snapshot completo"
+    )
 
 
 @router.post(
-    "/establishments/qualifications/import",
-    response_model=ImportarQualificacoesResponse,
+    "/establishments/qualification-assertions/import",
+    response_model=ImportarAssercoesQualificacaoResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Importar lista versionada de qualificacoes de estabelecimento",
+    summary="Importar lote versionado de asserções de qualificação de estabelecimento",
     description=(
-        "Importa qualificacoes (p.ex., exportacao-china, frigorico-certificado) "
-        "de estabelecimentos externos. Cada importacao eh versionada; a mesma "
-        "versao importada 2x nao duplica. Qualificacoes que saem da nova lista "
-        "sao marcadas como revogadas. "
-        "Conforme ADR-0045: rastreabilidade e reconciliacao automatica."
+        "Registra um `SourceArtifact` (identidade da importação: fonte, versão, "
+        "hash, cobertura) e as `EstablishmentQualificationAssertion` que ele "
+        "produz. A mesma `source_version` reimportada não duplica — localiza o "
+        "artefato existente e retorna `already_imported=true`. "
+        "`confidence` **não é aceito neste payload**: o Titan a computa a partir "
+        "da proveniência da própria chamada (ADR-0042/ADR-0045). "
+        "Quando `snapshot_semantics=COMPLETE_SNAPSHOT`, um estabelecimento "
+        "presente na última importação completa e ausente nesta produz uma "
+        "asserção derivada com `status=UNKNOWN` — nunca `NOT_QUALIFIED` — e sem "
+        "inventar `effective_until`: o fato registra apenas que uma mudança "
+        "ocorreu em algum ponto do intervalo, nunca quando. `PARTIAL`, `DELTA` "
+        "e `UNKNOWN` não autorizam nenhuma inferência de ausência."
     ),
     responses=RESPOSTAS_PADRAO,
 )
-def importar_qualificacoes_estabelecimento(
-    corpo: ImportarQualificacoesRequest,
+def importar_assercoes_qualificacao_estabelecimento(
+    corpo: ImportarAssercoesQualificacaoRequest,
     contexto: Annotated[
-        OrganizationContext, Depends(require_permission("QUALIFICATION_IMPORT"))
+        OrganizationContext,
+        Depends(require_permission(ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR)),
     ],
     connection: ConnectionDependency,
-) -> ImportarQualificacoesResponse:
-    """Importa qualificacoes de estabelecimento com reconciliacao."""
-    from packages.livestock_application.establishment_qualification_import_service import (
-        EstablishmentQualificationImportService,
-        QualificationImportInput,
+) -> ImportarAssercoesQualificacaoResponse:
+    from packages.livestock_application.qualification_assertion_import_service import (
+        QualificationAssertionImportService,
+        QualificationAssertionInput,
     )
-    from packages.livestock_infrastructure.persistence import (
-        TransactionalEstablishmentQualificationRepository,
+    from packages.livestock_domain.establishment_qualification_assertion import AssertionStatus
+    from packages.livestock_domain.qualification_source_artifact import SourceCoverage
+    from packages.livestock_infrastructure.persistence.qualification_assertion_repository import (
+        TransactionalEstablishmentQualificationAssertionRepository,
+        TransactionalQualificationSourceArtifactRepository,
     )
 
     try:
-        # Converte entrada para dominio
-        qualifications = []
-        for item in corpo.qualifications:
-            try:
-                status = EstablishmentQualificationStatus(item.status)
-            except ValueError as e:
-                raise ValueError(f"Status invalido: {item.status}") from e
+        semantica = SourceCoverage(corpo.snapshot_semantics)
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason_code="SNAPSHOT_SEMANTICS_INVALIDA",
+            title="snapshot_semantics invalida",
+            detail=f"Valor '{corpo.snapshot_semantics}' nao reconhecido.",
+        ) from error
 
-            qual = QualificationImportInput(
-                counterparty_id=typed_id_or_problem(
-                    item.counterparty_id,
+    itens: list[QualificationAssertionInput] = []
+    for item in corpo.assertions:
+        try:
+            asserted_status = AssertionStatus(item.asserted_status)
+        except ValueError as error:
+            raise DomainProblem(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                reason_code="ASSERTED_STATUS_INVALIDO",
+                title="asserted_status invalido",
+                detail=f"Valor '{item.asserted_status}' nao reconhecido.",
+            ) from error
+        itens.append(
+            QualificationAssertionInput(
+                establishment_id=typed_id_or_problem(
+                    item.establishment_id,
                     entity_type="external_counterparty",
-                    campo="counterparty_id",
+                    campo="establishment_id",
                 ),
-                market_purpose=item.market_purpose,
-                status=status,
-                source_name=item.source_name,
+                qualification_type=item.qualification_type,
+                asserted_status=asserted_status,
+                effective_from=item.effective_from,
+                effective_until=item.effective_until,
             )
-            qualifications.append(qual)
+        )
 
-        # Executa importacao
-        repo = TransactionalEstablishmentQualificationRepository(connection)
-        service = EstablishmentQualificationImportService(repository=repo)
+    servico = QualificationAssertionImportService(
+        artifact_repository=TransactionalQualificationSourceArtifactRepository(connection),
+        assertion_repository=TransactionalEstablishmentQualificationAssertionRepository(connection),
+        counterparty_repository=TransactionalExternalCounterpartyRepository(connection=connection),
+    )
 
-        resultado = service.import_qualifications(
-            organization_id=contexto.organization_id,
-            qualifications=qualifications,
+    try:
+        resultado = servico.import_assertions(
+            context=operation_context(contexto),
+            source=corpo.source,
             source_version=corpo.source_version,
+            content_hash=corpo.content_hash,
+            snapshot_semantics=semantica,
+            observed_at=corpo.observed_at,
+            assertions=itens,
         )
-
-        return ImportarQualificacoesResponse(
-            imported=resultado.imported,
-            revoked=resultado.revoked,
-            unchanged=resultado.unchanged,
-            rejected=resultado.rejected,
-            errors=list(resultado.errors),
-            source_version=resultado.source_version,
-        )
-
+    except KeyError as error:
+        raise _nao_encontrado("Estabelecimento") from error
     except ValueError as error:
         raise _conflito(error) from error
-    except Exception as error:
-        raise DomainProblem(
-            status_code=500,
-            reason_code="IMPORTACAO_FALHOU",
-            title="Falha ao importar qualificacoes",
-            detail=str(error),
-        ) from error
+
+    return ImportarAssercoesQualificacaoResponse(
+        source_artifact_id=str(resultado.source_artifact_id.value),
+        already_imported=resultado.already_imported,
+        created_assertions=resultado.created_assertions,
+        inferred_absence_assertions=resultado.inferred_absence_assertions,
+    )

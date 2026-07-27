@@ -56,6 +56,15 @@ MOVEMENT_LER: Final = "LIVESTOCK_MOVEMENT.LER"
 ELIGIBILITY_EXECUTAR: Final = "LIVESTOCK_ELIGIBILITY.EXECUTAR"
 TIMELINE_LER: Final = "LIVESTOCK_TIMELINE.LER"
 DOSSIER_LER: Final = "DOSSIER.LER"
+# Importar asserções de qualificação (ADR-0045) grava fato de terceiro sobre
+# estabelecimento, que alimenta elegibilidade de mercado — permissão própria,
+# distinta de registrar saída ou contraparte.
+ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR: Final = (
+    "LIVESTOCK_ESTABLISHMENT_QUALIFICATION_ASSERTION.IMPORTAR"
+)
+ESTABLISHMENT_QUALIFICATION_ASSERTION_LER: Final = (
+    "LIVESTOCK_ESTABLISHMENT_QUALIFICATION_ASSERTION.LER"
+)
 
 # A leitura é permissão própria por área, e não uma só para tudo. Papel de
 # consulta restrita — um comprador que só precisa ver o dossiê, um técnico que só
@@ -75,6 +84,7 @@ LEITURA: Final = frozenset(
         ANIMAL_LER_GENEALOGIA,
         REPRODUCTION_LER,
         PROPERTY_LER_GEOMETRIA,
+        ESTABLISHMENT_QUALIFICATION_ASSERTION_LER,
     }
 )
 
@@ -93,6 +103,7 @@ ESCRITA: Final = frozenset(
         VETERINARIAN_CRIAR,
         MOVEMENT_REGISTRAR,
         ELIGIBILITY_EXECUTAR,
+        ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR,
     }
 )
 
