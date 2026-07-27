@@ -78,6 +78,7 @@ from packages.livestock_infrastructure.persistence.imported_fact_repository impo
     TransactionalImportedLivestockFactRepository,
 )
 from packages.livestock_infrastructure.persistence.lot_repository import (
+    TransactionalLivestockLotRepository,
     TransactionalLotMembershipRepository,
 )
 from packages.livestock_infrastructure.persistence.medication_repository import (
@@ -177,6 +178,10 @@ def _eligibility_components(
         ),
         sanitary_campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
         treatment_application_repository=application_repository,
+        # Necessário para a elegibilidade de LOTE (rule-carencia-lote): sem o
+        # repositório de vínculos, o fact_provider não consegue enumerar quem
+        # está no lote para computar has_animal_in_withdrawal/blocking_animals.
+        membership_repository=TransactionalLotMembershipRepository(connection=connection),
     )
     return application_repository, evaluations, decisions, fact_provider
 
@@ -275,6 +280,80 @@ def executar_elegibilidade(
         dossier_id=str(dossier.dossier_id.value),
         reasons=[razao.message for razao in decision.reasons],
         governed_rule=None if governed_rule is None else governed_rule.to_dict(),
+    )
+
+
+class ElegibilidadeLoteResponse(BaseModel):
+    lot_id: str
+    result: str
+    outcome: str
+    evaluation_id: str
+    decision_id: str
+    reasons: list[str]
+
+
+@router.post(
+    "/lots/{lot_id}/eligibility",
+    response_model=ElegibilidadeLoteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Executar a elegibilidade farmacológica do lote",
+    description=(
+        "Bloqueia o lote inteiro (`rule-carencia-lote`) se qualquer animal "
+        "membro estiver em período de carência. Escreve Evaluation/Decision "
+        "permanentes, como a elegibilidade por animal. "
+        "**Sem dossiê**: `LivestockDossierTemplate` hoje só monta documento para "
+        "sujeito do tipo animal; o dossiê de lote fica para quando essa "
+        "extensão for decidida à parte."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def executar_elegibilidade_lote(
+    lot_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ELIGIBILITY_EXECUTAR))],
+    connection: ConnectionDependency,
+) -> ElegibilidadeLoteResponse:
+    alvo = typed_id_or_problem(lot_id, entity_type="livestock_lot", campo="lot_id")
+    organizacao = contexto.organization_id
+
+    lot_repository = TransactionalLivestockLotRepository(connection=connection)
+    if lot_repository.get_by_id(alvo) is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail="Lote não encontrado nesta organização.",
+        )
+
+    animal_repository = TransactionalAnimalRepository(connection=connection)
+    _application_repository, evaluations, decisions, fact_provider = _eligibility_components(
+        connection,
+        animal_repository,
+    )
+    policy_provider = EligibilityPolicyProvider(
+        policy_repository=TransactionalPolicyRepository(connection=connection),
+        rule_repository=TransactionalRuleRepository(connection=connection),
+    )
+    policy, animal_rule = policy_provider.current(organizacao)
+    lot_rule = policy_provider.current_lot_rule(organizacao, policy)
+
+    evaluation, decision = PharmacologicalEligibilityService(
+        fact_provider=fact_provider,
+        policy=policy,
+        # `rule` não é usado por evaluate_lot (que consulta lot_rule), mas o
+        # campo é obrigatório no serviço; a regra de animal já está em mãos.
+        rule=animal_rule,
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        lot_rule=lot_rule,
+    ).evaluate_lot(organizacao, alvo, datetime.now(UTC))
+
+    return ElegibilidadeLoteResponse(
+        lot_id=str(alvo.value),
+        result=decision.result.value,
+        outcome=evaluation.outcome.value,
+        evaluation_id=str(evaluation.evaluation_id.value),
+        decision_id=str(decision.decision_id.value),
+        reasons=[razao.message for razao in decision.reasons],
     )
 
 

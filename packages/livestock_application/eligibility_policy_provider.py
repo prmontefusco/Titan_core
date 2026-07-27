@@ -24,6 +24,7 @@ from packages.core_domain.rule import Rule
 from packages.livestock_application.eligibility import (
     ELIGIBILITY_POLICY_CODE,
     ELIGIBILITY_RULE_CODE,
+    LOT_ELIGIBILITY_RULE_CODE,
     build_eligibility_policy,
     build_eligibility_rule,
     build_lot_eligibility_rule,
@@ -77,3 +78,18 @@ class EligibilityPolicyProvider:
                 f"A política '{ELIGIBILITY_POLICY_CODE}' existe sem a regra de carência."
             )
         return policy, vigente
+
+    def current_lot_rule(self, organization_id: OrganizationId, policy: Policy) -> Rule:
+        """Regra de lote (`rule-carencia-lote`) da mesma política vigente.
+
+        `evaluate_lot` exige essa regra à parte da regra de animal — as duas
+        nascem juntas em `.current()`, mas cada avaliação (por animal ou por
+        lote) só precisa da que lhe cabe.
+        """
+        regras = self.rule_repository.list_by_policy(organization_id, policy.policy_id)
+        vigente = next((regra for regra in regras if regra.code == LOT_ELIGIBILITY_RULE_CODE), None)
+        if vigente is None:
+            raise RuntimeError(
+                f"A política '{ELIGIBILITY_POLICY_CODE}' existe sem a regra de carência de lote."
+            )
+        return vigente
