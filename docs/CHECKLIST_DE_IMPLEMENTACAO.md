@@ -16,6 +16,8 @@
 
 > **Ponto de parada em 27/07/2026:** a matriz passou a exercitar sujeito secundário de forma auditável no caso da China. O endpoint aceita `slaughterhouse_counterparty_id`, a célula chinesa só promove `ELEGIVEL` quando existe frigorífico selecionado e qualificação explícita do estabelecimento para `exportacao-china`, e essa qualificação fica registrada como dado append-only próprio. O roteiro `apps/validacao/simulacao_comercial.py` já percorre esse fluxo fim a fim. Na retomada, o próximo passo natural é substituir o cadastro manual dessa qualificação por importação ou reconciliação com fonte externa versionada.
 
+> **Revisão arquitetural em 27/07/2026 (pós-implementação):** ADR-0045 foi prototipada e depois revisada. A primeira versão incorretamente tipava `EstablishmentQualification` como `RuleAdoption`, violando ADR-0043. Decisão: `RuleAdoption` permanece representando a adoção de uma regra normativa, enquanto `EstablishmentQualificationAssertion` representa fato temporal verificável ("estabelecimento X possui habilitação Y segundo fonte Z, observado em data W"). Segunda correção: reconciliação não inventa `effective_until` — quando uma qualificação sai de lista, cria-se `Assertion` com `status=UNKNOWN` e `confidence=BAIXA`, registrando que mudança ocorreu mas data exata é desconhecida. Isso mantém rastreabilidade e honestidade temporal. A prototipagem em `EstablishmentQualificationImportService` servirá como base, mas a implementação será refatorada para criar `AssertionAssertion` (não `RuleAdoption`). A arquitetura resultante (Regra → Fato → Evaluation → Decision → Dossier) alinha-se com ADR-0041/0042/0043/0044 e especializa NR-7 (Assertion como conceito).
+
 
 
 
