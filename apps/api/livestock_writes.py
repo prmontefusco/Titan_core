@@ -1504,3 +1504,118 @@ def importar_geometria_do_car(
             CamadaRecusadaResponse(layer=r.layer, motivo=r.motivo) for r in resultado.recusadas
         ],
     )
+
+
+# ===================== Importacao de Qualificacoes de Estabelecimento =====================
+
+
+class QualificacaoImportItem(BaseModel):
+    """Um item da lista de qualificacoes a importar."""
+
+    counterparty_id: str = Field(description="UUID do estabelecimento externo")
+    market_purpose: str = Field(min_length=1, max_length=120, description="Ex: exportacao-china")
+    status: str = Field(
+        description="HABILITADO ou NAO_HABILITADO",
+    )
+    source_name: str = Field(min_length=1, max_length=255, description="Origem da qualificacao")
+
+
+class ImportarQualificacoesRequest(BaseModel):
+    """Requisicao para importar lista versionada de qualificacoes."""
+
+    qualifications: list[QualificacaoImportItem]
+    source_version: str = Field(
+        min_length=1, max_length=120, description="Identificador unico da versao (ex: data/hash)"
+    )
+
+
+class ImportarQualificacoesResponse(BaseModel):
+    """Resultado da importacao."""
+
+    imported: int = Field(description="Quantas qualificacoes foram criadas")
+    revoked: int = Field(description="Quantas foram revogadas (sairao do novo)")
+    unchanged: int = Field(description="Quantas permaneceram iguais")
+    rejected: int = Field(description="Quantas foram rejeitadas")
+    errors: list[str] = Field(default_factory=list, description="Mensagens de erro, se houver")
+    source_version: str = Field(description="Versao que foi importada")
+
+
+@router.post(
+    "/establishments/qualifications/import",
+    response_model=ImportarQualificacoesResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Importar lista versionada de qualificacoes de estabelecimento",
+    description=(
+        "Importa qualificacoes (p.ex., exportacao-china, frigorico-certificado) "
+        "de estabelecimentos externos. Cada importacao eh versionada; a mesma "
+        "versao importada 2x nao duplica. Qualificacoes que saem da nova lista "
+        "sao marcadas como revogadas. "
+        "Conforme ADR-0045: rastreabilidade e reconciliacao automatica."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def importar_qualificacoes_estabelecimento(
+    corpo: ImportarQualificacoesRequest,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission("QUALIFICATION_IMPORT"))
+    ],
+    connection: ConnectionDependency,
+) -> ImportarQualificacoesResponse:
+    """Importa qualificacoes de estabelecimento com reconciliacao."""
+    from packages.livestock_application.establishment_qualification_import_service import (
+        EstablishmentQualificationImportService,
+        QualificationImportInput,
+    )
+    from packages.livestock_infrastructure.persistence import (
+        TransactionalEstablishmentQualificationRepository,
+    )
+
+    try:
+        # Converte entrada para dominio
+        qualifications = []
+        for item in corpo.qualifications:
+            try:
+                status = EstablishmentQualificationStatus(item.status)
+            except ValueError as e:
+                raise ValueError(f"Status invalido: {item.status}") from e
+
+            qual = QualificationImportInput(
+                counterparty_id=typed_id_or_problem(
+                    item.counterparty_id,
+                    entity_type="external_counterparty",
+                    campo="counterparty_id",
+                ),
+                market_purpose=item.market_purpose,
+                status=status,
+                source_name=item.source_name,
+            )
+            qualifications.append(qual)
+
+        # Executa importacao
+        repo = TransactionalEstablishmentQualificationRepository(connection)
+        service = EstablishmentQualificationImportService(repository=repo)
+
+        resultado = service.import_qualifications(
+            organization_id=contexto.organization_id,
+            qualifications=qualifications,
+            source_version=corpo.source_version,
+        )
+
+        return ImportarQualificacoesResponse(
+            imported=resultado.imported,
+            revoked=resultado.revoked,
+            unchanged=resultado.unchanged,
+            rejected=resultado.rejected,
+            errors=list(resultado.errors),
+            source_version=resultado.source_version,
+        )
+
+    except ValueError as error:
+        raise _conflito(error) from error
+    except Exception as error:
+        raise DomainProblem(
+            status_code=500,
+            reason_code="IMPORTACAO_FALHOU",
+            title="Falha ao importar qualificacoes",
+            detail=str(error),
+        ) from error
