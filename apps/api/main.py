@@ -22,6 +22,7 @@ from apps.api.livestock_medications import router as livestock_medications_route
 from apps.api.livestock_queries import router as livestock_queries_router
 from apps.api.livestock_reads import router as livestock_reads_router
 from apps.api.livestock_sanitary_campaigns import router as livestock_sanitary_campaigns_router
+from apps.api.livestock_transformations import router as livestock_transformations_router
 from apps.api.livestock_treatments import router as livestock_treatments_router
 from apps.api.livestock_writes import router as livestock_writes_router
 from apps.api.problem import (
@@ -118,6 +119,7 @@ for livestock_router in (
     livestock_queries_router,
     livestock_reads_router,
     livestock_writes_router,
+    livestock_transformations_router,
 ):
     app.include_router(livestock_router)
 

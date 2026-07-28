@@ -49,6 +49,7 @@ IMPORTED_FACT_RECORDED = "livestock.imported_fact_recorded"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
 REPRODUCTIVE_EVENT_RECORDED = "livestock.reproductive_event_recorded"
 PROPERTY_GEOMETRY_RECORDED = "livestock.property_geometry_recorded"
+TRANSFORMATION_EVENT_RECORDED = "livestock.transformation_event_recorded"
 
 LIVESTOCK_EVENT_TYPES = frozenset(
     {
@@ -75,6 +76,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         PARENTAGE_REGISTERED,
         REPRODUCTIVE_EVENT_RECORDED,
         PROPERTY_GEOMETRY_RECORDED,
+        TRANSFORMATION_EVENT_RECORDED,
     }
 )
 
@@ -541,6 +543,38 @@ def parentage_registered_payload(
             "relation_id": _id(relation_id),
             "relation_type": relation_type,
             "role": role,
+        },
+    )
+
+
+def transformation_event_recorded_payload(
+    *,
+    event_id: TypedId,
+    process_type: str,
+    occurred_at: datetime,
+    facility_id: TypedId,
+    input_subject_ids: tuple[TypedId, ...],
+    output_items: tuple[tuple[TypedId, str], ...],
+    evidence_references: tuple[UniversalReference, ...],
+) -> CanonicalPayload:
+    """O agregado é a própria transformação — nunca o animal nem os itens criados.
+
+    Mesma razão do parto e do parentesco: é a entidade nascida aqui, e é ela que
+    as pontas (animal consumido, itens produzidos) passam a citar por referência.
+    """
+    return _payload(
+        TRANSFORMATION_EVENT_RECORDED,
+        {
+            "event_id": _id(event_id),
+            "evidence_references": [_id(r.target_id) for r in evidence_references],
+            "facility_id": _id(facility_id),
+            "input_subject_ids": _ids(input_subject_ids),
+            "occurred_at": occurred_at,
+            "output_items": [
+                {"item_id": _id(item_id), "item_type": item_type}
+                for item_id, item_type in output_items
+            ],
+            "process_type": process_type,
         },
     )
 

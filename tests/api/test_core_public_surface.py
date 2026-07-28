@@ -126,6 +126,10 @@ SUPERFICIE_ESPERADA = {
     # importada 2x é idempotente; ausência em snapshot completo produz UNKNOWN,
     # nunca NOT_QUALIFIED diretamente.
     ("/v1/livestock/establishments/qualification-assertions/import", "post"),
+    # Transformação industrial — fan-out real de abate (Passo 11.2, ADR-0046).
+    # Só escrita: consulta de TraceableItem (dossiê, timeline, recall) fica para
+    # o Passo 11.3/11.5, deliberadamente fora deste incremento.
+    ("/v1/livestock/transformations/slaughter", "post"),
 }
 
 

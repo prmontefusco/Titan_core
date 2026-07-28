@@ -65,6 +65,10 @@ ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR: Final = (
 ESTABLISHMENT_QUALIFICATION_ASSERTION_LER: Final = (
     "LIVESTOCK_ESTABLISHMENT_QUALIFICATION_ASSERTION.LER"
 )
+# Registrar uma transformação (ADR-0046) cria itens rastreáveis novos e consome
+# um animal definitivamente — permissão própria porque a operação é o começo da
+# rastreabilidade de produto, distinta de registrar saída do rebanho.
+TRANSFORMATION_REGISTRAR: Final = "LIVESTOCK_TRANSFORMATION.REGISTRAR"
 
 # A leitura é permissão própria por área, e não uma só para tudo. Papel de
 # consulta restrita — um comprador que só precisa ver o dossiê, um técnico que só
@@ -104,6 +108,7 @@ ESCRITA: Final = frozenset(
         MOVEMENT_REGISTRAR,
         ELIGIBILITY_EXECUTAR,
         ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR,
+        TRANSFORMATION_REGISTRAR,
     }
 )
 

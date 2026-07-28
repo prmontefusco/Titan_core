@@ -37,6 +37,7 @@ EXPECTED_EVENT_TYPES = frozenset(
         "livestock.sanitary_campaign_registered",
         "livestock.treatment_applied",
         "livestock.transfer_artifact_received",
+        "livestock.transformation_event_recorded",
         "livestock.veterinarian_registered",
         "livestock.veterinarian_status_updated",
     }
