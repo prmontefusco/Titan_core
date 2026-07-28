@@ -30,6 +30,10 @@ from packages.livestock_application.timeline_service import (
     TimelineCutoff,
     TimelineSourceKind,
 )
+from packages.livestock_application.transformation_service import (
+    SlaughterOutputSpec,
+    SlaughterService,
+)
 from packages.livestock_application.treatment_service import TreatmentApplicationService
 from packages.livestock_domain.animal import AnimalSex, IdentifierType
 from packages.livestock_domain.events import (
@@ -40,11 +44,15 @@ from packages.livestock_domain.events import (
     IDENTIFIER_ATTACHED,
     LOT_CREATED,
     PARENTAGE_REGISTERED,
+    TRANSFORMATION_EVENT_RECORDED,
     TREATMENT_APPLIED,
 )
+from packages.livestock_domain.exit import AnimalExit, ExitType
 from packages.livestock_domain.parentage import ParentageConfidence
+from packages.livestock_domain.transformation import TraceableItemType
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.test_animal_service import InMemoryAnimalRepository
+from tests.livestock_application.test_exit_service import InMemoryExitRepo
 from tests.livestock_application.test_lot_service import (
     InMemoryLotRepository,
     InMemoryMembershipRepository,
@@ -59,6 +67,10 @@ from tests.livestock_application.test_medication_service import (
 from tests.livestock_application.test_movement_service import (
     InMemoryMovementRepository,
     InMemoryPropertyStayRepository,
+)
+from tests.livestock_application.test_slaughter_service import (
+    InMemoryEventRepo,
+    InMemoryItemRepo,
 )
 from tests.livestock_application.test_treatment_service import InMemoryApplicationRepo
 from tests.livestock_support import (
@@ -89,6 +101,9 @@ class Scenario:
         self.evaluations = FakeEvaluationRepository()
         self.decisions = FakeDecisionRepository()
         self.relations = FakeRelationRepository()
+        self.exits = InMemoryExitRepo()
+        self.transformation_events = InMemoryEventRepo()
+        self.traceable_items = InMemoryItemRepo()
 
         self.property_service = RuralPropertyService(
             repository=self.property_repository, recorder=self.recorder
@@ -129,6 +144,41 @@ class Scenario:
             prescription_repository=InMemoryPrescriptionRepo(),
             recorder=self.recorder,
         )
+        self.slaughter_service = SlaughterService(
+            event_repository=self.transformation_events,
+            item_repository=self.traceable_items,
+            animal_repository=self.animal_repository,
+            exit_repository=self.exits,
+            property_repository=self.property_repository,
+            relation_service=RelationService(repository=self.relations),
+            recorder=self.recorder,
+        )
+
+    def abater_e_transformar(
+        self, animal_id: TypedId, facility_property_id: TypedId, occurred_at: datetime
+    ) -> tuple[TypedId, TypedId]:
+        """Saída por ABATE seguida de fan-out real (ADR-0046); devolve os dois `TraceableItem`."""
+        self.exits.save(
+            AnimalExit(
+                exit_id=TypedId.new("animal_exit"),
+                organization_id=self.organization_id,
+                animal_id=animal_id,
+                exit_type=ExitType.ABATE,
+                occurred_at=occurred_at,
+            )
+        )
+        resultado = self.slaughter_service.register_slaughter(
+            context=self.context,
+            animal_id=animal_id,
+            facility_property_id=facility_property_id,
+            occurred_at=occurred_at + timedelta(hours=1),
+            outputs=(
+                SlaughterOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+                SlaughterOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+            ),
+        )
+        item_1, item_2 = resultado.created_items
+        return item_1.item_id, item_2.item_id
 
     def timeline_service(self) -> LivestockTimelineService:
         return LivestockTimelineService(
@@ -462,6 +512,63 @@ def test_an_animal_of_another_organization_yields_nothing(
     entries = scenario.timeline_service().animal_timeline(OrganizationId.new(), animal_id)
 
     assert entries == ()
+
+
+def test_a_transformacao_aparece_na_linha_do_tempo_do_animal_e_dos_itens(
+    context: LivestockOperationContext,
+) -> None:
+    """ADR-0046, Passo 11.3: a transformação é fonte autoritativa para as duas pontas.
+
+    Nem o animal nem o item copiam o histórico um do outro -- cada um vê a
+    mesma `TransformationEvent` por citação, do mesmo jeito que o parto
+    aparece tanto na mãe quanto na cria.
+    """
+    scenario, animal_id, _ = build_herd(context)
+    frigorifico = scenario.property_service.register_property(
+        context=context, code="FRIG", name="Frigorifico", municipality="Franca", state_code="SP"
+    )
+    momento = datetime.now(UTC) - timedelta(days=2)
+
+    item_1, item_2 = scenario.abater_e_transformar(animal_id, frigorifico.property_id, momento)
+    service = scenario.timeline_service()
+
+    do_animal = service.animal_timeline(scenario.organization_id, animal_id)
+    do_item_1 = service.item_timeline(scenario.organization_id, item_1)
+    do_item_2 = service.item_timeline(scenario.organization_id, item_2)
+
+    assert TRANSFORMATION_EVENT_RECORDED in [e.entry_type for e in do_animal]
+    assert TRANSFORMATION_EVENT_RECORDED in [e.entry_type for e in do_item_1]
+    assert TRANSFORMATION_EVENT_RECORDED in [e.entry_type for e in do_item_2]
+
+    # As três leituras citam exatamente o mesmo agregado -- um fato, não três.
+    evento_do_animal = next(e for e in do_animal if e.entry_type == TRANSFORMATION_EVENT_RECORDED)
+    evento_do_item_1 = next(e for e in do_item_1 if e.entry_type == TRANSFORMATION_EVENT_RECORDED)
+    evento_do_item_2 = next(e for e in do_item_2 if e.entry_type == TRANSFORMATION_EVENT_RECORDED)
+    assert (
+        evento_do_animal.aggregate_id
+        == evento_do_item_1.aggregate_id
+        == evento_do_item_2.aggregate_id
+    )
+
+    # O item não herda a história do animal, nem o animal a de cada item.
+    assert ANIMAL_MOVED not in [e.entry_type for e in do_item_1]
+    assert LOT_CREATED not in [e.entry_type for e in do_item_1]
+
+
+def test_item_timeline_de_outra_organizacao_nao_traz_nada(
+    context: LivestockOperationContext,
+) -> None:
+    scenario, animal_id, _ = build_herd(context)
+    frigorifico = scenario.property_service.register_property(
+        context=context, code="FRIG2", name="Frigorifico", municipality="Franca", state_code="SP"
+    )
+    item_1, _ = scenario.abater_e_transformar(
+        animal_id, frigorifico.property_id, datetime.now(UTC) - timedelta(days=1)
+    )
+
+    entradas = scenario.timeline_service().item_timeline(OrganizationId.new(), item_1)
+
+    assert entradas == ()
 
 
 def test_a_decisao_nunca_aparece_antes_da_avaliacao_que_a_produziu(

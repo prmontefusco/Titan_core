@@ -9,6 +9,7 @@ duplicados.
 A linha do tempo e o dossiê são GET de verdade: leem e não escrevem nada.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
@@ -25,7 +26,14 @@ from apps.api.livestock_dependencies import (
 from apps.api.pagination import PaginacaoDependency, montar_pagina
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_application.dossier_service import DossierService
+from packages.core_application.recall_service import RecallService
 from packages.core_domain import OrganizationContext
+from packages.core_domain.recall import (
+    RecallDirection,
+    RecallMode,
+    RecallRequest,
+    RecallResult,
+)
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
 from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import (
@@ -43,6 +51,7 @@ from packages.livestock_application.authorization import (
     DOSSIER_LER,
     ELIGIBILITY_EXECUTAR,
     TIMELINE_LER,
+    TRACEABILITY_LER,
 )
 from packages.livestock_application.dossier_template import LivestockDossierTemplate
 from packages.livestock_application.eligibility import (
@@ -55,6 +64,7 @@ from packages.livestock_application.eligibility import (
 from packages.livestock_application.eligibility_policy_provider import (
     EligibilityPolicyProvider,
 )
+from packages.livestock_application.event_recorder import AGGREGATE_CONTRACT_VERSION
 from packages.livestock_application.fact_provider import LivestockFactProvider
 from packages.livestock_application.market_eligibility import (
     DEFAULT_MARKET_PROFILES,
@@ -63,6 +73,11 @@ from packages.livestock_application.market_eligibility import (
 from packages.livestock_application.timeline_service import (
     LivestockTimelineService,
     TimelineCutoff,
+    TimelineEntry,
+)
+from packages.livestock_application.transformation_service import (
+    TRANSFORMATION_INPUT_OF,
+    TRANSFORMATION_OUTPUT_OF,
 )
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
 from packages.livestock_infrastructure.persistence.animal_repository import (
@@ -97,7 +112,7 @@ from packages.livestock_infrastructure.persistence.sanitary_campaign_repository 
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
-from packages.shared_kernel import OrganizationId
+from packages.shared_kernel import OrganizationId, UniversalReference
 from packages.shared_kernel import TypedId as SharedTypedId
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
@@ -129,6 +144,43 @@ class MatrizMercadoResponse(BaseModel):
     markets: list[dict[str, Any]]
 
 
+class LinhaDoTempoItemResponse(BaseModel):
+    item_id: str
+    known_until: str | None
+    entry_count: int
+    entries: list[dict[str, Any]]
+
+
+class RecallPassoResponse(BaseModel):
+    relation_type: str
+    de_tipo: str
+    de_id: str
+    para_tipo: str
+    para_id: str
+    direcao: str
+
+
+class RecallCaminhoResponse(BaseModel):
+    passos: list[RecallPassoResponse]
+    explicacao: str
+
+
+class RecallLacunaResponse(BaseModel):
+    motivo: str
+    profundidade: int
+    descricao: str
+
+
+class RecallResponse(BaseModel):
+    recall_id: str
+    subject_type: str
+    subject_id: str
+    status: str
+    visited_nodes: int
+    caminhos: list[RecallCaminhoResponse]
+    lacunas: list[RecallLacunaResponse]
+
+
 class MatrizMercadoRequest(BaseModel):
     slaughterhouse_counterparty_id: str | None = None
 
@@ -144,6 +196,21 @@ def _timeline_service(connection: Connection) -> LivestockTimelineService:
         decision_repository=TransactionalDecisionRepository(connection=connection),
         relation_repository=TransactionalRelationRepository(connection=connection),
     )
+
+
+def _entradas_para_json(entradas: Sequence[TimelineEntry]) -> list[dict[str, Any]]:
+    return [
+        {
+            "occurred_at": entrada.occurred_at.isoformat(),
+            "recorded_at": entrada.recorded_at.isoformat(),
+            "entry_type": entrada.entry_type,
+            "source_kind": entrada.source_kind.value,
+            "aggregate_type": entrada.aggregate_id.entity_type,
+            "aggregate_id": str(entrada.aggregate_id.value),
+            "superseded_by": (str(entrada.superseded_by.value) if entrada.superseded_by else None),
+        }
+        for entrada in entradas
+    ]
 
 
 def _eligibility_components(
@@ -522,21 +589,163 @@ def consultar_linha_do_tempo(
         animal_id=str(alvo.value),
         known_until=known_until.isoformat() if known_until else None,
         entry_count=len(entradas),
-        entries=[
-            {
-                "occurred_at": entrada.occurred_at.isoformat(),
-                "recorded_at": entrada.recorded_at.isoformat(),
-                "entry_type": entrada.entry_type,
-                "source_kind": entrada.source_kind.value,
-                "aggregate_type": entrada.aggregate_id.entity_type,
-                "aggregate_id": str(entrada.aggregate_id.value),
-                "superseded_by": (
-                    str(entrada.superseded_by.value) if entrada.superseded_by else None
-                ),
-            }
-            for entrada in entradas
+        entries=_entradas_para_json(entradas),
+    )
+
+
+@router.get(
+    "/traceable-items/{item_id}/timeline",
+    response_model=LinhaDoTempoItemResponse,
+    summary="Consultar a linha do tempo de um item rastreável",
+    description=(
+        "ADR-0046, Passo 11.3. O item não tem histórico próprio — tudo o que "
+        "aparece aqui vem da `TransformationEvent` em que ele participa, hoje "
+        "só como saída (a que o criou). Nada é copiado do animal de origem: a "
+        "transformação é citada por ambos, não duplicada."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_linha_do_tempo_do_item(
+    item_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TIMELINE_LER))],
+    connection: ConnectionDependency,
+    occurred_until: Annotated[datetime | None, Query()] = None,
+    known_until: Annotated[datetime | None, Query()] = None,
+) -> LinhaDoTempoItemResponse:
+    alvo = typed_id_or_problem(item_id, entity_type="traceable_item", campo="item_id")
+
+    try:
+        corte = (
+            TimelineCutoff(occurred_until=occurred_until, known_until=known_until)
+            if (occurred_until or known_until)
+            else None
+        )
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="ENTRADA_INVALIDA",
+            title="Entrada inválida",
+            detail=str(error),
+        ) from error
+
+    entradas = _timeline_service(connection).item_timeline(contexto.organization_id, alvo, corte)
+    return LinhaDoTempoItemResponse(
+        item_id=str(alvo.value),
+        known_until=known_until.isoformat() if known_until else None,
+        entry_count=len(entradas),
+        entries=_entradas_para_json(entradas),
+    )
+
+
+_RECALL_RELATION_TYPES = (TRANSFORMATION_INPUT_OF, TRANSFORMATION_OUTPUT_OF)
+
+
+def _executar_recall_de_transformacao(
+    connection: Connection, contexto: OrganizationContext, subject_id: SharedTypedId
+) -> RecallResult:
+    """Percorre só o grafo de transformação (Passo 7.4 aplicado ao ADR-0046).
+
+    `AMBAS` é necessário porque toda relação projetada aponta do participante
+    para o evento (nunca o contrário, ver `transformation_service.py`):
+    alcançar "o outro lado" sempre exige combinar saída e entrada no nó do
+    evento. `relation_types` mantém a travessia dentro do grafo de
+    transformação — sem isso, o recall vazaria para parentesco, movimentação
+    e qualquer outro vínculo que a mesma tabela guarde.
+    """
+    servico = RecallService(relations=TransactionalRelationRepository(connection=connection))
+    resultado = servico.execute(
+        RecallRequest(
+            organization_id=contexto.organization_id,
+            subject_reference=UniversalReference(
+                target_id=subject_id,
+                organization_id=contexto.organization_id,
+                contract_version=AGGREGATE_CONTRACT_VERSION,
+            ),
+            direction=RecallDirection.AMBAS,
+            mode=RecallMode.SIMULACAO,
+            relation_types=_RECALL_RELATION_TYPES,
+        )
+    )
+    return resultado
+
+
+def _recall_resposta(resultado: RecallResult, subject_id: SharedTypedId) -> RecallResponse:
+    return RecallResponse(
+        recall_id=str(resultado.recall_id.value),
+        subject_type=subject_id.entity_type,
+        subject_id=str(subject_id.value),
+        status=resultado.status.value,
+        visited_nodes=resultado.visited_nodes,
+        caminhos=[
+            RecallCaminhoResponse(
+                explicacao=caminho.explain(),
+                passos=[
+                    RecallPassoResponse(
+                        relation_type=passo.relation_type,
+                        de_tipo=passo.from_reference.target_id.entity_type,
+                        de_id=str(passo.from_reference.target_id.value),
+                        para_tipo=passo.to_reference.target_id.entity_type,
+                        para_id=str(passo.to_reference.target_id.value),
+                        direcao=passo.direction.value,
+                    )
+                    for passo in caminho.steps
+                ],
+            )
+            for caminho in resultado.paths
+        ],
+        lacunas=[
+            RecallLacunaResponse(
+                motivo=lacuna.reason.value,
+                profundidade=lacuna.depth,
+                descricao=lacuna.description,
+            )
+            for lacuna in resultado.gaps
         ],
     )
+
+
+@router.get(
+    "/traceable-items/{item_id}/recall",
+    response_model=RecallResponse,
+    summary="Rastrear a origem de um item (item → transformação → animal)",
+    description=(
+        "ADR-0046, Passo 11.3. Percorre a projeção `UniversalRelation` da "
+        "transformação para localizar o animal (e outros itens do mesmo "
+        "evento, se houver). `status=inconclusivo` significa que a travessia "
+        "parou antes de esgotar o grafo — nunca que a origem é outra coisa."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def rastrear_origem_do_item(
+    item_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TRACEABILITY_LER))],
+    connection: ConnectionDependency,
+) -> RecallResponse:
+    alvo = typed_id_or_problem(item_id, entity_type="traceable_item", campo="item_id")
+    resultado = _executar_recall_de_transformacao(connection, contexto, alvo)
+    return _recall_resposta(resultado, alvo)
+
+
+@router.get(
+    "/animals/{animal_id}/recall",
+    response_model=RecallResponse,
+    summary="Rastrear o destino de um animal (animal → transformação → itens)",
+    description=(
+        "ADR-0046, Passo 11.3. Percorre a projeção `UniversalRelation` da "
+        "transformação para localizar todos os `TraceableItem` produzidos a "
+        "partir deste animal. `status=inconclusivo` significa que a travessia "
+        "parou antes de esgotar o grafo — nunca que não há mais itens."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def rastrear_destino_do_animal(
+    animal_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TRACEABILITY_LER))],
+    connection: ConnectionDependency,
+) -> RecallResponse:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    resultado = _executar_recall_de_transformacao(connection, contexto, alvo)
+    return _recall_resposta(resultado, alvo)
 
 
 @router.get(

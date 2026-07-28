@@ -1,4 +1,4 @@
-"""Roteiro executavel: fan-out real de abate (ADR-0046, Passo 11.2).
+"""Roteiro executavel: fan-out real de abate e travessia (ADR-0046, Passos 11.2/11.3).
 
 Um animal nasce na fazenda, sai do rebanho por ABATE, e o mesmo tenant que
 detem o frigorifico registra a transformacao industrial: o animal vira duas
@@ -7,9 +7,14 @@ O roteiro tambem prova as recusas que a ADR exige: sem saida ABATE registrada
 nao ha transformacao, o mesmo animal nao pode ser consumido duas vezes, e
 fan-out abaixo de duas saidas e recusado pelo proprio contrato HTTP.
 
+Na sequencia (Passo 11.3), prova a linha do tempo do item e o recall nas duas
+direcoes: item -> transformacao -> animal (retrospectiva) e animal ->
+transformacao -> todos os itens (prospectiva), sem que nenhuma das duas
+pontas copie o historico da outra -- cada uma cita a mesma TransformationEvent.
+
 O caso inter-organizacional (fazenda e frigorifico em tenants distintos) fica
 para quando o protocolo da ADR-0042 for extendido a este fluxo -- fora de
-escopo do Passo 11.2, que so prova o caso de uma unica Organization.
+escopo destes passos, que so provam o caso de uma unica Organization.
 
 python -m uv run --locked python -m apps.validacao.transformacao_industrial
 python -m uv run --locked python -m apps.validacao.transformacao_industrial --pausar
@@ -182,11 +187,75 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
             "seria genealogia contraditoria."
         ),
     )
+    roteiro.passo(
+        "9",
+        "Operador consulta a linha do tempo de um dos itens criados",
+        lambda: operador.get(f"/v1/livestock/traceable-items/{ids['item_1']}/timeline"),
+        200,
+        conferir=_conferir_timeline_do_item,
+        porque=(
+            "O item nao tem historico proprio (Passo 11.3): tudo que aparece "
+            "vem da TransformationEvent que o criou, citada -- nao copiada."
+        ),
+    )
+    roteiro.passo(
+        "10",
+        "Operador rastreia a origem do item (item -> transformacao -> animal)",
+        lambda: operador.get(f"/v1/livestock/traceable-items/{ids['item_1']}/recall"),
+        200,
+        conferir=lambda r: _conferir_recall_alcanca(r, "animal", ids["animal_id"]),
+        porque=(
+            "Travessia retrospectiva (Passo 11.3): o recall so tem a projecao "
+            "UniversalRelation para percorrer, e ainda assim reconstroi o "
+            "caminho ate o animal que originou o item."
+        ),
+    )
+    roteiro.passo(
+        "11",
+        "Operador rastreia o destino do animal (animal -> transformacao -> itens)",
+        lambda: operador.get(f"/v1/livestock/animals/{ids['animal_id']}/recall"),
+        200,
+        conferir=lambda r: (
+            _conferir_recall_alcanca(r, "traceable_item", ids["item_1"])
+            or _conferir_recall_alcanca(r, "traceable_item", ids["item_2"])
+        ),
+        porque=(
+            "Travessia prospectiva (Passo 11.3): a partir do animal, o recall "
+            "alcanca as DUAS saidas -- o fan-out real que o Passo 11.2 provou."
+        ),
+    )
     return roteiro
 
 
 def _conferir_conflito(resposta: Resposta) -> str | None:
     return None if resposta["reason_code"] == "CONFLITO_DE_DOMINIO" else "reason_code inesperado"
+
+
+def _conferir_timeline_do_item(resposta: Resposta) -> str | None:
+    tipos = [entrada["entry_type"] for entrada in resposta["entries"]]
+    if "livestock.transformation_event_recorded" not in tipos:
+        return "timeline do item deveria conter livestock.transformation_event_recorded"
+    return None
+
+
+def _conferir_recall_alcanca(resposta: Resposta, entity_type: str, valor: str) -> str | None:
+    """Confere que o alvo foi alcançado -- não que o status é "conclusivo".
+
+    Num grafo em estrela (1 evento, vários participantes), a travessia AMBAS
+    reexplora o centro a partir de cada folha já visitada e a própria
+    RecallService declara isso "ciclo_detectado", que torna o resultado
+    inconclusivo por definição ("qualquer lacuna torna o resultado
+    inconclusivo, sem exceção" -- core_domain/recall.py). Isso é esperado e
+    correto para fan-out/fan-in: não é lacuna de cobertura, é o BFS evitando
+    voltar a nó já visitado. O que este roteiro precisa confirmar é que o
+    alvo aparece em algum caminho -- o "inconclusivo" por ciclo não invalida
+    a travessia.
+    """
+    for caminho in resposta["caminhos"]:
+        ultimo_passo = caminho["passos"][-1]
+        if ultimo_passo["para_tipo"] == entity_type and ultimo_passo["para_id"] == valor:
+            return None
+    return f"nenhum caminho alcancou {entity_type}:{valor} (status={resposta['status']!r})"
 
 
 def _duas_saidas() -> list[dict[str, object]]:

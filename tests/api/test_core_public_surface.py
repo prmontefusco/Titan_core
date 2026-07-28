@@ -127,9 +127,12 @@ SUPERFICIE_ESPERADA = {
     # nunca NOT_QUALIFIED diretamente.
     ("/v1/livestock/establishments/qualification-assertions/import", "post"),
     # Transformação industrial — fan-out real de abate (Passo 11.2, ADR-0046).
-    # Só escrita: consulta de TraceableItem (dossiê, timeline, recall) fica para
-    # o Passo 11.3/11.5, deliberadamente fora deste incremento.
     ("/v1/livestock/transformations/slaughter", "post"),
+    # Timeline e recall de TraceableItem (Passo 11.3, ADR-0046). Dossiê próprio
+    # do item fica para o Passo 11.5, deliberadamente fora deste incremento.
+    ("/v1/livestock/traceable-items/{item_id}/timeline", "get"),
+    ("/v1/livestock/traceable-items/{item_id}/recall", "get"),
+    ("/v1/livestock/animals/{animal_id}/recall", "get"),
 }
 
 

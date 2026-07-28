@@ -31,12 +31,18 @@ from packages.livestock_application.event_recorder import AGGREGATE_CONTRACT_VER
 from packages.livestock_application.lot_service import LotMembershipRepositoryPort
 from packages.livestock_application.medication_service import MedicationBatchRepositoryPort
 from packages.livestock_application.movement_service import MovementRepositoryPort
+from packages.livestock_application.transformation_service import (
+    TRANSFORMATION_INPUT_OF,
+    TRANSFORMATION_OUTPUT_OF,
+)
 from packages.livestock_application.treatment_service import (
     TreatmentApplicationRepositoryPort,
 )
 from packages.livestock_domain.parentage import ROLE_BY_RELATION_TYPE
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
+
+_TRANSFORMATION_RELATION_TYPES = frozenset({TRANSFORMATION_INPUT_OF, TRANSFORMATION_OUTPUT_OF})
 
 EVALUATION_ENTRY_TYPE = "core.evaluation"
 DECISION_ENTRY_TYPE = "core.decision"
@@ -181,8 +187,27 @@ class LivestockTimelineService:
         )
         aggregates.extend(application.application_id for application in applications)
         aggregates.extend(self._parentage_relations(organization_id, animal_id))
+        aggregates.extend(self._transformation_relations(organization_id, animal_id))
 
         return self._assemble(organization_id, animal_id, aggregates, superseded, cutoff)
+
+    def item_timeline(
+        self,
+        organization_id: OrganizationId,
+        item_id: TypedId,
+        cutoff: TimelineCutoff | None = None,
+    ) -> tuple[TimelineEntry, ...]:
+        """História de um `TraceableItem` (ADR-0046): a transformação que o criou.
+
+        O item em si não emite `DomainEvent` próprio — nenhuma correção existe
+        ainda (Passo 11.7). Toda a história vem do `TransformationEvent` em que
+        ele participa, hoje só como saída; um item que volte a participar como
+        entrada de uma transformação seguinte (ex.: DEBONING, não implementado)
+        apareceria aqui pelo mesmo mecanismo, sem mudança neste método.
+        """
+        aggregates: list[TypedId] = [item_id]
+        aggregates.extend(self._transformation_relations(organization_id, item_id))
+        return self._assemble(organization_id, item_id, aggregates, {}, cutoff)
 
     def lot_timeline(
         self,
@@ -277,6 +302,25 @@ class LivestockTimelineService:
             relacao.relation_id
             for relacao in encontradas
             if relacao.relation_type in ROLE_BY_RELATION_TYPE
+        ]
+
+    def _transformation_relations(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[TypedId]:
+        """Os `TransformationEvent`s em que este sujeito é participante (ADR-0046).
+
+        A relação projetada sempre aponta do participante para o evento —
+        nunca o contrário (ver `transformation_service.py`) — então a busca é
+        sempre pelas relações de **saída** deste sujeito, tanto para o animal
+        (entrada) quanto para o item (saída).
+        """
+        outgoing = self.relation_repository.list_outgoing(
+            organization_id=organization_id, source_id=subject_id
+        )
+        return [
+            relacao.target_reference.target_id
+            for relacao in outgoing
+            if relacao.relation_type in _TRANSFORMATION_RELATION_TYPES
         ]
 
     def _events_of(

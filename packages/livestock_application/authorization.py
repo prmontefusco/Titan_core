@@ -69,6 +69,10 @@ ESTABLISHMENT_QUALIFICATION_ASSERTION_LER: Final = (
 # um animal definitivamente — permissão própria porque a operação é o começo da
 # rastreabilidade de produto, distinta de registrar saída do rebanho.
 TRANSFORMATION_REGISTRAR: Final = "LIVESTOCK_TRANSFORMATION.REGISTRAR"
+# Recall (Passo 7.4) percorre o grafo de relações além do que a linha do tempo
+# de um único sujeito mostra — a mesma razão que separou ANIMAL_LER_GENEALOGIA
+# de ANIMAL_LER. Permissão própria, distinta de TIMELINE_LER.
+TRACEABILITY_LER: Final = "LIVESTOCK_TRACEABILITY.LER"
 
 # A leitura é permissão própria por área, e não uma só para tudo. Papel de
 # consulta restrita — um comprador que só precisa ver o dossiê, um técnico que só
@@ -89,6 +93,7 @@ LEITURA: Final = frozenset(
         REPRODUCTION_LER,
         PROPERTY_LER_GEOMETRIA,
         ESTABLISHMENT_QUALIFICATION_ASSERTION_LER,
+        TRACEABILITY_LER,
     }
 )
 
