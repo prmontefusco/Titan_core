@@ -336,7 +336,7 @@ silêncio.
 ## Decomposição proposta do Marco 11
 
 - **11.1** — Esta ADR. Vocabulário, invariantes, fronteira de Organization.
-- **11.2** — Fan-out real de abate (`SLAUGHLER`) **dentro de uma única
+- **11.2** — Fan-out real de abate (`SLAUGHTER`) **dentro de uma única
   Organization** (frigorífico com representação local do animal já
   estabelecida via ADR-0042, ou operação verticalizada): 1 animal →
   `TransformationEvent` → pelo menos 2 saídas rastreáveis. Não aceitar
