@@ -133,6 +133,11 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/traceable-items/{item_id}/timeline", "get"),
     ("/v1/livestock/traceable-items/{item_id}/recall", "get"),
     ("/v1/livestock/animals/{animal_id}/recall", "get"),
+    # Detalhe e dossiê de rastreabilidade do TraceableItem (Passo 11.5,
+    # ADR-0046). O dossiê não é o Dossier do Core (exige Decision); é leitura
+    # própria da vertical, sem gravação.
+    ("/v1/livestock/traceable-items/{item_id}", "get"),
+    ("/v1/livestock/traceable-items/{item_id}/dossier", "get"),
 }
 
 

@@ -1,4 +1,4 @@
-"""Roteiro executavel: fan-out, travessia e balanco (ADR-0046, Passos 11.2/11.3/11.4).
+"""Roteiro executavel: fan-out, travessia, balanco e dossie (ADR-0046, Passos 11.2-11.5).
 
 Um animal nasce na fazenda, sai do rebanho por ABATE, e o mesmo tenant que
 detem o frigorifico registra a transformacao industrial: o animal vira duas
@@ -12,9 +12,13 @@ direcoes: item -> transformacao -> animal (retrospectiva) e animal ->
 transformacao -> todos os itens (prospectiva), sem que nenhuma das duas
 pontas copie o historico da outra -- cada uma cita a mesma TransformationEvent.
 
-Por fim (Passo 11.4), prova o balanco minimo: com peso de entrada e das
+Na sequencia (Passo 11.4), prova o balanco minimo: com peso de entrada e das
 saidas na mesma base de medicao, o balanco fecha (BALANCED); sem peso de
 entrada, fica NOT_ASSESSED -- nunca zero nem BALANCED por omissao.
+
+Por fim (Passo 11.5), prova o detalhe e o dossie de rastreabilidade do item:
+um documento so reunindo a transformacao que o criou (com balanco), a
+relacao quantitativa, a linha do tempo e a origem por recall.
 
 O caso inter-organizacional (fazenda e frigorifico em tenants distintos) fica
 para quando o protocolo da ADR-0042 for extendido a este fluxo -- fora de
@@ -268,6 +272,9 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         ),
         201,
         conferir=lambda r: _conferir_balance(r, "ASSESSED", "BALANCED"),
+        guardar=lambda r: ids.update(
+            item_balanco_1=str(r["created_items"][0]["item_id"]),
+        ),
         porque=(
             "Passo 11.4: com peso de entrada e das duas saidas na mesma base "
             "de medicao, o balanco fecha em BALANCED -- 300kg entram, 300kg saem."
@@ -313,6 +320,26 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         porque=(
             "Passo 11.4: sem peso de entrada, o balanco fica NOT_ASSESSED -- "
             "nunca zero nem BALANCED por omissao."
+        ),
+    )
+    roteiro.passo(
+        "18",
+        "Operador detalha o item da transformacao com balanco",
+        lambda: operador.get(f"/v1/livestock/traceable-items/{ids['item_balanco_1']}"),
+        200,
+        conferir=lambda r: None if r["item_type"] == "HALF_CARCASS" else "item_type inesperado",
+        porque="Identidade minima do item -- tipo, rotulo e a transformacao que o criou.",
+    )
+    roteiro.passo(
+        "19",
+        "Operador monta o dossie de rastreabilidade do item",
+        lambda: operador.get(f"/v1/livestock/traceable-items/{ids['item_balanco_1']}/dossier"),
+        200,
+        conferir=lambda r: _conferir_dossie(r, ids["animal_balanco_id"]),
+        porque=(
+            "Passo 11.5: um documento so, reunindo transformacao (com balanco), "
+            "relacao quantitativa, linha do tempo e origem por recall -- nao e "
+            "o Dossier do Core, que exige Decision."
         ),
     )
     return roteiro
@@ -394,6 +421,29 @@ def _duas_saidas_com_peso_total_300() -> list[dict[str, object]]:
             "label": f"HC-{uuid4().hex[:6]}-B",
         },
     ]
+
+
+def _conferir_dossie(resposta: Resposta, animal_id_esperado: str) -> str | None:
+    transformacao = resposta["transformation"]
+    if transformacao["balance"]["result"] != "BALANCED":
+        return f"esperava balance.result BALANCED, veio {transformacao['balance']['result']!r}"
+
+    quantitativo = resposta["quantitative"]
+    if quantitativo is None or quantitativo["quantity"] != "150.000":
+        return f"esperava quantitative.quantity '150.000', veio {quantitativo!r}"
+
+    if resposta["timeline"]["entry_count"] < 1:
+        return "timeline do dossie deveria ter ao menos uma entrada"
+
+    origens = resposta["origins"]["caminhos"]
+    alcancou_animal = any(
+        caminho["passos"][-1]["para_tipo"] == "animal"
+        and caminho["passos"][-1]["para_id"] == animal_id_esperado
+        for caminho in origens
+    )
+    if not alcancou_animal:
+        return f"origins deveria alcancar o animal {animal_id_esperado}"
+    return None
 
 
 def _conferir_balance(resposta: Resposta, status_esperado: str, result_esperado: str) -> str | None:

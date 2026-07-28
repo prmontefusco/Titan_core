@@ -23,9 +23,10 @@ from apps.api.livestock_dependencies import (
     require_permission,
     typed_id_or_problem,
 )
+from apps.api.livestock_transformations import BalancoResponse, _balanco_resposta
 from apps.api.pagination import PaginacaoDependency, montar_pagina
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
-from packages.core_application.dossier_service import DossierService
+from packages.core_application.dossier_service import DossierService, evidence_content
 from packages.core_application.recall_service import RecallService
 from packages.core_domain import OrganizationContext
 from packages.core_domain.recall import (
@@ -80,6 +81,12 @@ from packages.livestock_application.transformation_service import (
     TRANSFORMATION_OUTPUT_OF,
 )
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
+from packages.livestock_domain.transformation import (
+    TraceableItem,
+    TraceableItemType,
+    TransformationEvent,
+    TransformationParticipant,
+)
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
@@ -108,6 +115,10 @@ from packages.livestock_infrastructure.persistence.property_repository import (
 )
 from packages.livestock_infrastructure.persistence.sanitary_campaign_repository import (
     TransactionalSanitaryCampaignRepository,
+)
+from packages.livestock_infrastructure.persistence.transformation_repository import (
+    TransactionalTraceableItemRepository,
+    TransactionalTransformationEventRepository,
 )
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
@@ -183,6 +194,43 @@ class RecallResponse(BaseModel):
 
 class MatrizMercadoRequest(BaseModel):
     slaughterhouse_counterparty_id: str | None = None
+
+
+class ItemResponse(BaseModel):
+    item_id: str
+    item_type: TraceableItemType
+    label: str | None
+    created_at: datetime
+    created_by_transformation_id: str | None
+
+
+class QuantidadeResponse(BaseModel):
+    quantity: str | None
+    unit: str
+    measurement_basis: str | None
+
+
+class TransformacaoResumoResponse(BaseModel):
+    transformation_id: str
+    process_type: str
+    occurred_at: datetime
+    facility_id: str
+    balance: BalancoResponse
+
+
+class EvidenciaDossierResponse(BaseModel):
+    id: str
+    content_status: str
+    content: dict[str, Any] | None
+
+
+class ItemDossierResponse(BaseModel):
+    item: ItemResponse
+    transformation: TransformacaoResumoResponse
+    quantitative: QuantidadeResponse | None
+    timeline: LinhaDoTempoItemResponse
+    origins: RecallResponse
+    evidences: list[EvidenciaDossierResponse]
 
 
 def _timeline_service(connection: Connection) -> LivestockTimelineService:
@@ -746,6 +794,157 @@ def rastrear_destino_do_animal(
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     resultado = _executar_recall_de_transformacao(connection, contexto, alvo)
     return _recall_resposta(resultado, alvo)
+
+
+def _item_resposta(item: TraceableItem) -> ItemResponse:
+    return ItemResponse(
+        item_id=str(item.item_id.value),
+        item_type=item.item_type,
+        label=item.label,
+        created_at=item.created_at,
+        created_by_transformation_id=(
+            str(item.created_by_transformation_id.value)
+            if item.created_by_transformation_id is not None
+            else None
+        ),
+    )
+
+
+def _item_nao_encontrado() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_404_NOT_FOUND,
+        reason_code="RECURSO_NAO_ENCONTRADO",
+        title="Recurso não encontrado",
+        detail="Item rastreável não encontrado nesta organização.",
+    )
+
+
+def _participante_do_item(
+    evento: TransformationEvent, item_id: SharedTypedId
+) -> TransformationParticipant | None:
+    for participante in (*evento.inputs, *evento.outputs):
+        if participante.subject_reference.target_id == item_id:
+            return participante
+    return None
+
+
+def _evidencia_resposta(
+    referencia: UniversalReference, lookup: TransactionalEvidenceRepository
+) -> EvidenciaDossierResponse:
+    encontrada = lookup.get_by_id(referencia.target_id)
+    if encontrada is None:
+        return EvidenciaDossierResponse(
+            id=str(referencia.target_id.value), content_status="NAO_ACOMPANHA", content=None
+        )
+    return EvidenciaDossierResponse(
+        id=str(referencia.target_id.value),
+        content_status="COPIADO",
+        content=evidence_content(encontrada),
+    )
+
+
+@router.get(
+    "/traceable-items/{item_id}",
+    response_model=ItemResponse,
+    summary="Detalhar um item rastreável",
+    description=(
+        "ADR-0046, Passo 11.5. Identidade mínima do item: tipo, rótulo e a "
+        "transformação que o criou. Para a história completa, ver `/timeline`; "
+        "para a origem, `/recall`; para tudo junto, `/dossier`."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def detalhar_item(
+    item_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TIMELINE_LER))],
+    connection: ConnectionDependency,
+) -> ItemResponse:
+    alvo = typed_id_or_problem(item_id, entity_type="traceable_item", campo="item_id")
+    item = TransactionalTraceableItemRepository(connection=connection).get_by_id(alvo)
+    if item is None or item.organization_id != contexto.organization_id:
+        raise _item_nao_encontrado()
+    return _item_resposta(item)
+
+
+@router.get(
+    "/traceable-items/{item_id}/dossier",
+    response_model=ItemDossierResponse,
+    summary="Montar o dossiê de rastreabilidade de um item",
+    description=(
+        "ADR-0046, Passo 11.5. Reúne num só documento: a transformação que "
+        "criou o item, a relação quantitativa declarada, a linha do tempo, as "
+        "origens alcançadas por recall (com cobertura/lacunas) e as evidências "
+        "citadas pela transformação. **Não é o Dossier do Core** — aquele exige "
+        "uma `Decision`, e nenhuma regra ainda avalia `TraceableItem`; este é "
+        "um documento de leitura próprio da vertical, sem gravação nenhuma. "
+        "Por isso usa `TIMELINE_LER`, e não `DOSSIER_LER`: não é o documento de "
+        "prova reservado ao auditor, é a mesma informação que `/timeline` e "
+        "`/recall` já expõem ao operador, só reunida num só lugar."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def montar_dossie_do_item(
+    item_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TIMELINE_LER))],
+    connection: ConnectionDependency,
+) -> ItemDossierResponse:
+    alvo = typed_id_or_problem(item_id, entity_type="traceable_item", campo="item_id")
+    item = TransactionalTraceableItemRepository(connection=connection).get_by_id(alvo)
+    if item is None or item.organization_id != contexto.organization_id:
+        raise _item_nao_encontrado()
+
+    evento = (
+        None
+        if item.created_by_transformation_id is None
+        else TransactionalTransformationEventRepository(connection=connection).get_by_id(
+            item.created_by_transformation_id
+        )
+    )
+    if evento is None or evento.organization_id != contexto.organization_id:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail="TransformationEvent que criou o item não foi encontrado.",
+        )
+
+    participante = _participante_do_item(evento, alvo)
+    entradas_timeline = _timeline_service(connection).item_timeline(contexto.organization_id, alvo)
+    recall = _executar_recall_de_transformacao(connection, contexto, alvo)
+    evidencia_lookup = TransactionalEvidenceRepository(connection=connection)
+
+    return ItemDossierResponse(
+        item=_item_resposta(item),
+        transformation=TransformacaoResumoResponse(
+            transformation_id=str(evento.event_id.value),
+            process_type=evento.process_type.value,
+            occurred_at=evento.occurred_at,
+            facility_id=str(evento.facility_reference.target_id.value),
+            balance=_balanco_resposta(evento.balance),
+        ),
+        quantitative=(
+            None
+            if participante is None
+            else QuantidadeResponse(
+                quantity=(
+                    str(participante.quantity) if participante.quantity is not None else None
+                ),
+                unit=participante.unit,
+                measurement_basis=participante.measurement_basis,
+            )
+        ),
+        timeline=LinhaDoTempoItemResponse(
+            item_id=str(alvo.value),
+            known_until=None,
+            entry_count=len(entradas_timeline),
+            entries=_entradas_para_json(entradas_timeline),
+        ),
+        origins=_recall_resposta(recall, alvo),
+        evidences=[
+            _evidencia_resposta(referencia, evidencia_lookup)
+            for referencia in evento.evidence_references
+        ],
+    )
 
 
 @router.get(
