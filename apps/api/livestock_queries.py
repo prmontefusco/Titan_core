@@ -79,6 +79,7 @@ from packages.livestock_application.timeline_service import (
 from packages.livestock_application.transformation_service import (
     TRANSFORMATION_INPUT_OF,
     TRANSFORMATION_OUTPUT_OF,
+    operational_status_now,
 )
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
 from packages.livestock_domain.transformation import (
@@ -166,8 +167,10 @@ class RecallPassoResponse(BaseModel):
     relation_type: str
     de_tipo: str
     de_id: str
+    de_status: str | None = None
     para_tipo: str
     para_id: str
+    para_status: str | None = None
     direcao: str
 
 
@@ -216,6 +219,8 @@ class TransformacaoResumoResponse(BaseModel):
     occurred_at: datetime
     facility_id: str
     balance: BalancoResponse
+    status: str
+    corrected_by_transformation_id: str | None = None
 
 
 class EvidenciaDossierResponse(BaseModel):
@@ -717,7 +722,35 @@ def _executar_recall_de_transformacao(
     return resultado
 
 
-def _recall_resposta(resultado: RecallResult, subject_id: SharedTypedId) -> RecallResponse:
+def _status_de_no(
+    connection: Connection, entity_type: str, entity_id: SharedTypedId
+) -> str | None:
+    """Estado derivado CURRENT/SUPERSEDED de um nó do recall (ADR-0047, item 10).
+
+    Só `TransformationEvent` e `TraceableItem` têm este conceito — para
+    `TraceableItem`, o estado é o do evento que o criou (a "origem" do item, e
+    não uma propriedade do item em si). Qualquer outro tipo de nó (animal,
+    propriedade) devolve `None`: a correção de `TransformationEvent` não altera
+    o que esses sujeitos são.
+    """
+    if entity_type == "transformation_event":
+        return operational_status_now(
+            TransactionalTransformationEventRepository(connection=connection), entity_id
+        ).value
+    if entity_type == "traceable_item":
+        item = TransactionalTraceableItemRepository(connection=connection).get_by_id(entity_id)
+        if item is None or item.created_by_transformation_id is None:
+            return None
+        return operational_status_now(
+            TransactionalTransformationEventRepository(connection=connection),
+            item.created_by_transformation_id,
+        ).value
+    return None
+
+
+def _recall_resposta(
+    connection: Connection, resultado: RecallResult, subject_id: SharedTypedId
+) -> RecallResponse:
     return RecallResponse(
         recall_id=str(resultado.recall_id.value),
         subject_type=subject_id.entity_type,
@@ -732,8 +765,18 @@ def _recall_resposta(resultado: RecallResult, subject_id: SharedTypedId) -> Reca
                         relation_type=passo.relation_type,
                         de_tipo=passo.from_reference.target_id.entity_type,
                         de_id=str(passo.from_reference.target_id.value),
+                        de_status=_status_de_no(
+                            connection,
+                            passo.from_reference.target_id.entity_type,
+                            passo.from_reference.target_id,
+                        ),
                         para_tipo=passo.to_reference.target_id.entity_type,
                         para_id=str(passo.to_reference.target_id.value),
+                        para_status=_status_de_no(
+                            connection,
+                            passo.to_reference.target_id.entity_type,
+                            passo.to_reference.target_id,
+                        ),
                         direcao=passo.direction.value,
                     )
                     for passo in caminho.steps
@@ -771,7 +814,7 @@ def rastrear_origem_do_item(
 ) -> RecallResponse:
     alvo = typed_id_or_problem(item_id, entity_type="traceable_item", campo="item_id")
     resultado = _executar_recall_de_transformacao(connection, contexto, alvo)
-    return _recall_resposta(resultado, alvo)
+    return _recall_resposta(connection, resultado, alvo)
 
 
 @router.get(
@@ -793,7 +836,7 @@ def rastrear_destino_do_animal(
 ) -> RecallResponse:
     alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
     resultado = _executar_recall_de_transformacao(connection, contexto, alvo)
-    return _recall_resposta(resultado, alvo)
+    return _recall_resposta(connection, resultado, alvo)
 
 
 def _item_resposta(item: TraceableItem) -> ItemResponse:
@@ -913,6 +956,10 @@ def montar_dossie_do_item(
     recall = _executar_recall_de_transformacao(connection, contexto, alvo)
     evidencia_lookup = TransactionalEvidenceRepository(connection=connection)
 
+    event_repository = TransactionalTransformationEventRepository(connection=connection)
+    estado_evento = operational_status_now(event_repository, evento.event_id)
+    correcao = event_repository.get_correction_of(evento.event_id)
+
     return ItemDossierResponse(
         item=_item_resposta(item),
         transformation=TransformacaoResumoResponse(
@@ -921,6 +968,10 @@ def montar_dossie_do_item(
             occurred_at=evento.occurred_at,
             facility_id=str(evento.facility_reference.target_id.value),
             balance=_balanco_resposta(evento.balance),
+            status=estado_evento.value,
+            corrected_by_transformation_id=(
+                str(correcao.event_id.value) if correcao is not None else None
+            ),
         ),
         quantitative=(
             None
@@ -939,7 +990,7 @@ def montar_dossie_do_item(
             entry_count=len(entradas_timeline),
             entries=_entradas_para_json(entradas_timeline),
         ),
-        origins=_recall_resposta(recall, alvo),
+        origins=_recall_resposta(connection, recall, alvo),
         evidences=[
             _evidencia_resposta(referencia, evidencia_lookup)
             for referencia in evento.evidence_references

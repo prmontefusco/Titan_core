@@ -205,6 +205,56 @@ class TestTransformationEvent:
         evento = _event(org, balance=balanco)
         assert evento.balance is balanco
 
+    def test_aceita_correcao_com_motivo(self) -> None:
+        org = _org()
+        original_id = TypedId.new("transformation_event")
+        evento = _event(
+            org,
+            corrects_transformation_id=original_id,
+            correction_reason="Peso de saída lançado errado no apontamento original.",
+        )
+        assert evento.corrects_transformation_id == original_id
+        assert evento.correction_reason is not None
+
+    def test_corrects_transformation_id_exige_entity_type_correto(self) -> None:
+        org = _org()
+        with pytest.raises(ValueError, match="transformation_event"):
+            _event(
+                org,
+                corrects_transformation_id=TypedId.new("traceable_item"),
+                correction_reason="motivo",
+            )
+
+    def test_evento_nao_pode_corrigir_a_si_mesmo(self) -> None:
+        org = _org()
+        event_id = TypedId.new("transformation_event")
+        with pytest.raises(ValueError, match="corrigir a si mesmo"):
+            _event(
+                org,
+                event_id=event_id,
+                corrects_transformation_id=event_id,
+                correction_reason="motivo",
+            )
+
+    def test_correction_reason_obrigatorio_quando_ha_correcao(self) -> None:
+        org = _org()
+        with pytest.raises(ValueError, match="correction_reason"):
+            _event(org, corrects_transformation_id=TypedId.new("transformation_event"))
+
+    def test_correction_reason_vazio_e_recusado(self) -> None:
+        org = _org()
+        with pytest.raises(ValueError, match="correction_reason"):
+            _event(
+                org,
+                corrects_transformation_id=TypedId.new("transformation_event"),
+                correction_reason="   ",
+            )
+
+    def test_correction_reason_sem_corrects_transformation_id_e_recusado(self) -> None:
+        org = _org()
+        with pytest.raises(ValueError, match="correction_reason"):
+            _event(org, correction_reason="motivo sem correção")
+
 
 class TestTransformationBalance:
     def test_status_deve_ser_balance_status(self) -> None:

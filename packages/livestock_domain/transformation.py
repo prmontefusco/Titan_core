@@ -84,6 +84,20 @@ class BalanceResult(StrEnum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
 
 
+class TransformationStatus(StrEnum):
+    """Estado derivado de um `TransformationEvent`, nunca armazenado (ADR-0047, item 3).
+
+    Relativo a um instante de referência — `now` para guardas de escrita,
+    `known_until` para reconstrução histórica (invariante 5). O cálculo em si
+    (existe outro evento cujo `corrects_transformation_id` aponta para este?)
+    vive em `packages.livestock_application.transformation_service`, porque
+    depende de consulta ao repositório — este módulo só nomeia os dois estados.
+    """
+
+    CURRENT = "CURRENT"
+    SUPERSEDED = "SUPERSEDED"
+
+
 @dataclass(frozen=True, slots=True)
 class TransformationBalance:
     """Estrutura já fixada pela ADR-0046; nenhum serviço a computa ainda (Passo 11.4).
@@ -235,6 +249,8 @@ class TransformationEvent:
     source_artifact_references: tuple[UniversalReference, ...] = field(default_factory=tuple)
     balance: TransformationBalance | None = None
     evidence_references: tuple[UniversalReference, ...] = field(default_factory=tuple)
+    corrects_transformation_id: TypedId | None = None
+    correction_reason: str | None = None
 
     def __post_init__(self) -> None:
         if self.event_id.entity_type != "transformation_event":
@@ -289,6 +305,32 @@ class TransformationEvent:
 
         if self.balance is not None and not isinstance(self.balance, TransformationBalance):
             raise TypeError("balance deve ser TransformationBalance ou None.")
+
+        # ADR-0047, item 1: correção é um TransformationEvent completo novo, nunca
+        # um patch — corrects_transformation_id só referencia outro evento, jamais
+        # a si mesmo, e correction_reason é obrigatório exatamente quando há correção.
+        if self.corrects_transformation_id is not None:
+            if self.corrects_transformation_id.entity_type != "transformation_event":
+                raise ValueError(
+                    "corrects_transformation_id deve ter entity_type "
+                    "'transformation_event', recebido "
+                    f"'{self.corrects_transformation_id.entity_type}'."
+                )
+            if self.corrects_transformation_id == self.event_id:
+                raise ValueError(
+                    "TransformationEvent não pode corrigir a si mesmo "
+                    "(corrects_transformation_id == event_id)."
+                )
+            if self.correction_reason is None or not self.correction_reason.strip():
+                raise ValueError(
+                    "correction_reason é obrigatório quando corrects_transformation_id "
+                    "está definido (ADR-0047, item 1)."
+                )
+        elif self.correction_reason is not None:
+            raise ValueError(
+                "correction_reason só se aplica quando corrects_transformation_id "
+                "está definido."
+            )
 
     def _guard_same_organization(self, label: str, reference: UniversalReference) -> None:
         if (

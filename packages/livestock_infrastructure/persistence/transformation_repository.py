@@ -21,6 +21,8 @@ from sqlalchemy import (
     Index,
     String,
     Table,
+    Text,
+    UniqueConstraint,
     insert,
     select,
 )
@@ -64,10 +66,21 @@ transformation_events_table = Table(
     Column("balance", JSONB, nullable=True),
     Column("evidence_references", JSONB, nullable=False, server_default="[]"),
     Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("corrects_transformation_id", PG_UUID(as_uuid=True), nullable=True),
+    Column("correction_reason", Text, nullable=True),
     ForeignKeyConstraint(
         ["record_owner_organization_id"],
         ["core_identity.organizations.organization_id"],
         name="fk_transformation_events_organization",
+    ),
+    ForeignKeyConstraint(
+        ["corrects_transformation_id"],
+        [f"{CORE_AUDIT_SCHEMA}.transformation_events.event_id"],
+        name="fk_transformation_events_corrects",
+    ),
+    UniqueConstraint(
+        "corrects_transformation_id",
+        name="uq_transformation_events_corrects_transformation_id",
     ),
     comment="titan.classification=PROTECTED;titan.module_owner=livestock",
     schema=CORE_AUDIT_SCHEMA,
@@ -215,6 +228,12 @@ class TransactionalTransformationEventRepository(TransformationEventRepositoryPo
                     [reference_to_dict(r) for r in event.evidence_references]
                 ),
                 created_at=event.created_at,
+                corrects_transformation_id=(
+                    event.corrects_transformation_id.value
+                    if event.corrects_transformation_id is not None
+                    else None
+                ),
+                correction_reason=event.correction_reason,
             )
         )
 
@@ -222,6 +241,14 @@ class TransactionalTransformationEventRepository(TransformationEventRepositoryPo
         row = self.connection.execute(
             select(transformation_events_table).where(
                 transformation_events_table.c.event_id == event_id.value
+            )
+        ).one_or_none()
+        return None if row is None else self._map(row)
+
+    def get_correction_of(self, event_id: TypedId) -> TransformationEvent | None:
+        row = self.connection.execute(
+            select(transformation_events_table).where(
+                transformation_events_table.c.corrects_transformation_id == event_id.value
             )
         ).one_or_none()
         return None if row is None else self._map(row)
@@ -258,6 +285,12 @@ class TransactionalTransformationEventRepository(TransformationEventRepositoryPo
                 for ref in (reference_from_dict(item) for item in evidence_raw)
                 if ref is not None
             ),
+            corrects_transformation_id=(
+                TypedId(entity_type="transformation_event", value=row.corrects_transformation_id)
+                if row.corrects_transformation_id is not None
+                else None
+            ),
+            correction_reason=row.correction_reason,
         )
 
 

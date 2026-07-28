@@ -51,6 +51,7 @@ from packages.livestock_domain.transformation import (
     TransformationBalance,
     TransformationEvent,
     TransformationParticipant,
+    TransformationStatus,
 )
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
@@ -84,6 +85,35 @@ class TransformationEventRepositoryPort(Protocol):
 
     def get_by_id(self, event_id: TypedId) -> TransformationEvent | None: ...
 
+    def get_correction_of(self, event_id: TypedId) -> TransformationEvent | None:
+        """O evento cujo `corrects_transformation_id` aponta para `event_id`, se existir.
+
+        A UNIQUE de banco (ADR-0047, item 1/invariante 7) garante no máximo um
+        resultado — a busca nunca precisa desempatar.
+        """
+        ...
+
+
+class TransformationLockPort(Protocol):
+    """Bloqueio transacional de linhas (ADR-0047, item 5), isolado de propósito.
+
+    Não é mais um método nos ports de leitura/escrita já existentes
+    (`TraceableItemRepositoryPort`, `TransformationEventRepositoryPort`,
+    `AnimalRepositoryPort`) porque esses ports têm dezenas de fakes em testes
+    que não têm nenhum motivo para conhecer bloqueio pessimista — só quem
+    grava uma nova transformação ou uma correção precisa disto. Cada método
+    executa um `SELECT ... FOR UPDATE` na mesma conexão/transação que depois
+    revalida e escreve; devolve `False` quando a linha não existe (nada a
+    bloquear) em vez de lançar, porque "não existe" já é tratado por guardas
+    de domínio específicas de cada chamador (ex.: `AnimalNaoAbatido`).
+    """
+
+    def lock_transformation_event(self, event_id: TypedId) -> bool: ...
+
+    def lock_traceable_item(self, item_id: TypedId) -> bool: ...
+
+    def lock_animal(self, animal_id: TypedId) -> bool: ...
+
 
 class AnimalNaoAbatido(ValueError):
     """`TransformationEvent(SLAUGHTER)` exige `AnimalExit(ABATE)` já registrada."""
@@ -99,6 +129,40 @@ class ItemDeTipoInvalido(ValueError):
 
 class ItemJaConsumido(ValueError):
     """O item já foi consumido como entrada de uma transformação anterior."""
+
+
+class AlvoDeCorrecaoNaoEhVigente(ValueError):
+    """Só o leaf atual de uma cadeia de correção pode ser corrigido (ADR-0047, item 4).
+
+    Corrigir um evento já `SUPERSEDED` bifurcaria a cadeia; quem chama precisa
+    apontar a correção para o evento que já o corrigiu.
+    """
+
+
+class SaidaConsumidaAJusante(ValueError):
+    """Uma saída do evento a corrigir já foi consumida por transformação vigente.
+
+    ADR-0047, item 9: a correção só olha o próprio leaf; se uma saída dele já
+    virou entrada de outro `TransformationEvent` ainda `CURRENT`, corrigir a
+    origem invalidaria silenciosamente um fato já construído sobre ela.
+    """
+
+
+def operational_status_now(
+    event_repository: TransformationEventRepositoryPort, event_id: TypedId
+) -> TransformationStatus:
+    """`operational_status_now` da ADR-0047, item 3: instante de referência = agora.
+
+    SUPERSEDED sse existe outro `TransformationEvent` cujo
+    `corrects_transformation_id` aponta para `event_id` — a mesma pesquisa
+    reversa de `_superseded_map` (Marco 9), só que resolvida direto no
+    repositório em vez de varrer uma lista em memória, porque a UNIQUE de
+    banco já garante no máximo um resultado.
+    """
+    correction = event_repository.get_correction_of(event_id)
+    if correction is not None:
+        return TransformationStatus.SUPERSEDED
+    return TransformationStatus.CURRENT
 
 
 @dataclass(frozen=True, slots=True)
@@ -353,22 +417,62 @@ def _ja_usado_como_entrada(
     relation_service: RelationService,
     organization_id: OrganizationId,
     subject_reference: UniversalReference,
+    *,
+    excluding_event_id: TypedId | None = None,
 ) -> bool:
     """Um sujeito só é consumido como entrada uma vez.
 
     Lê a projeção já gravada em vez de um repositório dedicado — a mesma
     trilha que o Passo 7.1 já sustenta, sem tabela nova.
+
+    `excluding_event_id` existe para a correção (ADR-0047, item 7): reafirmar,
+    numa correção, a mesma entrada que o evento corrigido já reivindicava não
+    pode ser lida como "já em uso" — a única relação `input_of` a ignorar é
+    exatamente a que aponta para o evento sendo corrigido.
     """
     existentes = relation_service.list_outgoing_at(
         organization_id=organization_id, source_reference=subject_reference
     )
-    return any(relacao.relation_type == TRANSFORMATION_INPUT_OF for relacao in existentes)
+    return any(
+        relacao.relation_type == TRANSFORMATION_INPUT_OF
+        and (excluding_event_id is None or relacao.target_reference.target_id != excluding_event_id)
+        for relacao in existentes
+    )
 
 
 def _guard_occurred_at_no_futuro(occurred_at: datetime) -> None:
     require_utc(occurred_at, field_name="occurred_at")
     if occurred_at > datetime.now(UTC):
         raise ValueError("occurred_at não pode ser no futuro.")
+
+
+def _guard_saida_nao_consumida_a_jusante(
+    event_repository: TransformationEventRepositoryPort,
+    relation_service: RelationService,
+    organization_id: OrganizationId,
+    output_participant: TransformationParticipant,
+) -> None:
+    """ADR-0047, item 9: "consumida a jusante" olha só o leaf do evento a corrigir.
+
+    Compartilhada entre `SlaughterService` e `DeboningService` pelo mesmo
+    motivo de `_ja_usado_como_entrada` — nenhum dos dois serviços tem estado
+    que o outro precise, e a regra não depende de qual processo produziu a
+    saída, só de quem a consome agora.
+    """
+    relacoes = relation_service.list_outgoing_at(
+        organization_id=organization_id,
+        source_reference=output_participant.subject_reference,
+    )
+    for relacao in relacoes:
+        if relacao.relation_type != TRANSFORMATION_INPUT_OF:
+            continue
+        consumidor_id = relacao.target_reference.target_id
+        if operational_status_now(event_repository, consumidor_id) is TransformationStatus.CURRENT:
+            raise SaidaConsumidaAJusante(
+                f"A saída '{output_participant.subject_reference.target_id.value}' já foi "
+                "consumida por uma transformação vigente; corrigir a origem invalidaria um "
+                "fato já construído sobre ela (ADR-0047, item 9)."
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -380,6 +484,7 @@ class SlaughterService:
     property_repository: RuralPropertyRepositoryPort
     relation_service: RelationService
     recorder: LivestockEventRecorder
+    lock_port: TransformationLockPort
 
     def register_slaughter(
         self,
@@ -395,6 +500,78 @@ class SlaughterService:
         declared_loss: Decimal | None = None,
         tolerance: Decimal | None = None,
     ) -> SlaughterResult:
+        return self._persist(
+            context,
+            animal_id=animal_id,
+            facility_property_id=facility_property_id,
+            occurred_at=occurred_at,
+            outputs=outputs,
+            evidence_references=evidence_references,
+            input_quantity=input_quantity,
+            input_unit=input_unit,
+            input_measurement_basis=input_measurement_basis,
+            declared_loss=declared_loss,
+            tolerance=tolerance,
+            corrects_transformation_id=None,
+            correction_reason=None,
+        )
+
+    def correct_slaughter(
+        self,
+        context: LivestockOperationContext,
+        corrects_transformation_id: TypedId,
+        correction_reason: str,
+        animal_id: TypedId,
+        facility_property_id: TypedId,
+        occurred_at: datetime,
+        outputs: Sequence[TransformationOutputSpec],
+        evidence_references: tuple[UniversalReference, ...] = (),
+        input_quantity: Decimal | None = None,
+        input_unit: str = "",
+        input_measurement_basis: str | None = None,
+        declared_loss: Decimal | None = None,
+        tolerance: Decimal | None = None,
+    ) -> SlaughterResult:
+        """Corrige um `TransformationEvent(SLAUGHTER)` publicado (ADR-0047).
+
+        Cria um evento completo novo — reafirma entradas, saídas, balanço e
+        evidências; nunca é um patch parcial (item 1). `animal_id` tipicamente
+        repete a entrada original: o guard de "já usado como entrada" ignora
+        especificamente a reivindicação do próprio evento corrigido (item 7).
+        """
+        return self._persist(
+            context,
+            animal_id=animal_id,
+            facility_property_id=facility_property_id,
+            occurred_at=occurred_at,
+            outputs=outputs,
+            evidence_references=evidence_references,
+            input_quantity=input_quantity,
+            input_unit=input_unit,
+            input_measurement_basis=input_measurement_basis,
+            declared_loss=declared_loss,
+            tolerance=tolerance,
+            corrects_transformation_id=corrects_transformation_id,
+            correction_reason=correction_reason,
+        )
+
+    def _persist(
+        self,
+        context: LivestockOperationContext,
+        *,
+        animal_id: TypedId,
+        facility_property_id: TypedId,
+        occurred_at: datetime,
+        outputs: Sequence[TransformationOutputSpec],
+        evidence_references: tuple[UniversalReference, ...],
+        input_quantity: Decimal | None,
+        input_unit: str,
+        input_measurement_basis: str | None,
+        declared_loss: Decimal | None,
+        tolerance: Decimal | None,
+        corrects_transformation_id: TypedId | None,
+        correction_reason: str | None,
+    ) -> SlaughterResult:
         organization_id = context.organization_id
         _guard_occurred_at_no_futuro(occurred_at)
         if len(outputs) < FAN_OUT_MINIMO:
@@ -403,6 +580,36 @@ class SlaughterService:
                 "(fan-out real, ADR-0046 item 1)."
             )
 
+        original: TransformationEvent | None = None
+        if corrects_transformation_id is not None:
+            # Ordem determinística de bloqueio (ADR-0047, item 5.2): o alvo
+            # da correção primeiro, antes de qualquer entrada/saída.
+            self.lock_port.lock_transformation_event(corrects_transformation_id)
+            original = self.event_repository.get_by_id(corrects_transformation_id)
+            if original is None or original.organization_id != organization_id:
+                raise KeyError(
+                    f"TransformationEvent '{corrects_transformation_id.value}' não encontrado."
+                )
+            if original.process_type is not ProcessType.SLAUGHTER:
+                raise ValueError(
+                    "correct_slaughter só corrige TransformationEvent(SLAUGHTER); mudança de "
+                    "process_type não é correção (ADR-0047, item 11)."
+                )
+
+        # Entradas, em seguida (item 5.2) — SLAUGHTER tem uma única entrada.
+        self.lock_port.lock_animal(animal_id)
+
+        if original is not None:
+            # Saídas do evento sendo corrigido, por último e em ordem
+            # determinística — necessárias para a checagem de "consumida a
+            # jusante" (item 9).
+            for output_id in sorted(
+                (p.subject_reference.target_id for p in original.outputs),
+                key=lambda i: str(i.value),
+            ):
+                self.lock_port.lock_traceable_item(output_id)
+
+        # ---- revalidação: única leitura, já com os bloqueios adquiridos ----
         animal = self.animal_repository.get_by_id(animal_id)
         if animal is None or animal.organization_id != organization_id:
             raise KeyError(f"Animal '{animal_id.value}' não encontrado.")
@@ -427,12 +634,31 @@ class SlaughterService:
                 "occurred_at da transformação não pode ser anterior à saída por abate."
             )
 
+        if original is not None and corrects_transformation_id is not None:
+            if (
+                operational_status_now(self.event_repository, corrects_transformation_id)
+                is not TransformationStatus.CURRENT
+            ):
+                raise AlvoDeCorrecaoNaoEhVigente(
+                    "Só o leaf atual de uma cadeia de correção pode ser corrigido: aponte a "
+                    "correção para o evento que já corrigiu este (ADR-0047, item 4)."
+                )
+            for participant in original.outputs:
+                _guard_saida_nao_consumida_a_jusante(
+                    self.event_repository, self.relation_service, organization_id, participant
+                )
+
         animal_reference = UniversalReference(
             target_id=animal_id,
             organization_id=organization_id,
             contract_version=AGGREGATE_CONTRACT_VERSION,
         )
-        if _ja_usado_como_entrada(self.relation_service, organization_id, animal_reference):
+        if _ja_usado_como_entrada(
+            self.relation_service,
+            organization_id,
+            animal_reference,
+            excluding_event_id=corrects_transformation_id,
+        ):
             raise AnimalJaTransformado(
                 "Este animal já foi utilizado como entrada em uma transformação anterior."
             )
@@ -479,6 +705,8 @@ class SlaughterService:
             created_at=momento_criacao,
             balance=balance,
             evidence_references=evidence_references,
+            corrects_transformation_id=corrects_transformation_id,
+            correction_reason=correction_reason,
         )
 
         self.event_repository.save(event)
@@ -539,6 +767,7 @@ class DeboningService:
     property_repository: RuralPropertyRepositoryPort
     relation_service: RelationService
     recorder: LivestockEventRecorder
+    lock_port: TransformationLockPort
 
     def register_deboning(
         self,
@@ -550,6 +779,60 @@ class DeboningService:
         evidence_references: tuple[UniversalReference, ...] = (),
         declared_loss: Decimal | None = None,
         tolerance: Decimal | None = None,
+    ) -> DeboningResult:
+        return self._persist(
+            context,
+            facility_property_id=facility_property_id,
+            occurred_at=occurred_at,
+            inputs=inputs,
+            outputs=outputs,
+            evidence_references=evidence_references,
+            declared_loss=declared_loss,
+            tolerance=tolerance,
+            corrects_transformation_id=None,
+            correction_reason=None,
+        )
+
+    def correct_deboning(
+        self,
+        context: LivestockOperationContext,
+        corrects_transformation_id: TypedId,
+        correction_reason: str,
+        facility_property_id: TypedId,
+        occurred_at: datetime,
+        inputs: Sequence[DeboningInputSpec],
+        outputs: Sequence[TransformationOutputSpec],
+        evidence_references: tuple[UniversalReference, ...] = (),
+        declared_loss: Decimal | None = None,
+        tolerance: Decimal | None = None,
+    ) -> DeboningResult:
+        """Corrige um `TransformationEvent(DEBONING)` publicado (ADR-0047)."""
+        return self._persist(
+            context,
+            facility_property_id=facility_property_id,
+            occurred_at=occurred_at,
+            inputs=inputs,
+            outputs=outputs,
+            evidence_references=evidence_references,
+            declared_loss=declared_loss,
+            tolerance=tolerance,
+            corrects_transformation_id=corrects_transformation_id,
+            correction_reason=correction_reason,
+        )
+
+    def _persist(
+        self,
+        context: LivestockOperationContext,
+        *,
+        facility_property_id: TypedId,
+        occurred_at: datetime,
+        inputs: Sequence[DeboningInputSpec],
+        outputs: Sequence[TransformationOutputSpec],
+        evidence_references: tuple[UniversalReference, ...],
+        declared_loss: Decimal | None,
+        tolerance: Decimal | None,
+        corrects_transformation_id: TypedId | None,
+        correction_reason: str | None,
     ) -> DeboningResult:
         organization_id = context.organization_id
         _guard_occurred_at_no_futuro(occurred_at)
@@ -563,6 +846,35 @@ class DeboningService:
         if len({spec.item_id.value for spec in inputs}) != len(inputs):
             raise ValueError("Um item não pode ser entrada duplicada da mesma transformação.")
 
+        original: TransformationEvent | None = None
+        if corrects_transformation_id is not None:
+            # Ordem determinística de bloqueio (ADR-0047, item 5.2): alvo primeiro.
+            self.lock_port.lock_transformation_event(corrects_transformation_id)
+            original = self.event_repository.get_by_id(corrects_transformation_id)
+            if original is None or original.organization_id != organization_id:
+                raise KeyError(
+                    f"TransformationEvent '{corrects_transformation_id.value}' não encontrado."
+                )
+            if original.process_type is not ProcessType.DEBONING:
+                raise ValueError(
+                    "correct_deboning só corrige TransformationEvent(DEBONING); mudança de "
+                    "process_type não é correção (ADR-0047, item 11)."
+                )
+
+        # Entradas, em ordem determinística (item 5.2).
+        for input_id in sorted((spec.item_id for spec in inputs), key=lambda i: str(i.value)):
+            self.lock_port.lock_traceable_item(input_id)
+
+        if original is not None:
+            # Saídas do evento sendo corrigido, por último — checagem de
+            # "consumida a jusante" (item 9).
+            for output_id in sorted(
+                (p.subject_reference.target_id for p in original.outputs),
+                key=lambda i: str(i.value),
+            ):
+                self.lock_port.lock_traceable_item(output_id)
+
+        # ---- revalidação: única leitura, já com os bloqueios adquiridos ----
         facility = self.property_repository.get_by_id(facility_property_id)
         if facility is None or facility.organization_id != organization_id:
             raise KeyError(f"Propriedade '{facility_property_id.value}' não encontrada.")
@@ -580,6 +892,20 @@ class DeboningService:
                 )
             itens_de_entrada.append(item)
 
+        if original is not None and corrects_transformation_id is not None:
+            if (
+                operational_status_now(self.event_repository, corrects_transformation_id)
+                is not TransformationStatus.CURRENT
+            ):
+                raise AlvoDeCorrecaoNaoEhVigente(
+                    "Só o leaf atual de uma cadeia de correção pode ser corrigido: aponte a "
+                    "correção para o evento que já corrigiu este (ADR-0047, item 4)."
+                )
+            for participant in original.outputs:
+                _guard_saida_nao_consumida_a_jusante(
+                    self.event_repository, self.relation_service, organization_id, participant
+                )
+
         input_references = tuple(
             UniversalReference(
                 target_id=item.item_id,
@@ -589,7 +915,12 @@ class DeboningService:
             for item in itens_de_entrada
         )
         for reference in input_references:
-            if _ja_usado_como_entrada(self.relation_service, organization_id, reference):
+            if _ja_usado_como_entrada(
+                self.relation_service,
+                organization_id,
+                reference,
+                excluding_event_id=corrects_transformation_id,
+            ):
                 raise ItemJaConsumido(
                     f"O item '{reference.target_id.value}' já foi utilizado como entrada "
                     "em uma transformação anterior."
@@ -639,6 +970,8 @@ class DeboningService:
             created_at=momento_criacao,
             balance=balance,
             evidence_references=evidence_references,
+            corrects_transformation_id=corrects_transformation_id,
+            correction_reason=correction_reason,
         )
 
         self.event_repository.save(event)

@@ -20,11 +20,20 @@ Na sequencia (Passo 11.5), prova o detalhe e o dossie de rastreabilidade do
 item: um documento so reunindo a transformacao que o criou (com balanco), a
 relacao quantitativa, a linha do tempo e a origem por recall.
 
-Por fim (Passo 11.6), prova o fan-in real: as duas meias-carcaças do abate
-do Passo 11.2 viram entrada de um unico TransformationEvent(DEBONING), que
-produz saidas novas. O recall a partir de uma dessas saidas alcanca as DUAS
-origens sem inventar correspondencia 1:1 -- e, mais fundo no grafo, o
+Na sequencia (Passo 11.6), prova o fan-in real: as duas meias-carcaças do
+abate do Passo 11.2 viram entrada de um unico TransformationEvent(DEBONING),
+que produz saidas novas. O recall a partir de uma dessas saidas alcanca as
+DUAS origens sem inventar correspondencia 1:1 -- e, mais fundo no grafo, o
 proprio animal do Passo 11.2, provando a cadeia completa.
+
+Por fim (Passo 11.7, ADR-0047), prova a correcao de TransformationEvent
+publicado: o evento original nunca e editado -- uma correcao cria um evento
+completo novo, e o dossie do item original passa a mostrar
+transformation.status=SUPERSEDED com corrected_by_transformation_id apontando
+para a correcao. Corrigir um evento que ja nao e o leaf da cadeia e recusado
+(409), e corrigir uma origem cuja saida ja foi consumida por uma
+transformacao vigente tambem e recusado -- exatamente o caso da transformacao
+do Passo 11.2, cujas duas saidas ja viraram entrada da desossa do Passo 11.6.
 
 O caso inter-organizacional (fazenda e frigorifico em tenants distintos) fica
 para quando o protocolo da ADR-0042 for extendido a este fluxo -- fora de
@@ -281,6 +290,7 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         guardar=lambda r: ids.update(
             item_balanco_1=str(r["created_items"][0]["item_id"]),
             item_balanco_2=str(r["created_items"][1]["item_id"]),
+            balanco_transformation_id=str(r["transformation_id"]),
         ),
         porque=(
             "Passo 11.4: com peso de entrada e das duas saidas na mesma base "
@@ -457,6 +467,85 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
             "cadeia completa animal -> abate -> desossa."
         ),
     )
+    roteiro.passo(
+        "25",
+        "Operador corrige a transformacao com balanco, reafirmando a mesma entrada",
+        lambda: operador.post(
+            f"/v1/livestock/transformations/slaughter/{ids['balanco_transformation_id']}/corrections",
+            {
+                "correction_reason": "Peso das saidas lancado errado no apontamento original.",
+                "animal_id": ids["animal_balanco_id"],
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=1)).isoformat(),
+                "outputs": _duas_saidas_com_peso_total_300(),
+                "input_quantity": "300.000",
+                "input_unit": "kg",
+                "input_measurement_basis": "peso liquido",
+            },
+        ),
+        201,
+        conferir=lambda r: _conferir_correcao(r, ids["balanco_transformation_id"]),
+        guardar=lambda r: ids.update(correcao_balanco_id=str(r["transformation_id"])),
+        porque=(
+            "ADR-0047, item 1: a correcao cria um TransformationEvent completo "
+            "novo -- nunca edita o original. Reafirmar a mesma entrada (item 7 "
+            "da ADR) nao dispara a recusa de reuso de entrada."
+        ),
+    )
+    roteiro.passo(
+        "26",
+        "Operador confere que o dossie do item ORIGINAL mostra a correcao",
+        lambda: operador.get(f"/v1/livestock/traceable-items/{ids['item_balanco_1']}/dossier"),
+        200,
+        conferir=lambda r: _conferir_dossie_superseded(r, ids["correcao_balanco_id"]),
+        porque=(
+            "ADR-0047, item 3: o TraceableItem original nunca e editado nem "
+            "some -- continua consultavel integralmente, so que agora anotado "
+            "como SUPERSEDED, apontando para quem o corrigiu."
+        ),
+    )
+    roteiro.passo(
+        "27",
+        "Operador tenta corrigir o evento ORIGINAL de novo (ja nao e o leaf)",
+        lambda: operador.post(
+            f"/v1/livestock/transformations/slaughter/{ids['balanco_transformation_id']}/corrections",
+            {
+                "correction_reason": "Tentativa de bifurcar a cadeia de correcao.",
+                "animal_id": ids["animal_balanco_id"],
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=1)).isoformat(),
+                "outputs": _duas_saidas_com_peso_total_300(),
+            },
+        ),
+        409,
+        conferir=_conferir_conflito,
+        porque=(
+            "ADR-0047, item 4/invariante 9: so o leaf atual de uma cadeia de "
+            "correcao pode ser corrigido -- apontar de novo para o evento ja "
+            "corrigido bifurcaria a cadeia."
+        ),
+    )
+    roteiro.passo(
+        "28",
+        "Operador tenta corrigir a transformacao cujas saidas ja foram desossadas",
+        lambda: operador.post(
+            f"/v1/livestock/transformations/slaughter/{ids['transformation_id']}/corrections",
+            {
+                "correction_reason": "Tentativa de corrigir origem ja consumida a jusante.",
+                "animal_id": ids["animal_id"],
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=1)).isoformat(),
+                "outputs": _duas_saidas(),
+            },
+        ),
+        409,
+        conferir=_conferir_conflito,
+        porque=(
+            "ADR-0047, item 9: as duas saidas desta transformacao (Passo 11.2) "
+            "ja viraram entrada da desossa vigente do Passo 11.6 -- corrigir a "
+            "origem invalidaria silenciosamente um fato ja construido sobre ela."
+        ),
+    )
     return roteiro
 
 
@@ -587,6 +676,29 @@ def _saidas_de_desossa() -> list[dict[str, object]]:
             "label": f"APARA-{uuid4().hex[:6]}",
         },
     ]
+
+
+def _conferir_correcao(resposta: Resposta, transformation_id_original: str) -> str | None:
+    if resposta["corrects_transformation_id"] != transformation_id_original:
+        return (
+            f"corrects_transformation_id deveria ser {transformation_id_original!r}, "
+            f"veio {resposta['corrects_transformation_id']!r}"
+        )
+    if not resposta["correction_reason"]:
+        return "correction_reason deveria vir preenchido numa correcao"
+    return None
+
+
+def _conferir_dossie_superseded(resposta: Resposta, correcao_id_esperada: str) -> str | None:
+    transformacao = resposta["transformation"]
+    if transformacao["status"] != "SUPERSEDED":
+        return f"esperava transformation.status SUPERSEDED, veio {transformacao['status']!r}"
+    if transformacao["corrected_by_transformation_id"] != correcao_id_esperada:
+        return (
+            f"esperava corrected_by_transformation_id {correcao_id_esperada!r}, "
+            f"veio {transformacao['corrected_by_transformation_id']!r}"
+        )
+    return None
 
 
 def _conferir_fan_in(resposta: Resposta) -> str | None:

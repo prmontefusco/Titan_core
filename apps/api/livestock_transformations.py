@@ -29,6 +29,7 @@ from packages.core_infrastructure.persistence.relations import TransactionalRela
 from packages.livestock_application.authorization import TRANSFORMATION_REGISTRAR
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.transformation_service import (
+    AlvoDeCorrecaoNaoEhVigente,
     AnimalJaTransformado,
     AnimalNaoAbatido,
     DeboningInputSpec,
@@ -36,6 +37,7 @@ from packages.livestock_application.transformation_service import (
     DeboningService,
     ItemDeTipoInvalido,
     ItemJaConsumido,
+    SaidaConsumidaAJusante,
     SlaughterResult,
     SlaughterService,
     TransformationOutputSpec,
@@ -49,6 +51,9 @@ from packages.livestock_infrastructure.persistence.exit_repository import (
 )
 from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
+)
+from packages.livestock_infrastructure.persistence.transformation_locking import (
+    TransactionalTransformationLock,
 )
 from packages.livestock_infrastructure.persistence.transformation_repository import (
     TransactionalTraceableItemRepository,
@@ -119,6 +124,14 @@ class TransformacaoResponse(BaseModel):
     facility_property_id: str
     created_items: list[ItemRastreavelResponse]
     balance: BalancoResponse
+    corrects_transformation_id: str | None = None
+    correction_reason: str | None = None
+
+
+class CorrigirAbateRequest(RegistrarAbateRequest):
+    correction_reason: str = Field(
+        min_length=1, description="Motivo da correção (ADR-0047, item 1: sempre obrigatório)."
+    )
 
 
 class EntradaDeDesossaRequest(BaseModel):
@@ -153,6 +166,14 @@ class DesossaResponse(BaseModel):
     input_item_ids: list[str]
     created_items: list[ItemRastreavelResponse]
     balance: BalancoResponse
+    corrects_transformation_id: str | None = None
+    correction_reason: str | None = None
+
+
+class CorrigirDesossaRequest(RegistrarDesossaRequest):
+    correction_reason: str = Field(
+        min_length=1, description="Motivo da correção (ADR-0047, item 1: sempre obrigatório)."
+    )
 
 
 def _servico(connection: Connection) -> SlaughterService:
@@ -168,6 +189,7 @@ def _servico(connection: Connection) -> SlaughterService:
         recorder=LivestockEventRecorder(
             event_log=DomainEventRepository(connection=connection), clock=SystemClock()
         ),
+        lock_port=TransactionalTransformationLock(connection=connection),
     )
 
 
@@ -182,6 +204,7 @@ def _servico_desossa(connection: Connection) -> DeboningService:
         recorder=LivestockEventRecorder(
             event_log=DomainEventRepository(connection=connection), clock=SystemClock()
         ),
+        lock_port=TransactionalTransformationLock(connection=connection),
     )
 
 
@@ -258,6 +281,12 @@ def _resposta(
             for item in resultado.created_items
         ],
         balance=_balanco_resposta(resultado.event.balance),
+        corrects_transformation_id=(
+            str(resultado.event.corrects_transformation_id.value)
+            if resultado.event.corrects_transformation_id is not None
+            else None
+        ),
+        correction_reason=resultado.event.correction_reason,
     )
 
 
@@ -278,6 +307,12 @@ def _resposta_desossa(resultado: DeboningResult, facility_property_id: str) -> D
             for item in resultado.created_items
         ],
         balance=_balanco_resposta(resultado.event.balance),
+        corrects_transformation_id=(
+            str(resultado.event.corrects_transformation_id.value)
+            if resultado.event.corrects_transformation_id is not None
+            else None
+        ),
+        correction_reason=resultado.event.correction_reason,
     )
 
 
@@ -412,6 +447,168 @@ def registrar_desossa(
             detail="Item ou propriedade não encontrados nesta organização.",
         ) from error
     except (ItemDeTipoInvalido, ItemJaConsumido, ValueError) as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operação recusada pelo domínio",
+            detail=str(error),
+        ) from error
+
+    return _resposta_desossa(resultado, corpo.facility_property_id)
+
+
+@router.post(
+    "/transformations/slaughter/{event_id}/corrections",
+    response_model=TransformacaoResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Corrigir transformação de abate publicada",
+    description=(
+        "Corrige um `TransformationEvent(SLAUGHTER)` já publicado (ADR-0047, "
+        "Passo 11.7): cria um evento completo novo, nunca edita o original. Só "
+        "o leaf atual da cadeia de correção pode ser corrigido, e a correção é "
+        "recusada se alguma saída do evento original já foi consumida por uma "
+        "transformação ainda vigente."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def corrigir_abate(
+    event_id: str,
+    corpo: CorrigirAbateRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TRANSFORMATION_REGISTRAR))],
+    connection: ConnectionDependency,
+) -> TransformacaoResponse:
+    outputs = tuple(
+        TransformationOutputSpec(
+            item_type=saida.item_type,
+            quantity=_quantidade_ou_problema(saida.quantity, "outputs.quantity"),
+            unit=saida.unit,
+            measurement_basis=saida.measurement_basis,
+            label=saida.label,
+        )
+        for saida in corpo.outputs
+    )
+
+    try:
+        resultado = _servico(connection).correct_slaughter(
+            context=operation_context(contexto),
+            corrects_transformation_id=typed_id_or_problem(
+                event_id, entity_type="transformation_event", campo="event_id"
+            ),
+            correction_reason=corpo.correction_reason,
+            animal_id=typed_id_or_problem(corpo.animal_id, entity_type="animal", campo="animal_id"),
+            facility_property_id=typed_id_or_problem(
+                corpo.facility_property_id,
+                entity_type="rural_property",
+                campo="facility_property_id",
+            ),
+            occurred_at=corpo.occurred_at,
+            outputs=outputs,
+            evidence_references=_evidencias(contexto, corpo.evidence_ids),
+            input_quantity=_quantidade_ou_problema(corpo.input_quantity, "input_quantity"),
+            input_unit=corpo.input_unit,
+            input_measurement_basis=corpo.input_measurement_basis,
+            declared_loss=_quantidade_ou_problema(corpo.declared_loss, "declared_loss"),
+            tolerance=_quantidade_ou_problema(corpo.tolerance, "tolerance"),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail="Transformação, animal ou propriedade não encontrados nesta organização.",
+        ) from error
+    except (
+        AnimalNaoAbatido,
+        AnimalJaTransformado,
+        AlvoDeCorrecaoNaoEhVigente,
+        SaidaConsumidaAJusante,
+        ValueError,
+    ) as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operação recusada pelo domínio",
+            detail=str(error),
+        ) from error
+
+    return _resposta(resultado, corpo.animal_id, corpo.facility_property_id)
+
+
+@router.post(
+    "/transformations/deboning/{event_id}/corrections",
+    response_model=DesossaResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Corrigir transformação de desossa publicada",
+    description=(
+        "Corrige um `TransformationEvent(DEBONING)` já publicado (ADR-0047, "
+        "Passo 11.7): cria um evento completo novo, nunca edita o original. Só "
+        "o leaf atual da cadeia de correção pode ser corrigido, e a correção é "
+        "recusada se alguma saída do evento original já foi consumida por uma "
+        "transformação ainda vigente."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def corrigir_desossa(
+    event_id: str,
+    corpo: CorrigirDesossaRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TRANSFORMATION_REGISTRAR))],
+    connection: ConnectionDependency,
+) -> DesossaResponse:
+    inputs = tuple(
+        DeboningInputSpec(
+            item_id=typed_id_or_problem(
+                entrada.item_id, entity_type="traceable_item", campo="inputs.item_id"
+            ),
+            quantity=_quantidade_ou_problema(entrada.quantity, "inputs.quantity"),
+            unit=entrada.unit,
+            measurement_basis=entrada.measurement_basis,
+        )
+        for entrada in corpo.inputs
+    )
+    outputs = tuple(
+        TransformationOutputSpec(
+            item_type=saida.item_type,
+            quantity=_quantidade_ou_problema(saida.quantity, "outputs.quantity"),
+            unit=saida.unit,
+            measurement_basis=saida.measurement_basis,
+            label=saida.label,
+        )
+        for saida in corpo.outputs
+    )
+
+    try:
+        resultado = _servico_desossa(connection).correct_deboning(
+            context=operation_context(contexto),
+            corrects_transformation_id=typed_id_or_problem(
+                event_id, entity_type="transformation_event", campo="event_id"
+            ),
+            correction_reason=corpo.correction_reason,
+            facility_property_id=typed_id_or_problem(
+                corpo.facility_property_id,
+                entity_type="rural_property",
+                campo="facility_property_id",
+            ),
+            occurred_at=corpo.occurred_at,
+            inputs=inputs,
+            outputs=outputs,
+            evidence_references=_evidencias(contexto, corpo.evidence_ids),
+            declared_loss=_quantidade_ou_problema(corpo.declared_loss, "declared_loss"),
+            tolerance=_quantidade_ou_problema(corpo.tolerance, "tolerance"),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail="Transformação, item ou propriedade não encontrados nesta organização.",
+        ) from error
+    except (
+        ItemDeTipoInvalido,
+        ItemJaConsumido,
+        AlvoDeCorrecaoNaoEhVigente,
+        SaidaConsumidaAJusante,
+        ValueError,
+    ) as error:
         raise DomainProblem(
             status_code=status.HTTP_409_CONFLICT,
             reason_code="CONFLITO_DE_DOMINIO",

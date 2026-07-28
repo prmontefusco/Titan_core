@@ -142,6 +142,11 @@ SUPERFICIE_ESPERADA = {
     # escrita da transformação (TRANSFORMATION_REGISTRAR); o perfil do
     # processo, não o Core, decide quem pode ser entrada.
     ("/v1/livestock/transformations/deboning", "post"),
+    # Correção de TransformationEvent publicado (Passo 11.7, ADR-0047). Cria
+    # um evento completo novo — nunca edita o original; só o leaf atual da
+    # cadeia pode ser corrigido.
+    ("/v1/livestock/transformations/slaughter/{event_id}/corrections", "post"),
+    ("/v1/livestock/transformations/deboning/{event_id}/corrections", "post"),
 }
 
 

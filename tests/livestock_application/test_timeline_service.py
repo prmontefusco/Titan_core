@@ -71,6 +71,7 @@ from tests.livestock_application.test_movement_service import (
 from tests.livestock_application.test_slaughter_service import (
     InMemoryEventRepo,
     InMemoryItemRepo,
+    InMemoryLockPort,
 )
 from tests.livestock_application.test_treatment_service import InMemoryApplicationRepo
 from tests.livestock_support import (
@@ -152,6 +153,9 @@ class Scenario:
             property_repository=self.property_repository,
             relation_service=RelationService(repository=self.relations),
             recorder=self.recorder,
+            lock_port=InMemoryLockPort(
+                self.transformation_events, self.traceable_items, self.animal_repository
+            ),
         )
 
     def abater_e_transformar(

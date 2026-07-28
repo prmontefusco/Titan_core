@@ -20,11 +20,13 @@ from packages.livestock_application.event_recorder import (
     LivestockOperationContext,
 )
 from packages.livestock_application.transformation_service import (
+    AlvoDeCorrecaoNaoEhVigente,
     DeboningInputSpec,
     DeboningService,
     ItemDeTipoInvalido,
     ItemJaConsumido,
     ParticipantRole,
+    SaidaConsumidaAJusante,
     SlaughterService,
     TransformationOutputSpec,
 )
@@ -43,6 +45,7 @@ from tests.livestock_application.test_exit_service import InMemoryAnimalRepo, In
 from tests.livestock_application.test_slaughter_service import (
     InMemoryEventRepo,
     InMemoryItemRepo,
+    InMemoryLockPort,
     InMemoryPropertyRepo,
 )
 from tests.livestock_support import FakeRelationRepository, operation_context
@@ -65,6 +68,7 @@ class Cenario:
         self.events = InMemoryEventRepo()
         self.items = InMemoryItemRepo()
         self.relation_service = RelationService(repository=self.relations)
+        self.lock_port = InMemoryLockPort(self.events, self.items, self.animals)
 
         self.slaughter_service = SlaughterService(
             event_repository=self.events,
@@ -74,6 +78,7 @@ class Cenario:
             property_repository=self.properties,
             relation_service=self.relation_service,
             recorder=recorder,
+            lock_port=self.lock_port,
         )
         self.service = DeboningService(
             event_repository=self.events,
@@ -81,6 +86,7 @@ class Cenario:
             property_repository=self.properties,
             relation_service=self.relation_service,
             recorder=recorder,
+            lock_port=self.lock_port,
         )
 
         self.facility_id = self._nova_propriedade()
@@ -390,3 +396,99 @@ def test_evento_gravado_tem_todas_as_entradas(
     assert len(persistido.inputs) == 2
     entradas_persistidas = {p.subject_reference.target_id for p in persistido.inputs}
     assert entradas_persistidas == {cenario.half_carcass_1, cenario.half_carcass_2}
+
+
+class TestCorrecaoDeDeboning:
+    """ADR-0047, Passo 11.7: correção de TransformationEvent(DEBONING) publicado."""
+
+    def test_corrige_reafirmando_as_mesmas_entradas(
+        self, recorder: LivestockEventRecorder, context: LivestockOperationContext
+    ) -> None:
+        cenario = Cenario(recorder, context)
+        original = cenario.service.register_deboning(
+            context=context,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            inputs=cenario.entradas(),
+            outputs=cenario.saidas(),
+        )
+
+        correcao = cenario.service.correct_deboning(
+            context=context,
+            corrects_transformation_id=original.event.event_id,
+            correction_reason="Peso de saída lançado errado no apontamento original.",
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            inputs=cenario.entradas(),
+            outputs=cenario.saidas(),
+        )
+
+        assert correcao.event.corrects_transformation_id == original.event.event_id
+        assert cenario.events.get_by_id(original.event.event_id) == original.event
+
+    def test_recusa_corrigir_evento_que_ja_nao_e_o_leaf(
+        self, recorder: LivestockEventRecorder, context: LivestockOperationContext
+    ) -> None:
+        cenario = Cenario(recorder, context)
+        original = cenario.service.register_deboning(
+            context=context,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            inputs=cenario.entradas(),
+            outputs=cenario.saidas(),
+        )
+        cenario.service.correct_deboning(
+            context=context,
+            corrects_transformation_id=original.event.event_id,
+            correction_reason="Primeira correção.",
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            inputs=cenario.entradas(),
+            outputs=cenario.saidas(),
+        )
+
+        with pytest.raises(AlvoDeCorrecaoNaoEhVigente, match="leaf atual"):
+            cenario.service.correct_deboning(
+                context=context,
+                corrects_transformation_id=original.event.event_id,
+                correction_reason="Tentativa de bifurcar a cadeia.",
+                facility_property_id=cenario.facility_id,
+                occurred_at=ONTEM + timedelta(hours=2),
+                inputs=cenario.entradas(),
+                outputs=cenario.saidas(),
+            )
+
+    def test_recusa_corrigir_slaughter_cuja_saida_ja_foi_desossada(
+        self, recorder: LivestockEventRecorder, context: LivestockOperationContext
+    ) -> None:
+        """ADR-0047, item 9: o DEBONING do cenário já consumiu as duas saídas."""
+        cenario = Cenario(recorder, context)
+        cenario.service.register_deboning(
+            context=context,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            inputs=cenario.entradas(),
+            outputs=cenario.saidas(),
+        )
+
+        item_persistido = cenario.items.get_by_id(cenario.half_carcass_1)
+        assert item_persistido is not None
+        slaughter_original_id = item_persistido.created_by_transformation_id
+        assert slaughter_original_id is not None
+        slaughter_original = cenario.events.get_by_id(slaughter_original_id)
+        assert slaughter_original is not None
+        animal_original_id = slaughter_original.inputs[0].subject_reference.target_id
+
+        with pytest.raises(SaidaConsumidaAJusante, match="consumida por uma transformação"):
+            cenario.slaughter_service.correct_slaughter(
+                context=context,
+                corrects_transformation_id=slaughter_original_id,
+                correction_reason="Tentativa de corrigir origem já desossada.",
+                animal_id=animal_original_id,
+                facility_property_id=cenario.facility_id,
+                occurred_at=ONTEM + timedelta(hours=1),
+                outputs=(
+                    TransformationOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+                    TransformationOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+                ),
+            )
