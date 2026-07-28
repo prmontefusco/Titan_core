@@ -19,10 +19,10 @@ from packages.livestock_application.event_recorder import (
 from packages.livestock_application.transformation_service import (
     AnimalJaTransformado,
     AnimalNaoAbatido,
-    SlaughterOutputSpec,
     SlaughterService,
     TraceableItemRepositoryPort,
     TransformationEventRepositoryPort,
+    TransformationOutputSpec,
 )
 from packages.livestock_domain.animal import Animal, AnimalSex
 from packages.livestock_domain.events import TRANSFORMATION_EVENT_RECORDED
@@ -146,9 +146,9 @@ class Cenario:
             )
         )
 
-    def outputs(self, quantidade: int = 2) -> tuple[SlaughterOutputSpec, ...]:
+    def outputs(self, quantidade: int = 2) -> tuple[TransformationOutputSpec, ...]:
         return tuple(
-            SlaughterOutputSpec(
+            TransformationOutputSpec(
                 item_type=TraceableItemType.HALF_CARCASS,
                 quantity=Decimal("110.5"),
                 unit="kg",
@@ -369,13 +369,13 @@ def test_com_peso_de_entrada_o_balanco_calculado_e_persistido(
     cenario = Cenario(recorder, context)
     cenario.abater()
     saidas = (
-        SlaughterOutputSpec(
+        TransformationOutputSpec(
             item_type=TraceableItemType.HALF_CARCASS,
             quantity=Decimal("150"),
             unit="kg",
             measurement_basis="peso liquido",
         ),
-        SlaughterOutputSpec(
+        TransformationOutputSpec(
             item_type=TraceableItemType.HALF_CARCASS,
             quantity=Decimal("150"),
             unit="kg",

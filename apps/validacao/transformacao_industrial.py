@@ -1,4 +1,4 @@
-"""Roteiro executavel: fan-out, travessia, balanco e dossie (ADR-0046, Passos 11.2-11.5).
+"""Roteiro executavel: fan-out, travessia, balanco, dossie e fan-in (ADR-0046, Passos 11.2-11.6).
 
 Um animal nasce na fazenda, sai do rebanho por ABATE, e o mesmo tenant que
 detem o frigorifico registra a transformacao industrial: o animal vira duas
@@ -16,9 +16,15 @@ Na sequencia (Passo 11.4), prova o balanco minimo: com peso de entrada e das
 saidas na mesma base de medicao, o balanco fecha (BALANCED); sem peso de
 entrada, fica NOT_ASSESSED -- nunca zero nem BALANCED por omissao.
 
-Por fim (Passo 11.5), prova o detalhe e o dossie de rastreabilidade do item:
-um documento so reunindo a transformacao que o criou (com balanco), a
+Na sequencia (Passo 11.5), prova o detalhe e o dossie de rastreabilidade do
+item: um documento so reunindo a transformacao que o criou (com balanco), a
 relacao quantitativa, a linha do tempo e a origem por recall.
+
+Por fim (Passo 11.6), prova o fan-in real: as duas meias-carcaças do abate
+do Passo 11.2 viram entrada de um unico TransformationEvent(DEBONING), que
+produz saidas novas. O recall a partir de uma dessas saidas alcanca as DUAS
+origens sem inventar correspondencia 1:1 -- e, mais fundo no grafo, o
+proprio animal do Passo 11.2, provando a cadeia completa.
 
 O caso inter-organizacional (fazenda e frigorifico em tenants distintos) fica
 para quando o protocolo da ADR-0042 for extendido a este fluxo -- fora de
@@ -274,6 +280,7 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         conferir=lambda r: _conferir_balance(r, "ASSESSED", "BALANCED"),
         guardar=lambda r: ids.update(
             item_balanco_1=str(r["created_items"][0]["item_id"]),
+            item_balanco_2=str(r["created_items"][1]["item_id"]),
         ),
         porque=(
             "Passo 11.4: com peso de entrada e das duas saidas na mesma base "
@@ -340,6 +347,114 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
             "Passo 11.5: um documento so, reunindo transformacao (com balanco), "
             "relacao quantitativa, linha do tempo e origem por recall -- nao e "
             "o Dossier do Core, que exige Decision."
+        ),
+    )
+    roteiro.passo(
+        "20",
+        "Operador tenta a desossa com apenas uma entrada (fan-in insuficiente)",
+        lambda: operador.post(
+            "/v1/livestock/transformations/deboning",
+            {
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=2)).isoformat(),
+                "inputs": [{"item_id": ids["item_1"]}],
+                "outputs": _saidas_de_desossa(),
+            },
+        ),
+        422,
+        conferir=lambda r: None,
+        porque=(
+            "ADR-0046 item 1: fan-in real (Passo 11.6) exige ao menos duas "
+            "entradas -- o proprio contrato HTTP recusa antes do dominio, "
+            "espelhando a mesma regra do fan-out no Passo 11.2."
+        ),
+    )
+    roteiro.passo(
+        "21",
+        "Operador registra a desossa com fan-in real (as duas meias-carcaças do Passo 11.2)",
+        lambda: operador.post(
+            "/v1/livestock/transformations/deboning",
+            {
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=2)).isoformat(),
+                "inputs": [
+                    {"item_id": ids["item_1"], "quantity": "115.400", "unit": "kg"},
+                    {"item_id": ids["item_2"], "quantity": "112.900", "unit": "kg"},
+                ],
+                "outputs": _saidas_de_desossa(),
+            },
+        ),
+        201,
+        conferir=_conferir_fan_in,
+        guardar=lambda r: ids.update(
+            deboning_id=str(r["transformation_id"]),
+            cut_batch_id=str(r["created_items"][0]["item_id"]),
+        ),
+        porque=(
+            "Passo 11.6: duas entradas (as meias-carcaças do abate do animal "
+            "do Passo 11.2), um TransformationEvent(DEBONING), saidas novas -- "
+            "o fan-in real que a ADR previu desde o item 1."
+        ),
+    )
+    roteiro.passo(
+        "22",
+        "Operador tenta reaproveitar uma entrada ja consumida pela desossa anterior",
+        lambda: operador.post(
+            "/v1/livestock/transformations/deboning",
+            {
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=3)).isoformat(),
+                "inputs": [
+                    {"item_id": ids["item_1"]},
+                    {"item_id": ids["item_balanco_1"]},
+                ],
+                "outputs": _saidas_de_desossa(),
+            },
+        ),
+        409,
+        conferir=_conferir_conflito,
+        porque=(
+            "Um item so e consumido como entrada uma vez -- mesma regra do animal no Passo 11.2."
+        ),
+    )
+    roteiro.passo(
+        "23",
+        "Operador tenta usar um item de tipo nao permitido como entrada da desossa",
+        lambda: operador.post(
+            "/v1/livestock/transformations/deboning",
+            {
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=3)).isoformat(),
+                "inputs": [
+                    {"item_id": ids["cut_batch_id"]},
+                    {"item_id": ids["item_balanco_2"]},
+                ],
+                "outputs": _saidas_de_desossa(),
+            },
+        ),
+        409,
+        conferir=_conferir_conflito,
+        porque=(
+            "ADR-0046 item 6: o perfil do processo DEBONING so aceita "
+            "CARCASS/HALF_CARCASS como entrada -- um CUT_BATCH (saida da "
+            "propria desossa) nao serve de entrada para outra."
+        ),
+    )
+    roteiro.passo(
+        "24",
+        "Operador rastreia a origem do item criado pela desossa (fan-in)",
+        lambda: operador.get(f"/v1/livestock/traceable-items/{ids['cut_batch_id']}/recall"),
+        200,
+        conferir=lambda r: (
+            _conferir_recall_alcanca(r, "traceable_item", ids["item_1"])
+            or _conferir_recall_alcanca(r, "traceable_item", ids["item_2"])
+            or _conferir_recall_alcanca(r, "animal", ids["animal_id"])
+        ),
+        porque=(
+            "Passo 11.6, invariante 15: o recall alcanca as DUAS origens "
+            "(as meias-carcaças) sem inventar correspondencia 1:1 -- e, mais "
+            "fundo no grafo, o animal original do Passo 11.2, provando a "
+            "cadeia completa animal -> abate -> desossa."
         ),
     )
     return roteiro
@@ -452,6 +567,37 @@ def _conferir_balance(resposta: Resposta, status_esperado: str, result_esperado:
         return f"balance.status deveria ser {status_esperado!r}, veio {balance['status']!r}"
     if balance["result"] != result_esperado:
         return f"balance.result deveria ser {result_esperado!r}, veio {balance['result']!r}"
+    return None
+
+
+def _saidas_de_desossa() -> list[dict[str, object]]:
+    return [
+        {
+            "item_type": "CUT_BATCH",
+            "quantity": "150.000",
+            "unit": "kg",
+            "measurement_basis": "peso liquido",
+            "label": f"CORTE-{uuid4().hex[:6]}",
+        },
+        {
+            "item_type": "TRIM_BATCH",
+            "quantity": "78.300",
+            "unit": "kg",
+            "measurement_basis": "peso liquido",
+            "label": f"APARA-{uuid4().hex[:6]}",
+        },
+    ]
+
+
+def _conferir_fan_in(resposta: Resposta) -> str | None:
+    itens = resposta["created_items"]
+    if not isinstance(itens, list) or len(itens) < 1:
+        return "esperava ao menos 1 created_item"
+    entradas = resposta["input_item_ids"]
+    if not isinstance(entradas, list) or len(entradas) != 2:
+        return f"esperava 2 input_item_ids (fan-in real), veio {entradas!r}"
+    if resposta["process_type"] != "DEBONING":
+        return "process_type deveria ser DEBONING"
     return None
 
 

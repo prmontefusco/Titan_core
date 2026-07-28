@@ -31,8 +31,8 @@ from packages.livestock_application.timeline_service import (
     TimelineSourceKind,
 )
 from packages.livestock_application.transformation_service import (
-    SlaughterOutputSpec,
     SlaughterService,
+    TransformationOutputSpec,
 )
 from packages.livestock_application.treatment_service import TreatmentApplicationService
 from packages.livestock_domain.animal import AnimalSex, IdentifierType
@@ -173,8 +173,8 @@ class Scenario:
             facility_property_id=facility_property_id,
             occurred_at=occurred_at + timedelta(hours=1),
             outputs=(
-                SlaughterOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
-                SlaughterOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+                TransformationOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+                TransformationOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
             ),
         )
         item_1, item_2 = resultado.created_items

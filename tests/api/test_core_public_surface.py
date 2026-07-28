@@ -138,6 +138,10 @@ SUPERFICIE_ESPERADA = {
     # própria da vertical, sem gravação.
     ("/v1/livestock/traceable-items/{item_id}", "get"),
     ("/v1/livestock/traceable-items/{item_id}/dossier", "get"),
+    # Desossa — fan-in real (Passo 11.6, ADR-0046). Mesma permissão de
+    # escrita da transformação (TRANSFORMATION_REGISTRAR); o perfil do
+    # processo, não o Core, decide quem pode ser entrada.
+    ("/v1/livestock/transformations/deboning", "post"),
 }
 
 
