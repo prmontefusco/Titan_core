@@ -1,4 +1,4 @@
-"""Roteiro executavel: fan-out real de abate e travessia (ADR-0046, Passos 11.2/11.3).
+"""Roteiro executavel: fan-out, travessia e balanco (ADR-0046, Passos 11.2/11.3/11.4).
 
 Um animal nasce na fazenda, sai do rebanho por ABATE, e o mesmo tenant que
 detem o frigorifico registra a transformacao industrial: o animal vira duas
@@ -11,6 +11,10 @@ Na sequencia (Passo 11.3), prova a linha do tempo do item e o recall nas duas
 direcoes: item -> transformacao -> animal (retrospectiva) e animal ->
 transformacao -> todos os itens (prospectiva), sem que nenhuma das duas
 pontas copie o historico da outra -- cada uma cita a mesma TransformationEvent.
+
+Por fim (Passo 11.4), prova o balanco minimo: com peso de entrada e das
+saidas na mesma base de medicao, o balanco fecha (BALANCED); sem peso de
+entrada, fica NOT_ASSESSED -- nunca zero nem BALANCED por omissao.
 
 O caso inter-organizacional (fazenda e frigorifico em tenants distintos) fica
 para quando o protocolo da ADR-0042 for extendido a este fluxo -- fora de
@@ -224,6 +228,93 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
             "alcanca as DUAS saidas -- o fan-out real que o Passo 11.2 provou."
         ),
     )
+    roteiro.passo(
+        "12",
+        "Operador cadastra um segundo animal, para a transformacao com balanco",
+        lambda: operador.post(
+            "/v1/livestock/animals",
+            {"birth_property_id": ids["fazenda_id"], "sex": "MALE"},
+        ),
+        201,
+        conferir=lambda r: None if r["animal_id"] else "sem animal_id",
+        guardar=lambda r: ids.update(animal_balanco_id=str(r["animal_id"])),
+        porque="O primeiro animal ja foi consumido; o balanco precisa de um novo.",
+    )
+    roteiro.passo(
+        "13",
+        "Operador registra a saida ABATE do segundo animal",
+        lambda: operador.post(
+            f"/v1/livestock/animals/{ids['animal_balanco_id']}/exit",
+            {"exit_type": "ABATE", "occurred_at": abate_em.isoformat()},
+        ),
+        201,
+        conferir=lambda r: None if r["exit_type"] == "ABATE" else "exit_type nao ficou ABATE",
+        porque="Mesma pre-condicao do Passo 11.2.",
+    )
+    roteiro.passo(
+        "14",
+        "Operador registra a transformacao com peso de entrada e saidas (balanco calculado)",
+        lambda: operador.post(
+            "/v1/livestock/transformations/slaughter",
+            {
+                "animal_id": ids["animal_balanco_id"],
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=1)).isoformat(),
+                "outputs": _duas_saidas_com_peso_total_300(),
+                "input_quantity": "300.000",
+                "input_unit": "kg",
+                "input_measurement_basis": "peso liquido",
+            },
+        ),
+        201,
+        conferir=lambda r: _conferir_balance(r, "ASSESSED", "BALANCED"),
+        porque=(
+            "Passo 11.4: com peso de entrada e das duas saidas na mesma base "
+            "de medicao, o balanco fecha em BALANCED -- 300kg entram, 300kg saem."
+        ),
+    )
+    roteiro.passo(
+        "15",
+        "Operador cadastra um terceiro animal, para a transformacao sem peso",
+        lambda: operador.post(
+            "/v1/livestock/animals",
+            {"birth_property_id": ids["fazenda_id"], "sex": "MALE"},
+        ),
+        201,
+        conferir=lambda r: None if r["animal_id"] else "sem animal_id",
+        guardar=lambda r: ids.update(animal_sem_peso_id=str(r["animal_id"])),
+        porque="Prova o outro lado do balanco: ausencia de peso.",
+    )
+    roteiro.passo(
+        "16",
+        "Operador registra a saida ABATE do terceiro animal",
+        lambda: operador.post(
+            f"/v1/livestock/animals/{ids['animal_sem_peso_id']}/exit",
+            {"exit_type": "ABATE", "occurred_at": abate_em.isoformat()},
+        ),
+        201,
+        conferir=lambda r: None if r["exit_type"] == "ABATE" else "exit_type nao ficou ABATE",
+        porque="Mesma pre-condicao do Passo 11.2.",
+    )
+    roteiro.passo(
+        "17",
+        "Operador registra a transformacao SEM peso de entrada (balanco nao avaliado)",
+        lambda: operador.post(
+            "/v1/livestock/transformations/slaughter",
+            {
+                "animal_id": ids["animal_sem_peso_id"],
+                "facility_property_id": ids["frigorifico_id"],
+                "occurred_at": (abate_em + timedelta(hours=1)).isoformat(),
+                "outputs": _duas_saidas(),
+            },
+        ),
+        201,
+        conferir=lambda r: _conferir_balance(r, "NOT_ASSESSED", "NOT_APPLICABLE"),
+        porque=(
+            "Passo 11.4: sem peso de entrada, o balanco fica NOT_ASSESSED -- "
+            "nunca zero nem BALANCED por omissao."
+        ),
+    )
     return roteiro
 
 
@@ -283,6 +374,34 @@ def _conferir_fan_out(resposta: Resposta) -> str | None:
         return "esperava ao menos 2 created_items (fan-out real)"
     if resposta["process_type"] != "SLAUGHTER":
         return "process_type deveria ser SLAUGHTER"
+    return None
+
+
+def _duas_saidas_com_peso_total_300() -> list[dict[str, object]]:
+    return [
+        {
+            "item_type": "HALF_CARCASS",
+            "quantity": "150.000",
+            "unit": "kg",
+            "measurement_basis": "peso liquido",
+            "label": f"HC-{uuid4().hex[:6]}-A",
+        },
+        {
+            "item_type": "HALF_CARCASS",
+            "quantity": "150.000",
+            "unit": "kg",
+            "measurement_basis": "peso liquido",
+            "label": f"HC-{uuid4().hex[:6]}-B",
+        },
+    ]
+
+
+def _conferir_balance(resposta: Resposta, status_esperado: str, result_esperado: str) -> str | None:
+    balance = resposta["balance"]
+    if balance["status"] != status_esperado:
+        return f"balance.status deveria ser {status_esperado!r}, veio {balance['status']!r}"
+    if balance["result"] != result_esperado:
+        return f"balance.result deveria ser {result_esperado!r}, veio {balance['result']!r}"
     return None
 
 

@@ -70,6 +70,12 @@ from packages.livestock_infrastructure.persistence.transfer_artifact_repository 
     TransactionalReceivedTransferArtifactRepository,
     received_transfer_artifacts_table,
 )
+from packages.livestock_infrastructure.persistence.transformation_repository import (
+    TransactionalTraceableItemRepository,
+    TransactionalTransformationEventRepository,
+    traceable_items_table,
+    transformation_events_table,
+)
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
     treatment_applications_table,
@@ -106,6 +112,10 @@ __all__ = [
     "sanitary_campaigns_table",
     "TransactionalTreatmentApplicationRepository",
     "TransactionalReceivedTransferArtifactRepository",
+    "TransactionalTraceableItemRepository",
+    "TransactionalTransformationEventRepository",
+    "traceable_items_table",
+    "transformation_events_table",
     "TransactionalVeterinarianRepository",
     "animal_identifiers_table",
     "animal_movement_items_table",

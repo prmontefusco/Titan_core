@@ -34,11 +34,14 @@ from packages.livestock_domain.events import (
 )
 from packages.livestock_domain.exit import ExitType
 from packages.livestock_domain.transformation import (
+    BalanceResult,
+    BalanceStatus,
     ConsumptionMode,
     ParticipantRole,
     ProcessType,
     TraceableItem,
     TraceableItemType,
+    TransformationBalance,
     TransformationEvent,
     TransformationParticipant,
 )
@@ -90,6 +93,100 @@ class SlaughterResult:
     created_items: tuple[TraceableItem, ...]
 
 
+def compute_transformation_balance(
+    *,
+    input_quantity: Decimal | None,
+    input_unit: str,
+    input_measurement_basis: str | None,
+    outputs: Sequence[SlaughterOutputSpec],
+    declared_loss: Decimal | None,
+    tolerance: Decimal | None,
+) -> TransformationBalance:
+    """Calcula o balanço mínimo de uma transformação (ADR-0046, Passo 11.4).
+
+    Ausência de peso de entrada não impede o registro do fato (mesmo princípio
+    da ADR-0040): produz `NOT_ASSESSED`, nunca zero ou `BALANCED` por omissão.
+    Bases de medição incompatíveis entre entrada e saídas (ex.: peso vivo vs.
+    peso líquido pós-sangria) nunca são comparadas numericamente — o item 7 da
+    ADR é explícito que isso produz `INDETERMINATE`, nunca um número inventado.
+    `declared_loss` (perda conhecida) e `unaccounted_quantity` (diferença ainda
+    não explicada) são conceitos distintos: a segunda é calculada descontando a
+    primeira, nunca as duas somadas às cegas.
+    """
+    if input_quantity is None:
+        return TransformationBalance(
+            status=BalanceStatus.NOT_ASSESSED,
+            result=BalanceResult.NOT_APPLICABLE,
+            declared_loss=declared_loss,
+            reasons=("Quantidade de entrada não informada.",),
+        )
+
+    saidas_sem_quantidade = [spec for spec in outputs if spec.quantity is None]
+    if saidas_sem_quantidade:
+        return TransformationBalance(
+            status=BalanceStatus.DECLARED,
+            result=BalanceResult.INDETERMINATE,
+            measurement_basis=input_measurement_basis,
+            input_total=input_quantity,
+            declared_loss=declared_loss,
+            reasons=(
+                f"{len(saidas_sem_quantidade)} saída(s) sem quantidade declarada — "
+                "somar tratando ausência como zero inventaria dado.",
+            ),
+        )
+
+    unidades = {input_unit, *(spec.unit for spec in outputs)}
+    if len(unidades) > 1:
+        return TransformationBalance(
+            status=BalanceStatus.DECLARED,
+            result=BalanceResult.INDETERMINATE,
+            input_total=input_quantity,
+            declared_loss=declared_loss,
+            reasons=(f"Unidades incompatíveis entre entrada e saídas: {sorted(unidades)}.",),
+        )
+
+    bases = {input_measurement_basis, *(spec.measurement_basis for spec in outputs)}
+    if len(bases) > 1:
+        quantidades_brutas = [spec.quantity for spec in outputs if spec.quantity is not None]
+        output_total_bruto = sum(quantidades_brutas, start=Decimal("0"))
+        return TransformationBalance(
+            status=BalanceStatus.DECLARED,
+            result=BalanceResult.INDETERMINATE,
+            input_total=input_quantity,
+            output_total=output_total_bruto,
+            declared_loss=declared_loss,
+            reasons=(
+                "Bases de medição incompatíveis entre entrada e saídas "
+                f"({sorted(b for b in bases if b)}); comparar produziria número "
+                "inventado.",
+            ),
+        )
+
+    quantidades = [spec.quantity for spec in outputs if spec.quantity is not None]
+    output_total = sum(quantidades, start=Decimal("0"))
+    perda_declarada = declared_loss if declared_loss is not None else Decimal("0")
+    unaccounted = input_quantity - output_total - perda_declarada
+    tolerancia_efetiva = tolerance if tolerance is not None else Decimal("0")
+
+    if unaccounted == 0:
+        resultado = BalanceResult.BALANCED
+    elif abs(unaccounted) <= tolerancia_efetiva:
+        resultado = BalanceResult.WITHIN_TOLERANCE
+    else:
+        resultado = BalanceResult.OUTSIDE_TOLERANCE
+
+    return TransformationBalance(
+        status=BalanceStatus.ASSESSED,
+        result=resultado,
+        measurement_basis=input_measurement_basis,
+        input_total=input_quantity,
+        output_total=output_total,
+        declared_loss=declared_loss,
+        unaccounted_quantity=unaccounted,
+        tolerance=tolerance,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class SlaughterService:
     event_repository: TransformationEventRepositoryPort
@@ -108,6 +205,11 @@ class SlaughterService:
         occurred_at: datetime,
         outputs: Sequence[SlaughterOutputSpec],
         evidence_references: tuple[UniversalReference, ...] = (),
+        input_quantity: Decimal | None = None,
+        input_unit: str = "",
+        input_measurement_basis: str | None = None,
+        declared_loss: Decimal | None = None,
+        tolerance: Decimal | None = None,
     ) -> SlaughterResult:
         organization_id = context.organization_id
         self._guard_occurred_at(occurred_at)
@@ -178,12 +280,23 @@ class SlaughterService:
         input_participant = TransformationParticipant(
             subject_reference=animal_reference,
             role=ParticipantRole.INPUT,
+            quantity=input_quantity,
+            unit=input_unit,
+            measurement_basis=input_measurement_basis,
             consumption_mode=ConsumptionMode.FULL,
         )
         facility_reference = UniversalReference(
             target_id=facility_property_id,
             organization_id=organization_id,
             contract_version=AGGREGATE_CONTRACT_VERSION,
+        )
+        balance = compute_transformation_balance(
+            input_quantity=input_quantity,
+            input_unit=input_unit,
+            input_measurement_basis=input_measurement_basis,
+            outputs=outputs,
+            declared_loss=declared_loss,
+            tolerance=tolerance,
         )
 
         event = TransformationEvent(
@@ -195,6 +308,7 @@ class SlaughterService:
             inputs=(input_participant,),
             outputs=output_participants,
             created_at=momento_criacao,
+            balance=balance,
             evidence_references=evidence_references,
         )
 

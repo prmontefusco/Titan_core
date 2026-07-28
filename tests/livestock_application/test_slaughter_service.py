@@ -29,6 +29,8 @@ from packages.livestock_domain.events import TRANSFORMATION_EVENT_RECORDED
 from packages.livestock_domain.exit import AnimalExit, ExitType
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.transformation import (
+    BalanceResult,
+    BalanceStatus,
     ParticipantRole,
     TraceableItem,
     TraceableItemType,
@@ -338,3 +340,66 @@ def test_evento_gravado_tem_participantes_com_papeis_corretos(
     assert persistido is not None
     assert all(p.role is ParticipantRole.INPUT for p in persistido.inputs)
     assert all(p.role is ParticipantRole.OUTPUT for p in persistido.outputs)
+
+
+def test_sem_peso_de_entrada_o_balanco_persistido_e_not_assessed(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    """ADR-0046, Passo 11.4: ausência de peso nunca vira zero por omissão."""
+    cenario = Cenario(recorder, context)
+    cenario.abater()
+
+    resultado = cenario.service.register_slaughter(
+        context=context,
+        animal_id=cenario.animal_id,
+        facility_property_id=cenario.facility_id,
+        occurred_at=ONTEM + timedelta(hours=1),
+        outputs=cenario.outputs(2),
+    )
+
+    persistido = cenario.events.get_by_id(resultado.event.event_id)
+    assert persistido is not None
+    assert persistido.balance is not None
+    assert persistido.balance.status is BalanceStatus.NOT_ASSESSED
+
+
+def test_com_peso_de_entrada_o_balanco_calculado_e_persistido(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    cenario = Cenario(recorder, context)
+    cenario.abater()
+    saidas = (
+        SlaughterOutputSpec(
+            item_type=TraceableItemType.HALF_CARCASS,
+            quantity=Decimal("150"),
+            unit="kg",
+            measurement_basis="peso liquido",
+        ),
+        SlaughterOutputSpec(
+            item_type=TraceableItemType.HALF_CARCASS,
+            quantity=Decimal("150"),
+            unit="kg",
+            measurement_basis="peso liquido",
+        ),
+    )
+
+    resultado = cenario.service.register_slaughter(
+        context=context,
+        animal_id=cenario.animal_id,
+        facility_property_id=cenario.facility_id,
+        occurred_at=ONTEM + timedelta(hours=1),
+        outputs=saidas,
+        input_quantity=Decimal("300"),
+        input_unit="kg",
+        input_measurement_basis="peso liquido",
+    )
+
+    assert resultado.event.balance is not None
+    assert resultado.event.balance.status is BalanceStatus.ASSESSED
+    assert resultado.event.balance.result is BalanceResult.BALANCED
+
+    persistido = cenario.events.get_by_id(resultado.event.event_id)
+    assert persistido is not None
+    assert persistido.balance is not None
+    assert persistido.balance.result is BalanceResult.BALANCED
+    assert persistido.balance.output_total == Decimal("300")

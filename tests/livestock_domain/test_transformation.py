@@ -8,11 +8,14 @@ from uuid import uuid4
 import pytest
 
 from packages.livestock_domain.transformation import (
+    BalanceResult,
+    BalanceStatus,
     ConsumptionMode,
     ParticipantRole,
     ProcessType,
     TraceableItem,
     TraceableItemType,
+    TransformationBalance,
     TransformationEvent,
     TransformationParticipant,
 )
@@ -193,3 +196,29 @@ class TestTransformationEvent:
         outra = _org()
         with pytest.raises(ValueError, match="outra Organization"):
             _event(org, evidence_references=(_reference(outra, "evidence"),))
+
+    def test_aceita_balanco_calculado(self) -> None:
+        org = _org()
+        balanco = TransformationBalance(
+            status=BalanceStatus.ASSESSED, result=BalanceResult.BALANCED
+        )
+        evento = _event(org, balance=balanco)
+        assert evento.balance is balanco
+
+
+class TestTransformationBalance:
+    def test_status_deve_ser_balance_status(self) -> None:
+        with pytest.raises(TypeError, match="BalanceStatus"):
+            TransformationBalance(status="ASSESSED", result=BalanceResult.BALANCED)  # type: ignore[arg-type]
+
+    def test_result_deve_ser_balance_result(self) -> None:
+        with pytest.raises(TypeError, match="BalanceResult"):
+            TransformationBalance(status=BalanceStatus.ASSESSED, result="BALANCED")  # type: ignore[arg-type]
+
+    def test_totais_nao_aceitam_float(self) -> None:
+        with pytest.raises(TypeError, match="Decimal"):
+            TransformationBalance(
+                status=BalanceStatus.ASSESSED,
+                result=BalanceResult.BALANCED,
+                input_total=1.5,  # type: ignore[arg-type]
+            )

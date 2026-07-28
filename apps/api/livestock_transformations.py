@@ -34,7 +34,7 @@ from packages.livestock_application.transformation_service import (
     SlaughterResult,
     SlaughterService,
 )
-from packages.livestock_domain.transformation import TraceableItemType
+from packages.livestock_domain.transformation import TraceableItemType, TransformationBalance
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
@@ -69,12 +69,40 @@ class RegistrarAbateRequest(BaseModel):
     occurred_at: datetime = Field(description="Instante da transformação, em UTC.")
     outputs: list[SaidaDeAbateRequest] = Field(min_length=2)
     evidence_ids: list[str] = Field(default_factory=list)
+    input_quantity: str | None = Field(
+        default=None,
+        description=(
+            "Peso do animal na entrada, como texto decimal (ex.: '480.000'). "
+            "Sem ele, o balanço fica NOT_ASSESSED — ADR-0046, Passo 11.4."
+        ),
+    )
+    input_unit: str = ""
+    input_measurement_basis: str | None = None
+    declared_loss: str | None = Field(
+        default=None,
+        description="Perda conhecida (sangue, evaporação, descarte), como texto decimal.",
+    )
+    tolerance: str | None = Field(
+        default=None, description="Tolerância aceita para a diferença, como texto decimal."
+    )
 
 
 class ItemRastreavelResponse(BaseModel):
     item_id: str
     item_type: TraceableItemType
     label: str | None
+
+
+class BalancoResponse(BaseModel):
+    status: str
+    result: str
+    measurement_basis: str | None
+    input_total: str | None
+    output_total: str | None
+    declared_loss: str | None
+    unaccounted_quantity: str | None
+    tolerance: str | None
+    reasons: list[str]
 
 
 class TransformacaoResponse(BaseModel):
@@ -84,6 +112,7 @@ class TransformacaoResponse(BaseModel):
     animal_id: str
     facility_property_id: str
     created_items: list[ItemRastreavelResponse]
+    balance: BalancoResponse
 
 
 def _servico(connection: Connection) -> SlaughterService:
@@ -127,6 +156,38 @@ def _evidencias(contexto: OrganizationContext, ids: list[str]) -> tuple[Universa
     )
 
 
+def _texto_ou_none(valor: Decimal | None) -> str | None:
+    return None if valor is None else str(valor)
+
+
+def _balanco_resposta(balance: TransformationBalance | None) -> BalancoResponse:
+    if balance is None:
+        # SlaughterService sempre calcula um balanço (ao menos NOT_ASSESSED);
+        # este ramo é só defensivo, para o mapeamento nunca inventar um número.
+        return BalancoResponse(
+            status="NOT_ASSESSED",
+            result="NOT_APPLICABLE",
+            measurement_basis=None,
+            input_total=None,
+            output_total=None,
+            declared_loss=None,
+            unaccounted_quantity=None,
+            tolerance=None,
+            reasons=[],
+        )
+    return BalancoResponse(
+        status=balance.status.value,
+        result=balance.result.value,
+        measurement_basis=balance.measurement_basis,
+        input_total=_texto_ou_none(balance.input_total),
+        output_total=_texto_ou_none(balance.output_total),
+        declared_loss=_texto_ou_none(balance.declared_loss),
+        unaccounted_quantity=_texto_ou_none(balance.unaccounted_quantity),
+        tolerance=_texto_ou_none(balance.tolerance),
+        reasons=list(balance.reasons),
+    )
+
+
 def _resposta(
     resultado: SlaughterResult, animal_id: str, facility_property_id: str
 ) -> TransformacaoResponse:
@@ -142,6 +203,7 @@ def _resposta(
             )
             for item in resultado.created_items
         ],
+        balance=_balanco_resposta(resultado.event.balance),
     )
 
 
@@ -187,6 +249,11 @@ def registrar_abate(
             occurred_at=corpo.occurred_at,
             outputs=outputs,
             evidence_references=_evidencias(contexto, corpo.evidence_ids),
+            input_quantity=_quantidade_ou_problema(corpo.input_quantity, "input_quantity"),
+            input_unit=corpo.input_unit,
+            input_measurement_basis=corpo.input_measurement_basis,
+            declared_loss=_quantidade_ou_problema(corpo.declared_loss, "declared_loss"),
+            tolerance=_quantidade_ou_problema(corpo.tolerance, "tolerance"),
         )
     except KeyError as error:
         raise DomainProblem(

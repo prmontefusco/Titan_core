@@ -18,6 +18,7 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKeyConstraint,
+    Index,
     String,
     Table,
     insert,
@@ -34,11 +35,14 @@ from packages.livestock_application.transformation_service import (
     TransformationEventRepositoryPort,
 )
 from packages.livestock_domain.transformation import (
+    BalanceResult,
+    BalanceStatus,
     ConsumptionMode,
     ParticipantRole,
     ProcessType,
     TraceableItem,
     TraceableItemType,
+    TransformationBalance,
     TransformationEvent,
     TransformationParticipant,
 )
@@ -88,6 +92,11 @@ traceable_items_table = Table(
         [f"{CORE_AUDIT_SCHEMA}.transformation_events.event_id"],
         name="fk_traceable_items_transformation",
     ),
+    Index(
+        "ix_traceable_items_transformation",
+        "record_owner_organization_id",
+        "created_by_transformation_id",
+    ),
     comment="titan.classification=PROTECTED;titan.module_owner=livestock",
     schema=CORE_AUDIT_SCHEMA,
 )
@@ -117,6 +126,44 @@ def _participant_to_dict(participant: TransformationParticipant) -> dict[str, An
         ),
         "lot_or_batch_reference": reference_to_dict(participant.lot_or_batch_reference),
     }
+
+
+def _balance_to_dict(balance: TransformationBalance | None) -> dict[str, Any] | None:
+    if balance is None:
+        return None
+    return {
+        "status": balance.status.value,
+        "result": balance.result.value,
+        "measurement_basis": balance.measurement_basis,
+        "input_total": _decimal_to_str(balance.input_total),
+        "output_total": _decimal_to_str(balance.output_total),
+        "declared_loss": _decimal_to_str(balance.declared_loss),
+        "unaccounted_quantity": _decimal_to_str(balance.unaccounted_quantity),
+        "tolerance": _decimal_to_str(balance.tolerance),
+        "reasons": list(balance.reasons),
+        "evidence_references": [reference_to_dict(r) for r in balance.evidence_references],
+    }
+
+
+def _balance_from_dict(data: dict[str, Any] | None) -> TransformationBalance | None:
+    if data is None:
+        return None
+    return TransformationBalance(
+        status=BalanceStatus(data["status"]),
+        result=BalanceResult(data["result"]),
+        measurement_basis=data.get("measurement_basis"),
+        input_total=_decimal_from_str(data.get("input_total")),
+        output_total=_decimal_from_str(data.get("output_total")),
+        declared_loss=_decimal_from_str(data.get("declared_loss")),
+        unaccounted_quantity=_decimal_from_str(data.get("unaccounted_quantity")),
+        tolerance=_decimal_from_str(data.get("tolerance")),
+        reasons=tuple(data.get("reasons", [])),
+        evidence_references=tuple(
+            ref
+            for ref in (reference_from_dict(item) for item in data.get("evidence_references", []))
+            if ref is not None
+        ),
+    )
 
 
 def _participant_from_dict(data: dict[str, Any]) -> TransformationParticipant:
@@ -159,7 +206,11 @@ class TransactionalTransformationEventRepository(TransformationEventRepositoryPo
                 ),
                 inputs=json.dumps([_participant_to_dict(p) for p in event.inputs]),
                 outputs=json.dumps([_participant_to_dict(p) for p in event.outputs]),
-                balance=None,
+                balance=(
+                    json.dumps(_balance_to_dict(event.balance))
+                    if event.balance is not None
+                    else None
+                ),
                 evidence_references=json.dumps(
                     [reference_to_dict(r) for r in event.evidence_references]
                 ),
@@ -201,7 +252,7 @@ class TransactionalTransformationEventRepository(TransformationEventRepositoryPo
             inputs=tuple(_participant_from_dict(item) for item in _load(row.inputs)),
             outputs=tuple(_participant_from_dict(item) for item in _load(row.outputs)),
             created_at=_aware(row.created_at),
-            balance=None,
+            balance=_balance_from_dict(_load(row.balance)),
             evidence_references=tuple(
                 ref
                 for ref in (reference_from_dict(item) for item in evidence_raw)
