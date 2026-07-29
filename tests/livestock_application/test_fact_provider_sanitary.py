@@ -10,12 +10,25 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from packages.core_domain.evidence import ConfidenceTier
+from packages.livestock_application.establishment_qualification_service import (
+    establishment_qualification_fact_type,
+)
 from packages.livestock_application.fact_provider import (
     LivestockFactProvider,
     sanitary_requirement_fact_type,
 )
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_domain.animal import Animal, AnimalSex
+from packages.livestock_domain.establishment_qualification import (
+    EstablishmentQualification,
+    EstablishmentQualificationStatus,
+)
+from packages.livestock_domain.establishment_qualification_assertion import (
+    AssertionStatus,
+    EstablishmentQualificationAssertion,
+)
+from packages.livestock_domain.external_counterparty import CounterpartyType, ExternalCounterparty
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.treatment import TreatmentApplication
@@ -85,6 +98,51 @@ class _InMemoryApplicationRepo:
         self, organization_id: OrganizationId, medication_batch_id: TypedId
     ) -> list[TreatmentApplication]:
         return []
+
+
+class _InMemoryCounterpartyRepo:
+    def __init__(self, counterparties: list[ExternalCounterparty]) -> None:
+        self._counterparties = counterparties
+
+    def save(self, counterparty: ExternalCounterparty) -> None:
+        self._counterparties.append(counterparty)
+
+    def get_by_id(self, counterparty_id: TypedId) -> ExternalCounterparty | None:
+        return next((c for c in self._counterparties if c.counterparty_id == counterparty_id), None)
+
+    def list_by_organization(self, organization_id: OrganizationId) -> list[ExternalCounterparty]:
+        return [c for c in self._counterparties if c.organization_id == organization_id]
+
+
+class _InMemoryLegacyQualificationRepo:
+    def __init__(self, qualifications: list[EstablishmentQualification]) -> None:
+        self._qualifications = qualifications
+
+    def save(self, qualification: EstablishmentQualification) -> None:
+        self._qualifications.append(qualification)
+
+    def list_by_counterparty(
+        self, organization_id: OrganizationId, counterparty_id: TypedId
+    ) -> list[EstablishmentQualification]:
+        return [
+            item
+            for item in self._qualifications
+            if item.organization_id == organization_id and item.counterparty_id == counterparty_id
+        ]
+
+
+class _InMemoryAssertionRepo:
+    def __init__(self, assertions: list[EstablishmentQualificationAssertion]) -> None:
+        self._assertions = assertions
+
+    def list_by_establishment(
+        self, organization_id: OrganizationId, establishment_id: TypedId
+    ) -> list[EstablishmentQualificationAssertion]:
+        return [
+            item
+            for item in self._assertions
+            if item.organization_id == organization_id and item.establishment_id == establishment_id
+        ]
 
 
 def _org() -> OrganizationId:
@@ -218,3 +276,52 @@ def test_sem_repositorios_configurados_nao_emite_fato_sanitario() -> None:
     ]
 
     assert tipos_sanitarios == []
+
+
+def test_qualificacao_de_estabelecimento_prefere_assercao_bitemporal_ao_legado() -> None:
+    org_id = _org()
+    counterparty = ExternalCounterparty(
+        counterparty_id=TypedId.new("external_counterparty"),
+        organization_id=org_id,
+        name="Frigorifico Teste",
+        counterparty_type=CounterpartyType.SLAUGHTERHOUSE,
+    )
+    agora = datetime.now(UTC)
+    legado = EstablishmentQualification.create(
+        organization_id=org_id,
+        counterparty_id=counterparty.counterparty_id,
+        market_purpose="exportacao-china",
+        status=EstablishmentQualificationStatus.NAO_HABILITADO,
+        source_name="legado",
+        source_version="v1",
+        assessed_at=agora - timedelta(days=2),
+    )
+    assertion = EstablishmentQualificationAssertion.create(
+        organization_id=org_id,
+        establishment_id=counterparty.counterparty_id,
+        qualification_type="exportacao-china",
+        asserted_status=AssertionStatus.QUALIFIED,
+        effective_from=None,
+        effective_until=None,
+        observed_at=agora - timedelta(days=1),
+        source_artifact_id=TypedId.new("qualification_source_artifact"),
+        confidence_tier=ConfidenceTier.DOCUMENTED,
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({}),
+        external_counterparty_repository=_InMemoryCounterpartyRepo([counterparty]),
+        establishment_qualification_repository=_InMemoryLegacyQualificationRepo([legado]),
+        establishment_qualification_assertion_repository=_InMemoryAssertionRepo([assertion]),
+    )
+
+    snapshot = provider.get_snapshot(org_id, counterparty.counterparty_id, agora)
+    fatos = [
+        f
+        for f in snapshot.facts
+        if f.fact_type == establishment_qualification_fact_type("exportacao-china")
+    ]
+
+    assert len(fatos) == 1
+    assert fatos[0].payload["qualification_status"] == "HABILITADO"
+    assert fatos[0].payload["asserted_status"] == "QUALIFIED"

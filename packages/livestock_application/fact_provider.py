@@ -25,6 +25,10 @@ from packages.livestock_application.sanitary_requirement_service import (
 )
 from packages.livestock_application.treatment_service import TreatmentApplicationRepositoryPort
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
+from packages.livestock_domain.establishment_qualification_assertion import (
+    AssertionStatus,
+    EstablishmentQualificationAssertion,
+)
 from packages.livestock_domain.imported_fact import FactOrigin, ImportedLivestockFact
 from packages.livestock_domain.withdrawal import WITHDRAWAL_RULE_VERSION, compute_withdrawal_ends
 from packages.shared_kernel import OrganizationId, TypedId
@@ -59,12 +63,21 @@ class ImportedFactReaderPort(Protocol):
     ) -> list[ImportedLivestockFact]: ...
 
 
+class EstablishmentQualificationAssertionReaderPort(Protocol):
+    def list_by_establishment(
+        self, organization_id: OrganizationId, establishment_id: TypedId
+    ) -> list[EstablishmentQualificationAssertion]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class LivestockFactProvider(FactProviderPort):
     property_repository: RuralPropertyRepositoryPort
     animal_repository: AnimalRepositoryPort
     external_counterparty_repository: ExternalCounterpartyRepositoryPort | None = None
     establishment_qualification_repository: EstablishmentQualificationRepositoryPort | None = None
+    establishment_qualification_assertion_repository: (
+        EstablishmentQualificationAssertionReaderPort | None
+    ) = None
     stay_repository: PropertyStayRepositoryPort | None = None
     withdrawal_calculator: WithdrawalCalculator | None = None
     membership_repository: LotMembershipRepositoryPort | None = None
@@ -248,7 +261,48 @@ class LivestockFactProvider(FactProviderPort):
                             observed_at=at_time,
                         )
                     )
-                    if self.establishment_qualification_repository is not None:
+                    if self.establishment_qualification_assertion_repository is not None:
+                        latest_assertion_by_type: dict[
+                            str, EstablishmentQualificationAssertion
+                        ] = {}
+                        assertion_repository = self.establishment_qualification_assertion_repository
+                        assertions = assertion_repository.list_by_establishment(
+                            organization_id, target_id
+                        )
+                        for assertion in assertions:
+                            if not assertion.known_as_of(at_time):
+                                continue
+                            previous_assertion = latest_assertion_by_type.get(
+                                assertion.qualification_type
+                            )
+                            if (
+                                previous_assertion is None
+                                or assertion.observed_at >= previous_assertion.observed_at
+                            ):
+                                latest_assertion_by_type[assertion.qualification_type] = assertion
+                        for assertion in latest_assertion_by_type.values():
+                            fact_list.append(
+                                Fact.create(
+                                    fact_type=establishment_qualification_fact_type(
+                                        assertion.qualification_type
+                                    ),
+                                    payload={
+                                        "qualification_status": (
+                                            "HABILITADO"
+                                            if assertion.asserted_status
+                                            is AssertionStatus.QUALIFIED
+                                            else "NAO_HABILITADO"
+                                        ),
+                                        "asserted_status": assertion.asserted_status.value,
+                                        "source_artifact_id": str(
+                                            assertion.source_artifact_id.value
+                                        ),
+                                        "confidence_tier": assertion.confidence_tier.value,
+                                    },
+                                    observed_at=assertion.observed_at,
+                                )
+                            )
+                    elif self.establishment_qualification_repository is not None:
                         latest_by_market: dict[str, Any] = {}
                         qualifications = (
                             self.establishment_qualification_repository.list_by_counterparty(

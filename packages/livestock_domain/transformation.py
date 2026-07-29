@@ -328,8 +328,7 @@ class TransformationEvent:
                 )
         elif self.correction_reason is not None:
             raise ValueError(
-                "correction_reason só se aplica quando corrects_transformation_id "
-                "está definido."
+                "correction_reason só se aplica quando corrects_transformation_id está definido."
             )
 
     def _guard_same_organization(self, label: str, reference: UniversalReference) -> None:

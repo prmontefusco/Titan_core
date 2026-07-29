@@ -114,6 +114,9 @@ from packages.livestock_infrastructure.persistence.movement_repository import (
 from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
 )
+from packages.livestock_infrastructure.persistence.qualification_assertion_repository import (
+    TransactionalEstablishmentQualificationAssertionRepository,
+)
 from packages.livestock_infrastructure.persistence.sanitary_campaign_repository import (
     TransactionalSanitaryCampaignRepository,
 )
@@ -287,6 +290,9 @@ def _eligibility_components(
         ),
         establishment_qualification_repository=TransactionalEstablishmentQualificationRepository(
             connection=connection
+        ),
+        establishment_qualification_assertion_repository=(
+            TransactionalEstablishmentQualificationAssertionRepository(connection=connection)
         ),
         imported_fact_repository=TransactionalImportedLivestockFactRepository(
             connection=connection
@@ -722,9 +728,7 @@ def _executar_recall_de_transformacao(
     return resultado
 
 
-def _status_de_no(
-    connection: Connection, entity_type: str, entity_id: SharedTypedId
-) -> str | None:
+def _status_de_no(connection: Connection, entity_type: str, entity_id: SharedTypedId) -> str | None:
     """Estado derivado CURRENT/SUPERSEDED de um nó do recall (ADR-0047, item 10).
 
     Só `TransformationEvent` e `TraceableItem` têm este conceito — para

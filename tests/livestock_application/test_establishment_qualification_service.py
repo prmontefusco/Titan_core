@@ -17,8 +17,16 @@ from packages.livestock_domain.establishment_qualification import (
     EstablishmentQualification,
     EstablishmentQualificationStatus,
 )
+from packages.livestock_domain.establishment_qualification_assertion import (
+    AssertionStatus,
+    EstablishmentQualificationAssertion,
+)
 from packages.livestock_domain.events import ESTABLISHMENT_QUALIFICATION_RECORDED
 from packages.livestock_domain.external_counterparty import CounterpartyType, ExternalCounterparty
+from packages.livestock_domain.qualification_source_artifact import (
+    QualificationSourceArtifact,
+    SourceCoverage,
+)
 from packages.shared_kernel import FixedClock, OrganizationId, TypedId
 from tests.livestock_application.conftest import RECORDED_AT, FakeEventLog
 from tests.livestock_support import operation_context
@@ -39,6 +47,22 @@ class InMemoryQualificationRepo(EstablishmentQualificationRepositoryPort):
             for item in self.items
             if item.organization_id == organization_id and item.counterparty_id == counterparty_id
         ]
+
+
+class InMemorySourceArtifactRepo:
+    def __init__(self) -> None:
+        self.items: list[QualificationSourceArtifact] = []
+
+    def save(self, artifact: QualificationSourceArtifact) -> None:
+        self.items.append(artifact)
+
+
+class InMemoryAssertionRepo:
+    def __init__(self) -> None:
+        self.items: list[EstablishmentQualificationAssertion] = []
+
+    def save(self, assertion: EstablishmentQualificationAssertion) -> None:
+        self.items.append(assertion)
 
 
 class InMemoryCounterpartyRepo(ExternalCounterpartyRepositoryPort):
@@ -96,6 +120,48 @@ def test_registra_qualificacao_de_estabelecimento_com_evento() -> None:
     assert event_log.only(ESTABLISHMENT_QUALIFICATION_RECORDED).aggregate_reference.target_id == (
         qualification.qualification_id
     )
+
+
+def test_registro_manual_tambem_cria_assercao_bitemporal_documentada() -> None:
+    org_id = OrganizationId.new()
+    counterparty = ExternalCounterparty(
+        counterparty_id=TypedId.new("external_counterparty"),
+        organization_id=org_id,
+        name="Frigorifico Teste",
+        counterparty_type=CounterpartyType.SLAUGHTERHOUSE,
+        identifiers=("SIF:1234",),
+    )
+    source_artifacts = InMemorySourceArtifactRepo()
+    assertions = InMemoryAssertionRepo()
+    service = EstablishmentQualificationService(
+        repository=InMemoryQualificationRepo(),
+        counterparty_repository=InMemoryCounterpartyRepo(counterparty),
+        recorder=LivestockEventRecorder(
+            event_log=FakeEventLog(),
+            clock=FixedClock(RECORDED_AT),
+        ),
+        source_artifact_repository=source_artifacts,
+        assertion_repository=assertions,
+    )
+
+    assessed_at = datetime.now(UTC)
+    qualification = service.record_qualification(
+        context=_context(org_id),
+        counterparty_id=counterparty.counterparty_id,
+        market_purpose="exportacao-china",
+        status=EstablishmentQualificationStatus.HABILITADO,
+        source_name="declaracao-operador",
+        source_version=None,
+        assessed_at=assessed_at,
+    )
+
+    assert len(source_artifacts.items) == 1
+    assert source_artifacts.items[0].snapshot_semantics is SourceCoverage.PARTIAL
+    assert source_artifacts.items[0].source_version == qualification.qualification_id.value.hex
+    assert len(assertions.items) == 1
+    assert assertions.items[0].establishment_id == counterparty.counterparty_id
+    assert assertions.items[0].qualification_type == "exportacao-china"
+    assert assertions.items[0].asserted_status is AssertionStatus.QUALIFIED
 
 
 def test_recusa_qualificacao_para_contraparte_que_nao_e_frigorifico() -> None:

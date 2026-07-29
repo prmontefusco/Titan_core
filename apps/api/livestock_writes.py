@@ -115,6 +115,10 @@ from packages.livestock_infrastructure.persistence.movement_repository import (
 from packages.livestock_infrastructure.persistence.property_repository import (
     TransactionalRuralPropertyRepository,
 )
+from packages.livestock_infrastructure.persistence.qualification_assertion_repository import (
+    TransactionalEstablishmentQualificationAssertionRepository,
+    TransactionalQualificationSourceArtifactRepository,
+)
 from packages.livestock_infrastructure.persistence.reproduction_repository import (
     TransactionalReproductiveEventRepository,
 )
@@ -646,6 +650,12 @@ def registrar_qualificacao_de_estabelecimento(
         repository=TransactionalEstablishmentQualificationRepository(connection=connection),
         counterparty_repository=TransactionalExternalCounterpartyRepository(connection=connection),
         recorder=_recorder(connection),
+        source_artifact_repository=TransactionalQualificationSourceArtifactRepository(
+            connection=connection
+        ),
+        assertion_repository=TransactionalEstablishmentQualificationAssertionRepository(
+            connection=connection
+        ),
     )
     try:
         qualificacao = servico.record_qualification(
