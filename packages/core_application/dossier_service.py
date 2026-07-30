@@ -7,6 +7,12 @@ from typing import Any, Protocol
 
 from packages.core_domain.crypto import KeyIdentifier
 from packages.core_domain.decision import Decision
+from packages.core_domain.decision_governance import (
+    ContestationRecord,
+    DecisionOverride,
+    DecisionProposal,
+    DecisionReview,
+)
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
@@ -73,6 +79,10 @@ class DossierService:
         generated_at: datetime | None = None,
         evidences: Sequence[Evidence] = (),
         vertical_section: VerticalSection | None = None,
+        proposal: DecisionProposal | None = None,
+        reviews: Sequence[DecisionReview] = (),
+        override: DecisionOverride | None = None,
+        contestations: Sequence[ContestationRecord] = (),
     ) -> Dossier:
         """`evidences` são as evidências citadas pela decisão, para terem o conteúdo copiado.
 
@@ -93,6 +103,10 @@ class DossierService:
             instante,
             evidences,
             vertical_section,
+            proposal,
+            reviews,
+            override,
+            contestations,
         )
 
         return Dossier(
@@ -143,6 +157,10 @@ class DossierService:
         generated_at: datetime,
         evidences: Sequence[Evidence] = (),
         vertical_section: VerticalSection | None = None,
+        proposal: DecisionProposal | None = None,
+        reviews: Sequence[DecisionReview] = (),
+        override: DecisionOverride | None = None,
+        contestations: Sequence[ContestationRecord] = (),
     ) -> dict[str, Any]:
         return {
             "document_version": DOSSIER_DOCUMENT_VERSION,
@@ -224,6 +242,14 @@ class DossierService:
                     for s in decision.affected_subjects
                 ],
             },
+            "governance": {
+                "proposal": None if proposal is None else self._proposal_entry(proposal),
+                "reviews": [self._review_entry(review) for review in reviews],
+                "override": None if override is None else self._override_entry(override),
+                "contestations": [
+                    self._contestation_entry(contestation) for contestation in contestations
+                ],
+            },
             "evidences": [
                 self._evidence_entry(reference, evidences)
                 for reference in decision.evidence_references
@@ -281,6 +307,63 @@ class DossierService:
         entry["content_status"] = "COPIADO"
         entry["content"] = evidence_content(found)
         return entry
+
+    @staticmethod
+    def _proposal_entry(proposal: DecisionProposal) -> dict[str, Any]:
+        return {
+            "proposal_id": str(proposal.proposal_id.value),
+            "evaluation_id": str(proposal.evaluation_id.value),
+            "evaluation_hash": proposal.evaluation_hash,
+            "proposed_result": proposal.proposed_result.value,
+            "proposed_reasons": [reason.to_dict() for reason in proposal.proposed_reasons],
+            "purpose": proposal.purpose,
+            "justification_required": proposal.justification_required,
+            "created_at": proposal.created_at.isoformat(),
+        }
+
+    @staticmethod
+    def _review_entry(review: DecisionReview) -> dict[str, Any]:
+        return {
+            "review_id": str(review.review_id.value),
+            "proposal_id": str(review.proposal_id.value),
+            "reviewer_reference": {
+                "entity_type": review.reviewer_reference.target_id.entity_type,
+                "id": str(review.reviewer_reference.target_id.value),
+            },
+            "reviewer_authority_id": str(review.reviewer_authority_id.value),
+            "conclusion": review.conclusion.value,
+            "reasoning": review.reasoning,
+            "reviewed_at": review.reviewed_at.isoformat(),
+        }
+
+    @staticmethod
+    def _override_entry(override: DecisionOverride) -> dict[str, Any]:
+        return {
+            "override_id": str(override.override_id.value),
+            "original_decision_id": str(override.original_decision_id.value),
+            "authority_profile_id": str(override.authority_profile.authority_id.value),
+            "new_result": override.new_result.value,
+            "mandatory_reason": override.mandatory_reason,
+            "applied_at": override.applied_at.isoformat(),
+        }
+
+    @staticmethod
+    def _contestation_entry(contestation: ContestationRecord) -> dict[str, Any]:
+        return {
+            "contestation_id": str(contestation.contestation_id.value),
+            "decision_id": str(contestation.decision_id.value),
+            "contested_by": {
+                "entity_type": contestation.contested_by.target_id.entity_type,
+                "id": str(contestation.contested_by.target_id.value),
+            },
+            "grounds_description": contestation.grounds_description,
+            "status": contestation.status.value,
+            "filed_at": contestation.filed_at.isoformat(),
+            "resolved_at": (
+                None if contestation.resolved_at is None else contestation.resolved_at.isoformat()
+            ),
+            "resolution_notes": contestation.resolution_notes,
+        }
 
 
 def evidence_content(found: Evidence) -> dict[str, Any]:

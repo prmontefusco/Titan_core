@@ -32,6 +32,10 @@ from packages.core_infrastructure.persistence.rule_governance import (
     TransactionalRuleIdentityRepository,
     TransactionalRuleTimelineRepository,
 )
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+    TransactionalDecisionGovernanceRepository,
+)
 from packages.core_infrastructure.persistence.timestamping import TimestampAuditRepository
 from packages.core_infrastructure.persistence.users import UserRepository
 
@@ -39,6 +43,8 @@ __all__ = [
     "DatabaseConfigurationError",
     "AuthorizationRepository",
     "DatabaseSettings",
+    "TransactionalDecisionAuthorityProfileRepository",
+    "TransactionalDecisionGovernanceRepository",
     "ExternalIdentityRepository",
     "IntegrityCheckpointRepository",
     "IdempotencyRepository",

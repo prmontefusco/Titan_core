@@ -76,6 +76,7 @@ def test_reproduction_matches_when_rules_and_snapshot_are_identical() -> None:
     assert report.context_hash_matches
     assert report.evaluation_hash_matches
     assert report.outcome_matches
+    assert report.limitations
     assert report.original_outcome == EvaluationOutcome.CONDICOES_SATISFEITAS
     assert report.reproduced_outcome == EvaluationOutcome.CONDICOES_SATISFEITAS
 
@@ -186,3 +187,35 @@ def test_reproduction_detects_tampered_evaluation_hash() -> None:
     assert any("evaluation_hash" in d for d in report.divergences)
     # A Evaluation original -- adulterada ou não -- nunca é alterada pelo relatório.
     assert adulterada.evaluation_hash == "f" * 64
+
+
+def test_reproduction_declares_temporal_limitations_when_known_at_is_approximated() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _published_policy(org_id)
+    rule = _rule(policy)
+    snapshot = FactSnapshot.create(
+        organization_id=org_id,
+        target_id=subject_id,
+        as_of=now,
+        facts=[
+            Fact.create(
+                fact_type="sanitary.attestation",
+                payload={"result": "approved"},
+                observed_at=now,
+                recorded_at=now,
+            )
+        ],
+    )
+
+    evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
+        policy=policy, rules=[rule], snapshot=snapshot, purpose="AUDITORIA"
+    )
+
+    report = HistoricalReproductionService(engine=RuleEvaluationEngine()).reproduce(
+        evaluation, rules=[rule]
+    )
+
+    assert report.matches
+    assert any("recorded_at_fallback" in d for d in report.limitations)

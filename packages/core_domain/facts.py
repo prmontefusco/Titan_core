@@ -95,6 +95,20 @@ class Fact:
         """
         return self.known_at or self.recorded_at or self.observed_at
 
+    def knowledge_time_source(self) -> str:
+        """Explica de onde veio o corte de conhecimento usado no snapshot.
+
+        ADR-0052 exige que o Titan não apresente conhecimento reconstruído como
+        certeza silenciosa. Enquanto parte das fontes ainda não fornece
+        `known_at` explícito, o snapshot precisa ao menos declarar quando caiu
+        para `recorded_at` ou `observed_at`.
+        """
+        if self.known_at is not None:
+            return "known_at"
+        if self.recorded_at is not None:
+            return "recorded_at_fallback"
+        return "observed_at_fallback"
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "fact_id": str(self.fact_id.value),
@@ -142,6 +156,7 @@ class FactSnapshot:
     snapshot_hash: str = ""
     reference_time: datetime | None = None
     knowledge_cutoff: datetime | None = None
+    knowledge_limitations: tuple[str, ...] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         if not isinstance(self.organization_id, OrganizationId):
@@ -156,6 +171,8 @@ class FactSnapshot:
             raise TypeError("reference_time deve ser datetime ou None.")
         if self.knowledge_cutoff is not None and not isinstance(self.knowledge_cutoff, datetime):
             raise TypeError("knowledge_cutoff deve ser datetime ou None.")
+        if not isinstance(self.knowledge_limitations, tuple):
+            raise TypeError("knowledge_limitations deve ser uma tupla.")
 
     def effective_reference_time(self) -> datetime:
         return self.reference_time or self.as_of
@@ -179,6 +196,7 @@ class FactSnapshot:
             "knowledge_cutoff": self.effective_knowledge_cutoff().isoformat(),
             "facts": [f.to_dict() for f in self.facts],
             "snapshot_hash": self.snapshot_hash,
+            "knowledge_limitations": list(self.knowledge_limitations),
         }
 
     @classmethod
@@ -205,6 +223,7 @@ class FactSnapshot:
                 if data.get("knowledge_cutoff") is None
                 else datetime.fromisoformat(data["knowledge_cutoff"])
             ),
+            knowledge_limitations=tuple(data.get("knowledge_limitations", ())),
         )
 
     def get_latest_fact_by_type(self, fact_type: str) -> Fact | None:
@@ -230,6 +249,18 @@ class FactSnapshot:
         )
         sorted_facts = tuple(
             sorted(selected_facts, key=lambda f: (f.fact_type, f.observed_at, f.fact_id.value))
+        )
+        limitations = tuple(
+            sorted(
+                {
+                    (
+                        f"Fact {fact.fact_id.value} usa {fact.knowledge_time_source()} como "
+                        "aproximacao do conhecimento historico."
+                    )
+                    for fact in sorted_facts
+                    if fact.knowledge_time_source() != "known_at"
+                }
+            )
         )
 
         # Hash canônico do snapshot (ADR-0051): serialização determinística e
@@ -259,6 +290,7 @@ class FactSnapshot:
                 }
                 for f in sorted_facts
             ],
+            "knowledge_limitations": list(limitations),
         }
         canonical_payload = CanonicalPayload(
             schema="titan.fact_snapshot", version=1, value=hash_value
@@ -273,4 +305,5 @@ class FactSnapshot:
             snapshot_hash=calc_hash,
             reference_time=resolved_reference_time,
             knowledge_cutoff=resolved_knowledge_cutoff,
+            knowledge_limitations=limitations,
         )

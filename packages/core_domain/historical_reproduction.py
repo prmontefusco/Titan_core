@@ -32,6 +32,7 @@ class ReproductionReport:
     original_outcome: EvaluationOutcome
     reproduced_outcome: EvaluationOutcome
     divergences: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.report_id.entity_type != "reproduction_report":
@@ -48,6 +49,8 @@ class ReproductionReport:
             raise TypeError("reproduced_outcome deve ser um EvaluationOutcome válido.")
         if not isinstance(self.divergences, tuple):
             raise TypeError("divergences deve ser uma tupla.")
+        if not isinstance(self.limitations, tuple):
+            raise TypeError("limitations deve ser uma tupla.")
         # Consistência interna: "casa" só quando as três dimensões concordam, nunca
         # por conveniência de quem monta o relatório fora deste construtor.
         expected_matches = (

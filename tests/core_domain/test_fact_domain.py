@@ -179,3 +179,26 @@ def test_fact_snapshot_excludes_future_knowledge_beyond_cutoff() -> None:
     assert snapshot.reference_time == reference_time
     assert snapshot.knowledge_cutoff == knowledge_cutoff
     assert snapshot.facts == (before_cutoff,)
+
+
+def test_fact_snapshot_declares_when_knowledge_cutoff_uses_fallbacks() -> None:
+    org_id = OrganizationId.new()
+    target_id = TypedId.new("batch")
+    instant = datetime.now(UTC)
+    fact = Fact.create(
+        fact_type="sanitary.inspection",
+        payload={"result": "approved"},
+        observed_at=instant,
+        recorded_at=instant,
+        known_at=None,
+    )
+
+    snapshot = FactSnapshot.create(
+        organization_id=org_id,
+        target_id=target_id,
+        as_of=instant,
+        facts=[fact],
+    )
+
+    assert snapshot.knowledge_limitations
+    assert "recorded_at_fallback" in snapshot.knowledge_limitations[0]

@@ -1,6 +1,6 @@
 """Serviço de aplicação para governança humana de decisões (ADR-0016, ADR-0054)."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -26,6 +26,7 @@ class DecisionGovernanceRepositoryPort(Protocol):
 
     def save_review(self, review: DecisionReview) -> None: ...
     def get_review(self, review_id: TypedId) -> DecisionReview | None: ...
+    def list_reviews_by_proposal(self, proposal_id: TypedId) -> list[DecisionReview]: ...
 
     def save_override(self, override: DecisionOverride) -> None: ...
     def get_override(self, override_id: TypedId) -> DecisionOverride | None: ...
@@ -38,11 +39,9 @@ class DecisionGovernanceRepositoryPort(Protocol):
 class DecisionGovernanceService:
     """Orquestra propostas de decisão, revisão humana, overrides e contestações.
 
-    Persistência de `DecisionProposal`/`DecisionReview` é deliberadamente opcional
-    nesta fase (`repository=None` por padrão): nenhum caller de produção usa este
-    fluxo ainda, e criar tabela sem uso concreto seria antecipar infraestrutura.
-    Concorrência (ADR-0054 §9, `OptimisticConcurrency`) também fica de fora --
-    exigiria a persistência real que ainda não existe.
+    Persistência é opcional para preservar o uso em memória nos testes de domínio,
+    mas quando existe permite revalidar a trilha de proposta/revisão sem depender
+    do estado corrente do chamador.
     """
 
     repository: DecisionGovernanceRepositoryPort | None = None
@@ -123,20 +122,30 @@ class DecisionGovernanceService:
         authority_profile: DecisionAuthorityProfile,
         issued_at: datetime | None = None,
     ) -> Decision:
+        return self.emit_after_approvals(
+            evaluation=evaluation,
+            proposal=proposal,
+            reviews=[review],
+            authority_profile=authority_profile,
+            issued_at=issued_at,
+        )
+
+    def emit_after_approvals(
+        self,
+        evaluation: Evaluation,
+        proposal: DecisionProposal,
+        reviews: list[DecisionReview],
+        authority_profile: DecisionAuthorityProfile,
+        issued_at: datetime | None = None,
+    ) -> Decision:
         """Emite a Decision humana depois de uma DecisionReview aprovadora.
 
         Fecha o ciclo da ADR-0054 §3: Evaluation -> DecisionProposal -> uma ou
         mais DecisionReviews -> revalidação -> Decision autorizada. Revalida que
-        a review referencia exatamente esta proposta, que a proposta referencia
-        exatamente esta Evaluation (pelo hash, não só pelo id) e que a conclusão
-        é aprovação -- rejeição ou devolução nunca emitem Decision (ADR-0054
-        invariantes 1, 16).
+        as reviews referenciam exatamente esta proposta, que a proposta referencia
+        exatamente esta Evaluation (pelo hash, não só pelo id), que só há
+        aprovações e que a quantidade mínima exigida foi satisfeita.
         """
-        if review.proposal_id != proposal.proposal_id:
-            raise ValueError(
-                "A review não referencia esta proposta: revisão sobre outra "
-                "proposta não satisfaz emissão desta."
-            )
         if proposal.evaluation_id != evaluation.evaluation_id:
             raise ValueError("A proposta não referencia esta Evaluation.")
         if proposal.evaluation_hash != evaluation.evaluation_hash:
@@ -144,18 +153,63 @@ class DecisionGovernanceService:
                 "A Evaluation mudou desde que a proposta foi criada: material "
                 "diferente exige nova proposta e nova revisão, não reaproveitamento."
             )
-        if review.conclusion is not ReviewConclusion.APROVA:
-            raise ValueError(
-                f"Review com conclusão '{review.conclusion.value}' não emite Decision "
-                "-- só aprovação satisfaz emissão."
-            )
+        self._validate_reviews_for_emission(proposal, reviews, authority_profile)
+        resolved_authority = replace(authority_profile, approvals_required=0)
 
         return self.decision_service.decide(
             evaluation,
-            authority_profile,
+            resolved_authority,
             issued_at=issued_at,
             method=DecisionEmissionMethod.HUMAN,
         )
+
+    def _validate_reviews_for_emission(
+        self,
+        proposal: DecisionProposal,
+        reviews: list[DecisionReview],
+        authority_profile: DecisionAuthorityProfile,
+    ) -> None:
+        if not reviews:
+            raise ValueError(
+                "Emissão humana exige ao menos uma review aprovadora da proposta."
+            )
+
+        required_approvals = max(1, authority_profile.approvals_required)
+        seen_review_ids: set[TypedId] = set()
+        seen_reviewers: set[tuple[str, str]] = set()
+
+        for review in reviews:
+            if review.review_id in seen_review_ids:
+                raise ValueError("A mesma review não pode ser contada duas vezes na emissão.")
+            seen_review_ids.add(review.review_id)
+
+            if review.proposal_id != proposal.proposal_id:
+                raise ValueError(
+                    "A review não referencia esta proposta: revisão sobre outra "
+                    "proposta não satisfaz emissão desta."
+                )
+            if review.organization_id != proposal.organization_id:
+                raise ValueError("A review deve pertencer à mesma Organization da proposta.")
+            if review.conclusion is not ReviewConclusion.APROVA:
+                raise ValueError(
+                    f"Review com conclusão '{review.conclusion.value}' não emite Decision "
+                    "-- só aprovação satisfaz emissão."
+                )
+
+            reviewer_key = (
+                review.reviewer_reference.target_id.entity_type,
+                str(review.reviewer_reference.target_id.value),
+            )
+            if reviewer_key in seen_reviewers:
+                raise ValueError(
+                    "O mesmo revisor não pode satisfazer mais de uma aprovação exigida."
+                )
+            seen_reviewers.add(reviewer_key)
+
+        if len(reviews) < required_approvals:
+            raise ValueError(
+                "A proposta ainda não possui aprovações suficientes para emissão."
+            )
 
     def apply_override(
         self,

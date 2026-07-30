@@ -35,7 +35,11 @@ from packages.shared_kernel.serialization import CanonicalSerializer
 # ADR-0055 §6 exige que o Dossier preserve ou referencie o
 # `DecisionAuthorityProfile` e a identidade do emissor quando existentes.
 # Aditiva: um leitor da versão 3 continua encontrando tudo que esperava.
-DOSSIER_DOCUMENT_VERSION = 4
+#
+# Versão 5: a seção `governance` passou a preservar `DecisionProposal`,
+# `DecisionReview`, `DecisionOverride` e contestações quando existirem. Aditiva:
+# um leitor da versão 4 continua encontrando as seções anteriores.
+DOSSIER_DOCUMENT_VERSION = 5
 
 _SERIALIZER = CanonicalSerializer()
 

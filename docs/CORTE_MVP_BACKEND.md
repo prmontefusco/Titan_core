@@ -17,6 +17,12 @@ Este documento não substitui o checklist. Ele é o corte: uma leitura de cima p
 
 **Vai para a próxima fase:** tudo listado em "O que está fora do MVP" abaixo — nenhum desses itens bloqueia o fechamento de hoje.
 
+### Estado de conformidade do Core (30/07/2026)
+
+O Core avançou materialmente nas ADRs `0050` a `0055`, mas o fechamento honesto para o MVP é **conformidade implementada com pendências residuais explícitas**, não "aderência integral sem ressalvas". A base determinística e verificável já existe: execução de regra com falha técnica classificada (ADR-0050), identidade canônica de `FactSnapshot` e `Evaluation` com `context_hash` separado (ADR-0051), perfil de autoridade encadeado à `Decision` e bloqueio de emissão automática quando a avaliação não é elegível (ADR-0053), fluxo humano de proposta/revisão/emissão com persistência real de governança e aprovações mínimas distintas (ADR-0054), e `Dossier`/`VerificationBundle` carregando cadeia de emissão e governança suficiente para verificação offline (ADR-0055).
+
+As ressalvas que permanecem abertas são concretas. A ADR-0052 ficou **parcial**: `FactSnapshot` já declara `knowledge_limitations` quando a reprodução depende de aproximação por `recorded_at` ou `observed_at`, mas a modelagem completa do eixo de conhecimento (`known_at` contextual, `accepted_at` e tempos correlatos) ainda não existe. A ADR-0054 também não está completa na borda de produção: o Core já persiste `DecisionProposal`/`DecisionReview`/`DecisionOverride`, mas ainda falta um caller real da API/vertical que transforme automaticamente a recusa de emissão em proposta operacional de revisão ponta a ponta, em vez de depender só da exceção técnica no caminho recusado.
+
 ---
 
 ## O que está dentro do MVP

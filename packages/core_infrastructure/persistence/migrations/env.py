@@ -16,6 +16,10 @@ from packages.core_infrastructure.persistence.crypto import key_registry_table
 from packages.core_infrastructure.persistence.decision import decisions_table
 from packages.core_infrastructure.persistence.decision_governance import (
     decision_authority_profiles_table,
+    decision_contestations_table,
+    decision_overrides_table,
+    decision_proposals_table,
+    decision_reviews_table,
 )
 from packages.core_infrastructure.persistence.dossier import dossiers_table
 from packages.core_infrastructure.persistence.evaluation import evaluations_table
@@ -110,6 +114,10 @@ assert rule_adoptions_table.metadata is target_metadata
 assert evaluations_table.metadata is target_metadata
 assert decisions_table.metadata is target_metadata
 assert decision_authority_profiles_table.metadata is target_metadata
+assert decision_proposals_table.metadata is target_metadata
+assert decision_reviews_table.metadata is target_metadata
+assert decision_overrides_table.metadata is target_metadata
+assert decision_contestations_table.metadata is target_metadata
 assert relations_table.metadata is target_metadata
 assert reference_projection_table.metadata is target_metadata
 assert nonconformities_table.metadata is target_metadata

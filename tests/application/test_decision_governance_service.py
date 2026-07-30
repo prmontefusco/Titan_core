@@ -123,6 +123,24 @@ def _reviewer_reference(org_id: OrganizationId) -> UniversalReference:
     )
 
 
+def _human_authority_with_approvals(
+    org_id: OrganizationId, purpose: str, approvals_required: int
+) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("user"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="FISCAL_AUDITOR_SENIOR",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.HUMAN,
+        approvals_required=approvals_required,
+    )
+
+
 def test_create_proposal_derives_result_and_reasons_matching_decide() -> None:
     evaluation = _pending_review_evaluation()
     service = DecisionGovernanceService()
@@ -298,5 +316,94 @@ def test_emit_after_approval_detects_stale_evaluation_hash() -> None:
             evaluation=evaluation_mudada,
             proposal=proposal,
             review=review,
+            authority_profile=authority,
+        )
+
+
+def test_emit_after_approvals_requires_minimum_number_of_approvals() -> None:
+    evaluation = _pending_review_evaluation()
+    service = DecisionGovernanceService()
+    proposal = service.create_proposal(evaluation=evaluation)
+    authority = _human_authority_with_approvals(
+        evaluation.organization_id, evaluation.purpose, approvals_required=2
+    )
+    review = service.record_review(
+        proposal=proposal,
+        reviewer_reference=_reviewer_reference(evaluation.organization_id),
+        reviewer_authority=authority,
+        conclusion=ReviewConclusion.APROVA,
+        reasoning="Primeira aprovação.",
+    )
+
+    with pytest.raises(ValueError, match="aprovações suficientes"):
+        service.emit_after_approvals(
+            evaluation=evaluation,
+            proposal=proposal,
+            reviews=[review],
+            authority_profile=authority,
+        )
+
+
+def test_emit_after_approvals_accepts_multiple_distinct_approvals() -> None:
+    evaluation = _pending_review_evaluation()
+    service = DecisionGovernanceService()
+    proposal = service.create_proposal(evaluation=evaluation)
+    authority = _human_authority_with_approvals(
+        evaluation.organization_id, evaluation.purpose, approvals_required=2
+    )
+    review_a = service.record_review(
+        proposal=proposal,
+        reviewer_reference=_reviewer_reference(evaluation.organization_id),
+        reviewer_authority=authority,
+        conclusion=ReviewConclusion.APROVA,
+        reasoning="Primeira aprovação.",
+    )
+    review_b = service.record_review(
+        proposal=proposal,
+        reviewer_reference=_reviewer_reference(evaluation.organization_id),
+        reviewer_authority=authority,
+        conclusion=ReviewConclusion.APROVA,
+        reasoning="Segunda aprovação.",
+    )
+
+    decision = service.emit_after_approvals(
+        evaluation=evaluation,
+        proposal=proposal,
+        reviews=[review_a, review_b],
+        authority_profile=authority,
+    )
+
+    assert decision.emission_method is DecisionEmissionMethod.HUMAN
+    assert decision.authority_profile_id == authority.authority_id
+
+
+def test_emit_after_approvals_rejects_same_reviewer_twice() -> None:
+    evaluation = _pending_review_evaluation()
+    service = DecisionGovernanceService()
+    proposal = service.create_proposal(evaluation=evaluation)
+    authority = _human_authority_with_approvals(
+        evaluation.organization_id, evaluation.purpose, approvals_required=2
+    )
+    reviewer = _reviewer_reference(evaluation.organization_id)
+    review_a = service.record_review(
+        proposal=proposal,
+        reviewer_reference=reviewer,
+        reviewer_authority=authority,
+        conclusion=ReviewConclusion.APROVA,
+        reasoning="Primeira aprovação.",
+    )
+    review_b = service.record_review(
+        proposal=proposal,
+        reviewer_reference=reviewer,
+        reviewer_authority=authority,
+        conclusion=ReviewConclusion.APROVA,
+        reasoning="Tentativa de reaproveitar o mesmo revisor.",
+    )
+
+    with pytest.raises(ValueError, match="mesmo revisor"):
+        service.emit_after_approvals(
+            evaluation=evaluation,
+            proposal=proposal,
+            reviews=[review_a, review_b],
             authority_profile=authority,
         )

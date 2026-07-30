@@ -86,7 +86,6 @@ class HistoricalReproductionService:
                 f"outcome divergente: original={evaluation.outcome.value}, "
                 f"reproduzido={reproduced_outcome.value}."
             )
-
         return ReproductionReport(
             report_id=TypedId.new("reproduction_report"),
             organization_id=evaluation.organization_id,
@@ -98,4 +97,5 @@ class HistoricalReproductionService:
             original_outcome=evaluation.outcome,
             reproduced_outcome=reproduced_outcome,
             divergences=tuple(divergences),
+            limitations=evaluation.fact_snapshot.knowledge_limitations,
         )

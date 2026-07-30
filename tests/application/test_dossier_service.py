@@ -13,7 +13,15 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_domain.decision import Decision
 from packages.core_domain.decision_authority import DecisionEmissionMethod
-from packages.core_domain.decision_governance import DecisionAuthorityProfile
+from packages.core_domain.decision_governance import (
+    ContestationRecord,
+    DecisionAuthorityProfile,
+    DecisionOverride,
+    DecisionProposal,
+    DecisionReview,
+    GovernanceStatus,
+    ReviewConclusion,
+)
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
@@ -128,6 +136,10 @@ def test_dossier_is_self_contained_and_verifiable_offline() -> None:
         decision.authority_reference.target_id.value
     )
     assert doc["decision"]["emission_method"] == decision.emission_method.value
+    assert doc["governance"]["proposal"] is None
+    assert doc["governance"]["reviews"] == []
+    assert doc["governance"]["override"] is None
+    assert doc["governance"]["contestations"] == []
     assert doc["evidences"]
 
 
@@ -386,7 +398,74 @@ def test_new_documents_declare_the_new_version() -> None:
     )
 
     assert dossier.document["document_version"] == DOSSIER_DOCUMENT_VERSION
-    assert DOSSIER_DOCUMENT_VERSION == 4
+    assert DOSSIER_DOCUMENT_VERSION == 5
+
+
+def test_governance_chain_travels_with_the_document_when_present() -> None:
+    org_id, _, policy, rule, evaluation, decision = _cenario()
+    authority = _authority(org_id, evaluation.purpose)
+    proposal = DecisionProposal(
+        proposal_id=TypedId.new("decision_proposal"),
+        organization_id=org_id,
+        evaluation_id=evaluation.evaluation_id,
+        evaluation_hash=evaluation.evaluation_hash,
+        proposed_result=decision.result,
+        proposed_reasons=decision.reasons,
+        purpose=evaluation.purpose,
+        justification_required=True,
+        created_at=datetime.now(UTC),
+    )
+    review = DecisionReview(
+        review_id=TypedId.new("decision_review"),
+        organization_id=org_id,
+        proposal_id=proposal.proposal_id,
+        reviewer_reference=UniversalReference(
+            target_id=TypedId.new("user"), organization_id=org_id, contract_version=1
+        ),
+        reviewer_authority_id=authority.authority_id,
+        conclusion=ReviewConclusion.APROVA,
+        reasoning="Revisão presencial concluída.",
+        reviewed_at=datetime.now(UTC),
+    )
+    override = DecisionOverride(
+        override_id=TypedId.new("decision_override"),
+        organization_id=org_id,
+        original_decision_id=decision.decision_id,
+        authority_profile=authority,
+        new_result=decision.result,
+        mandatory_reason="Fluxo excepcional documentado.",
+        applied_at=datetime.now(UTC),
+    )
+    contestation = ContestationRecord(
+        contestation_id=TypedId.new("contestation"),
+        organization_id=org_id,
+        decision_id=decision.decision_id,
+        contested_by=UniversalReference(
+            target_id=TypedId.new("user"), organization_id=org_id, contract_version=1
+        ),
+        grounds_description="Contestação formal protocolada.",
+        status=GovernanceStatus.PENDENTE,
+        filed_at=datetime.now(UTC),
+    )
+
+    dossier = DossierService().build(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        rules=[rule],
+        proposal=proposal,
+        reviews=[review],
+        override=override,
+        contestations=[contestation],
+    )
+
+    governance = dossier.document["governance"]
+    assert governance["proposal"]["proposal_id"] == str(proposal.proposal_id.value)
+    assert governance["reviews"][0]["review_id"] == str(review.review_id.value)
+    assert governance["override"]["override_id"] == str(override.override_id.value)
+    assert governance["contestations"][0]["contestation_id"] == str(
+        contestation.contestation_id.value
+    )
 
 
 def test_vertical_content_lives_under_one_declared_key() -> None:

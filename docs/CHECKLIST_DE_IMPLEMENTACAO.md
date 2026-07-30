@@ -12,16 +12,31 @@
 > checklist; eles refinam a interpretação arquitetural para os próximos
 > incrementos.
 
+> **Ponto de parada em 30/07/2026 (ADR-0052/0054/0055):** o Core avançou além
+> do estado descrito acima para a trilha de decisões explicáveis. A Fase 1 da
+> ADR-0050 já havia sido concluída; agora a governança de decisão possui
+> persistência real para `DecisionProposal`, `DecisionReview`,
+> `DecisionOverride` e `ContestationRecord` (migration `20260730_0062`), o
+> `Dossier` passou a carregar a seção `governance` quando essa trilha existir,
+> e o fluxo humano já valida aprovações múltiplas mínimas e impede reutilizar o
+> mesmo revisor para satisfazer mais de uma aprovação. Na frente temporal, o
+> `FactSnapshot` passou a declarar `knowledge_limitations` quando a reprodução
+> histórica depende de `recorded_at` ou `observed_at` como aproximação de
+> `known_at`, e o `HistoricalReproduction` agora separa **divergência real** de
+> **limitação temporal declarada**. Isso fortalece a honestidade da ADR-0052,
+> mas **não** fecha ainda a modelagem completa de `known_at` contextual,
+> `accepted_at` e demais tempos do eixo de conhecimento.
+
 ## Adequações obrigatórias da ADR-0048
 
 > **ADR-0048 aceita em 29/07/2026.** O Core e a matriz de elegibilidade já possuem implementações parciais de `FactSnapshot`, `Evaluation`, `DecisionReason` e `Decision`, mas ainda não satisfazem todos os critérios da arquitetura de decisões explicáveis e reproduzíveis. Os itens abaixo não bloqueiam a redação da ADR-0049; bloqueiam apenas alegações de conformidade integral ou de emissão regulatória oficial pelo caminho automático atual.
 
 | Item | Estado | Objetivo e critério de aceite |
 |---|---|---|
-| **T1 — Proveniência no hash de `FactSnapshot`** | PENDENTE | Incluir `source_reference` e demais referências de proveniência relevantes na representação canônica hasheada. Alterar uma referência de origem deve alterar `snapshot_hash`; testes devem provar a regressão. |
-| **T2 — Temporalidade de conhecimento** | PENDENTE | Representar `recorded_at`, `known_at` e `discovered_at` quando aplicáveis, sem confundir esses instantes com o tempo do fato. Snapshot e seleção de `Policy` devem distinguir tempo de referência de tempo do conhecimento; reprodução histórica não pode usar conhecimento posterior. |
-| **T3 — Autoridade e método de emissão** | PENDENTE | Implementar e persistir `DecisionAuthorityProfile`, método de emissão e aprovações requeridas. Ausência de autoridade resolvida não pode emitir `Decision` oficial. |
-| **T4 — Proposta para revisão humana** | PENDENTE | Quando `EvaluationOutcome` exigir revisão humana, produzir e persistir `DecisionProposal`; não emitir `Decision` automática. A emissão posterior deve criar nova `Decision` vinculada à proposta e à autoridade aplicável. |
+| **T1 — Proveniência no hash de `FactSnapshot`** | CONCLUÍDO | `FactSnapshot.create()` passou a usar representação canônica versionada e o `snapshot_hash` já cobre `source_reference`; alterar a proveniência muda a identidade do snapshot, com testes cobrindo a regressão. |
+| **T2 — Temporalidade de conhecimento** | PARCIAL | `Fact`, `FactSnapshot` e `HistoricalReproduction` já distinguem `reference_time` de `knowledge_cutoff`, excluem conhecimento posterior do snapshot e registram `knowledge_limitations` quando a reprodução depende de fallback por `recorded_at`/`observed_at`. Ainda falta a modelagem completa de `known_at` contextual, `accepted_at` e demais tempos do eixo de conhecimento para alegar conformidade integral. |
+| **T3 — Autoridade e método de emissão** | CONCLUÍDO | `DecisionAuthorityProfile` foi implementado, persistido e encadeado à `Decision`; emissão automática agora recusa `Evaluation` inelegível e ausência/invalidade de autoridade com código estruturado, e o dossiê já preserva perfil, referência e método de emissão. |
+| **T4 — Proposta para revisão humana** | PARCIAL | `DecisionProposal`, `DecisionReview`, persistência de governança e emissão humana com aprovações mínimas já existem; `Decision` automática não é mais emitida quando a `Evaluation` pede revisão humana. Ainda falta um caller de produção que crie a proposta automaticamente no caminho recusado da API/vertical e trate o fluxo ponta a ponta sem exceção técnica. |
 
 ### Testes obrigatórios de não regressão
 
