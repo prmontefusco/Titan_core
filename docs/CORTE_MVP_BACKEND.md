@@ -9,6 +9,16 @@ Este documento não substitui o checklist. Ele é o corte: uma leitura de cima p
 
 ---
 
+## Fechamento do MVP (30/07/2026)
+
+**Fluxos prontos e validados de ponta a ponta hoje**, via roteiro executável contra API, PostgreSQL e Keycloak reais — não apenas testes automatizados: perfis de mercado publicados (`perfis_mercado`), elegibilidade orientada a mercado por animal (`mercados_orientados`), explicação comercial executiva por animal e por lote (`explicacao_comercial`), matriz de elegibilidade explicável por mercado (`matriz_elegibilidade_mercados`), elegibilidade orientada a mercado por lote (`mercados_orientados_lote`). Um operador consegue, hoje, perguntar "para onde posso vender, por que não posso, e o que falta" para China, EUA e UE, e receber resposta coerente com o negócio — nenhum `500`, linguagem consistente entre `summary`/`why`/`next_action` (três divergências de terminologia corrigidas nesta rodada, ver `CHECKLIST_DE_IMPLEMENTACAO.md`).
+
+**Riscos residuais que ficam abertos conscientemente** (tabela completa abaixo): o endpoint de embargo ambiental do IBAMA não tem roteiro de validação manual exercitando o caminho HTTP contra o provider `Titan_geodata` real; e a suíte de integração fica silenciosamente pulada sem `TITAN_DATABASE_URL` configurada — isso já mascarou dois bugs reais nesta sessão (política de RLS do embargo com variável de sessão errada; `Decision` salva sem `DecisionAuthorityProfile` persistido, violando FK nova da ADR-0048) que só apareceram ao rodar a suíte inteira contra Postgres de propósito, não no fluxo normal de trabalho.
+
+**Vai para a próxima fase:** tudo listado em "O que está fora do MVP" abaixo — nenhum desses itens bloqueia o fechamento de hoje.
+
+---
+
 ## O que está dentro do MVP
 
 ### Core (Marcos 0–7) — fundação, não vertical
@@ -78,7 +88,7 @@ Este documento não substitui o checklist. Ele é o corte: uma leitura de cima p
 
 ### Roteiros de validação manual aprovados (rodam contra Docker + Keycloak + PostgreSQL reais)
 
-`governanca_regras` (6/6) · `matriz_elegibilidade_mercados` (4/4) · `exigibilidade_sanitaria_minima` · `prescricao_veterinaria` · `fato_importado` · `simulacao_comercial` (11/11, ponta a ponta: fazenda → animal → prova recebida → matriz → frigorífico → abate).
+`governanca_regras` (6/6) · `matriz_elegibilidade_mercados` (4/4) · `exigibilidade_sanitaria_minima` · `prescricao_veterinaria` · `fato_importado` · `simulacao_comercial` (11/11, ponta a ponta: fazenda → animal → prova recebida → matriz → frigorífico → abate) · `perfis_mercado` (1/1) · `mercados_orientados` (3/3) · `explicacao_comercial` (5/5) · `mercados_orientados_lote` (5/5) — os quatro últimos validados em 30/07/2026.
 
 ---
 
@@ -123,6 +133,8 @@ Zero linhas. Deliberadamente adiado até este documento existir — não faz sen
 | **Modelo de receita indefinido (NR-8)** | Quem paga (frigorífico, produtor, banco/seguradora) ainda não está fechado comercialmente | Hipótese de porta de entrada via GTA/PNIB registrada; não bloqueia o backend, mas deveria informar o que priorizar a seguir |
 | **`Assertion` como padrão emergente não generalizado (NR-7)** | O mesmo formato (sujeito/fato/afirmante/evidência/confiança) já apareceu 4+ vezes em domínios distintos; resistir a generalizar cedo é deliberado, mas o custo de não generalizar cresce a cada nova ocorrência | Registrado para revisão na próxima vez que aparecer em domínio novo |
 | **Cobertura E2E de `REAVALIACAO_NECESSARIA`** | O mecanismo existe e tem teste unitário; falta um teste de integração exercitando via API real | Pequeno, não bloqueia o corte |
+| **Suíte de integração pulada em silêncio sem `TITAN_DATABASE_URL`** | O fluxo normal de trabalho (editar, rodar testes rápidos) não configura essa variável por padrão, e `pytestmark = skipif` faz a suíte inteira sumir sem aviso — já mascarou bugs reais duas vezes (27/07 e 30/07/2026), incluindo uma política de RLS inteiramente quebrada que só falhava sob role restrita | Nenhuma automática; depende de lembrar de configurar `TITAN_DATABASE_URL` e rodar a suíte completa antes de aceitar um incremento como validado |
+| **Embargo ambiental do IBAMA sem roteiro manual via HTTP real** | Mecanismo, endpoint e consumo pela matriz existem e passam nos testes automatizados (que escrevem a assertion direto no repositório), mas nenhum roteiro exercitou `POST .../environmental-embargoes/ibama/assertions` contra o provider `Titan_geodata` de verdade | Backlog registrado em `CHECKLIST_DE_IMPLEMENTACAO.md`, 30/07/2026 |
 
 ---
 
