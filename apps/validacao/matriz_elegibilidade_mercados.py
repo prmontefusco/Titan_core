@@ -302,8 +302,8 @@ def _registrar_assertion_embargo(database_url: str, organizacao: str, property_i
                 PropertyEnvironmentalEmbargoAssertion.create(
                     organization_id=organization_id,
                     property_id=TypedId.parse("rural_property", property_id),
-                    geometry_id=TypedId.new("property_geometry"),
-                    geometry_version=1,
+                    geometry_id=None,
+                    geometry_version=None,
                     source_name="IBAMA",
                     source_layer="IBAMA_EMBARGOS",
                     operation="intersects",

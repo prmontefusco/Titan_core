@@ -7,7 +7,7 @@ python -m uv run --locked python -m apps.validacao.mercados_orientados --pausar
 import argparse
 import os
 import sys
-from datetime import UTC, datetime
+from uuid import uuid4
 
 from apps.seed.__main__ import SENHA_DEMONSTRACAO
 from apps.seed.keycloak import AdminKeycloak
@@ -18,10 +18,11 @@ from packages.livestock_application.market_eligibility import MarketEligibilityP
 
 
 def _criar_animal(operador: Cliente, ids: dict[str, str]) -> object:
+    codigo = uuid4().hex[:8]
     propriedade = operador.post(
         "/v1/livestock/properties",
         {
-            "code": f"PROP-{datetime.now(UTC).timestamp():.0f}",
+            "code": f"PROP-{codigo}",
             "name": "Fazenda Mercados",
             "municipality": "Cuiaba",
             "state_code": "MT",

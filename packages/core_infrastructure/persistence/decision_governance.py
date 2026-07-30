@@ -1,5 +1,6 @@
 """Persistencia PostgreSQL para DecisionAuthorityProfile (ADR-0053/T3 da ADR-0048)."""
 
+import json
 from dataclasses import dataclass
 from datetime import UTC
 
@@ -98,7 +99,7 @@ class TransactionalDecisionAuthorityProfileRepository:
             {
                 "authority_profile_id": profile.authority_id.value,
                 "org_id": profile.organization_id.value,
-                "principal_reference": reference_to_dict(profile.principal_reference),
+                "principal_reference": json.dumps(reference_to_dict(profile.principal_reference)),
                 "role_name": profile.role_name,
                 "purpose": profile.purpose,
                 "emission_method": profile.emission_method.value,

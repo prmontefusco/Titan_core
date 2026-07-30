@@ -127,6 +127,10 @@ class DecisionRepositoryPort(Protocol):
     def save(self, decision: Decision) -> None: ...
 
 
+class DecisionAuthorityProfileRepositoryPort(Protocol):
+    def save(self, profile: DecisionAuthorityProfile) -> None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class GovernedRuleReference:
     adoption_id: TypedId
@@ -164,6 +168,7 @@ class PharmacologicalEligibilityService:
     rule: Rule
     evaluation_repository: EvaluationRepositoryPort
     decision_repository: DecisionRepositoryPort
+    authority_profile_repository: DecisionAuthorityProfileRepositoryPort | None = None
     lot_rule: Rule | None = None
 
     def evaluate_animal(
@@ -198,14 +203,14 @@ class PharmacologicalEligibilityService:
             snapshot=snapshot,
             purpose=ELIGIBILITY_PURPOSE,
         )
-        decision = DecisionService().decide(
-            evaluation,
-            automated_decision_authority(
-                organization_id,
-                purpose=evaluation.purpose,
-                role_name="LIVESTOCK_PHARMACOLOGICAL_ELIGIBILITY_ENGINE",
-            ),
+        authority = automated_decision_authority(
+            organization_id,
+            purpose=evaluation.purpose,
+            role_name="LIVESTOCK_PHARMACOLOGICAL_ELIGIBILITY_ENGINE",
         )
+        decision = DecisionService().decide(evaluation, authority)
         self.evaluation_repository.save(evaluation)
+        if self.authority_profile_repository is not None:
+            self.authority_profile_repository.save(authority)
         self.decision_repository.save(decision)
         return evaluation, decision

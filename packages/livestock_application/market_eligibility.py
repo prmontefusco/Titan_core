@@ -13,6 +13,7 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.decision import Decision, DecisionReason, DecisionResult
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import Rule
@@ -188,6 +189,10 @@ class MarketEvaluationRepositoryPort(Protocol):
 
 class MarketDecisionRepositoryPort(Protocol):
     def save(self, decision: Decision) -> None: ...
+
+
+class MarketDecisionAuthorityProfileRepositoryPort(Protocol):
+    def save(self, profile: DecisionAuthorityProfile) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,6 +459,7 @@ class MarketEligibilityService:
     fact_provider: FactProviderPort | None = None
     evaluation_repository: MarketEvaluationRepositoryPort | None = None
     decision_repository: MarketDecisionRepositoryPort | None = None
+    authority_profile_repository: MarketDecisionAuthorityProfileRepositoryPort | None = None
     profiles: Sequence[MarketProfile] = DEFAULT_MARKET_PROFILES
 
     def evaluate(
@@ -780,15 +786,15 @@ class MarketEligibilityService:
                 snapshot=snapshot,
                 purpose=market,
             )
-            decision = DecisionService().decide(
-                evaluation,
-                automated_decision_authority(
-                    organization_id,
-                    purpose=evaluation.purpose,
-                    role_name="LIVESTOCK_MARKET_ELIGIBILITY_ENGINE",
-                ),
+            authority = automated_decision_authority(
+                organization_id,
+                purpose=evaluation.purpose,
+                role_name="LIVESTOCK_MARKET_ELIGIBILITY_ENGINE",
             )
+            decision = DecisionService().decide(evaluation, authority)
             self.evaluation_repository.save(evaluation)
+            if self.authority_profile_repository is not None:
+                self.authority_profile_repository.save(authority)
             self.decision_repository.save(decision)
             return MarketRequirementResult(
                 rule_code=requirement.rule_code,

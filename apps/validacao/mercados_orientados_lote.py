@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from apps.seed.__main__ import SENHA_DEMONSTRACAO
 from apps.seed.keycloak import AdminKeycloak
@@ -18,10 +19,11 @@ from packages.livestock_application.market_eligibility import MarketEligibilityP
 
 
 def _criar_cenario(operador: Cliente, ids: dict[str, str]) -> object:
+    codigo = uuid4().hex[:8]
     propriedade = operador.post(
         "/v1/livestock/properties",
         {
-            "code": f"PROP-{datetime.now(UTC).timestamp():.0f}",
+            "code": f"PROP-{codigo}",
             "name": "Fazenda Lote Mercados",
             "municipality": "Cuiaba",
             "state_code": "MT",
@@ -42,7 +44,7 @@ def _criar_cenario(operador: Cliente, ids: dict[str, str]) -> object:
         "/v1/livestock/lots",
         {
             "property_id": ids["property_id"],
-            "code": f"LOT-{datetime.now(UTC).timestamp():.0f}",
+            "code": f"LOT-{uuid4().hex[:8]}",
             "name": "Lote Mercado",
         },
     )
@@ -148,7 +150,7 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         lambda: _registrar_qualificacao(operador, ids),
         201,
         conferir=lambda r: (
-            None if r["qualification_status"] == "HABILITADO" else "qualificacao nao foi registrada"
+            None if r["status"] == "HABILITADO" else "qualificacao nao foi registrada"
         ),
         porque=(
             "A regra da China depende de uma qualificacao publicada "

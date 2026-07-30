@@ -36,6 +36,9 @@ from packages.core_domain.recall import (
     RecallResult,
 )
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+)
 from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import (
     TransactionalEvaluationRepository,
@@ -979,6 +982,7 @@ def _executar_avaliacao_orientada_a_mercado(
         fact_provider=fact_provider,
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
         profiles=profiles,
     ).evaluate(
         organization_id=organizacao,
@@ -995,6 +999,7 @@ def _executar_avaliacao_orientada_a_mercado(
             rule=rule,
             evaluation_repository=evaluations,
             decision_repository=decisions,
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
         ).evaluate_animal(organizacao, animal_id, instante)
     else:
         persisted_evaluation = evaluations.get_by_id(
@@ -1085,6 +1090,7 @@ def executar_elegibilidade(
         rule=rule,
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
     ).evaluate_animal(organizacao, alvo, datetime.now(UTC))
 
     dossier = LivestockDossierTemplate(
@@ -1176,6 +1182,7 @@ def executar_elegibilidade_lote(
         rule=animal_rule,
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
         lot_rule=lot_rule,
     ).evaluate_lot(organizacao, alvo, datetime.now(UTC))
 
@@ -1246,6 +1253,7 @@ def executar_matriz_de_mercado(
         fact_provider=fact_provider,
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
         profiles=DEFAULT_MARKET_PROFILES,
     ).evaluate(
         organization_id=organizacao,
@@ -1262,6 +1270,7 @@ def executar_matriz_de_mercado(
             rule=rule,
             evaluation_repository=evaluations,
             decision_repository=decisions,
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
         ).evaluate_animal(organizacao, alvo, instante)
     else:
         persisted_evaluation = evaluations.get_by_id(
