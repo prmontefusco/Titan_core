@@ -18,6 +18,11 @@ from packages.core_domain.evaluation import (
 from packages.core_domain.facts import FactSnapshot
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ConditionOutcome, Rule, RuleCondition
+from packages.core_domain.rule_execution import (
+    RuleExecutionContext,
+    RuleExecutionFailure,
+    TechnicalFailureCategory,
+)
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 _ACTIONABLE_STATUSES = frozenset({RuleResultStatus.NAO_ATENDIDA, RuleResultStatus.PENDENTE})
@@ -33,8 +38,35 @@ class RuleEvaluationEngine:
     """
 
     engine_version: int = 1
+    # Limite determinístico e real (ADR-0050 §13): None preserva o comportamento
+    # de sempre (sem teto), um valor concreto recusa a execução com RESOURCE_LIMIT
+    # em vez de avaliar um número de condições maior do que o declarado como seguro.
+    max_conditions_evaluated: int | None = None
 
     def evaluate(self, rule: Rule, snapshot: FactSnapshot) -> RuleResult:
+        context = RuleExecutionContext(
+            rule_id=rule.rule_id,
+            rule_version=rule.version,
+            organization_id=rule.organization_id,
+            subject_id=snapshot.target_id,
+            snapshot_hash=snapshot.snapshot_hash,
+            reference_time=snapshot.effective_reference_time(),
+            knowledge_cutoff=snapshot.effective_knowledge_cutoff(),
+            engine_version=self.engine_version,
+            max_conditions_evaluated=self.max_conditions_evaluated,
+        )
+
+        if (
+            context.max_conditions_evaluated is not None
+            and len(rule.conditions) > context.max_conditions_evaluated
+        ):
+            raise RuleExecutionFailure(
+                TechnicalFailureCategory.RESOURCE_LIMIT,
+                f"Regra '{rule.code}' excede o limite determinístico de "
+                f"{context.max_conditions_evaluated} condição(ões) avaliada(s) por "
+                f"execução ({len(rule.conditions)} declarada(s)).",
+            )
+
         available_evidence_types = frozenset(f.fact_type for f in snapshot.facts)
 
         inputs_hash = compute_rule_inputs_hash(
@@ -46,7 +78,18 @@ class RuleEvaluationEngine:
             conditions_digest=compute_conditions_digest(rule.conditions),
         )
 
-        status, reason, missing = self._decide(rule, snapshot, available_evidence_types)
+        try:
+            status, reason, missing = self._decide(rule, snapshot, available_evidence_types)
+        except RuleExecutionFailure:
+            raise
+        except Exception as erro:
+            # Classificação deliberada (ADR-0050 §11): uma exceção não prevista aqui
+            # vira falha técnica estruturada, nunca um RuleResult conclusivo nem uma
+            # exceção crua não classificada.
+            raise RuleExecutionFailure(
+                TechnicalFailureCategory.RUNTIME_ERROR,
+                f"Regra '{rule.code}' falhou tecnicamente durante a execução: {erro}",
+            ) from erro
 
         return RuleResult.create(
             rule_id=rule.rule_id,
@@ -98,8 +141,57 @@ class RuleEvaluationEngine:
                 missing,
             )
 
-        # 3. Condições normativas declaradas, avaliadas na ordem de declaração.
+        # 3. Conflito de evidência a nível da própria regra (ADR-0050 §10/§15): fatos
+        #    do tipo que a regra lê, com valores divergentes na chave que ela compara,
+        #    tornam a condição indecidível -- nunca uma violação silenciosa.
+        conflicts = self._detect_condition_conflicts(rule, snapshot)
+        if conflicts:
+            detalhes = "; ".join(conflicts)
+            return (
+                RuleResultStatus.INDETERMINADA,
+                f"Regra '{rule.code}' indeterminada por conflito de evidência: {detalhes}.",
+                (),
+            )
+
+        # 4. Condições normativas declaradas, avaliadas na ordem de declaração.
         return self._decide_conditions(rule, snapshot)
+
+    @staticmethod
+    def _detect_condition_conflicts(rule: Rule, snapshot: FactSnapshot) -> tuple[str, ...]:
+        """Conflito escopado às condições da própria regra, não ao snapshot inteiro.
+
+        Fatos do mesmo tipo com `observed_at` diferentes não conflitam: o mais
+        recente supera o mais antigo (o mesmo critério de `get_latest_fact_by_type`)
+        -- isso é evolução temporal do fato, não contradição. Só fatos genuinamente
+        simultâneos e divergentes indicam conflito de evidência real (ADR-0050
+        §10/§15). `EvidenceInconsistencyDetector` (ADR-0035) cobre o snapshot
+        inteiro a nível de Policy; isto é aditivo, não uma segunda fonte de verdade.
+        """
+        conflicts: list[str] = []
+        checked_types: set[str] = set()
+        for condition in rule.conditions:
+            if condition.fact_type in checked_types:
+                continue
+            checked_types.add(condition.fact_type)
+            matching = snapshot.get_facts_by_type(condition.fact_type)
+            if len(matching) < 2:
+                continue
+            latest_moment = max(f.observed_at for f in matching)
+            contemporaneous = [f for f in matching if f.observed_at == latest_moment]
+            if len(contemporaneous) < 2:
+                continue
+            # repr() evita depender de hashability do valor do payload.
+            distinct = {
+                repr(fact.payload[condition.payload_key])
+                for fact in contemporaneous
+                if condition.payload_key in fact.payload
+            }
+            if len(distinct) > 1:
+                conflicts.append(
+                    f"'{condition.fact_type}.{condition.payload_key}' tem valores "
+                    "divergentes entre fatos simultâneos do snapshot"
+                )
+        return tuple(conflicts)
 
     def _decide_conditions(
         self, rule: Rule, snapshot: FactSnapshot

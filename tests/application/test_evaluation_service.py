@@ -1,11 +1,14 @@
-"""Testes de aplicação para o RuleEvaluationEngine determinístico (Passo 6.4)."""
+"""Testes de aplicação para o RuleEvaluationEngine determinístico (Passo 6.4, ADR-0050)."""
 
 from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from packages.core_application.evaluation_service import RuleEvaluationEngine
 from packages.core_domain.evaluation import RuleResultStatus
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
+from packages.core_domain.rule_execution import RuleExecutionFailure, TechnicalFailureCategory
 from packages.shared_kernel import OrganizationId, TypedId
 
 
@@ -414,3 +417,151 @@ def test_rule_temporal_applicability_uses_reference_time_not_knowledge_cutoff() 
 
     assert result.status == RuleResultStatus.ATENDIDA
     assert result.evaluated_at == knowledge_cutoff
+
+
+def test_unexpected_exception_becomes_classified_runtime_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """ADR-0050 §11: falha técnica nunca vira RuleResult, nem propaga crua."""
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+
+    rule = _rule(org_id, conditions=(_attestation_condition(),))
+    snapshot = _snapshot(
+        org_id,
+        subject_id,
+        now,
+        ("sanitary.attestation",),
+        payloads={"sanitary.attestation": {"result": "approved"}},
+    )
+
+    def _explode(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("falha simulada de runtime")
+
+    monkeypatch.setattr(RuleCondition, "check", _explode)
+
+    with pytest.raises(RuleExecutionFailure) as excinfo:
+        RuleEvaluationEngine().evaluate(rule, snapshot)
+
+    assert excinfo.value.category is TechnicalFailureCategory.RUNTIME_ERROR
+
+
+def test_resource_limit_exceeded_is_classified_not_nao_atendida() -> None:
+    """ADR-0050 §4/invariante 4: limite de recurso não pode virar reprovação normativa."""
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+
+    rule = _rule(
+        org_id,
+        conditions=(
+            _attestation_condition(),
+            RuleCondition(
+                fact_type="transport.gta",
+                payload_key="numero",
+                operator=ComparisonOperator.EQUALS,
+                expected_value="123",
+            ),
+        ),
+    )
+    snapshot = _snapshot(org_id, subject_id, now, ("sanitary.attestation", "transport.gta"))
+
+    engine = RuleEvaluationEngine(max_conditions_evaluated=1)
+
+    with pytest.raises(RuleExecutionFailure) as excinfo:
+        engine.evaluate(rule, snapshot)
+
+    assert excinfo.value.category is TechnicalFailureCategory.RESOURCE_LIMIT
+
+
+def test_resource_limit_unset_preserves_previous_behavior() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+
+    rule = _rule(org_id, conditions=(_attestation_condition(),))
+    snapshot = _snapshot(
+        org_id,
+        subject_id,
+        now,
+        ("sanitary.attestation",),
+        payloads={"sanitary.attestation": {"result": "approved"}},
+    )
+
+    result = RuleEvaluationEngine().evaluate(rule, snapshot)
+
+    assert result.status == RuleResultStatus.ATENDIDA
+
+
+def test_condition_level_fact_conflict_produces_indeterminada_not_violation() -> None:
+    """ADR-0050 §10/§15: conflito de evidência é indeterminação, não violação silenciosa."""
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+
+    rule = _rule(org_id, conditions=(_attestation_condition(),))
+    fato_aprovado = Fact.create(
+        fact_type="sanitary.attestation", payload={"result": "approved"}, observed_at=now
+    )
+    fato_reprovado = Fact.create(
+        fact_type="sanitary.attestation", payload={"result": "rejected"}, observed_at=now
+    )
+    snapshot = FactSnapshot.create(
+        organization_id=org_id,
+        target_id=subject_id,
+        as_of=now,
+        facts=[fato_aprovado, fato_reprovado],
+    )
+
+    result = RuleEvaluationEngine().evaluate(rule, snapshot)
+
+    assert result.status == RuleResultStatus.INDETERMINADA
+    assert "conflito de evidência" in result.reason
+
+
+def test_condition_level_conflict_is_deterministic() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+
+    rule = _rule(org_id, conditions=(_attestation_condition(),))
+    fato_aprovado = Fact.create(
+        fact_type="sanitary.attestation", payload={"result": "approved"}, observed_at=now
+    )
+    fato_reprovado = Fact.create(
+        fact_type="sanitary.attestation", payload={"result": "rejected"}, observed_at=now
+    )
+    snapshot = FactSnapshot.create(
+        organization_id=org_id,
+        target_id=subject_id,
+        as_of=now,
+        facts=[fato_aprovado, fato_reprovado],
+    )
+
+    engine = RuleEvaluationEngine()
+    r1 = engine.evaluate(rule, snapshot)
+    r2 = engine.evaluate(rule, snapshot)
+
+    assert r1.status == r2.status == RuleResultStatus.INDETERMINADA
+    assert r1.reason == r2.reason
+
+
+def test_no_conflict_without_duplicate_facts_of_condition_type() -> None:
+    """Sem fatos duplicados no tipo lido pela condição, a checagem nova não interfere."""
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+
+    rule = _rule(org_id, conditions=(_attestation_condition(),))
+    snapshot = _snapshot(
+        org_id,
+        subject_id,
+        now,
+        ("sanitary.attestation",),
+        payloads={"sanitary.attestation": {"result": "approved"}},
+    )
+
+    result = RuleEvaluationEngine().evaluate(rule, snapshot)
+
+    assert result.status == RuleResultStatus.ATENDIDA
