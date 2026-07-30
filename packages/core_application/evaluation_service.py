@@ -12,6 +12,7 @@ from packages.core_domain.evaluation import (
     RuleResultStatus,
     aggregate_outcome,
     compute_conditions_digest,
+    compute_context_hash,
     compute_evaluation_hash,
     compute_rule_inputs_hash,
 )
@@ -354,15 +355,20 @@ class PolicyEvaluationService:
         if inconsistencies and outcome == EvaluationOutcome.CONDICOES_SATISFEITAS:
             outcome = EvaluationOutcome.EVIDENCIA_CONFLITANTE
 
-        evaluation_hash = compute_evaluation_hash(
+        rule_versions = tuple((r.code, r.version) for r in ordered_rules)
+        context_hash = compute_context_hash(
             policy_id=policy.policy_id,
             policy_version=policy.version,
-            subject_id=snapshot.target_id,
             purpose=purpose.strip(),
+            engine_version=self.engine.engine_version,
+            rule_versions=rule_versions,
+        )
+        evaluation_hash = compute_evaluation_hash(
+            context_hash=context_hash,
+            subject_id=snapshot.target_id,
             snapshot_hash=snapshot.snapshot_hash,
             rule_results=rule_results,
             outcome=outcome,
-            engine_version=self.engine.engine_version,
         )
 
         return Evaluation(
@@ -378,6 +384,7 @@ class PolicyEvaluationService:
             evaluated_at=evaluated_at or snapshot.effective_knowledge_cutoff(),
             engine_version=self.engine.engine_version,
             evaluation_hash=evaluation_hash,
+            context_hash=context_hash,
             executor_reference=executor_reference,
-            rule_versions=tuple((r.code, r.version) for r in ordered_rules),
+            rule_versions=rule_versions,
         )

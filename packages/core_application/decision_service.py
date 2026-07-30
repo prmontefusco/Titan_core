@@ -94,13 +94,10 @@ class DecisionService:
 
         decision_hash = compute_decision_hash(
             evaluation_hash=evaluation.evaluation_hash,
-            policy_id=evaluation.policy_id,
-            policy_version=evaluation.policy_version,
             subject_id=evaluation.subject_id,
             purpose=evaluation.purpose,
             result=result,
             reasons=reasons,
-            engine_version=self.engine_version,
             authority_profile_id=authority_profile.authority_id,
             emission_method=DecisionEmissionMethod.AUTOMATED,
         )

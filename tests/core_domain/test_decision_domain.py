@@ -54,13 +54,10 @@ def _decision(reasons: tuple[DecisionReason, ...]) -> Decision:
         engine_version=1,
         decision_hash=compute_decision_hash(
             evaluation_hash="eval-hash",
-            policy_id=policy_id,
-            policy_version=1,
             subject_id=subject_id,
             purpose="CONFORMIDADE_SANITARIA",
             result=DecisionResult.REJEITADA,
             reasons=reasons,
-            engine_version=1,
             authority_profile_id=authority_profile_id,
             emission_method=DecisionEmissionMethod.AUTOMATED,
         ),
@@ -123,14 +120,11 @@ def test_reason_without_rule_roundtrips() -> None:
 def test_decision_hash_ignores_message_but_not_code() -> None:
     rule_id = TypedId.new("rule")
     subject_id = TypedId.new("batch")
-    policy_id = TypedId.new("policy")
     authority_profile_id = TypedId.new("authority_profile")
 
     def _hash(code: DecisionReasonCode, message: str) -> str:
         return compute_decision_hash(
             evaluation_hash="eval-hash",
-            policy_id=policy_id,
-            policy_version=1,
             subject_id=subject_id,
             purpose="CONFORMIDADE",
             result=DecisionResult.REJEITADA,
@@ -139,7 +133,6 @@ def test_decision_hash_ignores_message_but_not_code() -> None:
                     code=code, message=message, rule_code="rule-a", rule_id=rule_id, rule_version=1
                 ),
             ),
-            engine_version=1,
             authority_profile_id=authority_profile_id,
             emission_method=DecisionEmissionMethod.AUTOMATED,
         )

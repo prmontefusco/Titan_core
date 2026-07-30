@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from packages.shared_kernel import CanonicalSerializer
+from packages.shared_kernel import CanonicalSerializer, canonicalize_for_hash
 
 
 def test_mapping_order_produces_identical_bytes_and_hash() -> None:
@@ -93,3 +93,36 @@ def test_rejects_cyclic_structure() -> None:
 def test_rejects_unsupported_type() -> None:
     with pytest.raises(TypeError, match="Tipo não suportado"):
         CanonicalSerializer().serialize({"value": object()})  # type: ignore[dict-item]
+
+
+def test_canonicalize_for_hash_converts_float_via_text() -> None:
+    assert canonicalize_for_hash(380.5) == Decimal("380.5")
+
+
+def test_canonicalize_for_hash_walks_nested_structures() -> None:
+    payload = {"weights": [380.5, 410.0], "nested": {"ratio": 0.3}}
+
+    result = canonicalize_for_hash(payload)
+
+    assert result == {
+        "weights": [Decimal("380.5"), Decimal("410.0")],
+        "nested": {"ratio": Decimal("0.3")},
+    }
+
+
+def test_canonicalize_for_hash_leaves_supported_types_untouched() -> None:
+    now = datetime(2026, 7, 21, 10, 30, tzinfo=UTC)
+    assert canonicalize_for_hash("texto") == "texto"
+    assert canonicalize_for_hash(42) == 42
+    assert canonicalize_for_hash(True) is True
+    assert canonicalize_for_hash(None) is None
+    assert canonicalize_for_hash(now) == now
+    assert canonicalize_for_hash(Decimal("1.5")) == Decimal("1.5")
+
+
+def test_canonicalize_for_hash_output_is_accepted_by_serializer() -> None:
+    payload = {"average_weight_kg": 380.5, "readings": [1.0, 2.5]}
+
+    serialized = CanonicalSerializer().serialize(canonicalize_for_hash(payload))
+
+    assert isinstance(serialized, bytes)

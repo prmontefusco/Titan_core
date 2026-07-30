@@ -115,3 +115,23 @@ class CanonicalSerializer:
         require_utc(value, field_name="datetime")
         rendered = value.astimezone(UTC).isoformat(timespec="microseconds")
         return rendered.replace("+00:00", "Z")
+
+
+def canonicalize_for_hash(value: object) -> CanonicalValue:
+    """Converte um valor arbitrário para o subconjunto aceito por `CanonicalSerializer`.
+
+    Payloads de vertical (ex.: peso de um `Fact`) chegam com tipos nativos do Python
+    que `CanonicalSerializer` recusa de propósito (`float` não é aceito, só
+    `Decimal`). Esta função percorre o valor recursivamente e converte `float` para
+    `Decimal` a partir da representação textual, nunca do construtor binário, para
+    não introduzir ruído de precisão que o valor original não carregava. `dict`/
+    `list`/`tuple` são percorridos; os demais tipos já suportados (`str`, `int`,
+    `bool`, `None`, `datetime`, `Decimal`) passam adiante sem alteração.
+    """
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, Mapping):
+        return {str(key): canonicalize_for_hash(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [canonicalize_for_hash(item) for item in value]
+    return value  # type: ignore[return-value]

@@ -153,6 +153,7 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
         engine_version=1,
         rule_versions=(),
         evaluation_hash="d" * 64,
+        context_hash="e" * 64,
     )
 
     reason = DecisionReason(
@@ -161,13 +162,10 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
     )
     dec_hash = compute_decision_hash(
         evaluation_hash=evaluation.evaluation_hash,
-        policy_id=policy_id,
-        policy_version=1,
         subject_id=subject_id,
         purpose="AUDITORIA",
         result=DecisionResult.INDETERMINADA,
         reasons=(reason,),
-        engine_version=1,
         authority_profile_id=TypedId(entity_type="authority_profile", value=uuid4()),
         emission_method=DecisionEmissionMethod.HUMAN,
     )

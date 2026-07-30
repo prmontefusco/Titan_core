@@ -1,14 +1,19 @@
 """Modelo de domínio imutável para Contrato de Fatos da Vertical (ADR-0038/Passo 6.3)."""
 
 import hashlib
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
+from packages.core_domain.events import CanonicalPayload
+from packages.shared_kernel import (
+    OrganizationId,
+    TypedId,
+    UniversalReference,
+    canonicalize_for_hash,
+)
 
 
 def reference_to_dict(reference: UniversalReference | None) -> dict[str, Any] | None:
@@ -227,34 +232,38 @@ class FactSnapshot:
             sorted(selected_facts, key=lambda f: (f.fact_type, f.observed_at, f.fact_id.value))
         )
 
-        # Cálculo determinístico de hash do snapshot
-        hash_payload = {
+        # Hash canônico do snapshot (ADR-0051): serialização determinística e
+        # versionada via CanonicalPayload/CanonicalSerializer, não json.dumps cru
+        # (ordem de chaves, formatação e biblioteca não devem alterar bytes/hash
+        # sem alterar semântica). `source_reference` participa de propósito: alterar
+        # a proveniência de um fato precisa mudar a identidade do snapshot.
+        hash_value: dict[str, Any] = {
             "organization_id": str(organization_id.value),
             "target_id": {
                 "entity_type": target_id.entity_type,
                 "value": str(target_id.value),
             },
-            "as_of": as_of.isoformat(),
-            "reference_time": resolved_reference_time.isoformat(),
-            "knowledge_cutoff": resolved_knowledge_cutoff.isoformat(),
+            "as_of": as_of,
+            "reference_time": resolved_reference_time,
+            "knowledge_cutoff": resolved_knowledge_cutoff,
             "facts": [
                 {
                     "fact_id": str(f.fact_id.value),
                     "fact_type": f.fact_type,
-                    "payload": f.payload,
-                    "observed_at": f.observed_at.isoformat(),
+                    "payload": canonicalize_for_hash(f.payload),
+                    "observed_at": f.observed_at,
                     "source_reference": reference_to_dict(f.source_reference),
-                    "recorded_at": (None if f.recorded_at is None else f.recorded_at.isoformat()),
-                    "known_at": None if f.known_at is None else f.known_at.isoformat(),
-                    "discovered_at": (
-                        None if f.discovered_at is None else f.discovered_at.isoformat()
-                    ),
+                    "recorded_at": f.recorded_at,
+                    "known_at": f.known_at,
+                    "discovered_at": f.discovered_at,
                 }
                 for f in sorted_facts
             ],
         }
-        raw_bytes = json.dumps(hash_payload, sort_keys=True).encode("utf-8")
-        calc_hash = hashlib.sha256(raw_bytes).hexdigest()
+        canonical_payload = CanonicalPayload(
+            schema="titan.fact_snapshot", version=1, value=hash_value
+        )
+        calc_hash = hashlib.sha256(canonical_payload.canonical_bytes).hexdigest()
 
         return cls(
             organization_id=organization_id,

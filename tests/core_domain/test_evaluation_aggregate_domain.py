@@ -10,6 +10,7 @@ from packages.core_domain.evaluation import (
     RuleResult,
     RuleResultStatus,
     aggregate_outcome,
+    compute_context_hash,
     compute_evaluation_hash,
 )
 from packages.core_domain.facts import Fact, FactSnapshot
@@ -49,6 +50,13 @@ def _evaluation(
 ) -> Evaluation:
     outcome = aggregate_outcome(results)
     policy_id = TypedId.new("policy")
+    context_hash = compute_context_hash(
+        policy_id=policy_id,
+        policy_version=1,
+        purpose="CONFORMIDADE_SANITARIA",
+        engine_version=1,
+        rule_versions=(),
+    )
     return Evaluation(
         evaluation_id=TypedId.new("evaluation"),
         organization_id=org_id,
@@ -62,15 +70,13 @@ def _evaluation(
         evaluated_at=snapshot.as_of,
         engine_version=1,
         evaluation_hash=compute_evaluation_hash(
-            policy_id=policy_id,
-            policy_version=1,
+            context_hash=context_hash,
             subject_id=subject_id,
-            purpose="CONFORMIDADE_SANITARIA",
             snapshot_hash=snapshot.snapshot_hash,
             rule_results=results,
             outcome=outcome,
-            engine_version=1,
         ),
+        context_hash=context_hash,
     )
 
 
@@ -140,6 +146,7 @@ def test_evaluation_requires_purpose_and_matching_snapshot() -> None:
             evaluated_at=now,
             engine_version=1,
             evaluation_hash=base.evaluation_hash,
+            context_hash=base.context_hash,
         )
 
     # O snapshot precisa descrever o mesmo Subject da Evaluation.
@@ -158,6 +165,7 @@ def test_evaluation_requires_purpose_and_matching_snapshot() -> None:
             evaluated_at=now,
             engine_version=1,
             evaluation_hash=base.evaluation_hash,
+            context_hash=base.context_hash,
         )
 
 
@@ -197,16 +205,21 @@ def test_evaluation_hash_ignores_result_identity_but_not_content() -> None:
             inputs_hash="inputs-estaveis",
         )
 
+    context_hash = compute_context_hash(
+        policy_id=policy_id,
+        policy_version=1,
+        purpose="CONFORMIDADE_SANITARIA",
+        engine_version=1,
+        rule_versions=(),
+    )
+
     def _hash(results: tuple[RuleResult, ...]) -> str:
         return compute_evaluation_hash(
-            policy_id=policy_id,
-            policy_version=1,
+            context_hash=context_hash,
             subject_id=subject_id,
-            purpose="CONFORMIDADE_SANITARIA",
             snapshot_hash=snapshot.snapshot_hash,
             rule_results=results,
             outcome=aggregate_outcome(results),
-            engine_version=1,
         )
 
     atendida_a = _fixed_result(RuleResultStatus.ATENDIDA)

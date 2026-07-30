@@ -21,6 +21,7 @@ from packages.core_domain.evaluation import (
     EvaluationOutcome,
     RuleResult,
     RuleResultStatus,
+    compute_context_hash,
     compute_evaluation_hash,
 )
 from packages.core_domain.facts import FactSnapshot
@@ -96,15 +97,19 @@ def sample_dossier() -> Dossier:
         rule_code=rule.code,
     )
 
-    eval_hash = compute_evaluation_hash(
+    context_hash = compute_context_hash(
         policy_id=policy_id,
         policy_version=1,
-        subject_id=subject_id,
         purpose="AUDITORIA_EXPORTACAO",
+        engine_version=1,
+        rule_versions=((rule.code, 1),),
+    )
+    eval_hash = compute_evaluation_hash(
+        context_hash=context_hash,
+        subject_id=subject_id,
         snapshot_hash=fact_snapshot.snapshot_hash,
         rule_results=(rule_result,),
         outcome=EvaluationOutcome.CONDICOES_SATISFEITAS,
-        engine_version=1,
     )
 
     evaluation = Evaluation(
@@ -121,6 +126,7 @@ def sample_dossier() -> Dossier:
         engine_version=1,
         rule_versions=((rule.code, 1),),
         evaluation_hash=eval_hash,
+        context_hash=context_hash,
     )
 
     reason = DecisionReason(
@@ -131,13 +137,10 @@ def sample_dossier() -> Dossier:
 
     dec_hash = compute_decision_hash(
         evaluation_hash=eval_hash,
-        policy_id=policy_id,
-        policy_version=1,
         subject_id=subject_id,
         purpose="AUDITORIA_EXPORTACAO",
         result=DecisionResult.APROVADA,
         reasons=(reason,),
-        engine_version=1,
         authority_profile_id=authority_profile_id,
         emission_method=DecisionEmissionMethod.HUMAN,
     )

@@ -2,7 +2,7 @@
 
 from packages.shared_kernel.identifiers import OrganizationId, TypedId
 from packages.shared_kernel.references import UniversalReference
-from packages.shared_kernel.serialization import CanonicalSerializer
+from packages.shared_kernel.serialization import CanonicalSerializer, canonicalize_for_hash
 from packages.shared_kernel.temporal import Clock, FixedClock, RecordTimestamps, SystemClock
 
 __all__ = [
@@ -14,4 +14,5 @@ __all__ = [
     "SystemClock",
     "TypedId",
     "UniversalReference",
+    "canonicalize_for_hash",
 ]

@@ -39,6 +39,7 @@ evaluations_table = Table(
     Column("evaluated_at", DateTime(timezone=True), nullable=False),
     Column("snapshot_hash", String(64), nullable=False),
     Column("evaluation_hash", String(64), nullable=False),
+    Column("context_hash", String(64), nullable=False),
     Column("fact_snapshot", JSONB, nullable=False),
     Column("rule_results", JSONB, nullable=False),
     Column("rule_versions", JSONB, nullable=False, server_default="[]"),
@@ -86,6 +87,7 @@ class TransactionalEvaluationRepository:
                     evaluated_at,
                     snapshot_hash,
                     evaluation_hash,
+                    context_hash,
                     fact_snapshot,
                     rule_results,
                     rule_versions,
@@ -103,6 +105,7 @@ class TransactionalEvaluationRepository:
                     :evaluated_at,
                     :snapshot_hash,
                     :evaluation_hash,
+                    :context_hash,
                     :fact_snapshot,
                     :rule_results,
                     :rule_versions,
@@ -123,6 +126,7 @@ class TransactionalEvaluationRepository:
                 "evaluated_at": evaluation.evaluated_at,
                 "snapshot_hash": evaluation.fact_snapshot.snapshot_hash,
                 "evaluation_hash": evaluation.evaluation_hash,
+                "context_hash": evaluation.context_hash,
                 "fact_snapshot": json.dumps(evaluation.fact_snapshot.to_dict()),
                 "rule_results": json.dumps([r.to_dict() for r in evaluation.rule_results]),
                 "rule_versions": json.dumps(
@@ -151,6 +155,7 @@ class TransactionalEvaluationRepository:
                     engine_version,
                     evaluated_at,
                     evaluation_hash,
+                    context_hash,
                     fact_snapshot,
                     rule_results,
                     rule_versions,
@@ -186,6 +191,7 @@ class TransactionalEvaluationRepository:
                     engine_version,
                     evaluated_at,
                     evaluation_hash,
+                    context_hash,
                     fact_snapshot,
                     rule_results,
                     rule_versions,
@@ -240,6 +246,7 @@ class TransactionalEvaluationRepository:
             evaluated_at=evaluated_at,
             engine_version=row.engine_version,  # type: ignore[attr-defined]
             evaluation_hash=row.evaluation_hash,  # type: ignore[attr-defined]
+            context_hash=row.context_hash,  # type: ignore[attr-defined]
             executor_reference=reference_from_dict(raw_executor),
             rule_versions=tuple((item["code"], item["version"]) for item in raw_versions),
         )

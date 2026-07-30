@@ -1,6 +1,6 @@
 # DOMAIN.md
 
-**Versão:** 1.19  
+**Versão:** 1.20  
 **Status:** Visão de destino congelada  
 **Projeto:** Titan Core
 
@@ -403,6 +403,14 @@ Representação aceita de uma informação para finalidade delimitada.
 Pode ser derivado de Claims, Sources e Evidences.
 
 A aceitação de um Fact não o transforma em verdade absoluta. Deve preservar origem, contexto, validade e confiança.
+
+## FactSnapshot
+
+Declaração imutável, canônica e identificável do universo de Facts, proveniência e tempos autorizados para uma Evaluation específica (ADR-0051).
+
+Preserva Organization, Subject, instante de referência, corte de conhecimento e os Facts selecionados — cada um com sua referência de origem, quando presente. Alterar uma referência de origem semanticamente relevante produz nova identidade (`snapshot_hash`), mesmo quando o conteúdo visível do Fact não muda.
+
+`snapshot_hash` identifica o material avaliado; é complementar a `context_hash` (ver Evaluation), que identifica a semântica normativa aplicada. As duas identidades respondem perguntas diferentes e não se substituem.
 
 ## Event
 
@@ -1130,6 +1138,8 @@ Resultados iniciais: `ATENDIDA`, `NAO_ATENDIDA`, `PENDENTE`, `NAO_APLICAVEL`, `I
 Execução registrada de uma Policy e suas Rules sobre snapshot delimitado de informações.
 
 Preserva identificador, Organization, Subject, finalidade, Policy e versão, Rules e versões, NormativeBasisSnapshot quando aplicável, Facts, Claims, Evidences, RuleResults, EvaluationOutcome, momento, versão do motor, hash do snapshot e Actor ou mecanismo executor.
+
+Sua identidade é composta por duas Digests complementares (ADR-0051): `snapshot_hash` (o que foi avaliado, herdado do FactSnapshot) e `context_hash` (com que semântica — Policy, Rules, motor e finalidade). Nenhuma delas substitui a outra, e nenhuma é duplicada dentro da outra.
 
 Evaluation histórica nunca é alterada. Mudanças futuras produzem nova Evaluation.
 

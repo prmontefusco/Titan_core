@@ -1,7 +1,6 @@
 """Modelo de domínio imutável para Decision explicável (ADR-0016/Passo 6.6)."""
 
 import hashlib
-import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -10,6 +9,7 @@ from typing import Any
 from uuid import UUID
 
 from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.events import CanonicalPayload
 from packages.core_domain.facts import reference_from_dict, reference_to_dict
 from packages.core_domain.rule import SeverityLevel
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -110,29 +110,26 @@ class DecisionReason:
 
 def compute_decision_hash(
     evaluation_hash: str,
-    policy_id: TypedId,
-    policy_version: int,
     subject_id: TypedId,
     purpose: str,
     result: DecisionResult,
     reasons: Sequence[DecisionReason],
-    engine_version: int,
     authority_profile_id: TypedId,
     emission_method: DecisionEmissionMethod,
 ) -> str:
-    """Digest SHA-256 determinístico da Decision.
+    """Digest SHA-256 canônico da Decision (ADR-0051 §11).
 
     Descreve a conclusão e sua fundamentação, permitindo reconstruir a Decision a
-    partir da Evaluation preservada e confirmar igualdade.
+    partir da Evaluation preservada e confirmar igualdade. `policy_id`,
+    `policy_version` e `engine_version` não são reembutidos aqui: já participam de
+    `context_hash`, que `evaluation_hash` já cobre transitivamente — duplicá-los
+    faria a mesma informação valer por duas identidades diferentes.
     """
-    payload = {
+    value: dict[str, Any] = {
         "evaluation_hash": evaluation_hash,
-        "policy_id": str(policy_id.value),
-        "policy_version": policy_version,
         "subject_id": str(subject_id.value),
         "purpose": purpose,
         "result": result.value,
-        "engine_version": engine_version,
         "authority_profile_id": str(authority_profile_id.value),
         "emission_method": emission_method.value,
         "reasons": sorted(
@@ -148,8 +145,8 @@ def compute_decision_hash(
             key=lambda item: (item["code"], item["rule_code"], item["rule_id"]),
         ),
     }
-    raw_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
-    return hashlib.sha256(raw_bytes).hexdigest()
+    canonical_payload = CanonicalPayload(schema="titan.decision", version=1, value=value)
+    return hashlib.sha256(canonical_payload.canonical_bytes).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,13 +211,10 @@ class Decision:
     def recompute_hash(self) -> str:
         return compute_decision_hash(
             evaluation_hash=self.evaluation_hash,
-            policy_id=self.policy_id,
-            policy_version=self.policy_version,
             subject_id=self.subject_id,
             purpose=self.purpose,
             result=self.result,
             reasons=self.reasons,
-            engine_version=self.engine_version,
             authority_profile_id=self.authority_profile_id,
             emission_method=self.emission_method,
         )

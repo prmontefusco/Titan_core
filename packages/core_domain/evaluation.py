@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+from packages.core_domain.events import CanonicalPayload
 from packages.core_domain.facts import FactSnapshot
 from packages.core_domain.rule import RuleCondition, SeverityLevel
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -207,25 +208,53 @@ def aggregate_outcome(rule_results: Sequence["RuleResult"]) -> EvaluationOutcome
     return EvaluationOutcome.INDETERMINADO
 
 
-def compute_evaluation_hash(
+def compute_context_hash(
     policy_id: TypedId,
     policy_version: int,
-    subject_id: TypedId,
     purpose: str,
+    engine_version: int,
+    rule_versions: Sequence[tuple[str, int]],
+) -> str:
+    """Hash SHA-256 canônico da semântica de avaliação (ADR-0051 §3/§6).
+
+    Identifica Policy/Rules/motor/finalidade usados — separado do `snapshot_hash`,
+    que identifica o material avaliado. Duas Evaluations com o mesmo `context_hash`
+    aplicaram exatamente a mesma semântica normativa, ainda que sobre snapshots
+    diferentes.
+    """
+    value: dict[str, Any] = {
+        "policy_id": str(policy_id.value),
+        "policy_version": policy_version,
+        "purpose": purpose,
+        "engine_version": engine_version,
+        "rule_versions": sorted(
+            ([code, version] for code, version in rule_versions),
+            key=lambda item: (item[0], item[1]),
+        ),
+    }
+    canonical_payload = CanonicalPayload(schema="titan.evaluation_context", version=1, value=value)
+    return hashlib.sha256(canonical_payload.canonical_bytes).hexdigest()
+
+
+def compute_evaluation_hash(
+    context_hash: str,
+    subject_id: TypedId,
     snapshot_hash: str,
     rule_results: Sequence["RuleResult"],
     outcome: EvaluationOutcome,
-    engine_version: int,
 ) -> str:
-    """Hash SHA-256 determinístico e reproduzível da Evaluation completa."""
-    payload = {
-        "policy_id": str(policy_id.value),
-        "policy_version": policy_version,
+    """Hash SHA-256 determinístico e reproduzível da Evaluation completa.
+
+    Deriva de duas identidades complementares (ADR-0051 §3/§11): `snapshot_hash`
+    (o que foi avaliado, calculado por `FactSnapshot.create`) e `context_hash`
+    (com que semântica) — nunca reembutidos crus aqui, para não duplicar a mesma
+    informação em identidades diferentes.
+    """
+    value: dict[str, Any] = {
+        "context_hash": context_hash,
         "subject_id": str(subject_id.value),
-        "purpose": purpose,
         "snapshot_hash": snapshot_hash,
         "outcome": outcome.value,
-        "engine_version": engine_version,
         # A identidade do RuleResult varia a cada execução e é omitida de propósito:
         # o hash descreve o conteúdo avaliado, não a instância produzida.
         "rule_results": sorted(
@@ -241,8 +270,8 @@ def compute_evaluation_hash(
             key=lambda item: (item["rule_id"], item["rule_version"]),
         ),
     }
-    raw_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
-    return hashlib.sha256(raw_bytes).hexdigest()
+    canonical_payload = CanonicalPayload(schema="titan.evaluation", version=1, value=value)
+    return hashlib.sha256(canonical_payload.canonical_bytes).hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +295,10 @@ class Evaluation:
     evaluated_at: datetime
     engine_version: int
     evaluation_hash: str
+    # Identidade da semântica de avaliação (ADR-0051 §3): Policy/Rules/motor/
+    # finalidade, separada de snapshot_hash (o que foi avaliado). Sem default:
+    # toda Evaluation nova declara as duas identidades complementares.
+    context_hash: str
     executor_reference: UniversalReference | None = None
     rule_versions: tuple[tuple[str, int], ...] = field(default_factory=tuple)
 
@@ -288,6 +321,8 @@ class Evaluation:
             raise TypeError("outcome deve ser um EvaluationOutcome válido.")
         if not isinstance(self.evaluation_hash, str) or not self.evaluation_hash.strip():
             raise ValueError("evaluation_hash deve ser uma string não vazia.")
+        if not isinstance(self.context_hash, str) or not self.context_hash.strip():
+            raise ValueError("context_hash deve ser uma string não vazia.")
         if self.fact_snapshot.organization_id != self.organization_id:
             raise ValueError("O snapshot deve pertencer à Organization da Evaluation.")
         if self.fact_snapshot.target_id != self.subject_id:
@@ -296,18 +331,29 @@ class Evaluation:
     def results_by_status(self, status: RuleResultStatus) -> tuple[RuleResult, ...]:
         return tuple(r for r in self.rule_results if r.status is status)
 
+    def recompute_context_hash(self) -> str:
+        """Recalcula a identidade de semântica a partir do conteúdo preservado."""
+        return compute_context_hash(
+            policy_id=self.policy_id,
+            policy_version=self.policy_version,
+            purpose=self.purpose,
+            engine_version=self.engine_version,
+            rule_versions=self.rule_versions,
+        )
+
     def recompute_hash(self) -> str:
         """Recalcula o hash a partir do conteúdo preservado, para auditoria."""
         return compute_evaluation_hash(
-            policy_id=self.policy_id,
-            policy_version=self.policy_version,
+            context_hash=self.context_hash,
             subject_id=self.subject_id,
-            purpose=self.purpose,
             snapshot_hash=self.fact_snapshot.snapshot_hash,
             rule_results=self.rule_results,
             outcome=self.outcome,
-            engine_version=self.engine_version,
         )
 
     def is_reproducible(self) -> bool:
-        return self.recompute_hash() == self.evaluation_hash
+        """Confere as duas identidades complementares (ADR-0051 §3), não só uma."""
+        return (
+            self.recompute_context_hash() == self.context_hash
+            and self.recompute_hash() == self.evaluation_hash
+        )
