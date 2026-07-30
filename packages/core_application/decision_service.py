@@ -74,6 +74,7 @@ class DecisionService:
         evaluation: Evaluation,
         authority_profile: DecisionAuthorityProfile,
         issued_at: datetime | None = None,
+        method: DecisionEmissionMethod = DecisionEmissionMethod.AUTOMATED,
     ) -> Decision:
         # Uma Evaluation adulterada não pode fundamentar conclusão alguma.
         if not evaluation.is_reproducible():
@@ -84,9 +85,13 @@ class DecisionService:
 
         # ADR-0053 §3/§10: Evaluation não se converte automaticamente em Decision.
         # Revisão humana, conflito não resolvido ou validação externa pendente
-        # bloqueiam a emissão automática -- nunca viram Decision indeterminada
-        # silenciosa.
-        if evaluation.outcome in _INELIGIBLE_FOR_AUTOMATIC_EMISSION:
+        # bloqueiam a emissão AUTOMÁTICA -- nunca viram Decision indeterminada
+        # silenciosa. Emissão HUMANA passa por aqui deliberadamente: é o humano
+        # que resolve a pendência que bloquearia o caminho automático (ADR-0054).
+        if (
+            method is DecisionEmissionMethod.AUTOMATED
+            and evaluation.outcome in _INELIGIBLE_FOR_AUTOMATIC_EMISSION
+        ):
             raise DecisionEmissionRefused(
                 DecisionEmissionRefusalCode.REVIEW_REQUIRED,
                 f"Evaluation com outcome '{evaluation.outcome.value}' exige revisão "
@@ -108,18 +113,15 @@ class DecisionService:
                 "Decision oficial exige DecisionAuthorityProfile com a mesma purpose da "
                 "Evaluation.",
             )
-        if not authority_profile.can_issue_at(
-            issued_at,
-            expected_method=DecisionEmissionMethod.AUTOMATED,
-        ):
+        if not authority_profile.can_issue_at(issued_at, expected_method=method):
             raise DecisionEmissionRefused(
                 DecisionEmissionRefusalCode.AUTHORITY_EXPIRED,
-                "Decision oficial automatica exige DecisionAuthorityProfile ativo, "
-                "vigente, automatizado e sem aprovacoes pendentes.",
+                "Decision oficial exige DecisionAuthorityProfile ativo, vigente, "
+                f"com método de emissão '{method.value}' e sem aprovações pendentes.",
             )
 
-        result = self._derive_result(evaluation)
-        reasons = self._build_reasons(evaluation)
+        result = self.derive_result(evaluation)
+        reasons = self.build_reasons(evaluation)
         corrective_actions = tuple(
             dict.fromkeys(r.corrective_action for r in reasons if r.corrective_action)
         )
@@ -132,7 +134,7 @@ class DecisionService:
             result=result,
             reasons=reasons,
             authority_profile_id=authority_profile.authority_id,
-            emission_method=DecisionEmissionMethod.AUTOMATED,
+            emission_method=method,
         )
 
         return Decision(
@@ -152,7 +154,7 @@ class DecisionService:
             decision_hash=decision_hash,
             authority_profile_id=authority_profile.authority_id,
             authority_reference=authority_profile.principal_reference,
-            emission_method=DecisionEmissionMethod.AUTOMATED,
+            emission_method=method,
             affected_subjects=(
                 UniversalReference(
                     target_id=evaluation.subject_id,
@@ -164,7 +166,7 @@ class DecisionService:
             corrective_actions=corrective_actions,
         )
 
-    def _derive_result(self, evaluation: Evaluation) -> DecisionResult:
+    def derive_result(self, evaluation: Evaluation) -> DecisionResult:
         outcome = evaluation.outcome
         if outcome is EvaluationOutcome.CONDICOES_SATISFEITAS:
             return DecisionResult.APROVADA
@@ -179,7 +181,7 @@ class DecisionService:
         # pendente e revisão humana não são conclusões: são ausência de conclusão.
         return DecisionResult.INDETERMINADA
 
-    def _build_reasons(self, evaluation: Evaluation) -> tuple[DecisionReason, ...]:
+    def build_reasons(self, evaluation: Evaluation) -> tuple[DecisionReason, ...]:
         if not evaluation.rule_results:
             return (
                 DecisionReason(

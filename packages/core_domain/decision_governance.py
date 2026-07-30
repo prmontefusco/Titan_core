@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision import DecisionReason, DecisionResult
 from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
@@ -110,17 +110,22 @@ class DecisionAuthorityProfile:
 
 @dataclass(frozen=True, slots=True)
 class DecisionProposal:
-    """Proposta de decisão gerada quando a avaliação exige revisão humana (ADR-0016)."""
+    """Proposta imutável derivada de Evaluation para revisão humana (ADR-0054 §5).
+
+    Fotografia do que foi submetido a revisão: não é Decision, não é apresentada
+    como conclusão oficial e nunca é editada. Mudança de resultado, razão ou
+    material relevante produz nova proposta, nunca uma edição desta.
+    """
 
     proposal_id: TypedId
     organization_id: OrganizationId
     evaluation_id: TypedId
+    evaluation_hash: str
     proposed_result: DecisionResult
+    proposed_reasons: tuple[DecisionReason, ...]
+    purpose: str
     justification_required: bool
-    status: GovernanceStatus
     created_at: datetime
-    reviewed_at: datetime | None = None
-    reviewer_authority_id: TypedId | None = None
 
     def __post_init__(self) -> None:
         if self.proposal_id.entity_type != "decision_proposal":
@@ -129,9 +134,62 @@ class DecisionProposal:
             raise ValueError("evaluation_id deve ser do tipo 'evaluation'.")
         if not isinstance(self.organization_id, OrganizationId):
             raise TypeError("organization_id deve ser OrganizationId.")
+        if not isinstance(self.evaluation_hash, str) or not self.evaluation_hash.strip():
+            raise ValueError("evaluation_hash deve ser uma string não vazia.")
+        if not isinstance(self.proposed_reasons, tuple):
+            raise TypeError("proposed_reasons deve ser uma tupla.")
+        if not self.proposed_reasons:
+            raise ValueError("Toda DecisionProposal exige ao menos uma DecisionReason proposta.")
+        if not isinstance(self.purpose, str) or not self.purpose.strip():
+            raise ValueError("purpose deve ser uma string não vazia.")
         require_utc(self.created_at, field_name="created_at")
-        if self.reviewed_at is not None:
-            require_utc(self.reviewed_at, field_name="reviewed_at")
+
+
+class ReviewConclusion(StrEnum):
+    """Conclusão de uma DecisionReview (ADR-0054 §7): aprovação, rejeição ou devolução.
+
+    `DEVOLVE` não é rejeição: indica necessidade de correção ou nova análise, sem
+    encerrar a proposta como recusada.
+    """
+
+    APROVA = "APROVA"
+    REJEITA = "REJEITA"
+    DEVOLVE = "DEVOLVE"
+
+
+@dataclass(frozen=True, slots=True)
+class DecisionReview:
+    """Conclusão de revisão humana sobre uma DecisionProposal (ADR-0054 §6).
+
+    Referencia a proposta pelo identificador imutável; nunca altera a Evaluation
+    nem a proposta revisada. Autoridade de revisar não implica autoridade de
+    emitir Decision (ADR-0053 invariante 7) -- essa validação é de quem consome
+    a review, não deste objeto.
+    """
+
+    review_id: TypedId
+    organization_id: OrganizationId
+    proposal_id: TypedId
+    reviewer_reference: UniversalReference
+    reviewer_authority_id: TypedId
+    conclusion: ReviewConclusion
+    reasoning: str
+    reviewed_at: datetime
+
+    def __post_init__(self) -> None:
+        if self.review_id.entity_type != "decision_review":
+            raise ValueError("review_id deve ser do tipo 'decision_review'.")
+        if self.proposal_id.entity_type != "decision_proposal":
+            raise ValueError("proposal_id deve ser do tipo 'decision_proposal'.")
+        if self.reviewer_authority_id.entity_type != "authority_profile":
+            raise ValueError("reviewer_authority_id deve ser do tipo 'authority_profile'.")
+        if not isinstance(self.organization_id, OrganizationId):
+            raise TypeError("organization_id deve ser OrganizationId.")
+        if not isinstance(self.conclusion, ReviewConclusion):
+            raise TypeError("conclusion deve ser um ReviewConclusion válido.")
+        if not isinstance(self.reasoning, str) or not self.reasoning.strip():
+            raise ValueError("Toda DecisionReview exige fundamentação (reasoning) não vazia.")
+        require_utc(self.reviewed_at, field_name="reviewed_at")
 
 
 @dataclass(frozen=True, slots=True)

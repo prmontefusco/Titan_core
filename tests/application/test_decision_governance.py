@@ -24,6 +24,8 @@ from packages.core_domain.decision_governance import (
 from packages.core_domain.evaluation import (
     Evaluation,
     EvaluationOutcome,
+    compute_context_hash,
+    compute_evaluation_hash,
 )
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy, PolicyStatus
@@ -139,6 +141,13 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
         snapshot_hash="c" * 64,
     )
 
+    context_hash = compute_context_hash(
+        policy_id=policy_id,
+        policy_version=1,
+        purpose="AUDITORIA",
+        engine_version=1,
+        rule_versions=(),
+    )
     evaluation = Evaluation(
         evaluation_id=eval_id,
         organization_id=org_id,
@@ -152,9 +161,16 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
         evaluated_at=now,
         engine_version=1,
         rule_versions=(),
-        evaluation_hash="d" * 64,
-        context_hash="e" * 64,
+        evaluation_hash=compute_evaluation_hash(
+            context_hash=context_hash,
+            subject_id=subject_id,
+            snapshot_hash=snapshot.snapshot_hash,
+            rule_results=(),
+            outcome=EvaluationOutcome.REVISAO_HUMANA_NECESSARIA,
+        ),
+        context_hash=context_hash,
     )
+    assert evaluation.is_reproducible()
 
     reason = DecisionReason(
         code=DecisionReasonCode.REGRA_INDETERMINADA,
@@ -200,14 +216,13 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
 
     service = DecisionGovernanceService()
 
-    # 1. Proposta
-    proposal = service.create_proposal(
-        evaluation=evaluation,
-        proposed_result=DecisionResult.APROVADA_COM_RESTRICOES,
-        created_at=now,
-    )
-    assert proposal.status == GovernanceStatus.PENDENTE
-    assert proposal.proposed_result == DecisionResult.APROVADA_COM_RESTRICOES
+    # 1. Proposta -- derivada da Evaluation, não escolhida por quem chama
+    # (ADR-0054 §5): outcome REVISAO_HUMANA_NECESSARIA sem regras executadas
+    # deriva INDETERMINADA, a mesma conclusão que decide() chegaria.
+    proposal = service.create_proposal(evaluation=evaluation, created_at=now)
+    assert proposal.proposed_result == DecisionResult.INDETERMINADA
+    assert proposal.evaluation_hash == evaluation.evaluation_hash
+    assert proposal.purpose == "AUDITORIA"
 
     # 2. Override
     authority = DecisionAuthorityProfile(
