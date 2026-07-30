@@ -41,6 +41,9 @@ from packages.core_infrastructure.persistence.database import (
     create_database_engine,
 )
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+)
 from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import (
     TransactionalEvaluationRepository,
@@ -291,6 +294,9 @@ class Demonstracao:
             rule=rule,
             evaluation_repository=TransactionalEvaluationRepository(connection=self.connection),
             decision_repository=TransactionalDecisionRepository(connection=self.connection),
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                connection=self.connection
+            ),
         ).evaluate_animal(self.semeado.org_a, animal_id, datetime.now(UTC))
 
     def _dossie(self, decisao: Decision, avaliacao: Evaluation) -> Dossier:

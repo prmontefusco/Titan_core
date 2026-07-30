@@ -95,9 +95,9 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
                     "subject_label": "estabelecimento",
                 }
             ]
-            and bool(r["top_gaps"])
-            and r["top_gaps"][0]["market"] == MarketEligibilityPurpose.EXPORTACAO_CHINA.code
-            and r["top_gaps"][0]["code"] == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+            and bool(r["market_gaps"])
+            and r["market_gaps"][0]["market"] == MarketEligibilityPurpose.EXPORTACAO_CHINA.code
+            and r["market_gaps"][0]["code"] == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
             and _mercados_resolvidos(
                 r["markets"],
                 {

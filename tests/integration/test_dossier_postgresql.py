@@ -27,6 +27,9 @@ from packages.core_domain.dossier import compute_dossier_hash
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.rule import ComparisonOperator, RuleCondition, SeverityLevel
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+)
 from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import (
     TransactionalEvaluationRepository,
@@ -133,7 +136,9 @@ def test_dossier_survives_roundtrip_and_verifies_offline(db_connection: Connecti
     )
     TransactionalEvaluationRepository(connection=db_connection).save(evaluation)
 
-    decision = DecisionService().decide(evaluation, _authority(org_id_1, evaluation.purpose))
+    authority = _authority(org_id_1, evaluation.purpose)
+    TransactionalDecisionAuthorityProfileRepository(db_connection).save(authority)
+    decision = DecisionService().decide(evaluation, authority)
     TransactionalDecisionRepository(connection=db_connection).save(decision)
 
     dossier = DossierService(repository=dossier_repo).build_and_store(

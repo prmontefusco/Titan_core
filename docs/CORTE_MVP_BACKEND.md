@@ -1,6 +1,7 @@
 # Corte do MVP — Backend Titan Livestock
 
-**Data:** 27 de julho de 2026
+**Data:** 27 de julho de 2026 (atualizado em 30 de julho de 2026 — embargo ambiental do IBAMA)
+**Escopo congelado em 30/07/2026**, por decisão do responsável, após validação manual da trilha comercial (`docs/CHECKLIST_DE_IMPLEMENTACAO.md`, entrada de 30/07/2026). A partir daqui, mudança de código nas áreas listadas como "dentro" só entra por correção de bug real, quebra de fluxo ou texto que impeça uso — não por generalização ou expansão de escopo.
 **Fonte:** `docs/CHECKLIST_DE_IMPLEMENTACAO.md` (estado real do backend, verificado contra PostgreSQL, Keycloak e API rodando)
 **Propósito:** dizer explicitamente o que está dentro, o que está fora, e por quê — para que nada pareça esquecido e para que o início do frontend (item 8 da fila) comece sobre contratos que não vão mudar por baixo.
 
@@ -53,6 +54,13 @@ Este documento não substitui o checklist. Ele é o corte: uma leitura de cima p
 - `REAVALIACAO_NECESSARIA` quando a política usada diverge da política vigente — reprodutibilidade histórica sem reescrever decisão passada.
 - Cada célula da matriz expõe regra/versão/adoção/motivos/lacunas/requisitos, o suficiente para uma UI explicar a resposta sem reconsultar o banco.
 
+### Embargo ambiental do IBAMA (parcial, ADR-0041)
+
+- `EnvironmentalEmbargoService.assess_ibama_embargoes` consulta a geometria vigente da propriedade e cruza contra o provider `Titan_geodata` de verdade (`fetch_ibama_overlaps`), não um cadastro manual.
+- `EnvironmentalEmbargoAssertionService.record_ibama_assertion` congela essa avaliação como `PropertyEnvironmentalEmbargoAssertion` auditável (append-only, geometria e versão citadas), exposta em `POST /v1/livestock/properties/{property_id}/environmental-embargoes/ibama/assertions`.
+- A matriz de mercado já consome essa assertion via `rule-embargo-ambiental-ibama` (fato `livestock.environmental_embargo.ibama`) quando a regra é adotada para o mercado — validado manualmente em 30/07/2026 (roteiro `matriz_elegibilidade_mercados`) e coberto por teste de integração sob RLS restrito.
+- **O que ainda não existe:** nenhum roteiro de validação manual exercita este endpoint específico contra o provider `Titan_geodata` real via HTTP (os testes de integração escrevem a assertion direto no repositório); e as demais camadas territoriais do item 2 abaixo (FUNAI, PRODES/DETER, MapBiomas) continuam de fora. Portanto o item 2 ("Avaliação territorial") sai de "inteiramente fora" para "uma camada dentro, as outras três fora".
+
 ### Proveniência externa (ADR-0042)
 
 - Contraparte externa local (fazenda/frigorífico de outra Organization, sem furar isolamento).
@@ -81,8 +89,8 @@ Este documento não substitui o checklist. Ele é o corte: uma leitura de cima p
 **Não existe:** nenhum `MarketProfile` diz "a UE exige campanha de febre aftosa". Isso é decisão normativa real — qual mercado exige qual vacina — e inventá-la sem fonte seria pior que não ter a funcionalidade. Fica para quando houver decisão normativa que a sustente.
 
 ### 2. Avaliação territorial (Marco 17.4/17.5)
-**Existe:** georreferenciamento da propriedade e importação do CAR pelo `Titan_geodata` (perímetro, reserva legal, APP, hidrografia).
-**Não existe:** cruzamento com camadas de restrição de terceiros (embargo do IBAMA, terra indígena da FUNAI, alerta do PRODES, uso do solo do MapBiomas). A ADR-0026 já modela o problema; falta a camada externa e o `SpatialAssessment`. É o item de maior valor comercial ainda não construído (NR-6), porque conformidade territorial é a mesma máquina da carência — mas exige fonte de dado que ainda não está integrada.
+**Existe:** georreferenciamento da propriedade, importação do CAR pelo `Titan_geodata` (perímetro, reserva legal, APP, hidrografia), e agora também o cruzamento com a camada de embargo do IBAMA (ver "Embargo ambiental do IBAMA" acima) — mecanismo, endpoint e consumo pela matriz de mercado já existem e estão testados, mas sem validação manual do caminho HTTP completo contra o provider real.
+**Não existe:** terra indígena da FUNAI, alerta do PRODES/DETER, uso do solo do MapBiomas. A ADR-0026 já modela o problema para essas três; falta a camada externa e o `SpatialAssessment` genérico. Ainda é o maior valor comercial não capturado por completo (NR-6), mas o primeiro corte (IBAMA) deixou de ser "não construído".
 
 ### 3. Importação de qualificação de estabelecimento por fonte externa versionada
 **Existe:** ADR-0045 aceita (asserção bitemporal, `SourceArtifact`, `EstablishmentQualificationAssertion`, `SourceCoverage`, confiança computada pelo Titan) e implementada.

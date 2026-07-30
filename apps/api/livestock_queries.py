@@ -185,7 +185,7 @@ class AvaliacaoMercadosResponse(BaseModel):
     indeterminate_markets: list[str]
     missing_markets: list[str]
     required_subjects: list[dict[str, str]]
-    top_gaps: list[dict[str, str]]
+    market_gaps: list[dict[str, str]]
     evaluation_id: str
     decision_id: str
     dossier_id: str
@@ -211,7 +211,7 @@ class AvaliacaoMercadosLoteResponse(BaseModel):
     indeterminate_markets: list[str]
     missing_markets: list[str]
     required_subjects: list[dict[str, str]]
-    top_gaps: list[dict[str, str]]
+    market_gaps: list[dict[str, str]]
     markets: list[dict[str, Any]]
 
 
@@ -575,7 +575,7 @@ def _required_subjects(matrix: Any) -> list[dict[str, str]]:
     return required
 
 
-def _top_gaps(matrix: Any) -> list[dict[str, str]]:
+def _market_gaps(matrix: Any) -> list[dict[str, str]]:
     gaps: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for entry in matrix.entries:
@@ -668,7 +668,7 @@ def _lot_market_summary(*, market_status: str, entries: Sequence[dict[str, Any]]
         )
 
     if market_status == "AUSENTE":
-        return "O lote ainda nao pode ser comparado neste mercado porque faltam regras publicadas."
+        return "O lote ainda nao pode ser avaliado neste mercado porque faltam regras publicadas."
 
     indeterminate_count = sum(
         1 for entry in entries if entry["status"] in {"INDETERMINADO", "AUSENTE"}
@@ -744,6 +744,25 @@ def _market_why(entry: dict[str, Any]) -> list[str]:
             if isinstance(reason, dict) and str(reason.get("message", "")).strip()
         ]
     return [str(entry.get("summary", ""))]
+
+
+def _affected_animal_ids(entry: dict[str, Any]) -> list[str]:
+    """Quais animais do lote respondem pelo status do mercado.
+
+    Quando o bloqueio vem de um sujeito dependente ainda nao escolhido (ex.:
+    estabelecimento), todo animal do lote aparece com o mesmo status por
+    reflexo da mesma pendencia -- listar cada um deles sugeriria um problema
+    individual que nao existe. A pendencia e do mercado, nao do animal.
+    """
+    dependency = entry.get("dependency")
+    if isinstance(dependency, dict) and dependency.get("selected_subject_id") is None:
+        return []
+    return [
+        *[str(animal_id) for animal_id in entry.get("blocked_animal_ids", [])],
+        *[str(animal_id) for animal_id in entry.get("conditioned_animal_ids", [])],
+        *[str(animal_id) for animal_id in entry.get("indeterminate_animal_ids", [])],
+        *[str(animal_id) for animal_id in entry.get("missing_animal_ids", [])],
+    ]
 
 
 def _market_next_action(entry: dict[str, Any]) -> str | None:
@@ -826,7 +845,7 @@ def _commercial_narrative(
         )
     if missing_markets:
         parts.append(
-            f"{subject_label} ainda nao pode ser comparado em "
+            f"{subject_label} ainda nao pode ser avaliado em "
             f"{_format_market_names(missing_markets)} "
             "porque faltam regras publicadas."
         )
@@ -878,12 +897,7 @@ def _explicacao_comercial_de_avaliacao(
                 summary=str(entry.get("summary", "")),
                 why=_market_why(entry),
                 next_action=_market_next_action(entry),
-                affected_animal_ids=[
-                    *[str(animal_id) for animal_id in entry.get("blocked_animal_ids", [])],
-                    *[str(animal_id) for animal_id in entry.get("conditioned_animal_ids", [])],
-                    *[str(animal_id) for animal_id in entry.get("indeterminate_animal_ids", [])],
-                    *[str(animal_id) for animal_id in entry.get("missing_animal_ids", [])],
-                ],
+                affected_animal_ids=_affected_animal_ids(entry),
             )
             for entry in markets
         ],
@@ -999,7 +1013,9 @@ def _executar_avaliacao_orientada_a_mercado(
             rule=rule,
             evaluation_repository=evaluations,
             decision_repository=decisions,
-            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                connection
+            ),
         ).evaluate_animal(organizacao, animal_id, instante)
     else:
         persisted_evaluation = evaluations.get_by_id(
@@ -1270,7 +1286,9 @@ def executar_matriz_de_mercado(
             rule=rule,
             evaluation_repository=evaluations,
             decision_repository=decisions,
-            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                connection
+            ),
         ).evaluate_animal(organizacao, alvo, instante)
     else:
         persisted_evaluation = evaluations.get_by_id(
@@ -1381,7 +1399,7 @@ def executar_avaliacao_orientada_a_mercados(
         indeterminate_markets=indeterminate_markets,
         missing_markets=missing_markets,
         required_subjects=_required_subjects(matrix),
-        top_gaps=_top_gaps(matrix),
+        market_gaps=_market_gaps(matrix),
         evaluation_id=str(evaluation.evaluation_id.value),
         decision_id=str(decision.decision_id.value),
         dossier_id=str(dossier.dossier_id.value),
@@ -1554,7 +1572,7 @@ def executar_avaliacao_orientada_a_mercados_para_lote(
     indeterminate_markets: list[str] = []
     missing_markets: list[str] = []
     required_subjects: list[dict[str, str]] = []
-    top_gaps: list[dict[str, str]] = []
+    market_gaps: list[dict[str, str]] = []
     seen_required: set[tuple[str, str]] = set()
     seen_gap: set[tuple[str, str]] = set()
 
@@ -1604,7 +1622,7 @@ def executar_avaliacao_orientada_a_mercados_para_lote(
                 if key in seen_gap:
                     continue
                 seen_gap.add(key)
-                top_gaps.append(
+                market_gaps.append(
                     {
                         "market": market_code,
                         "code": code,
@@ -1673,7 +1691,7 @@ def executar_avaliacao_orientada_a_mercados_para_lote(
         indeterminate_markets=indeterminate_markets,
         missing_markets=missing_markets,
         required_subjects=required_subjects,
-        top_gaps=top_gaps,
+        market_gaps=market_gaps,
         markets=markets,
     )
 

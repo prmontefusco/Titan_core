@@ -107,6 +107,9 @@ from packages.core_infrastructure.persistence import (
 )
 from packages.core_infrastructure.persistence.crypto import TransactionalKeyRegistryRepository
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+)
 from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.events import DomainEventRepository
@@ -411,7 +414,9 @@ def _run_full_scenario(connection: Connection) -> CoreProof:
     assert evaluation.is_reproducible()
 
     # ---- 7. Decisão explicável ------------------------------------------
-    decision = DecisionService().decide(evaluation, _authority(org, evaluation.purpose))
+    authority = _authority(org, evaluation.purpose)
+    TransactionalDecisionAuthorityProfileRepository(connection).save(authority)
+    decision = DecisionService().decide(evaluation, authority)
     TransactionalDecisionRepository(connection=connection).save(decision)
     assert decision.result is DecisionResult.REJEITADA
     assert decision.reasons, "Decisão sem razão não é explicável."

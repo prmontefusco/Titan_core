@@ -22,6 +22,9 @@ from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.rule import ComparisonOperator, RuleCondition, SeverityLevel
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+)
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
@@ -127,6 +130,7 @@ def test_decision_is_preserved_explainable_and_isolated(db_connection: Connectio
     evaluation_repo.save(evaluation)
 
     authority = _authority(org_id_1, evaluation.purpose)
+    TransactionalDecisionAuthorityProfileRepository(db_connection).save(authority)
     decision = DecisionService().decide(evaluation, authority)
     assert decision.result == DecisionResult.REJEITADA
     decision_repo.save(decision)

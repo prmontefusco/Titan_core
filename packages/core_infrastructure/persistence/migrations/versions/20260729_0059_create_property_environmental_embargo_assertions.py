@@ -62,15 +62,15 @@ def upgrade() -> None:
             f"""
             CREATE POLICY tenant_isolation_policy ON {SCHEMA}.{TABLE}
             USING (
-                record_owner_organization_id = current_setting(
-                    'app.current_organization_id',
-                    true
+                record_owner_organization_id = NULLIF(
+                    current_setting('titan.organization_id', true),
+                    ''
                 )::uuid
             )
             WITH CHECK (
-                record_owner_organization_id = current_setting(
-                    'app.current_organization_id',
-                    true
+                record_owner_organization_id = NULLIF(
+                    current_setting('titan.organization_id', true),
+                    ''
                 )::uuid
             )
             """

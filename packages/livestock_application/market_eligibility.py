@@ -632,7 +632,7 @@ class MarketEligibilityService:
                             message=(
                                 "O que depende do animal esta satisfeito, mas este mercado "
                                 "ainda depende de um "
-                                f"{dependency.subject_label} escolhido."
+                                f"{dependency.subject_label} exigido."
                             ),
                         ),
                     ),

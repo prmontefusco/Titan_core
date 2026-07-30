@@ -35,7 +35,6 @@ from packages.livestock_domain.environmental_embargo_assertion import (
 from packages.livestock_infrastructure.persistence import (
     TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
 )
-from packages.shared_kernel import TypedId
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
 
 pytestmark = pytest.mark.skipif(
@@ -319,8 +318,11 @@ def _registrar_assertion_embargo_ambiental(
     assertion = PropertyEnvironmentalEmbargoAssertion.create(
         organization_id=ambiente.org_a.organization_id,
         property_id=ambiente.property_id,
-        geometry_id=TypedId.new("property_geometry"),
-        geometry_version=1,
+        # Sem geometria propria registrada neste cenario: a assertion e sobre
+        # a propriedade como um todo. Um TypedId fabricado violaria a FK para
+        # property_geometries, que so aceita uma versao de fato registrada.
+        geometry_id=None,
+        geometry_version=None,
         source_name="IBAMA",
         source_layer="IBAMA_EMBARGOS",
         operation="intersects",
@@ -800,8 +802,8 @@ def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(
             "subject_label": "estabelecimento",
         }
     ]
-    assert corpo["top_gaps"][0]["market"] == MarketEligibilityPurpose.EXPORTACAO_CHINA.code
-    assert corpo["top_gaps"][0]["code"] == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+    assert corpo["market_gaps"][0]["market"] == MarketEligibilityPurpose.EXPORTACAO_CHINA.code
+    assert corpo["market_gaps"][0]["code"] == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
     por_mercado = {item["market"]: item for item in corpo["markets"]}
     assert set(por_mercado) == {
         MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
@@ -1189,7 +1191,10 @@ def test_matriz_de_mercado_falha_fechado_sem_carencia_declarada_por_mercado(
     assert europa["requirements"][1]["rule_code"] == "rule-rastreabilidade-minima"
     assert europa["requirements"][1]["status"] == "ELEGIVEL"
     assert europa["requirements"][2]["rule_code"] == "rule-embargo-ambiental-ibama"
-    assert europa["requirements"][2]["status"] == "ELEGIVEL"
+    # Sem nenhuma assertion de embargo registrada, o fact_provider nao emite o
+    # fato: silencio nao afirma "sem embargo" (ADR-0041), entao a regra fica
+    # INDETERMINADA por evidencia pendente, e nao ELEGIVEL por omissao.
+    assert europa["requirements"][2]["status"] == "INDETERMINADO"
 
 
 def test_matriz_de_mercado_bloqueia_ue_por_regra_governada_de_embargo_ambiental(
