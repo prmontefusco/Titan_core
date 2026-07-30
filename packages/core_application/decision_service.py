@@ -12,7 +12,11 @@ from packages.core_domain.decision import (
     compute_decision_hash,
 )
 from packages.core_domain.decision_authority import DecisionEmissionMethod
-from packages.core_domain.decision_governance import DecisionAuthorityProfile
+from packages.core_domain.decision_governance import (
+    DecisionAuthorityProfile,
+    DecisionEmissionRefusalCode,
+    DecisionEmissionRefused,
+)
 from packages.core_domain.evaluation import Evaluation, EvaluationOutcome, RuleResultStatus
 from packages.core_domain.rule import SeverityLevel
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -20,6 +24,18 @@ from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 # Severidades que impedem aprovação. As demais podem virar restrição declarada em
 # vez de reprovação total.
 _BLOCKING_SEVERITIES = frozenset({SeverityLevel.BLOCKING, SeverityLevel.CRITICAL})
+
+# ADR-0053 §10: Decision não é emitida quando revisão, resolução de conflito ou
+# validação externa estiver pendente. Esses outcomes não têm conclusão automática
+# possível -- a Evaluation permanece histórica e pode originar DecisionProposal
+# (ADR-0054, ainda não implementada), nunca uma Decision oficial silenciosa.
+_INELIGIBLE_FOR_AUTOMATIC_EMISSION = frozenset(
+    {
+        EvaluationOutcome.EVIDENCIA_CONFLITANTE,
+        EvaluationOutcome.VALIDACAO_EXTERNA_PENDENTE,
+        EvaluationOutcome.REVISAO_HUMANA_NECESSARIA,
+    }
+)
 
 _STATUS_TO_REASON_CODE: dict[RuleResultStatus, DecisionReasonCode] = {
     RuleResultStatus.ATENDIDA: DecisionReasonCode.REGRA_ATENDIDA,
@@ -66,23 +82,40 @@ class DecisionService:
                 "com o hash registrado."
             )
 
+        # ADR-0053 §3/§10: Evaluation não se converte automaticamente em Decision.
+        # Revisão humana, conflito não resolvido ou validação externa pendente
+        # bloqueiam a emissão automática -- nunca viram Decision indeterminada
+        # silenciosa.
+        if evaluation.outcome in _INELIGIBLE_FOR_AUTOMATIC_EMISSION:
+            raise DecisionEmissionRefused(
+                DecisionEmissionRefusalCode.REVIEW_REQUIRED,
+                f"Evaluation com outcome '{evaluation.outcome.value}' exige revisão "
+                "humana, resolução de conflito ou validação externa antes de "
+                "emissão automática de Decision. Nenhuma Decision oficial foi "
+                "emitida.",
+            )
+
         issued_at = issued_at or evaluation.evaluated_at
         if authority_profile.organization_id != evaluation.organization_id:
-            raise ValueError(
+            raise DecisionEmissionRefused(
+                DecisionEmissionRefusalCode.AUTHORITY_OUT_OF_SCOPE,
                 "Decision oficial exige DecisionAuthorityProfile da mesma organization da "
-                "Evaluation."
+                "Evaluation.",
             )
         if authority_profile.purpose != evaluation.purpose:
-            raise ValueError(
-                "Decision oficial exige DecisionAuthorityProfile com a mesma purpose da Evaluation."
+            raise DecisionEmissionRefused(
+                DecisionEmissionRefusalCode.AUTHORITY_OUT_OF_SCOPE,
+                "Decision oficial exige DecisionAuthorityProfile com a mesma purpose da "
+                "Evaluation.",
             )
         if not authority_profile.can_issue_at(
             issued_at,
             expected_method=DecisionEmissionMethod.AUTOMATED,
         ):
-            raise ValueError(
+            raise DecisionEmissionRefused(
+                DecisionEmissionRefusalCode.AUTHORITY_EXPIRED,
                 "Decision oficial automatica exige DecisionAuthorityProfile ativo, "
-                "vigente, automatizado e sem aprovacoes pendentes."
+                "vigente, automatizado e sem aprovacoes pendentes.",
             )
 
         result = self._derive_result(evaluation)

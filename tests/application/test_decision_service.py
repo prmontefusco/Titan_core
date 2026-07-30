@@ -12,8 +12,12 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_domain.decision import DecisionReasonCode, DecisionResult
 from packages.core_domain.decision_authority import DecisionEmissionMethod
-from packages.core_domain.decision_governance import DecisionAuthorityProfile
-from packages.core_domain.evaluation import Evaluation, EvaluationOutcome
+from packages.core_domain.decision_governance import (
+    DecisionAuthorityProfile,
+    DecisionEmissionRefusalCode,
+    DecisionEmissionRefused,
+)
+from packages.core_domain.evaluation import Evaluation, EvaluationOutcome, compute_evaluation_hash
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
@@ -313,3 +317,107 @@ def test_authority_profile_with_another_purpose_cannot_emit_decision() -> None:
             evaluation,
             _authority(org_id, "FINALIDADE_DIFERENTE"),
         )
+
+
+def _with_outcome(evaluation: Evaluation, outcome: EvaluationOutcome) -> Evaluation:
+    """Troca o outcome de uma Evaluation reproduzível, recomputando o hash junto.
+
+    Nem todo outcome tem produtor real hoje (REVISAO_HUMANA_NECESSARIA e
+    VALIDACAO_EXTERNA_PENDENTE não são emitidos por aggregate_outcome em lugar
+    nenhum do Core atual) -- isto testa o portão de DecisionService.decide()
+    isoladamente do que hoje produz cada outcome.
+    """
+    new_hash = compute_evaluation_hash(
+        context_hash=evaluation.context_hash,
+        subject_id=evaluation.subject_id,
+        snapshot_hash=evaluation.fact_snapshot.snapshot_hash,
+        rule_results=evaluation.rule_results,
+        outcome=outcome,
+    )
+    return replace(evaluation, outcome=outcome, evaluation_hash=new_hash)
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        EvaluationOutcome.EVIDENCIA_CONFLITANTE,
+        EvaluationOutcome.VALIDACAO_EXTERNA_PENDENTE,
+        EvaluationOutcome.REVISAO_HUMANA_NECESSARIA,
+    ],
+)
+def test_decision_is_refused_when_evaluation_requires_review(
+    outcome: EvaluationOutcome,
+) -> None:
+    """ADR-0053 §3/§10: Evaluation não se converte automaticamente em Decision."""
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+    evaluation = _with_outcome(
+        _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved")), outcome
+    )
+    assert evaluation.is_reproducible()
+
+    with pytest.raises(DecisionEmissionRefused) as excinfo:
+        DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
+
+    assert excinfo.value.code is DecisionEmissionRefusalCode.REVIEW_REQUIRED
+    assert outcome.value in str(excinfo.value)
+
+
+def test_refusal_for_conflicting_outcome_does_not_alter_original_evaluation() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+    evaluation = _with_outcome(
+        _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved")),
+        EvaluationOutcome.REVISAO_HUMANA_NECESSARIA,
+    )
+
+    with pytest.raises(DecisionEmissionRefused):
+        DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
+
+    # A Evaluation permanece histórica e reproduzível -- nada foi mutado por
+    # tentar (e falhar) emitir Decision sobre ela.
+    assert evaluation.outcome is EvaluationOutcome.REVISAO_HUMANA_NECESSARIA
+    assert evaluation.is_reproducible()
+
+
+def test_authority_refusals_carry_structured_codes() -> None:
+    """As recusas de autoridade já existentes ganham código, sem mudar a mensagem."""
+    org_id = OrganizationId.new()
+    other_org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+    evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
+
+    with pytest.raises(DecisionEmissionRefused) as errado_org:
+        DecisionService().decide(evaluation, _authority(other_org_id, evaluation.purpose))
+    assert errado_org.value.code is DecisionEmissionRefusalCode.AUTHORITY_OUT_OF_SCOPE
+
+    with pytest.raises(DecisionEmissionRefused) as errado_purpose:
+        DecisionService().decide(evaluation, _authority(org_id, "OUTRA_FINALIDADE"))
+    assert errado_purpose.value.code is DecisionEmissionRefusalCode.AUTHORITY_OUT_OF_SCOPE
+
+    inativa = replace(_authority(org_id, evaluation.purpose), is_active=False)
+    with pytest.raises(DecisionEmissionRefused) as inativa_erro:
+        DecisionService().decide(evaluation, inativa)
+    assert inativa_erro.value.code is DecisionEmissionRefusalCode.AUTHORITY_EXPIRED
+
+
+def test_allowed_outcomes_still_emit_decision_normally() -> None:
+    """O portão novo não bloqueia os outcomes que sempre puderam emitir Decision."""
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+
+    aprovada = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
+    decision = DecisionService().decide(aprovada, _authority(org_id, aprovada.purpose))
+    assert decision.result == DecisionResult.APROVADA

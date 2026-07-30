@@ -23,6 +23,37 @@ class GovernanceStatus(StrEnum):
     CANCELADA = "CANCELADA"
 
 
+class DecisionEmissionRefusalCode(StrEnum):
+    """Vocabulário de recusa de emissão da ADR-0053 §11.
+
+    Falha de autoridade nunca é resultado técnico ou regulatório negativo
+    (ADR-0053 invariante 15) — é sempre este código estruturado, distinto de
+    `DecisionResult` e de `EvaluationOutcome`.
+    """
+
+    AUTHORITY_NOT_FOUND = "AUTHORITY_NOT_FOUND"
+    AUTHORITY_EXPIRED = "AUTHORITY_EXPIRED"
+    AUTHORITY_OUT_OF_SCOPE = "AUTHORITY_OUT_OF_SCOPE"
+    REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    SEGREGATION_VIOLATION = "SEGREGATION_VIOLATION"
+    EVALUATION_NOT_ELIGIBLE = "EVALUATION_NOT_ELIGIBLE"
+
+
+class DecisionEmissionRefused(ValueError):
+    """Emissão de Decision recusada (ADR-0053): pré-condição de autoridade ou
+    elegibilidade da Evaluation não satisfeita.
+
+    Subclasse de `ValueError` de propósito: preserva compatibilidade com
+    `except ValueError`/`pytest.raises(ValueError, ...)` já escritos contra
+    `DecisionService.decide()`, enquanto acrescenta o código estruturado que a
+    ADR-0053 exige para distinguir os motivos de recusa.
+    """
+
+    def __init__(self, code: DecisionEmissionRefusalCode, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
 @dataclass(frozen=True, slots=True)
 class DecisionAuthorityProfile:
     """Perfil resolvido pelo servidor para emitir Decision oficial."""
