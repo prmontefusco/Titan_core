@@ -11,6 +11,8 @@ from packages.core_application.evaluation_service import (
     RuleEvaluationEngine,
 )
 from packages.core_domain.decision import DecisionReasonCode, DecisionResult
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.evaluation import Evaluation, EvaluationOutcome
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
@@ -72,6 +74,22 @@ def _evaluate(policy: Policy, rules: list[Rule], snapshot: FactSnapshot) -> Eval
     )
 
 
+def _authority(org_id: OrganizationId, purpose: str) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="AUTOMATED_DECISION_ENGINE",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+    )
+
+
 def test_satisfied_conditions_produce_approval_with_reasons() -> None:
     org_id = OrganizationId.new()
     subject_id = TypedId.new("batch")
@@ -80,7 +98,7 @@ def test_satisfied_conditions_produce_approval_with_reasons() -> None:
     rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
 
     evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
 
     assert decision.result == DecisionResult.APROVADA
     assert decision.reasons  # nunca existe conclusão sem justificativa
@@ -98,7 +116,7 @@ def test_blocking_failure_produces_rejection_with_corrective_action() -> None:
     rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
 
     evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "rejected"))
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
 
     assert decision.result == DecisionResult.REJEITADA
     razoes = decision.reasons_by_code(DecisionReasonCode.REGRA_NAO_ATENDIDA)
@@ -115,7 +133,7 @@ def test_non_blocking_failure_produces_approval_with_restrictions() -> None:
     rule = _rule(policy, "rule-recomendacao", SeverityLevel.WARNING)
 
     evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "rejected"))
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
 
     assert evaluation.outcome == EvaluationOutcome.CONDICOES_NAO_SATISFEITAS
     # Descumprimento apenas informativo não reprova, mas também não aprova limpo.
@@ -139,7 +157,7 @@ def test_insufficient_information_is_never_an_approval() -> None:
     )
 
     evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
 
     assert evaluation.outcome == EvaluationOutcome.INFORMACAO_INSUFICIENTE
     assert decision.result == DecisionResult.INDETERMINADA
@@ -154,7 +172,7 @@ def test_decision_without_any_rule_states_that_nothing_was_verified() -> None:
     policy = _policy(org_id)
 
     evaluation = _evaluate(policy, [], _snapshot(org_id, subject_id, now, "approved"))
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
 
     assert decision.result == DecisionResult.INDETERMINADA
     assert decision.reasons_by_code(DecisionReasonCode.NENHUMA_REGRA_APLICAVEL)
@@ -174,7 +192,7 @@ def test_decision_cites_evidence_backing_the_facts() -> None:
         [_rule(policy, "rule-atestado", SeverityLevel.BLOCKING)],
         _snapshot(org_id, subject_id, now, "approved", source_reference=evidence_ref),
     )
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
 
     assert decision.evidence_references == (evidence_ref,)
     assert decision.affected_subjects[0].target_id == subject_id
@@ -187,10 +205,11 @@ def test_decision_is_deterministic_and_reconstructible_from_evaluation() -> None
     policy = _policy(org_id)
     rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
     evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "rejected"))
+    authority = _authority(org_id, evaluation.purpose)
 
     service = DecisionService()
-    primeira = service.decide(evaluation)
-    segunda = service.decide(evaluation)
+    primeira = service.decide(evaluation, authority)
+    segunda = service.decide(evaluation, authority)
 
     # A identidade muda a cada emissão, mas a conclusão e o digest não.
     assert primeira.decision_id != segunda.decision_id
@@ -211,4 +230,86 @@ def test_tampered_evaluation_cannot_ground_a_decision() -> None:
     assert not adulterada.is_reproducible()
 
     with pytest.raises(ValueError, match="não reproduzível"):
-        DecisionService().decide(adulterada)
+        DecisionService().decide(adulterada, _authority(org_id, evaluation.purpose))
+
+
+def test_decision_without_authority_profile_cannot_be_emitted() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+    evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
+
+    with pytest.raises(TypeError):
+        DecisionService().decide(evaluation)  # type: ignore[call-arg]
+
+
+def test_inactive_or_pending_authority_profile_cannot_emit_decision() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+    evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
+
+    inactive = DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="AUTOMATED_DECISION_ENGINE",
+        purpose=evaluation.purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+        is_active=False,
+    )
+    pending_approval = DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="AUTOMATED_DECISION_ENGINE",
+        purpose=evaluation.purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=1,
+    )
+
+    with pytest.raises(ValueError, match="DecisionAuthorityProfile"):
+        DecisionService().decide(evaluation, inactive)
+    with pytest.raises(ValueError, match="DecisionAuthorityProfile"):
+        DecisionService().decide(evaluation, pending_approval)
+
+
+def test_authority_profile_from_another_organization_cannot_emit_decision() -> None:
+    org_id = OrganizationId.new()
+    other_org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+    evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
+
+    with pytest.raises(ValueError, match="mesma organization"):
+        DecisionService().decide(evaluation, _authority(other_org_id, evaluation.purpose))
+
+
+def test_authority_profile_with_another_purpose_cannot_emit_decision() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    now = datetime.now(UTC)
+    policy = _policy(org_id)
+    rule = _rule(policy, "rule-atestado", SeverityLevel.BLOCKING)
+    evaluation = _evaluate(policy, [rule], _snapshot(org_id, subject_id, now, "approved"))
+
+    with pytest.raises(ValueError, match="mesma purpose"):
+        DecisionService().decide(
+            evaluation,
+            _authority(org_id, "FINALIDADE_DIFERENTE"),
+        )

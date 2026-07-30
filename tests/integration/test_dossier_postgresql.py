@@ -21,6 +21,8 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_application.policy_service import PolicyService
 from packages.core_application.rule_service import RuleService
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.dossier import compute_dossier_hash
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.rule import ComparisonOperator, RuleCondition, SeverityLevel
@@ -44,6 +46,22 @@ def db_connection() -> Iterator[Connection]:
     with engine.connect() as conn:
         with conn.begin():
             yield conn
+
+
+def _authority(org_id: OrganizationId, purpose: str) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="INTEGRATION_AUTOMATED_DOSSIER_ENGINE",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+    )
 
 
 def test_dossier_survives_roundtrip_and_verifies_offline(db_connection: Connection) -> None:
@@ -115,7 +133,7 @@ def test_dossier_survives_roundtrip_and_verifies_offline(db_connection: Connecti
     )
     TransactionalEvaluationRepository(connection=db_connection).save(evaluation)
 
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id_1, evaluation.purpose))
     TransactionalDecisionRepository(connection=db_connection).save(decision)
 
     dossier = DossierService(repository=dossier_repo).build_and_store(

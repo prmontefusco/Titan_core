@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 
 from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.evidence import ConfidenceTier
 from packages.livestock_application.eligibility import (
     PharmacologicalEligibilityService,
@@ -154,6 +155,8 @@ def test_animal_in_withdrawal_is_rejected(
     assert decision.result is DecisionResult.REJEITADA
     assert decision.subject_id == animal_id  # sujeito afetado
     assert decision.reasons  # motivo explícito
+    assert decision.emission_method is DecisionEmissionMethod.AUTOMATED
+    assert decision.authority_profile_id.entity_type == "authority_profile"
 
     # Versão preservada: o fato de carência carrega a versão da regra de cálculo.
     fato = evaluation.fact_snapshot.get_latest_fact_by_type(WITHDRAWAL_FACT_TYPE)
@@ -180,6 +183,7 @@ def test_animal_out_of_withdrawal_is_approved(
     _, decision = service.evaluate_animal(org_id, animal_id, datetime.now(UTC))
 
     assert decision.result is DecisionResult.APROVADA
+    assert decision.emission_method is DecisionEmissionMethod.AUTOMATED
 
 
 def test_reevaluation_adds_a_record_instead_of_replacing_the_first(

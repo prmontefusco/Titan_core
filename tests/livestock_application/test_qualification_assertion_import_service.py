@@ -258,6 +258,43 @@ def test_reimportacao_da_mesma_versao_nao_duplica() -> None:
     assert len(ambiente.assertion_repo.store) == 1  # nao duplicou
 
 
+def test_mesma_source_version_com_content_hash_diferente_e_rejeitada() -> None:
+    org_id = _org()
+    ambiente = _ambiente()
+    estab = _establishment(org_id)
+    ambiente.counterparty_repo.save(estab)
+    context = _context(org_id)
+
+    entrada = [
+        QualificationAssertionInput(
+            establishment_id=estab.counterparty_id,
+            qualification_type="EXPORT_CN",
+            asserted_status=AssertionStatus.QUALIFIED,
+        )
+    ]
+
+    ambiente.service.import_assertions(
+        context=context,
+        source="MAPA",
+        source_version="v1",
+        content_hash="sha256:aaa",
+        snapshot_semantics=SourceCoverage.COMPLETE_SNAPSHOT,
+        observed_at=datetime(2026, 7, 27, tzinfo=UTC),
+        assertions=entrada,
+    )
+
+    with pytest.raises(ValueError, match="content_hash diferente"):
+        ambiente.service.import_assertions(
+            context=context,
+            source="MAPA",
+            source_version="v1",
+            content_hash="sha256:bbb",
+            snapshot_semantics=SourceCoverage.COMPLETE_SNAPSHOT,
+            observed_at=datetime(2026, 7, 27, tzinfo=UTC),
+            assertions=entrada,
+        )
+
+
 # -- Reconciliação com cobertura (testes 3 e 4 da seção 11) -------------------
 
 

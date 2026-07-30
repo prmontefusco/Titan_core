@@ -23,10 +23,19 @@ from packages.livestock_application.establishment_qualification_service import (
     establishment_qualification_fact_type,
 )
 from packages.livestock_application.market_eligibility import (
+    ENVIRONMENTAL_EMBARGO_RULE_CODE,
     ESTABLISHMENT_RULE_CODE,
     TRACEABILITY_RULE_CODE,
     MarketEligibilityPurpose,
 )
+from packages.livestock_domain.environmental_embargo_assertion import (
+    EnvironmentalEmbargoAssertionStatus,
+    PropertyEnvironmentalEmbargoAssertion,
+)
+from packages.livestock_infrastructure.persistence import (
+    TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
+)
+from packages.shared_kernel import TypedId
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
 
 pytestmark = pytest.mark.skipif(
@@ -196,9 +205,9 @@ def _adotar_regra_de_carencia_para_mercados(
         )
         assert adoption.status_code == 201, adoption.text
     if MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA in mercados:
-        # O perfil da UE (DEFAULT_MARKET_PROFILES) tem dois requisitos: carencia
-        # e rastreabilidade minima. Sem adotar tambem a rastreabilidade, esse
-        # segundo requisito fica AUSENTE, e AUSENTE tem precedencia sobre
+        # O perfil da UE (DEFAULT_MARKET_PROFILES) tem tres requisitos: carencia,
+        # rastreabilidade minima e embargo ambiental. Sem adotar tambem os dois
+        # complementares, algum requisito fica AUSENTE, e AUSENTE tem precedencia sobre
         # INDETERMINADO na agregacao (_aggregate_requirement_status) -- o
         # status do mercado inteiro apareceria como AUSENTE em vez de refletir
         # o requisito de carencia que o teste realmente quer exercitar.
@@ -251,6 +260,91 @@ def _adotar_regra_de_carencia_para_mercados(
             headers=cabecalho,
         )
         assert adoption.status_code == 201, adoption.text
+        identidade_embargo = operador.post(
+            "/v1/rule-governance/rule-identities",
+            json={
+                "code": ENVIRONMENTAL_EMBARGO_RULE_CODE,
+                "purpose": "Embargo ambiental por mercado.",
+                "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                "source_type": "politica_interna",
+                "vertical": "livestock",
+                "description": "Regra ficticia de embargo ambiental para validar matriz comercial.",
+            },
+            headers=cabecalho,
+        )
+        assert identidade_embargo.status_code == 201, identidade_embargo.text
+        identity_id = identidade_embargo.json()["rule_identity_id"]
+        rule = operador.post(
+            f"/v1/rule-governance/rule-identities/{identity_id}/versions",
+            json={
+                "policy_id": _criar_policy_de_regra(ambiente),
+                "name": "Ausencia de embargo ambiental do IBAMA",
+                "description": "Exige ausencia de embargo ambiental conhecido.",
+                "severity": "blocking",
+                "normative_source": "politica interna ficticia",
+                "conditions": [
+                    {
+                        "fact_type": "livestock.environmental_embargo.ibama",
+                        "payload_key": "status",
+                        "operator": "equals",
+                        "expected_value": "SEM_RESTRICAO",
+                        "description": "A propriedade nao pode ter embargo ambiental do IBAMA.",
+                    }
+                ],
+                "justification": "UE exige ausencia de embargo ambiental conhecido.",
+                "corrective_action": "Resolver o embargo ou registrar nova assertion valida.",
+            },
+            headers=cabecalho,
+        )
+        assert rule.status_code == 201, rule.text
+        adoption = operador.post(
+            f"/v1/rule-governance/rule-identities/{identity_id}/adoptions",
+            json={
+                "rule_version_id": rule.json()["rule_id"],
+                "purpose": MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code,
+                "scope": ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                "reason": "Regra adotada para embargo ambiental na UE.",
+            },
+            headers=cabecalho,
+        )
+        assert adoption.status_code == 201, adoption.text
+
+
+def _registrar_assertion_embargo_ambiental(
+    ambiente: Ambiente,
+    *,
+    status: EnvironmentalEmbargoAssertionStatus,
+) -> None:
+    set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
+    assertion = PropertyEnvironmentalEmbargoAssertion.create(
+        organization_id=ambiente.org_a.organization_id,
+        property_id=ambiente.property_id,
+        geometry_id=TypedId.new("property_geometry"),
+        geometry_version=1,
+        source_name="IBAMA",
+        source_layer="IBAMA_EMBARGOS",
+        operation="intersects",
+        status=status,
+        source_digest="a" * 64,
+        response_digest="b" * 64,
+        version_ids=("ibama_v1",),
+        restrictions_payload=(
+            {
+                "source": "IBAMA",
+                "layer": "IBAMA_EMBARGOS",
+                "feature_id": 101,
+                "version_id": "ibama_v1",
+                "polygon_digest": "c" * 64,
+                "attributes": {"nom_embarg": "Area de validacao"},
+            },
+        )
+        if status is EnvironmentalEmbargoAssertionStatus.COM_RESTRICAO
+        else (),
+        observed_at=datetime.now(UTC),
+    )
+    TransactionalPropertyEnvironmentalEmbargoAssertionRepository(ambiente.connection).save(
+        assertion
+    )
 
 
 def _criar_contraparte_externa(
@@ -646,10 +740,415 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     assert [requisito["rule_code"] for requisito in requisitos_europa] == [
         "rule-carencia-farmacologica",
         "rule-rastreabilidade-minima",
+        "rule-embargo-ambiental-ibama",
     ]
-    assert [requisito["status"] for requisito in requisitos_europa] == ["AUSENTE", "AUSENTE"]
+    assert [requisito["status"] for requisito in requisitos_europa] == [
+        "AUSENTE",
+        "AUSENTE",
+        "AUSENTE",
+    ]
     assert all(requisito["adoption"] is None for requisito in requisitos_europa)
     assert all(requisito["rule_version"] is None for requisito in requisitos_europa)
+
+
+def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (
+            MarketEligibilityPurpose.EXPORTACAO_CHINA,
+            MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+            MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,
+        ),
+    )
+
+    resposta = operador.post(
+        "/v1/livestock/market-eligibility/evaluations",
+        json={
+            "animal_id": animal,
+            "markets": [
+                MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+            ],
+        },
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["animal_id"] == animal
+    assert corpo["requested_markets"] == [
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+    ]
+    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
+    assert corpo["can_sell_to_any_requested_market"] is True
+    assert "ao menos um mercado solicitado elegivel" in corpo["executive_summary"]
+    assert corpo["eligible_markets"] == [MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code]
+    assert corpo["blocked_markets"] == []
+    assert corpo["conditioned_markets"] == [MarketEligibilityPurpose.EXPORTACAO_CHINA.code]
+    assert corpo["indeterminate_markets"] == []
+    assert corpo["missing_markets"] == []
+    assert corpo["required_subjects"] == [
+        {
+            "market": MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+            "subject_key": "slaughterhouse",
+            "subject_label": "estabelecimento",
+        }
+    ]
+    assert corpo["top_gaps"][0]["market"] == MarketEligibilityPurpose.EXPORTACAO_CHINA.code
+    assert corpo["top_gaps"][0]["code"] == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+    por_mercado = {item["market"]: item for item in corpo["markets"]}
+    assert set(por_mercado) == {
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+    }
+    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
+    assert "selecione o estabelecimento exigido" in por_mercado["exportacao-china"]["summary"]
+    assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-estados-unidos"]["summary"] == (
+        "Mercado elegivel para comercializacao."
+    )
+
+
+def test_avaliacao_orientada_a_mercados_recusa_mercado_desconhecido(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+
+    resposta = operador.post(
+        "/v1/livestock/market-eligibility/evaluations",
+        json={
+            "animal_id": animal,
+            "markets": ["exportacao-marte"],
+        },
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 422, resposta.text
+    assert resposta.json()["reason_code"] == "ENTRADA_INVALIDA"
+
+
+def test_explicacao_comercial_do_animal_resume_mercados_e_proxima_acao(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (
+            MarketEligibilityPurpose.EXPORTACAO_CHINA,
+            MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+        ),
+    )
+
+    resposta = operador.post(
+        "/v1/livestock/market-eligibility/commercial-explanations",
+        json={
+            "animal_id": animal,
+            "markets": [
+                MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+            ],
+        },
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["subject_type"] == "animal"
+    assert corpo["subject_id"] == animal
+    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
+    assert "Estados Unidos" in corpo["narrative"]
+    assert "China" in corpo["narrative"]
+    assert corpo["recommended_next_action"] == (
+        "Selecionar e qualificar o estabelecimento exigido para os mercados condicionados."
+    )
+    por_mercado = {item["market"]: item for item in corpo["markets"]}
+    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
+    assert por_mercado["exportacao-china"]["next_action"] == (
+        "Selecionar o estabelecimento exigido e repetir a avaliacao deste mercado."
+    )
+    assert por_mercado["exportacao-china"]["affected_animal_ids"] == []
+    assert any("estabelecimento exigido" in why for why in por_mercado["exportacao-china"]["why"])
+
+
+def test_listar_perfis_de_mercado_publica_requisitos_e_dependencias(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+
+    resposta = operador.get(
+        "/v1/livestock/market-eligibility/profiles",
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    perfis = {item["market"]: item for item in resposta.json()}
+    assert set(perfis) == {
+        MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code,
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+    }
+    assert perfis["exportacao-estados-unidos"]["declared_withdrawal_period_days"] == 30
+    assert [req["rule_code"] for req in perfis["exportacao-uniao-europeia"]["requirements"]] == [
+        ELIGIBILITY_RULE_CODE,
+        TRACEABILITY_RULE_CODE,
+        ENVIRONMENTAL_EMBARGO_RULE_CODE,
+    ]
+    assert perfis["exportacao-china"]["requirements"][1] == {
+        "rule_code": ESTABLISHMENT_RULE_CODE,
+        "scope": "livestock.slaughterhouse",
+        "dependent_subject_key": "slaughterhouse",
+        "dependent_subject_label": "estabelecimento",
+    }
+
+
+def test_avaliacao_orientada_a_mercados_para_lote_agrega_os_animais_vigentes(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animais = _criar_animais(ambiente, operador, 2)
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (
+            MarketEligibilityPurpose.EXPORTACAO_CHINA,
+            MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+        ),
+    )
+    lote = operador.post(
+        "/v1/livestock/lots",
+        json={
+            "property_id": str(ambiente.property_id.value),
+            "code": f"L-{datetime.now(UTC).timestamp():.0f}",
+            "name": "Lote mercado",
+        },
+        headers=cabecalho,
+    ).json()["lot_id"]
+    for animal_id in animais:
+        resposta = operador.post(
+            f"/v1/livestock/lots/{lote}/members",
+            json={"animal_id": animal_id},
+            headers=cabecalho,
+        )
+        assert resposta.status_code == 201, resposta.text
+
+    resposta = operador.post(
+        "/v1/livestock/market-eligibility/lots/evaluations",
+        json={
+            "lot_id": lote,
+            "markets": [
+                MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+            ],
+        },
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["lot_id"] == lote
+    assert corpo["member_count"] == 2
+    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
+    assert corpo["can_sell_to_any_requested_market"] is True
+    assert corpo["eligible_markets"] == [MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code]
+    assert corpo["conditioned_markets"] == [MarketEligibilityPurpose.EXPORTACAO_CHINA.code]
+    assert corpo["required_subjects"] == [
+        {
+            "market": MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+            "subject_key": "slaughterhouse",
+            "subject_label": "estabelecimento",
+        }
+    ]
+    por_mercado = {item["market"]: item for item in corpo["markets"]}
+    assert set(por_mercado) == {
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+    }
+    assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
+    assert (
+        "Todos os 2 animais vigentes do lote estao elegiveis"
+        in por_mercado["exportacao-estados-unidos"]["summary"]
+    )
+    assert sorted(por_mercado["exportacao-estados-unidos"]["eligible_animal_ids"]) == sorted(
+        animais
+    )
+    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
+    assert "depende da escolha do estabelecimento" in por_mercado["exportacao-china"]["summary"]
+    assert sorted(por_mercado["exportacao-china"]["conditioned_animal_ids"]) == sorted(animais)
+
+
+def test_avaliacao_orientada_a_mercados_para_lote_usa_frigorifico_escolhido(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animais = _criar_animais(ambiente, operador, 2)
+    slaughterhouse_id = _criar_contraparte_externa(
+        operador,
+        ambiente,
+        name="Frigorifico Lote China",
+        counterparty_type="SLAUGHTERHOUSE",
+    )
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (
+            MarketEligibilityPurpose.EXPORTACAO_CHINA,
+            MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+        ),
+    )
+    _registrar_qualificacao_de_estabelecimento(
+        operador,
+        ambiente,
+        counterparty_id=slaughterhouse_id,
+        market_purpose=MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+    )
+    lote = operador.post(
+        "/v1/livestock/lots",
+        json={
+            "property_id": str(ambiente.property_id.value),
+            "code": f"L-{datetime.now(UTC).timestamp():.0f}",
+            "name": "Lote China habilitado",
+        },
+        headers=cabecalho,
+    ).json()["lot_id"]
+    for animal_id in animais:
+        resposta = operador.post(
+            f"/v1/livestock/lots/{lote}/members",
+            json={"animal_id": animal_id},
+            headers=cabecalho,
+        )
+        assert resposta.status_code == 201, resposta.text
+
+    resposta = operador.post(
+        "/v1/livestock/market-eligibility/lots/evaluations",
+        json={
+            "lot_id": lote,
+            "markets": [
+                MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+            ],
+            "slaughterhouse_counterparty_id": slaughterhouse_id,
+        },
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["commercial_outlook"] == "TOTALMENTE_COMERCIALIZAVEL"
+    assert corpo["can_sell_to_any_requested_market"] is True
+    assert corpo["eligible_markets"] == [
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+    ]
+    assert corpo["conditioned_markets"] == []
+    assert corpo["required_subjects"] == []
+    por_mercado = {item["market"]: item for item in corpo["markets"]}
+    china = por_mercado[MarketEligibilityPurpose.EXPORTACAO_CHINA.code]
+    assert china["status"] == "ELEGIVEL"
+    assert china["dependency"] == {
+        "subject_key": "slaughterhouse",
+        "subject_label": "estabelecimento",
+        "selected_subject_id": slaughterhouse_id,
+    }
+    assert "Todos os 2 animais vigentes do lote estao elegiveis" in china["summary"]
+    assert sorted(china["eligible_animal_ids"]) == sorted(animais)
+    for animal in china["animals"]:
+        assert animal["status"] == "ELEGIVEL"
+        assert animal["dependency"] == {
+            "subject_key": "slaughterhouse",
+            "subject_label": "estabelecimento",
+            "selected_subject_id": slaughterhouse_id,
+        }
+        assert animal["summary"] == "Mercado elegivel com o estabelecimento selecionado."
+
+
+def test_explicacao_comercial_do_lote_resume_animais_afetados(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animais = _criar_animais(ambiente, operador, 2)
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (
+            MarketEligibilityPurpose.EXPORTACAO_CHINA,
+            MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
+        ),
+    )
+    lote = operador.post(
+        "/v1/livestock/lots",
+        json={
+            "property_id": str(ambiente.property_id.value),
+            "code": f"L-{datetime.now(UTC).timestamp():.0f}",
+            "name": "Lote explicacao comercial",
+        },
+        headers=cabecalho,
+    ).json()["lot_id"]
+    for animal_id in animais:
+        resposta = operador.post(
+            f"/v1/livestock/lots/{lote}/members",
+            json={"animal_id": animal_id},
+            headers=cabecalho,
+        )
+        assert resposta.status_code == 201, resposta.text
+
+    resposta = operador.post(
+        "/v1/livestock/market-eligibility/commercial-explanations",
+        json={
+            "lot_id": lote,
+            "markets": [
+                MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+                MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+            ],
+        },
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["subject_type"] == "lot"
+    assert corpo["subject_id"] == lote
+    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
+    assert "O lote pode ser comercializado" in corpo["narrative"]
+    assert corpo["recommended_next_action"] == (
+        "Selecionar e qualificar o estabelecimento exigido para os mercados condicionados."
+    )
+    por_mercado = {item["market"]: item for item in corpo["markets"]}
+    china = por_mercado["exportacao-china"]
+    assert china["status"] == "CONDICIONADO"
+    assert china["affected_animal_ids"] == []
+    assert china["next_action"] == (
+        "Selecionar o estabelecimento exigido e repetir a avaliacao deste mercado."
+    )
+    assert any("selecione o estabelecimento exigido" in why for why in china["why"])
+    estados_unidos = por_mercado["exportacao-estados-unidos"]
+    assert estados_unidos["status"] == "ELEGIVEL"
+    assert estados_unidos["why"] == [
+        "Todos os animais vigentes apareceram elegiveis neste mercado."
+    ]
+
+
+def test_explicacao_comercial_recusa_quando_sujeito_nao_e_unico(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+
+    resposta = operador.post(
+        "/v1/livestock/market-eligibility/commercial-explanations",
+        json={},
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 422, resposta.text
+    assert resposta.json()["reason_code"] == "ENTRADA_INVALIDA"
 
 
 def test_matriz_de_mercado_falha_fechado_sem_carencia_declarada_por_mercado(
@@ -679,12 +1178,51 @@ def test_matriz_de_mercado_falha_fechado_sem_carencia_declarada_por_mercado(
     assert europa["requirements"][0]["status"] == "INDETERMINADO"
     assert europa["requirements"][0]["gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
     # requirements[0] (carencia) e curto-circuitado pela lacuna acima, sem
-    # reasons proprias. requirements[1] (rastreabilidade) e adotado e
-    # executado normalmente, entao as reasons agregadas do mercado vem dele --
-    # nao ha reasons "fantasma" nem confusao entre os dois requisitos.
-    assert [reason["rule_code"] for reason in europa["reasons"]] == ["rule-rastreabilidade-minima"]
+    # reasons proprias. requirements[1] (rastreabilidade) e [2] (embargo
+    # ambiental) sao adotados e executados normalmente, entao as reasons
+    # agregadas do mercado vem deles -- nao ha reasons "fantasma" nem
+    # confusao entre os tres requisitos.
+    assert [reason["rule_code"] for reason in europa["reasons"]] == [
+        "rule-rastreabilidade-minima",
+        "rule-embargo-ambiental-ibama",
+    ]
     assert europa["requirements"][1]["rule_code"] == "rule-rastreabilidade-minima"
     assert europa["requirements"][1]["status"] == "ELEGIVEL"
+    assert europa["requirements"][2]["rule_code"] == "rule-embargo-ambiental-ibama"
+    assert europa["requirements"][2]["status"] == "ELEGIVEL"
+
+
+def test_matriz_de_mercado_bloqueia_ue_por_regra_governada_de_embargo_ambiental(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+    _adotar_regra_de_carencia_para_mercados(
+        operador,
+        ambiente,
+        (MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA,),
+    )
+    _registrar_assertion_embargo_ambiental(
+        ambiente,
+        status=EnvironmentalEmbargoAssertionStatus.COM_RESTRICAO,
+    )
+
+    resposta = operador.post(
+        f"/v1/livestock/animals/{animal}/eligibility/market-matrix",
+        json={},
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    europa = {item["market"]: item for item in resposta.json()["markets"]}[
+        "exportacao-uniao-europeia"
+    ]
+    assert europa["status"] == "NAO_ELEGIVEL"
+    assert europa["requirements"][2]["rule_code"] == "rule-embargo-ambiental-ibama"
+    assert europa["requirements"][2]["status"] == "NAO_ELEGIVEL"
+    assert europa["requirements"][2]["rule_version"]["code"] == "rule-embargo-ambiental-ibama"
+    assert europa["requirements"][2]["adoption"]["purpose"] == "exportacao-uniao-europeia"
+    assert europa["requirements"][2]["reasons"][0]["rule_code"] == "rule-embargo-ambiental-ibama"
 
 
 def test_matriz_de_mercado_mostra_sujeito_escolhido_e_falha_fechado_sem_avaliador(

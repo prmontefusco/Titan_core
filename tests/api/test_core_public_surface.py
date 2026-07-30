@@ -28,6 +28,19 @@ SUPERFICIE_ESPERADA = {
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/adoptions", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/adoptions/replace", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/timeline", "get"),
+    ("/v1/rule-governance/catalogs/livestock-market-rules", "get"),
+    (
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/drafts",
+        "post",
+    ),
+    (
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/governance-flow",
+        "post",
+    ),
+    (
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/execute",
+        "post",
+    ),
     # Vertical Livestock — API mínima do fluxo aprovado (Passos 10.4a e 10.4b).
     ("/v1/livestock/animals", "post"),
     ("/v1/livestock/medications", "post"),
@@ -38,6 +51,10 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/treatments/{application_id}/corrections", "post"),
     ("/v1/livestock/animals/{animal_id}/eligibility", "post"),
     ("/v1/livestock/animals/{animal_id}/eligibility/market-matrix", "post"),
+    ("/v1/livestock/market-eligibility/profiles", "get"),
+    ("/v1/livestock/market-eligibility/evaluations", "post"),
+    ("/v1/livestock/market-eligibility/commercial-explanations", "post"),
+    ("/v1/livestock/market-eligibility/lots/evaluations", "post"),
     # Elegibilidade de lote (rule-carencia-lote): bloqueia o lote inteiro se
     # qualquer animal membro estiver em carência. Sem dossiê -- o template hoje
     # só monta documento para sujeito do tipo animal.
@@ -116,6 +133,17 @@ SUPERFICIE_ESPERADA = {
     # As camadas do imovel: perimetro, reserva legal, APP, hidrografia. Camadas
     # territoriais (embargo, terra indigena, desmatamento) NAO vivem aqui.
     ("/v1/livestock/properties/{property_id}/geometry/layers", "get"),
+    # Avaliacao espacial de camada territorial externa: usa a geometria vigente
+    # da propriedade, mas nao transforma embargo em atributo do imovel.
+    ("/v1/livestock/properties/{property_id}/environmental-embargoes/ibama", "get"),
+    (
+        "/v1/livestock/properties/{property_id}/environmental-embargoes/ibama/assertions",
+        "get",
+    ),
+    (
+        "/v1/livestock/properties/{property_id}/environmental-embargoes/ibama/assertions",
+        "post",
+    ),
     # Importação do CAR (Passo 17.2). A prévia consulta e não grava: serve para
     # pré-preencher o cadastro, e o que o operador confirmar entra como
     # declaração dele. A importação grava, com proveniência SICAR_CAR.

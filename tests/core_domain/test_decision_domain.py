@@ -11,6 +11,7 @@ from packages.core_domain.decision import (
     DecisionResult,
     compute_decision_hash,
 )
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.rule import SeverityLevel
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
@@ -31,6 +32,12 @@ def _decision(reasons: tuple[DecisionReason, ...]) -> Decision:
     org_id = OrganizationId.new()
     subject_id = TypedId.new("batch")
     policy_id = TypedId.new("policy")
+    authority_profile_id = TypedId.new("authority_profile")
+    authority_reference = UniversalReference(
+        target_id=TypedId.new("service_identity"),
+        organization_id=org_id,
+        contract_version=1,
+    )
     return Decision(
         decision_id=TypedId.new("decision"),
         organization_id=org_id,
@@ -54,7 +61,13 @@ def _decision(reasons: tuple[DecisionReason, ...]) -> Decision:
             result=DecisionResult.REJEITADA,
             reasons=reasons,
             engine_version=1,
+            authority_profile_id=authority_profile_id,
+            emission_method=DecisionEmissionMethod.AUTOMATED,
         ),
+        authority_profile_id=authority_profile_id,
+        authority_reference=authority_reference,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        corrective_actions=(),
     )
 
 
@@ -111,6 +124,7 @@ def test_decision_hash_ignores_message_but_not_code() -> None:
     rule_id = TypedId.new("rule")
     subject_id = TypedId.new("batch")
     policy_id = TypedId.new("policy")
+    authority_profile_id = TypedId.new("authority_profile")
 
     def _hash(code: DecisionReasonCode, message: str) -> str:
         return compute_decision_hash(
@@ -126,6 +140,8 @@ def test_decision_hash_ignores_message_but_not_code() -> None:
                 ),
             ),
             engine_version=1,
+            authority_profile_id=authority_profile_id,
+            emission_method=DecisionEmissionMethod.AUTOMATED,
         )
 
     # A mensagem humana pode ser traduzida sem alterar o contrato da decisão.

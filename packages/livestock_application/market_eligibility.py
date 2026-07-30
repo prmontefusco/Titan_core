@@ -21,11 +21,13 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
     ELIGIBILITY_RULE_CODE,
     GovernedRuleReference,
+    automated_decision_authority,
 )
 from packages.shared_kernel import OrganizationId, TypedId
 
 TRACEABILITY_RULE_CODE = "rule-rastreabilidade-minima"
 ESTABLISHMENT_RULE_CODE = "rule-habilitacao-estabelecimento"
+ENVIRONMENTAL_EMBARGO_RULE_CODE = "rule-embargo-ambiental-ibama"
 # Regra governada de exigibilidade sanitária (Item 4 da fila do backend).
 # Qual campanha um mercado exige vive na RuleCondition da versão adotada
 # (fact_type=sanitary_requirement_fact_type("<campanha>")), não aqui — o
@@ -120,6 +122,10 @@ DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = (
             ),
             MarketRequirement(
                 rule_code=TRACEABILITY_RULE_CODE,
+                scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            ),
+            MarketRequirement(
+                rule_code=ENVIRONMENTAL_EMBARGO_RULE_CODE,
                 scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
             ),
         ),
@@ -774,7 +780,14 @@ class MarketEligibilityService:
                 snapshot=snapshot,
                 purpose=market,
             )
-            decision = DecisionService().decide(evaluation)
+            decision = DecisionService().decide(
+                evaluation,
+                automated_decision_authority(
+                    organization_id,
+                    purpose=evaluation.purpose,
+                    role_name="LIVESTOCK_MARKET_ELIGIBILITY_ENGINE",
+                ),
+            )
             self.evaluation_repository.save(evaluation)
             self.decision_repository.save(decision)
             return MarketRequirementResult(

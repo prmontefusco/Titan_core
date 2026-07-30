@@ -24,6 +24,10 @@ from packages.core_domain.decision import (
     DecisionResult,
     compute_decision_hash,
 )
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import (
+    DecisionAuthorityProfile,
+)
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
@@ -192,6 +196,8 @@ __all__ = [
     "DecisionReasonCode",
     "DecisionResult",
     "compute_decision_hash",
+    "DecisionAuthorityProfile",
+    "DecisionEmissionMethod",
     "UniversalRelation",
     "ReverseReference",
     "ReferencingKind",

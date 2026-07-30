@@ -1,9 +1,4 @@
-"""Testes do VerificationBundle e da verificação offline (Passo 7.6).
-
-Percorre a validação do plano: verificar com ferramenta independente e sem Titan,
-confirmar `INDETERMINADA` quando falta material e `INVALIDA` com o ponto exato da
-falha quando o conteúdo é adulterado.
-"""
+"""Testes do VerificationBundle e da verificacao offline (Passo 7.6)."""
 
 import json
 from datetime import UTC, datetime
@@ -21,6 +16,8 @@ from packages.core_application.verification_service import (
     TRUST_POLICY_COMPONENT,
     VerificationBundleService,
 )
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.dossier import Dossier
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
@@ -37,16 +34,32 @@ from packages.core_domain.verification import (
     VerificationReasonCode,
     VerificationStatus,
 )
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 AGORA = datetime.now(UTC)
+
+
+def _authority(org_id: OrganizationId, purpose: str) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="AUTOMATED_BUNDLE_DECISION_ENGINE",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+    )
 
 
 def _dossie() -> Dossier:
     org_id = OrganizationId.new()
     subject_id = TypedId.new("batch")
     policy = Policy.create_draft(
-        organization_id=org_id, code="pol-sanitaria", name="Política Sanitária"
+        organization_id=org_id, code="pol-sanitaria", name="Politica Sanitaria"
     ).publish()
     rule = Rule.create(
         policy_id=policy.policy_id,
@@ -79,7 +92,7 @@ def _dossie() -> Dossier:
     evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
         policy=policy, rules=[rule], snapshot=snapshot, purpose="CONFORMIDADE_SANITARIA"
     )
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
     return DossierService().build(
         decision=decision, evaluation=evaluation, policy=policy, rules=[rule]
     )
@@ -90,7 +103,7 @@ def _assinatura() -> SignatureMaterial:
         key_id="chave-institucional-1",
         algorithm="sha256",
         profile="INSTITUTIONAL_SIGNATURE",
-        signed_digest="",  # preenchido pelo serviço com o digest do manifesto
+        signed_digest="",
         signature_value="assinatura-de-teste",
         signed_at=AGORA,
         certificate_chain=("cert-emissor",),
@@ -119,20 +132,15 @@ def test_complete_bundle_verifies_as_valid_offline() -> None:
     assert relatorio.status is VerificationStatus.VALIDA
     assert relatorio.first_failure is None
     assert relatorio.failures == ()
-    # Nunca um booleano: cada dimensão responde por si.
     assert len(relatorio.results) == len(NORMATIVE_DIMENSION_ORDER)
     assert relatorio.explain()
 
-    # A dimensão declarativa torna visível o que o modo offline não faz, sem
-    # rebaixar o agregado por não ser obrigatória.
     atual = relatorio.result_for(VerificationDimension.REVOGACAO_ATUAL)
     assert atual is not None
     assert atual.status is VerificationStatus.NAO_EXECUTADA
 
 
 def test_unsupported_algorithm_never_yields_a_valid_aggregate() -> None:
-    """A falha lógica que a revisão da ADR-0039 flagrou: um pacote não pode ser
-    declarado válido sem que sua assinatura tenha sido verificada."""
     bundle = VerificationBundleService().build_from_dossier(
         dossier=_dossie(),
         audience="auditoria",
@@ -152,15 +160,12 @@ def test_unsupported_algorithm_never_yields_a_valid_aggregate() -> None:
 
     assinatura = relatorio.result_for(VerificationDimension.ASSINATURA)
     assert assinatura is not None
-    # Tentativa sem capacidade é indeterminação, não "não executada".
     assert assinatura.status is VerificationStatus.INDETERMINADA
     assert assinatura.reason_code is VerificationReasonCode.ALGORITMO_NAO_SUPORTADO_PELO_VERIFICADOR
     assert relatorio.status is VerificationStatus.INDETERMINADA
 
 
 def test_mandatory_dimension_not_executed_forces_indeterminate_aggregate() -> None:
-    """Defesa redundante: mesmo que uma obrigatória chegue a NAO_EXECUTADA por
-    outro caminho, o agregado não pode virar válido."""
     bundle = _pacote_completo()
     base = BundleVerifier().verify(bundle, verified_at=AGORA, trust_anchors=ANCORAS)
     assert base.status is VerificationStatus.VALIDA
@@ -197,7 +202,6 @@ def test_failures_only_lists_invalid_dimensions() -> None:
         trust_anchors=ANCORAS,
     )
 
-    # Agregado indeterminado sem dimensão inválida: failures vazio não é omissão.
     assert relatorio.status is VerificationStatus.INDETERMINADA
     assert relatorio.failures == ()
     assert relatorio.first_failure is None
@@ -207,7 +211,6 @@ def test_bundle_travels_and_is_verified_without_titan() -> None:
     service = VerificationBundleService()
     bundle = _pacote_completo()
 
-    # Sai do Titan como texto e volta em outra ponta, sem banco nem rede.
     transportado = json.loads(json.dumps(service.export(bundle)))
     recebido = VerificationBundleService.load(transportado)
 
@@ -231,7 +234,6 @@ def test_tampered_component_is_invalid_with_exact_failure_point() -> None:
     assert falha is not None
     assert falha.dimension is VerificationDimension.INTEGRIDADE
     assert falha.reason_code is VerificationReasonCode.DIGEST_DIVERGENTE
-    # O ponto exato da falha é nomeado.
     assert falha.failure_point == DOSSIER_COMPONENT
 
 
@@ -247,7 +249,6 @@ def test_missing_required_component_is_indeterminate_not_invalid() -> None:
 
     estrutura = relatorio.result_for(VerificationDimension.ESTRUTURA)
     assert estrutura is not None
-    # Falta de material é indeterminação, jamais reprovação.
     assert estrutura.status is VerificationStatus.INDETERMINADA
     assert estrutura.reason_code is VerificationReasonCode.COMPONENTE_OBRIGATORIO_AUSENTE
     assert relatorio.status is VerificationStatus.INDETERMINADA
@@ -274,7 +275,7 @@ def test_tampered_manifest_is_detected() -> None:
     manifesto_alterado = type(bundle.manifest)(
         bundle_id=bundle.manifest.bundle_id,
         organization_id=bundle.manifest.organization_id,
-        purpose="OUTRA_FINALIDADE",  # alterado sem recalcular o digest
+        purpose="OUTRA_FINALIDADE",
         audience=bundle.manifest.audience,
         created_at=bundle.manifest.created_at,
         components=bundle.manifest.components,
@@ -307,7 +308,6 @@ def test_without_trust_anchor_signature_is_indeterminate() -> None:
 
     assinatura = relatorio.result_for(VerificationDimension.ASSINATURA)
     assert assinatura is not None
-    # Âncora dentro do pacote não é confiável por estar no pacote.
     assert assinatura.status is VerificationStatus.INDETERMINADA
     assert assinatura.reason_code is VerificationReasonCode.MATERIAL_DE_CONFIANCA_AUSENTE
     assert relatorio.status is VerificationStatus.INDETERMINADA
@@ -322,7 +322,6 @@ def test_bundle_without_signature_declares_the_gap() -> None:
     relatorio = BundleVerifier().verify(bundle, verified_at=AGORA)
     assert relatorio.status is VerificationStatus.INDETERMINADA
 
-    # A ausência é declarada no manifesto, não silenciosa.
     assert any("Sem assinatura" in g for g in bundle.manifest.declared_gaps)
     politica = bundle.manifest.component(TRUST_POLICY_COMPONENT)
     assert politica is not None
@@ -379,7 +378,7 @@ def test_declared_gaps_make_coverage_indeterminate() -> None:
         created_at=AGORA,
         signature=_assinatura(),
         verification_policy={"perfil_minimo": "INSTITUTIONAL_SIGNATURE"},
-        declared_gaps=("Evidências brutas omitidas por autorização.",),
+        declared_gaps=("Evidencias brutas omitidas por autorizacao.",),
     )
     relatorio = BundleVerifier().verify(bundle, verified_at=AGORA, trust_anchors=ANCORAS)
 

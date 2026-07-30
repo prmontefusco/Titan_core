@@ -8,6 +8,7 @@ preservando ambas as decisões e com snapshots/hashes distintos.
 from datetime import UTC, datetime, timedelta
 
 from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.livestock_application.eligibility import (
     PharmacologicalEligibilityService,
     build_eligibility_policy,
@@ -150,6 +151,7 @@ def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal(
     # 1. Lote REPROVADO: contém animal em carência.
     eval_1, decision_1 = service.evaluate_lot(org_id, lot.lot_id, datetime.now(UTC))
     assert decision_1.result is DecisionResult.REJEITADA
+    assert decision_1.emission_method is DecisionEmissionMethod.AUTOMATED
     fato_1 = eval_1.fact_snapshot.get_latest_fact_by_type(LOT_ELIGIBILITY_FACT_TYPE)
     assert fato_1 is not None
     assert fato_1.payload["blocking_animals"] == [animal_em_carencia.animal_id.value.hex]
@@ -162,6 +164,7 @@ def test_lot_blocked_then_approved_after_removing_animal_in_withdrawal(
         org_id, lot.lot_id, datetime.now(UTC) + timedelta(hours=1)
     )
     assert decision_2.result is DecisionResult.APROVADA
+    assert decision_2.emission_method is DecisionEmissionMethod.AUTOMATED
     fato_2 = eval_2.fact_snapshot.get_latest_fact_by_type(LOT_ELIGIBILITY_FACT_TYPE)
     assert fato_2 is not None
     assert fato_2.payload["blocking_animals"] == []

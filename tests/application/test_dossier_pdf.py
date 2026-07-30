@@ -1,4 +1,4 @@
-"""Testes para representação PDF verificável do Dossier (Passo 7.8)."""
+"""Testes para representacao PDF verificavel do Dossier (Passo 7.8)."""
 
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -14,6 +14,7 @@ from packages.core_domain.decision import (
     DecisionResult,
     compute_decision_hash,
 )
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.dossier import Dossier
 from packages.core_domain.evaluation import (
     Evaluation,
@@ -30,6 +31,14 @@ from packages.core_infrastructure.pdf import SoftwareDossierPdfAdapter
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
+def _authority_reference(org_id: OrganizationId) -> UniversalReference:
+    return UniversalReference(
+        target_id=TypedId.new("service_identity"),
+        organization_id=org_id,
+        contract_version=1,
+    )
+
+
 @pytest.fixture
 def sample_dossier() -> Dossier:
     org_id = OrganizationId(uuid4())
@@ -42,7 +51,7 @@ def sample_dossier() -> Dossier:
         policy_id=policy_id,
         organization_id=org_id,
         code="POL_VACINACAO_2026",
-        name="Política de Vacinação Pecuária",
+        name="Politica de Vacinacao Pecuaria",
         description="Verifica cobertura vacinal contra aftosa",
         version=1,
         status=PolicyStatus.PUBLISHED,
@@ -53,11 +62,11 @@ def sample_dossier() -> Dossier:
         policy_id=policy_id,
         organization_id=org_id,
         code="REGRA_AFTOSA_OBRIGATORIA",
-        name="Vacinação Aftosa",
-        description="Exige comprovante de vacina nos últimos 180 dias",
+        name="Vacinacao Aftosa",
+        description="Exige comprovante de vacina nos ultimos 180 dias",
         version=1,
         severity=SeverityLevel.BLOCKING,
-        normative_source="Instrução Normativa MAPA nº 45",
+        normative_source="Instrucao Normativa MAPA no 45",
         required_evidence_types=("CERTIDAO_VACINACAO",),
         conditions=(),
     )
@@ -78,8 +87,8 @@ def sample_dossier() -> Dossier:
         subject_id=subject_id,
         status=RuleResultStatus.ATENDIDA,
         severity=SeverityLevel.BLOCKING,
-        reason="Comprovante de vacinação válido fornecido.",
-        corrective_action="Nenhuma ação necessária.",
+        reason="Comprovante de vacinacao valido fornecido.",
+        corrective_action="Nenhuma acao necessaria.",
         missing_evidence_types=(),
         evaluated_at=datetime.now(UTC),
         snapshot_hash="a" * 64,
@@ -116,8 +125,9 @@ def sample_dossier() -> Dossier:
 
     reason = DecisionReason(
         code=DecisionReasonCode.REGRA_ATENDIDA,
-        message="Todas as condições regulatórias foram atendidas.",
+        message="Todas as condicoes regulatorias foram atendidas.",
     )
+    authority_profile_id = TypedId.new("authority_profile")
 
     dec_hash = compute_decision_hash(
         evaluation_hash=eval_hash,
@@ -128,6 +138,8 @@ def sample_dossier() -> Dossier:
         result=DecisionResult.APROVADA,
         reasons=(reason,),
         engine_version=1,
+        authority_profile_id=authority_profile_id,
+        emission_method=DecisionEmissionMethod.HUMAN,
     )
 
     decision = Decision(
@@ -144,11 +156,15 @@ def sample_dossier() -> Dossier:
         reasons=(reason,),
         issued_at=datetime.now(UTC),
         engine_version=1,
+        decision_hash=dec_hash,
+        authority_profile_id=authority_profile_id,
+        authority_reference=_authority_reference(org_id),
+        emission_method=DecisionEmissionMethod.HUMAN,
         evidence_references=(),
         affected_subjects=(
             UniversalReference(target_id=subject_id, organization_id=org_id, contract_version=1),
         ),
-        decision_hash=dec_hash,
+        corrective_actions=(),
     )
 
     service = DossierService()

@@ -1,4 +1,4 @@
-"""Testes de aplicação para o Dossier autocontido (Passo 7.5)."""
+"""Testes de aplicacao para o Dossier autocontido (Passo 7.5)."""
 
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -12,6 +12,8 @@ from packages.core_application.evaluation_service import (
     RuleEvaluationEngine,
 )
 from packages.core_domain.decision import Decision
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.dossier import (
     DOSSIER_DOCUMENT_VERSION,
     Dossier,
@@ -35,6 +37,22 @@ from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, S
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
+def _authority(org_id: OrganizationId, purpose: str) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="AUTOMATED_DOSSIER_DECISION_ENGINE",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+    )
+
+
 def _cenario(
     resultado_do_fato: str = "rejected",
 ) -> tuple[OrganizationId, TypedId, Policy, Rule, Evaluation, Decision]:
@@ -43,14 +61,14 @@ def _cenario(
     t0 = datetime.now(UTC)
 
     policy = Policy.create_draft(
-        organization_id=org_id, code="pol-sanitaria", name="Política Sanitária"
+        organization_id=org_id, code="pol-sanitaria", name="Politica Sanitaria"
     ).publish()
     rule = Rule.create(
         policy_id=policy.policy_id,
         organization_id=org_id,
         code="rule-atestado",
         name="Atestado aprovado",
-        description="Exige atestado sanitário aprovado",
+        description="Exige atestado sanitario aprovado",
         severity=SeverityLevel.BLOCKING,
         conditions=(
             RuleCondition(
@@ -61,7 +79,7 @@ def _cenario(
                 description="Atestado deve estar aprovado",
             ),
         ),
-        corrective_action="Reemitir o atestado sanitário.",
+        corrective_action="Reemitir o atestado sanitario.",
     )
     snapshot = FactSnapshot.create(
         organization_id=org_id,
@@ -83,7 +101,7 @@ def _cenario(
     evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
         policy=policy, rules=[rule], snapshot=snapshot, purpose="CONFORMIDADE_SANITARIA"
     )
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
     return org_id, subject_id, policy, rule, evaluation, decision
 
 
@@ -98,7 +116,6 @@ def test_dossier_is_self_contained_and_verifiable_offline() -> None:
     assert dossier.recompute_hash() == dossier.dossier_hash
 
     doc = dossier.document
-    # Tudo que explica a decisão viaja dentro do documento.
     assert doc["subject"]["id"] == str(subject_id.value)
     assert doc["policy"]["code"] == "pol-sanitaria"
     assert doc["rules"][0]["conditions"][0]["expected_value"] == "approved"
@@ -117,8 +134,6 @@ def test_decision_can_be_reproduced_from_the_document_alone() -> None:
         .document
     )
 
-    # Um leitor sem banco consegue refazer o raciocínio: pega a condição declarada,
-    # aplica ao fato preservado e chega ao mesmo resultado da regra.
     condicao = doc["rules"][0]["conditions"][0]
     fato = next(f for f in doc["facts"]["facts"] if f["fact_type"] == condicao["fact_type"])
     satisfeita = fato["payload"][condicao["payload_key"]] == condicao["expected_value"]
@@ -231,11 +246,7 @@ def test_storing_requires_a_repository() -> None:
         )
 
 
-# -- Conteúdo da evidência no dossiê (correção do Passo 10.2) -----------------
-
-
 def _evidencia(org_id: OrganizationId, evidence_id: TypedId) -> Evidence:
-    """Evidência com o mesmo identificador que a decisão cita."""
     return Evidence(
         evidence_id=evidence_id,
         organization_id=org_id,
@@ -256,7 +267,6 @@ def _evidencia(org_id: OrganizationId, evidence_id: TypedId) -> Evidence:
 
 
 def test_evidence_content_travels_inside_the_document() -> None:
-    """Sem o conteúdo, o dossiê exigiria o banco do Titan para ser compreendido."""
     org_id, _, policy, rule, evaluation, decision = _cenario()
     citada = decision.evidence_references[0].target_id
     evidencia = _evidencia(org_id, citada)
@@ -272,8 +282,6 @@ def test_evidence_content_travels_inside_the_document() -> None:
     entrada = dossier.document["evidences"][0]
     assert entrada["id"] == str(citada.value)
     assert entrada["content_status"] == "COPIADO"
-    # O hash do conteúdo é o que permite a quem tem o arquivo original conferir
-    # que é o mesmo, sem nos consultar.
     assert entrada["content"]["content_hash"] == evidencia.content_hash.hex()
     assert entrada["content"]["source"]["source_type"] == SourceType.DOCUMENT.value
     assert entrada["content"]["confidence"]["tier"] == ConfidenceTier.DOCUMENTED.value
@@ -281,7 +289,6 @@ def test_evidence_content_travels_inside_the_document() -> None:
 
 
 def test_absent_evidence_content_is_declared_not_omitted() -> None:
-    """Quem lê precisa distinguir 'não havia evidência' de 'havia e não veio'."""
     _, _, policy, rule, evaluation, decision = _cenario()
 
     dossier = DossierService().build(
@@ -291,12 +298,10 @@ def test_absent_evidence_content_is_declared_not_omitted() -> None:
     entrada = dossier.document["evidences"][0]
     assert entrada["content"] is None
     assert entrada["content_status"] == "NAO_ACOMPANHA"
-    # O identificador continua lá: a entrada não sumiu, só o conteúdo não veio.
     assert entrada["id"] == str(decision.evidence_references[0].target_id.value)
 
 
 def test_revoked_evidence_is_never_presented_as_valid() -> None:
-    """Apresentar evidência revogada como se valesse transformaria o dossiê em prova falsa."""
     org_id, _, policy, rule, evaluation, decision = _cenario()
     citada = decision.evidence_references[0].target_id
     revogada = _evidencia(org_id, citada).revoke(
@@ -323,7 +328,6 @@ def test_revoked_evidence_is_never_presented_as_valid() -> None:
 
 
 def test_unrelated_evidence_is_not_smuggled_into_the_document() -> None:
-    """Só entra o que a decisão citou: o dossiê não é vitrine de material avulso."""
     org_id, _, policy, rule, evaluation, decision = _cenario()
     alheia = _evidencia(org_id, TypedId.new("evidence"))
 
@@ -342,13 +346,6 @@ def test_unrelated_evidence_is_not_smuggled_into_the_document() -> None:
 
 
 def test_previously_stored_dossier_keeps_verifying_after_the_change() -> None:
-    """A cadeia de integridade não foi afetada.
-
-    Um dossiê gravado sob o documento versão 1 carrega o próprio documento e o
-    próprio hash. Mudar o construtor não reescreve nada do que já existe: ele
-    continua conferindo contra si mesmo, e continua declarando a versão sob a qual
-    foi emitido.
-    """
     org_id = OrganizationId.new()
     documento_v1 = {
         "document_version": 1,
@@ -373,8 +370,6 @@ def test_previously_stored_dossier_keeps_verifying_after_the_change() -> None:
 
     assert antigo.verify()
     assert antigo.document_version == 1
-    # O documento antigo permanece exatamente como foi emitido: nenhum campo novo
-    # foi injetado nele retroativamente.
     assert "content_status" not in antigo.document["evidences"][0]
 
 
@@ -389,11 +384,7 @@ def test_new_documents_declare_the_new_version() -> None:
     assert DOSSIER_DOCUMENT_VERSION == 3
 
 
-# -- Seção da vertical no documento (Passo 10.2b) -----------------------------
-
-
 def test_vertical_content_lives_under_one_declared_key() -> None:
-    """A separação é estrutural: nada da vertical se mistura aos campos do Core."""
     _, _, policy, rule, evaluation, decision = _cenario()
 
     dossier = DossierService().build(
@@ -412,7 +403,6 @@ def test_vertical_content_lives_under_one_declared_key() -> None:
     assert secao["namespace"] == "livestock"
     assert secao["section_version"] == 1
     assert secao["content"]["identidade"]["sisbov"] == "BR5544332211"
-    # Nenhum campo da vertical vazou para o nível do Core.
     assert "identidade" not in dossier.document
     assert dossier.verify()
 
@@ -428,7 +418,6 @@ def test_absent_vertical_section_is_declared_not_omitted() -> None:
 
 
 def test_section_version_is_independent_from_the_document_version() -> None:
-    """A vertical evolui o conteúdo dela sem mexer na versão do Core."""
     _, _, policy, rule, evaluation, decision = _cenario()
 
     dossier = DossierService().build(
@@ -446,7 +435,6 @@ def test_section_version_is_independent_from_the_document_version() -> None:
 
 
 def test_the_envelope_is_validated_even_though_the_content_is_not() -> None:
-    """O Core confere o envelope; o conteúdo ele não interpreta — nem pode."""
     with pytest.raises(ValueError, match="namespace"):
         VerticalSection(namespace="Livestock", section_version=1, content={"x": 1})
 

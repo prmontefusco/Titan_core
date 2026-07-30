@@ -414,6 +414,7 @@ def _project_relations(
 
 
 def _ja_usado_como_entrada(
+    event_repository: TransformationEventRepositoryPort,
     relation_service: RelationService,
     organization_id: OrganizationId,
     subject_reference: UniversalReference,
@@ -433,11 +434,15 @@ def _ja_usado_como_entrada(
     existentes = relation_service.list_outgoing_at(
         organization_id=organization_id, source_reference=subject_reference
     )
-    return any(
-        relacao.relation_type == TRANSFORMATION_INPUT_OF
-        and (excluding_event_id is None or relacao.target_reference.target_id != excluding_event_id)
-        for relacao in existentes
-    )
+    for relacao in existentes:
+        if relacao.relation_type != TRANSFORMATION_INPUT_OF:
+            continue
+        consumidor_id = relacao.target_reference.target_id
+        if excluding_event_id is not None and consumidor_id == excluding_event_id:
+            continue
+        if operational_status_now(event_repository, consumidor_id) is TransformationStatus.CURRENT:
+            return True
+    return False
 
 
 def _guard_occurred_at_no_futuro(occurred_at: datetime) -> None:
@@ -654,6 +659,7 @@ class SlaughterService:
             contract_version=AGGREGATE_CONTRACT_VERSION,
         )
         if _ja_usado_como_entrada(
+            self.event_repository,
             self.relation_service,
             organization_id,
             animal_reference,
@@ -916,6 +922,7 @@ class DeboningService:
         )
         for reference in input_references:
             if _ja_usado_como_entrada(
+                self.event_repository,
                 self.relation_service,
                 organization_id,
                 reference,

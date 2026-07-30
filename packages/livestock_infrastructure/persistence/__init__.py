@@ -85,6 +85,11 @@ from packages.livestock_infrastructure.persistence.veterinarian_repository impor
     veterinarians_table,
 )
 
+from .environmental_embargo_assertion_repository import (
+    TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
+    property_environmental_embargo_assertions_table,
+)
+
 __all__ = [
     "TransactionalAnimalMovementRepository",
     "TransactionalAnimalRepository",
@@ -98,6 +103,7 @@ __all__ = [
     "TransactionalAnimalExitRepository",
     "TransactionalExternalCounterpartyRepository",
     "TransactionalEstablishmentQualificationRepository",
+    "TransactionalPropertyEnvironmentalEmbargoAssertionRepository",
     "TransactionalImportedLivestockFactRepository",
     "TransactionalPropertyGeometryRepository",
     "TransactionalReproductiveEventRepository",
@@ -106,6 +112,7 @@ __all__ = [
     "TransactionalEstablishmentQualificationAssertionRepository",
     "qualification_source_artifacts_table",
     "establishment_qualification_assertions_table",
+    "property_environmental_embargo_assertions_table",
     "property_geometries_table",
     "reproductive_event_offspring_table",
     "reproductive_events_table",

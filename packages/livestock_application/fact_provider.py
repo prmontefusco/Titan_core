@@ -7,6 +7,9 @@ from typing import Any, Protocol
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.environmental_embargo_assertion_service import (
+    PropertyEnvironmentalEmbargoAssertionRepositoryPort,
+)
 from packages.livestock_application.establishment_qualification_service import (
     EstablishmentQualificationRepositoryPort,
     establishment_qualification_fact_type,
@@ -25,6 +28,9 @@ from packages.livestock_application.sanitary_requirement_service import (
 )
 from packages.livestock_application.treatment_service import TreatmentApplicationRepositoryPort
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
+from packages.livestock_domain.environmental_embargo_assertion import (
+    PropertyEnvironmentalEmbargoAssertion,
+)
 from packages.livestock_domain.establishment_qualification_assertion import (
     AssertionStatus,
     EstablishmentQualificationAssertion,
@@ -39,6 +45,7 @@ WITHDRAWAL_FACT_TYPE = "livestock.withdrawal"
 LOT_ELIGIBILITY_FACT_TYPE = "livestock.lot_eligibility"
 IMPORTED_TREATMENT_FACT_TYPE = "livestock.treatment_applied"
 EXTERNAL_COUNTERPARTY_FACT_TYPE = "livestock.external_counterparty"
+ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE = "livestock.environmental_embargo.ibama"
 # Sem limite de paginação real na leitura para fatos: uma campanha sanitária
 # que exista e não seja lida aqui produziria uma matriz que finge que aquela
 # campanha nunca foi exigida — pior que uma consulta um pouco mais cara.
@@ -79,6 +86,9 @@ class LivestockFactProvider(FactProviderPort):
         EstablishmentQualificationAssertionReaderPort | None
     ) = None
     stay_repository: PropertyStayRepositoryPort | None = None
+    environmental_embargo_assertion_repository: (
+        PropertyEnvironmentalEmbargoAssertionRepositoryPort | None
+    ) = None
     withdrawal_calculator: WithdrawalCalculator | None = None
     membership_repository: LotMembershipRepositoryPort | None = None
     imported_fact_repository: ImportedFactReaderPort | None = None
@@ -157,6 +167,43 @@ class LivestockFactProvider(FactProviderPort):
                         observed_at=at_time,
                     )
                 )
+
+                property_id = None
+                if self.stay_repository is not None:
+                    active_stay = self.stay_repository.get_active_stay(target_id)
+                    if active_stay is not None:
+                        property_id = active_stay.property_id
+                if property_id is None:
+                    property_id = animal.birth_property_id
+                embargo_assertion = self._latest_environmental_embargo_assertion(
+                    organization_id,
+                    property_id,
+                    at_time,
+                )
+                if embargo_assertion is not None:
+                    fact_list.append(
+                        Fact.create(
+                            fact_type=ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+                            payload={
+                                "assertion_id": embargo_assertion.assertion_id.value.hex,
+                                "property_id": embargo_assertion.property_id.value.hex,
+                                "geometry_id": (
+                                    None
+                                    if embargo_assertion.geometry_id is None
+                                    else embargo_assertion.geometry_id.value.hex
+                                ),
+                                "geometry_version": embargo_assertion.geometry_version,
+                                "status": embargo_assertion.status.value,
+                                "source_name": embargo_assertion.source_name,
+                                "source_layer": embargo_assertion.source_layer,
+                                "operation": embargo_assertion.operation,
+                                "restriction_count": embargo_assertion.restriction_count,
+                                "version_ids": list(embargo_assertion.version_ids),
+                                "response_digest": embargo_assertion.response_digest,
+                            },
+                            observed_at=embargo_assertion.observed_at,
+                        )
+                    )
 
                 if self.withdrawal_calculator is not None:
                     status = self.withdrawal_calculator.assess_animal(organization_id, target_id)
@@ -367,6 +414,23 @@ class LivestockFactProvider(FactProviderPort):
             as_of=at_time,
             facts=tuple(fact_list),
         )
+
+    def _latest_environmental_embargo_assertion(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId | None,
+        at_time: datetime,
+    ) -> PropertyEnvironmentalEmbargoAssertion | None:
+        if property_id is None or self.environmental_embargo_assertion_repository is None:
+            return None
+        assertions = self.environmental_embargo_assertion_repository.list_by_property(
+            organization_id,
+            property_id,
+        )
+        known_assertions = [item for item in assertions if item.observed_at <= at_time]
+        if not known_assertions:
+            return None
+        return max(known_assertions, key=lambda item: item.observed_at)
 
     def _imported_withdrawal_contributions(
         self, organization_id: OrganizationId, animal_id: TypedId

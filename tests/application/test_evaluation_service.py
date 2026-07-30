@@ -381,3 +381,36 @@ def test_evaluation_hash_reflects_snapshot_content() -> None:
         engine.evaluate(rule, snap_with).inputs_hash
         != engine.evaluate(rule, snap_without).inputs_hash
     )
+
+
+def test_rule_temporal_applicability_uses_reference_time_not_knowledge_cutoff() -> None:
+    org_id = OrganizationId.new()
+    subject_id = TypedId.new("batch")
+    reference_time = datetime.now(UTC)
+    knowledge_cutoff = reference_time + timedelta(days=30)
+
+    rule = _rule(
+        org_id,
+        valid_to=reference_time + timedelta(days=1),
+        required=("sanitary.attestation",),
+    )
+    snapshot = FactSnapshot.create(
+        organization_id=org_id,
+        target_id=subject_id,
+        as_of=reference_time,
+        reference_time=reference_time,
+        knowledge_cutoff=knowledge_cutoff,
+        facts=[
+            Fact.create(
+                fact_type="sanitary.attestation",
+                payload={"result": "approved"},
+                observed_at=reference_time,
+                known_at=reference_time,
+            )
+        ],
+    )
+
+    result = RuleEvaluationEngine().evaluate(rule, snapshot)
+
+    assert result.status == RuleResultStatus.ATENDIDA
+    assert result.evaluated_at == knowledge_cutoff

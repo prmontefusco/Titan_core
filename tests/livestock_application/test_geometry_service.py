@@ -25,7 +25,11 @@ from packages.livestock_domain.geometry import (
     digest_de,
 )
 from packages.livestock_domain.property import RuralProperty
-from packages.livestock_infrastructure.geodata import CarLayer, CarProperty
+from packages.livestock_infrastructure.geodata import (
+    CarLayer,
+    CarProperty,
+    SpatialRestrictionAssessment,
+)
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.conftest import FakeEventLog
 
@@ -107,6 +111,11 @@ class FakeCarLookup:
 
     def fetch_layers(self, cod_imovel: str, state: str) -> list[CarLayer]:
         return list(self.camadas)
+
+    def fetch_ibama_overlaps(
+        self, *, polygon_payload: str, srid: int = 4326
+    ) -> SpatialRestrictionAssessment:
+        raise AssertionError("Nao deveria consultar embargos do IBAMA nesta importacao.")
 
 
 def _camada(nome: str, payload: str) -> CarLayer:

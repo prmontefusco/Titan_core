@@ -1,8 +1,36 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 28 de julho de 2026
+**Atualizado em:** 29 de julho de 2026
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
-**Próximo passo planejado:** Passo 11.7 (correção de `TransformationEvent` publicado, ADR-0047) implementado e validado — Marco 11 completo. Próximo incremento a decidir com o responsável.
+**Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
+
+> **Atualização documental em 30/07/2026:** as ADRs `0050` a `0055` devem ser
+> tratadas como **ACEITAS**, e o documento
+> `docs/architecture-specification/TITAN_ARCHITECTURE_PRINCIPLES.md` passa a
+> ser usado como **documento norteador complementar**. Nenhum desses
+> documentos revoga `DOMAIN.md`, `ARCHITECTURE.md`, `DEVELOPMENT.md` ou o
+> checklist; eles refinam a interpretação arquitetural para os próximos
+> incrementos.
+
+## Adequações obrigatórias da ADR-0048
+
+> **ADR-0048 aceita em 29/07/2026.** O Core e a matriz de elegibilidade já possuem implementações parciais de `FactSnapshot`, `Evaluation`, `DecisionReason` e `Decision`, mas ainda não satisfazem todos os critérios da arquitetura de decisões explicáveis e reproduzíveis. Os itens abaixo não bloqueiam a redação da ADR-0049; bloqueiam apenas alegações de conformidade integral ou de emissão regulatória oficial pelo caminho automático atual.
+
+| Item | Estado | Objetivo e critério de aceite |
+|---|---|---|
+| **T1 — Proveniência no hash de `FactSnapshot`** | PENDENTE | Incluir `source_reference` e demais referências de proveniência relevantes na representação canônica hasheada. Alterar uma referência de origem deve alterar `snapshot_hash`; testes devem provar a regressão. |
+| **T2 — Temporalidade de conhecimento** | PENDENTE | Representar `recorded_at`, `known_at` e `discovered_at` quando aplicáveis, sem confundir esses instantes com o tempo do fato. Snapshot e seleção de `Policy` devem distinguir tempo de referência de tempo do conhecimento; reprodução histórica não pode usar conhecimento posterior. |
+| **T3 — Autoridade e método de emissão** | PENDENTE | Implementar e persistir `DecisionAuthorityProfile`, método de emissão e aprovações requeridas. Ausência de autoridade resolvida não pode emitir `Decision` oficial. |
+| **T4 — Proposta para revisão humana** | PENDENTE | Quando `EvaluationOutcome` exigir revisão humana, produzir e persistir `DecisionProposal`; não emitir `Decision` automática. A emissão posterior deve criar nova `Decision` vinculada à proposta e à autoridade aplicável. |
+
+### Testes obrigatórios de não regressão
+
+- `REVISAO_HUMANA_NECESSARIA` não pode emitir `Decision` automática;
+- ausência de autoridade não pode emitir `Decision`;
+- alteração de `source_reference` deve alterar `snapshot_hash`;
+- reprodução histórica não pode usar conhecimento posterior.
+
+Os quatro itens devem ser implementados em incrementos separados, com testes focados e roteiro executável caso a alteração exponha comportamento observável pela API.
 
 > **Nota de numeração:** a numeração deste checklist havia divergido do `PLANO_DE_IMPLEMENTACAO_VALIDADO.md`, que é a autoridade. Os registros do Marco 9 abaixo seguem a numeração do **PLANO**: 9.1 Medication e MedicationBatch, 9.2 VeterinaryPrescription, 9.3 TreatmentApplication, 9.4 WithdrawalPeriod, 9.5 elegibilidade farmacológica, 9.6 avaliação de lote. A entrega anterior rotulada "9.1 — Agregadores de Medicamentos e Prescrições" cobriu, na prática, o Medication do PLANO-9.1 **e** o VeterinaryPrescription do PLANO-9.2; o MedicationBatch que faltava no PLANO-9.1 foi entregue depois.
 
@@ -22,7 +50,7 @@
 
 > **ADR-0045 aceita em 27/07/2026, após três rodadas de revisão arquitetural.** Terceira rodada corrigiu: definição de `COMPLETE_SNAPSHOT` (ausência habilita significado, mas não decide — a Policy decide); introdução de `SourceArtifact` como entidade própria carregando `source_version`/hash/cobertura, com Assertion apenas referenciando `source_artifact_id`; `ConfidenceLevel` deixa de ser campo do payload HTTP e passa a ser computado pelo Titan a partir da proveniência; exemplo `UNKNOWN + INFORMED` corrigido para não violar a obrigatoriedade de artefato. Documento também registra um padrão emergente a observar (não generalizar ainda): modelagem bitemporal (`effective_*` = valid time; `observed_at`/`recorded_at` = knowledge time), útil para qualquer fato cuja verdade no mundo diverge de quando o Titan tomou conhecimento dela (CAR retroativo, embargo, status sanitário, documento cancelado). **Próximo passo: refatorar a implementação prototipada (`EstablishmentQualificationImportService`) conforme a arquitetura final desta ADR.**
 
-> **ADR-0045 implementada em 27/07/2026, commit `112aa70`.** Prototipagem anterior removida e substituída por `QualificationSourceArtifact`/`SourceCoverage` (`packages/livestock_domain/qualification_source_artifact.py`), `EstablishmentQualificationAssertion`/`AssertionStatus` (`packages/livestock_domain/establishment_qualification_assertion.py`), e `QualificationAssertionImportService` com `compute_confidence()` computando a confiança a partir do contexto de chamada (`packages/livestock_application/qualification_assertion_import_service.py`). Duas tabelas novas com RLS forçado na migration `20260727_0056`. Endpoint `POST /v1/livestock/establishments/qualification-assertions/import` sem campo `confidence` no payload. 34 testes novos cobrem os 6 casos formais da seção 11 da ADR, incluindo reconciliação com cobertura e a distinção entre reprodução histórica e auditoria retrospectiva. Roteiro de validação manual (`apps/validacao/importacao_qualificacao_estabelecimento.py`) reescrito para chamar o serviço real, não dados simulados. Portão completo com PostgreSQL real (Docker subido, migrations aplicadas): `ruff check`, `ruff format --check`, `mypy` (464 arquivos) e `alembic check` limpos; 929/932 testes aprovados. **As 3 falhas restantes são pré-existentes** em `test_livestock_api_leitura.py` (matriz de elegibilidade por mercado — 500 inesperado e status `AUSENTE` onde se esperava `INDETERMINADO`), confirmadas via `git stash` contra o commit anterior a este trabalho; sinalizadas como tarefa separada, não bloqueiam o fechamento do 17.3a.
+> **ADR-0045 implementada em 27/07/2026, commit `112aa70`, e alinhada ao fluxo manual em 29/07/2026.** Prototipagem anterior removida e substituída por `QualificationSourceArtifact`/`SourceCoverage` (`packages/livestock_domain/qualification_source_artifact.py`), `EstablishmentQualificationAssertion`/`AssertionStatus` (`packages/livestock_domain/establishment_qualification_assertion.py`), e `QualificationAssertionImportService` com `compute_confidence()` computando a confiança a partir do contexto de chamada (`packages/livestock_application/qualification_assertion_import_service.py`). Duas tabelas novas com RLS forçado na migration `20260727_0056`. Endpoint `POST /v1/livestock/establishments/qualification-assertions/import` sem campo `confidence` no payload. O endpoint manual de qualificação continua existindo por compatibilidade operacional, mas agora também grava `QualificationSourceArtifact` + `EstablishmentQualificationAssertion`, e a elegibilidade passa a preferir essa trilha bitemporal como fonte de decisão; o modelo legado fica como fallback de compatibilidade, não como fonte paralela preferencial. Testes cobrem reconciliação com cobertura, distinção entre reprodução histórica e auditoria retrospectiva, além da convergência manual→assertion.
 
 > **Investigação do item 1 concluída em 27/07/2026, commit `90d3eba`.** Achado estrutural: `tests/integration/test_livestock_api_leitura.py` tem `pytestmark = skipif(not DATABASE_URL, ...)` — sem `TITAN_DATABASE_URL` configurada, os 3 testes de matriz de mercado eram pulados em silêncio, e isso vinha acontecendo desde que os testes foram escritos. A linha do checklist que citava um desses testes como evidência de item `CONCLUÍDO` (27/07, "falha fechada sem carência declarada") nunca havia rodado de verdade contra PostgreSQL. Três bugs de fixture, nenhum em código de produção: (1) `_criar_policy_de_regra` criava a `Policy` como `draft` e nunca publicava — `PolicyEvaluationService` recusa avaliar draft desde o commit fundacional do motor (Marco 6), então isso nunca poderia ter funcionado; (2) o perfil da UE tem dois requisitos (carência + rastreabilidade, este último adicionado no commit `09d3417`) mas o helper só adotava regra para carência, e como `AUSENTE` tem precedência sobre `INDETERMINADO` na agregação, o requisito sem adoção mascarava o resultado que o teste queria exercitar; (3) a regra fictícia de carência declarava `required_evidence_types=["livestock.treatment_applied"]`, um tipo de fato que só existe via importação externa (ADR-0042) e que o cenário nunca produz — a regra real de produção (`build_eligibility_rule`, `eligibility.py`) não declara nenhum. Corrigidos os três; **932/932 testes passando**, zero pulados com o banco configurado corretamente.
 

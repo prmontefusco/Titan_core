@@ -318,6 +318,47 @@ def test_auditor_nao_registra_qualificacao_de_estabelecimento(
     assert resposta.json()["reason_code"] == "PERMISSAO_AUSENTE"
 
 
+def test_importacao_de_qualificacao_recusa_mesma_versao_com_hash_diferente(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={"name": "Frigorifico MAPA", "counterparty_type": "SLAUGHTERHOUSE"},
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+
+    corpo = {
+        "source": "MAPA",
+        "source_version": "2026-07-29T12:00:00Z",
+        "content_hash": "sha256:aaa",
+        "snapshot_semantics": "COMPLETE_SNAPSHOT",
+        "observed_at": "2026-07-29T12:00:00Z",
+        "assertions": [
+            {
+                "establishment_id": contraparte.json()["counterparty_id"],
+                "qualification_type": "EXPORT_CN",
+                "asserted_status": "QUALIFIED",
+            }
+        ],
+    }
+    primeira = operador.post(
+        "/v1/livestock/establishments/qualification-assertions/import",
+        json=corpo,
+        headers=_cabecalho(ambiente),
+    )
+    assert primeira.status_code == 201, primeira.text
+
+    resposta = operador.post(
+        "/v1/livestock/establishments/qualification-assertions/import",
+        json={**corpo, "content_hash": "sha256:bbb"},
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 409, resposta.text
+    assert resposta.json()["reason_code"] == "SOURCE_VERSION_CONTENT_HASH_CONFLICT"
+
+
 def test_o_levantamento_historico_traz_quem_saiu_com_a_saida_preenchida(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:

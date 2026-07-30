@@ -224,3 +224,248 @@ def test_publicar_regra_para_identidade_inexistente_retorna_404(ambiente) -> Non
 
     assert resposta.status_code == 404
     assert resposta.json()["reason_code"] == "RECURSO_NAO_ENCONTRADO"
+
+
+def test_catalogo_http_de_templates_de_mercado_publica_fatos_e_modelos(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.auditor).get(
+        "/v1/rule-governance/catalogs/livestock-market-rules",
+        headers=headers,
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["vertical"] == "livestock"
+    assert corpo["catalog_version"] == 1
+
+    facts = {item["fact_type"]: item for item in corpo["fact_types"]}
+    assert "livestock.withdrawal" in facts
+    assert "livestock.environmental_embargo.ibama" in facts
+    assert facts["livestock.sanitary_requirement.brucelose"]["parameterized"] is True
+
+    templates = {item["rule_code"]: item for item in corpo["templates"]}
+    assert "rule-carencia-farmacologica" in templates
+    assert "rule-embargo-ambiental-ibama" in templates
+    assert "rule-exigibilidade-sanitaria" in templates
+    assert (
+        templates["rule-habilitacao-estabelecimento"]["conditions"][0]["fact_type"]
+        == "livestock.establishment_qualification.{{market_purpose}}"
+    )
+    assert (
+        templates["rule-exigibilidade-sanitaria"]["conditions"][0]["fact_type"]
+        == "livestock.sanitary_requirement.{{campaign_code}}"
+    )
+
+
+def test_materializa_template_parametrizado_de_campanha_sanitaria(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.operador).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "sanitary-requirement-campaign-v1/drafts",
+        headers=headers,
+        json={
+            "name": "Brucelose obrigatoria para exportacao",
+            "description": "Exige campanha sanitaria de brucelose satisfeita.",
+            "normative_source": "IN ficticia de validacao",
+            "parameters": {"campaign_code": "brucelose"},
+        },
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["template_code"] == "sanitary-requirement-campaign-v1"
+    assert corpo["rule_code"] == "rule-exigibilidade-sanitaria"
+    assert corpo["severity"] == "blocking"
+    assert corpo["normative_source"] == "IN ficticia de validacao"
+    assert corpo["conditions"] == [
+        {
+            "fact_type": "livestock.sanitary_requirement.brucelose",
+            "payload_key": "status",
+            "operator": "equals",
+            "expected_value": "SATISFEITO",
+            "description": "A campanha sanitaria exigida precisa estar satisfeita.",
+        }
+    ]
+
+
+def test_materializa_template_parametrizado_exige_parametro_obrigatorio(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.operador).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "slaughterhouse-qualification-v1/drafts",
+        headers=headers,
+        json={
+            "name": "Habilitacao do frigorifico",
+            "parameters": {},
+        },
+    )
+
+    assert resposta.status_code == 422
+    assert resposta.json()["reason_code"] == "PARAMETRO_DE_TEMPLATE_INVALIDO"
+
+
+def test_auditor_nao_materializa_rascunho_de_template(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.auditor).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "pharmacological-withdrawal-v1/drafts",
+        headers=headers,
+        json={"name": "Carencia base"},
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_sugere_fluxo_completo_de_governanca_para_template_de_mercado(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.operador).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "sanitary-requirement-campaign-v1/governance-flow",
+        headers=headers,
+        json={
+            "market_purpose": "exportacao-china",
+            "adoption_scope": "livestock.animal",
+            "name": "Brucelose obrigatoria para China",
+            "normative_source": "Protocolo China 2026",
+            "identity_description": "Regra sugerida para mercado internacional.",
+            "version_description": "Campanha obrigatoria para exportacao.",
+            "adoption_reason": "Ativar regra para simulacao comercial.",
+            "parameters": {"campaign_code": "brucelose"},
+        },
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["template_code"] == "sanitary-requirement-campaign-v1"
+    assert corpo["identity"] == {
+        "code": "rule-exigibilidade-sanitaria",
+        "purpose": "Aplicar 'Brucelose obrigatoria para China' para o mercado 'exportacao-china'.",
+        "scope": "livestock.animal",
+        "source_type": "politica_interna",
+        "vertical": "livestock",
+        "description": "Regra sugerida para mercado internacional.",
+    }
+    assert corpo["version"]["rule_code"] == "rule-exigibilidade-sanitaria"
+    assert corpo["version"]["name"] == "Brucelose obrigatoria para China"
+    assert corpo["version"]["normative_source"] == "Protocolo China 2026"
+    assert (
+        corpo["version"]["conditions"][0]["fact_type"] == "livestock.sanitary_requirement.brucelose"
+    )
+    assert corpo["adoption"] == {
+        "purpose": "exportacao-china",
+        "scope": "livestock.animal",
+        "reason": "Ativar regra para simulacao comercial.",
+    }
+
+
+def test_auditor_nao_sugere_fluxo_de_governanca(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.auditor).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "pharmacological-withdrawal-v1/governance-flow",
+        headers=headers,
+        json={
+            "market_purpose": "exportacao-estados-unidos",
+            "adoption_scope": "livestock.animal",
+            "name": "Carencia para EUA",
+        },
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_executa_fluxo_assistido_e_cria_identidade_versao_e_adocao(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+    policy_id = _criar_policy(ambiente)
+
+    resposta = _cliente(ambiente, ambiente.operador).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "sanitary-requirement-campaign-v1/execute",
+        headers=headers,
+        json={
+            "policy_id": policy_id,
+            "market_purpose": "exportacao-china",
+            "adoption_scope": "livestock.animal",
+            "name": "Brucelose obrigatoria China",
+            "normative_source": "Protocolo China 2026",
+            "identity_description": "Fluxo assistido de validacao.",
+            "version_description": "Regra publicada via fluxo guiado.",
+            "adoption_reason": "Ativar regra por mercado.",
+            "parameters": {"campaign_code": "brucelose"},
+        },
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["template_code"] == "sanitary-requirement-campaign-v1"
+    assert corpo["identity"]["code"] == "rule-exigibilidade-sanitaria"
+    assert corpo["version"]["code"] == "rule-exigibilidade-sanitaria"
+    assert corpo["version"]["normative_source"] == "Protocolo China 2026"
+    assert (
+        corpo["version"]["conditions"][0]["fact_type"] == "livestock.sanitary_requirement.brucelose"
+    )
+    assert corpo["adoption"] is not None
+    assert corpo["adoption"]["purpose"] == "exportacao-china"
+    assert corpo["adoption"]["scope"] == "livestock.animal"
+
+    timeline = _cliente(ambiente, ambiente.auditor).get(
+        f"/v1/rule-governance/rule-identities/{corpo['identity']['rule_identity_id']}/timeline",
+        headers=headers,
+    )
+    assert timeline.status_code == 200, timeline.text
+    assert {item["event_type"] for item in timeline.json()["items"]} == {
+        "rule_identity_created",
+        "rule_version_drafted",
+        "rule_version_published",
+        "rule_adopted",
+    }
+
+
+def test_executa_fluxo_sem_adocao_quando_solicitado(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+    policy_id = _criar_policy(ambiente)
+
+    resposta = _cliente(ambiente, ambiente.operador).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "pharmacological-withdrawal-v1/execute",
+        headers=headers,
+        json={
+            "policy_id": policy_id,
+            "market_purpose": "exportacao-estados-unidos",
+            "adoption_scope": "livestock.animal",
+            "name": "Carencia base EUA",
+            "create_adoption": False,
+        },
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    corpo = resposta.json()
+    assert corpo["identity"]["code"] == "rule-carencia-farmacologica"
+    assert corpo["adoption"] is None
+
+
+def test_auditor_nao_executa_fluxo_assistido(ambiente) -> None:  # type: ignore[no-untyped-def]
+    headers = {"X-Titan-Organization-Id": str(ambiente.org_a.organization_id.value)}
+
+    resposta = _cliente(ambiente, ambiente.auditor).post(
+        "/v1/rule-governance/catalogs/livestock-market-rules/templates/"
+        "pharmacological-withdrawal-v1/execute",
+        headers=headers,
+        json={
+            "policy_id": str(uuid4()),
+            "market_purpose": "exportacao-estados-unidos",
+            "adoption_scope": "livestock.animal",
+            "name": "Carencia base EUA",
+        },
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["reason_code"] == "PERMISSAO_AUSENTE"

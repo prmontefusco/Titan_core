@@ -2,8 +2,15 @@
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import cast
 
-from packages.core_domain.decision import DecisionReason, DecisionReasonCode, DecisionResult
+from packages.core_domain.decision import (
+    Decision,
+    DecisionReason,
+    DecisionReasonCode,
+    DecisionResult,
+)
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
@@ -12,8 +19,12 @@ from packages.livestock_application.eligibility import ELIGIBILITY_RULE_ADOPTION
 from packages.livestock_application.establishment_qualification_service import (
     establishment_qualification_fact_type,
 )
+from packages.livestock_application.fact_provider import (
+    ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+)
 from packages.livestock_application.market_eligibility import (
     DEFAULT_MARKET_PROFILES,
+    ENVIRONMENTAL_EMBARGO_RULE_CODE,
     ESTABLISHMENT_RULE_CODE,
     TRACEABILITY_RULE_CODE,
     MarketEligibilityGapCode,
@@ -168,6 +179,11 @@ class InMemoryFactProvider:
                 Fact.create(
                     fact_type="livestock.withdrawal",
                     payload={"in_withdrawal": False},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type=ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+                    payload={"status": "SEM_RESTRICAO", "restriction_count": 0},
                     observed_at=at_time,
                 ),
             ),
@@ -417,6 +433,10 @@ def test_supported_markets_generate_independent_executions_side_by_side() -> Non
 
     assert len(evaluations.saved) == 2
     assert len(decisions.saved) == 2
+    assert all(
+        cast(Decision, decision).emission_method is DecisionEmissionMethod.AUTOMATED
+        for decision in decisions.saved
+    )
     executions = [entry.requirements[0].execution for entry in matrix.entries]
     assert executions[0] is not None
     assert executions[1] is not None
@@ -561,6 +581,7 @@ def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> N
 
     entry = matrix.entries[0]
     assert entry.status is MarketEligibilityStatus.ELEGIVEL
+    assert cast(Decision, decisions.saved[-1]).emission_method is DecisionEmissionMethod.AUTOMATED
     assert entry.dependency is not None
     assert entry.dependency.selected_subject_id == str(slaughterhouse_id.value)
     assert [requirement.status for requirement in entry.requirements] == [
@@ -679,12 +700,23 @@ def test_adopted_requirement_without_evaluator_is_indeterminate() -> None:
         TRACEABILITY_RULE_CODE,
         "exportacao-uniao-europeia",
     )
+    embargo_adoption = adoptions.add(
+        org_id,
+        ENVIRONMENTAL_EMBARGO_RULE_CODE,
+        "exportacao-uniao-europeia",
+    )
     rules.add_from_adoption(carencia, code="rule-carencia-farmacologica")
     rules.add_from_adoption(
         traceability_adoption,
         code=TRACEABILITY_RULE_CODE,
         justification="Rastreabilidade minima exigida.",
         corrective_action="Completar a cadeia minima de proveniencia.",
+    )
+    rules.add_from_adoption(
+        embargo_adoption,
+        code=ENVIRONMENTAL_EMBARGO_RULE_CODE,
+        justification="Ausencia de embargo ambiental conhecida.",
+        corrective_action="Resolver o embargo ou registrar nova assertion.",
     )
 
     matrix = MarketEligibilityService(
@@ -696,6 +728,7 @@ def test_adopted_requirement_without_evaluator_is_indeterminate() -> None:
     entry = matrix.entries[0]
     assert entry.status is MarketEligibilityStatus.INDETERMINADO
     assert [requirement.status for requirement in entry.requirements] == [
+        MarketEligibilityStatus.INDETERMINADO,
         MarketEligibilityStatus.INDETERMINADO,
         MarketEligibilityStatus.INDETERMINADO,
     ]
@@ -711,3 +744,110 @@ def test_adopted_requirement_without_evaluator_is_indeterminate() -> None:
     assert entry.requirements[1].gaps[0].code is (
         MarketEligibilityGapCode.AVALIADOR_DE_REQUISITO_AUSENTE
     )
+    assert entry.requirements[2].governed_rule is not None
+    assert entry.requirements[2].governed_rule.adoption_id == embargo_adoption.adoption_id
+    assert entry.requirements[2].rule_version is not None
+    assert entry.requirements[2].rule_version.code == ENVIRONMENTAL_EMBARGO_RULE_CODE
+    assert entry.requirements[2].gaps[0].code is (
+        MarketEligibilityGapCode.AVALIADOR_DE_REQUISITO_AUSENTE
+    )
+
+
+def test_market_with_adopted_environmental_embargo_rule_can_block_by_governed_fact() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+
+    carencia = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    embargo = adoptions.add(org_id, ENVIRONMENTAL_EMBARGO_RULE_CODE, "exportacao-china")
+    carencia_rule = rules.add_from_adoption(carencia, code="rule-carencia-farmacologica")
+    embargo_rule = Rule(
+        rule_id=embargo.rule_version_id,
+        policy_id=TypedId.new("policy"),
+        organization_id=org_id,
+        code=ENVIRONMENTAL_EMBARGO_RULE_CODE,
+        name="Embargo ambiental do IBAMA",
+        description="Bloqueia mercado quando a propriedade vigente tem embargo declarado.",
+        version=1,
+        severity=SeverityLevel.BLOCKING,
+        normative_source="politica interna ficticia",
+        conditions=(
+            RuleCondition(
+                fact_type=ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+                payload_key="status",
+                operator=ComparisonOperator.EQUALS,
+                expected_value="SEM_RESTRICAO",
+                description="A propriedade nao pode ter embargo ambiental do IBAMA.",
+            ),
+        ),
+        justification="Mercado exige ausencia de embargo ambiental conhecido.",
+        corrective_action="Resolver o embargo ou reavaliar com nova assertion valida.",
+    )
+    rules.items[embargo_rule.rule_id] = embargo_rule
+    policies.add_from_rule(carencia_rule)
+    policies.add_from_rule(embargo_rule)
+
+    class EmbargoedFactProvider(InMemoryFactProvider):
+        def get_snapshot(
+            self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+        ) -> FactSnapshot:
+            snapshot = super().get_snapshot(organization_id, target_id, at_time)
+            facts = tuple(
+                Fact.create(
+                    fact_type=ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+                    payload={"status": "COM_RESTRICAO", "restriction_count": 1},
+                    observed_at=at_time,
+                )
+                if fact.fact_type == ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE
+                else fact
+                for fact in snapshot.facts
+            )
+            return FactSnapshot.create(
+                organization_id=organization_id,
+                target_id=target_id,
+                as_of=at_time,
+                facts=facts,
+            )
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=EmbargoedFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                    MarketRequirement(
+                        rule_code=ENVIRONMENTAL_EMBARGO_RULE_CODE,
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC),
+    )
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.NAO_ELEGIVEL
+    assert cast(Decision, decisions.saved[-1]).emission_method is DecisionEmissionMethod.AUTOMATED
+    assert [requirement.status for requirement in entry.requirements] == [
+        MarketEligibilityStatus.ELEGIVEL,
+        MarketEligibilityStatus.NAO_ELEGIVEL,
+    ]
+    assert entry.requirements[1].rule_code == ENVIRONMENTAL_EMBARGO_RULE_CODE
+    assert entry.requirements[1].reasons[0].rule_code == ENVIRONMENTAL_EMBARGO_RULE_CODE

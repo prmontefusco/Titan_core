@@ -86,7 +86,7 @@ Este documento não substitui o checklist. Ele é o corte: uma leitura de cima p
 
 ### 3. Importação de qualificação de estabelecimento por fonte externa versionada
 **Existe:** ADR-0045 aceita (asserção bitemporal, `SourceArtifact`, `EstablishmentQualificationAssertion`, `SourceCoverage`, confiança computada pelo Titan) e implementada.
-**Não existe:** integração com uma fonte real (MAPA, frigorífico, importador) que publique essa lista automaticamente. Hoje a qualificação ainda é cadastro manual via API.
+**Não existe:** integração com uma fonte real (MAPA, frigorífico, importador) que publique essa lista automaticamente. O cadastro manual via API continua existindo, mas agora alimenta a mesma trilha auditável (`QualificationSourceArtifact` + `EstablishmentQualificationAssertion`) consumida pela elegibilidade; ele deixou de ser uma fonte paralela preferencial de decisão.
 
 ### 4. Contraparte externa como fornecedor indireto de ponta a ponta
 Fazenda de origem → recria → engorda é hoje um cadastro local por Organization. A cadeia cria→recria→engorda completa (GTA estadual, heterogênea) não está integrada — é a lacuna que a ADR-0042 deixou explícita desde o início.

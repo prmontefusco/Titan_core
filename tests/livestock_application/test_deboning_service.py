@@ -492,3 +492,83 @@ class TestCorrecaoDeDeboning:
                     TransformationOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
                 ),
             )
+
+    def test_entrada_removida_por_correcao_volta_a_ficar_disponivel(
+        self, recorder: LivestockEventRecorder, context: LivestockOperationContext
+    ) -> None:
+        cenario = Cenario(recorder, context)
+        original = cenario.service.register_deboning(
+            context=context,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            inputs=cenario.entradas(),
+            outputs=cenario.saidas(),
+        )
+        animal_extra = Animal(
+            animal_id=TypedId.new("animal"),
+            organization_id=cenario.organization_id,
+            birth_property_id=TypedId.new("rural_property"),
+            sex=AnimalSex.MALE,
+        )
+        cenario.animals.save(animal_extra)
+        cenario.exits.save(
+            AnimalExit(
+                exit_id=TypedId.new("animal_exit"),
+                organization_id=cenario.organization_id,
+                animal_id=animal_extra.animal_id,
+                exit_type=ExitType.ABATE,
+                occurred_at=ONTEM,
+            )
+        )
+        abate_extra = cenario.slaughter_service.register_slaughter(
+            context=context,
+            animal_id=animal_extra.animal_id,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=1),
+            outputs=(
+                TransformationOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+                TransformationOutputSpec(item_type=TraceableItemType.HALF_CARCASS),
+            ),
+        )
+        novo_item = abate_extra.created_items[0].item_id
+
+        cenario.service.correct_deboning(
+            context=context,
+            corrects_transformation_id=original.event.event_id,
+            correction_reason="Uma das meias-carcaças entrou por engano.",
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            inputs=(
+                cenario.entradas()[0],
+                DeboningInputSpec(
+                    item_id=novo_item,
+                    quantity=Decimal("150"),
+                    unit="kg",
+                    measurement_basis="peso liquido",
+                ),
+            ),
+            outputs=cenario.saidas(),
+        )
+
+        resultado = cenario.service.register_deboning(
+            context=context,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=3),
+            inputs=(
+                DeboningInputSpec(
+                    item_id=cenario.half_carcass_2,
+                    quantity=Decimal("150"),
+                    unit="kg",
+                    measurement_basis="peso liquido",
+                ),
+                DeboningInputSpec(
+                    item_id=abate_extra.created_items[1].item_id,
+                    quantity=Decimal("150"),
+                    unit="kg",
+                    measurement_basis="peso liquido",
+                ),
+            ),
+            outputs=cenario.saidas(),
+        )
+
+        assert resultado.event.inputs[0].subject_reference.target_id == cenario.half_carcass_2

@@ -8,8 +8,11 @@ from packages.livestock_infrastructure.geodata.car_client import (
     GeodataCarClient,
     GeodataIndisponivel,
     GeodataNaoConfigurado,
+    SpatialRestriction,
+    SpatialRestrictionAssessment,
     interpretar_camada,
     interpretar_resposta,
+    interpretar_restricoes_espaciais,
 )
 
 __all__ = [
@@ -20,6 +23,9 @@ __all__ = [
     "GeodataCarClient",
     "GeodataIndisponivel",
     "GeodataNaoConfigurado",
+    "SpatialRestriction",
+    "SpatialRestrictionAssessment",
     "interpretar_camada",
+    "interpretar_restricoes_espaciais",
     "interpretar_resposta",
 ]

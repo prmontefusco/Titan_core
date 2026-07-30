@@ -31,6 +31,7 @@ EXPECTED_EVENT_TYPES = frozenset(
         "livestock.medication_registered",
         "livestock.parentage_registered",
         "livestock.prescription_issued",
+        "livestock.property_environmental_embargo_assertion_recorded",
         "livestock.property_geometry_recorded",
         "livestock.property_registered",
         "livestock.reproductive_event_recorded",

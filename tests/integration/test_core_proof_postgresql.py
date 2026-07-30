@@ -57,6 +57,8 @@ from packages.core_domain.crypto import (
     KeyIdentifier,
 )
 from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.dossier import compute_dossier_hash
 from packages.core_domain.events import CanonicalPayload, DomainEvent
 from packages.core_domain.evidence import (
@@ -166,6 +168,18 @@ def _ref(org: OrganizationId, entity_type: str, value: TypedId | None = None) ->
         target_id=value or TypedId.new(entity_type),
         organization_id=org,
         contract_version=1,
+    )
+
+
+def _authority(org: OrganizationId, purpose: str) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org,
+        principal_reference=_ref(org, "service_identity"),
+        role_name="CORE_PROOF_AUTOMATED_DECISION_ENGINE",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
     )
 
 
@@ -397,7 +411,7 @@ def _run_full_scenario(connection: Connection) -> CoreProof:
     assert evaluation.is_reproducible()
 
     # ---- 7. Decisão explicável ------------------------------------------
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org, evaluation.purpose))
     TransactionalDecisionRepository(connection=connection).save(decision)
     assert decision.result is DecisionResult.REJEITADA
     assert decision.reasons, "Decisão sem razão não é explicável."

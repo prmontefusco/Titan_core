@@ -49,6 +49,9 @@ IMPORTED_FACT_RECORDED = "livestock.imported_fact_recorded"
 PARENTAGE_REGISTERED = "livestock.parentage_registered"
 REPRODUCTIVE_EVENT_RECORDED = "livestock.reproductive_event_recorded"
 PROPERTY_GEOMETRY_RECORDED = "livestock.property_geometry_recorded"
+PROPERTY_ENVIRONMENTAL_EMBARGO_ASSERTION_RECORDED = (
+    "livestock.property_environmental_embargo_assertion_recorded"
+)
 TRANSFORMATION_EVENT_RECORDED = "livestock.transformation_event_recorded"
 
 LIVESTOCK_EVENT_TYPES = frozenset(
@@ -76,6 +79,7 @@ LIVESTOCK_EVENT_TYPES = frozenset(
         PARENTAGE_REGISTERED,
         REPRODUCTIVE_EVENT_RECORDED,
         PROPERTY_GEOMETRY_RECORDED,
+        PROPERTY_ENVIRONMENTAL_EMBARGO_ASSERTION_RECORDED,
         TRANSFORMATION_EVENT_RECORDED,
     }
 )
@@ -709,5 +713,41 @@ def imported_fact_recorded_payload(
             "origin": origin,
             "received_by": _id(received_by),
             "source_artifact_id": _id(source_artifact_id),
+        },
+    )
+
+
+def property_environmental_embargo_assertion_recorded_payload(
+    *,
+    assertion_id: TypedId,
+    property_id: TypedId,
+    geometry_id: TypedId | None,
+    geometry_version: int | None,
+    source_name: str,
+    source_layer: str,
+    operation: str,
+    status: str,
+    source_digest: str | None,
+    response_digest: str | None,
+    version_ids: tuple[str, ...],
+    restriction_count: int,
+    observed_at: datetime,
+) -> CanonicalPayload:
+    return _payload(
+        PROPERTY_ENVIRONMENTAL_EMBARGO_ASSERTION_RECORDED,
+        {
+            "assertion_id": _id(assertion_id),
+            "geometry_id": None if geometry_id is None else _id(geometry_id),
+            "geometry_version": geometry_version,
+            "observed_at": observed_at,
+            "operation": operation,
+            "property_id": _id(property_id),
+            "response_digest": response_digest,
+            "restriction_count": restriction_count,
+            "source_digest": source_digest,
+            "source_layer": source_layer,
+            "source_name": source_name,
+            "status": status,
+            "version_ids": list(version_ids),
         },
     )

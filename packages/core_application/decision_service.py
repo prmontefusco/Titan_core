@@ -11,6 +11,8 @@ from packages.core_domain.decision import (
     DecisionResult,
     compute_decision_hash,
 )
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.evaluation import Evaluation, EvaluationOutcome, RuleResultStatus
 from packages.core_domain.rule import SeverityLevel
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -54,6 +56,7 @@ class DecisionService:
     def decide(
         self,
         evaluation: Evaluation,
+        authority_profile: DecisionAuthorityProfile,
         issued_at: datetime | None = None,
     ) -> Decision:
         # Uma Evaluation adulterada não pode fundamentar conclusão alguma.
@@ -61,6 +64,25 @@ class DecisionService:
             raise ValueError(
                 "Evaluation não reproduzível: o conteúdo preservado não confere "
                 "com o hash registrado."
+            )
+
+        issued_at = issued_at or evaluation.evaluated_at
+        if authority_profile.organization_id != evaluation.organization_id:
+            raise ValueError(
+                "Decision oficial exige DecisionAuthorityProfile da mesma organization da "
+                "Evaluation."
+            )
+        if authority_profile.purpose != evaluation.purpose:
+            raise ValueError(
+                "Decision oficial exige DecisionAuthorityProfile com a mesma purpose da Evaluation."
+            )
+        if not authority_profile.can_issue_at(
+            issued_at,
+            expected_method=DecisionEmissionMethod.AUTOMATED,
+        ):
+            raise ValueError(
+                "Decision oficial automatica exige DecisionAuthorityProfile ativo, "
+                "vigente, automatizado e sem aprovacoes pendentes."
             )
 
         result = self._derive_result(evaluation)
@@ -79,6 +101,8 @@ class DecisionService:
             result=result,
             reasons=reasons,
             engine_version=self.engine_version,
+            authority_profile_id=authority_profile.authority_id,
+            emission_method=DecisionEmissionMethod.AUTOMATED,
         )
 
         return Decision(
@@ -93,9 +117,12 @@ class DecisionService:
             result=result,
             reasons=reasons,
             snapshot_hash=evaluation.fact_snapshot.snapshot_hash,
-            issued_at=issued_at or evaluation.evaluated_at,
+            issued_at=issued_at,
             engine_version=self.engine_version,
             decision_hash=decision_hash,
+            authority_profile_id=authority_profile.authority_id,
+            authority_reference=authority_profile.principal_reference,
+            emission_method=DecisionEmissionMethod.AUTOMATED,
             affected_subjects=(
                 UniversalReference(
                     target_id=evaluation.subject_id,

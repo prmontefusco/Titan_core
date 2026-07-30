@@ -26,6 +26,7 @@ from packages.livestock_domain.geometry import digest_de
 
 TIMEOUT_PADRAO_SEGUNDOS = 30
 CAMINHO_IMOVEL = "/api/v1/sicar/properties"
+CAMINHO_IBAMA_POLIGONO = "/api/v1/ibama/spatial/polygon"
 
 
 class CarNaoEncontrado(LookupError):
@@ -105,10 +106,41 @@ class CarLayer:
     feature_count: int | None
 
 
+@dataclass(frozen=True, slots=True)
+class SpatialRestriction:
+    """Uma feicao territorial que intersecta o poligono consultado."""
+
+    source: str
+    layer: str
+    feature_id: int | None
+    polygon_payload: str
+    polygon_digest: str
+    response_digest: str
+    version_id: str | None
+    attributes: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class SpatialRestrictionAssessment:
+    """Resultado cru de uma consulta espacial por poligono."""
+
+    source: str
+    layer: str
+    operation: str
+    version_ids: tuple[str, ...]
+    restriction_count: int
+    restrictions: tuple[SpatialRestriction, ...]
+    response_digest: str
+
+
 class CarLookupPort(Protocol):
     def fetch(self, cod_imovel: str, state: str) -> CarProperty: ...
 
     def fetch_layers(self, cod_imovel: str, state: str) -> list[CarLayer]: ...
+
+    def fetch_ibama_overlaps(
+        self, *, polygon_payload: str, srid: int = 4326
+    ) -> SpatialRestrictionAssessment: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -194,6 +226,50 @@ class GeodataCarClient(CarLookupPort):
             raise GeodataIndisponivel("A lista de camadas não veio como lista.")
         return [interpretar_camada(item) for item in dados]
 
+    def fetch_ibama_overlaps(
+        self, *, polygon_payload: str, srid: int = 4326
+    ) -> SpatialRestrictionAssessment:
+        """Consulta embargos do IBAMA sobre um poligono informado."""
+        if not polygon_payload.strip():
+            raise ValueError("polygon_payload não pode ser vazio.")
+        if srid <= 0:
+            raise ValueError("srid deve ser positivo.")
+        try:
+            geometry = json.loads(polygon_payload)
+        except json.JSONDecodeError as erro:
+            raise ValueError("polygon_payload deve ser um GeoJSON válido.") from erro
+        if not isinstance(geometry, dict) or geometry.get("type") not in {
+            "Polygon",
+            "MultiPolygon",
+        }:
+            raise ValueError("polygon_payload deve descrever Polygon ou MultiPolygon.")
+
+        url = f"{self.base_url.rstrip('/')}{CAMINHO_IBAMA_POLIGONO}"
+        pedido = urllib.request.Request(
+            url,
+            headers={"X-API-Key": self.api_key, "Accept": "application/json"},
+            method="POST",
+            data=json.dumps(
+                {"geometry": geometry, "srid": srid},
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode("utf-8"),
+        )
+        try:
+            with urllib.request.urlopen(pedido, timeout=self.timeout_seconds) as resposta:
+                bruto = resposta.read()
+        except urllib.error.HTTPError as erro:
+            corpo = erro.read().decode("utf-8", errors="replace")[:300]
+            raise GeodataIndisponivel(
+                f"O provider devolveu {erro.code} na consulta espacial do IBAMA: {corpo}"
+                f" (chave usada: {self.chave_mascarada})"
+            ) from erro
+        except urllib.error.URLError as erro:
+            raise GeodataIndisponivel(
+                f"Provider inacessível em {self.base_url}: {erro.reason}"
+            ) from erro
+        return interpretar_restricoes_espaciais(bruto)
+
     def _pedir(self, caminho: str, state: str, cod_imovel: str) -> bytes:
         uf = state.strip().upper()
         if not cod_imovel.strip():
@@ -276,6 +352,86 @@ def interpretar_resposta(bruto: bytes) -> CarProperty:
         polygon_digest=digest_de(payload),
         response_digest=digest_de(texto),
         attributes=dict(dados.get("properties") or {}),
+    )
+
+
+def interpretar_restricoes_espaciais(bruto: bytes) -> SpatialRestrictionAssessment:
+    """Traduz a resposta espacial do provider em tipos do Titan."""
+    texto = bruto.decode("utf-8")
+    try:
+        dados = json.loads(texto)
+    except json.JSONDecodeError as erro:
+        raise GeodataIndisponivel("O provider não devolveu JSON.") from erro
+
+    dataset = dados.get("dataset")
+    if not isinstance(dataset, dict):
+        raise GeodataIndisponivel("A resposta espacial não traz metadados do dataset.")
+    source = dataset.get("source")
+    layer = dataset.get("layer")
+    version_ids = dataset.get("version_ids") or []
+    if not isinstance(source, str) or not source:
+        raise GeodataIndisponivel("A resposta espacial não informa a fonte.")
+    if not isinstance(layer, str) or not layer:
+        raise GeodataIndisponivel("A resposta espacial não informa a camada.")
+    if not isinstance(version_ids, list):
+        raise GeodataIndisponivel("version_ids precisa ser uma lista.")
+
+    operation = dados.get("operation")
+    count = dados.get("count")
+    features = dados.get("features")
+    if not isinstance(operation, str) or not operation:
+        raise GeodataIndisponivel("A resposta espacial não informa a operação.")
+    if not isinstance(count, int):
+        raise GeodataIndisponivel("A resposta espacial não informa a contagem.")
+    if not isinstance(features, list):
+        raise GeodataIndisponivel("A resposta espacial não traz features como lista.")
+
+    restrictions: list[SpatialRestriction] = []
+    for item in features:
+        if not isinstance(item, dict):
+            raise GeodataIndisponivel("Feature espacial malformada.")
+        geometria = item.get("geometry")
+        propriedades = item.get("properties") or {}
+        if not isinstance(geometria, dict) or "type" not in geometria:
+            raise GeodataIndisponivel("Feature espacial sem geometria reconhecível.")
+        if not isinstance(propriedades, dict):
+            raise GeodataIndisponivel("Feature espacial sem propriedades reconhecíveis.")
+        payload = json.dumps(geometria, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
+        feature_response_digest = digest_de(
+            json.dumps(item, separators=(",", ":"), ensure_ascii=False)
+        )
+        restrictions.append(
+            SpatialRestriction(
+                source=source,
+                layer=layer,
+                feature_id=(
+                    int(propriedades["id"]) if isinstance(propriedades.get("id"), int) else None
+                ),
+                polygon_payload=payload,
+                polygon_digest=digest_de(payload),
+                response_digest=feature_response_digest,
+                version_id=(
+                    str(propriedades["version_id"])
+                    if propriedades.get("version_id") is not None
+                    else None
+                ),
+                attributes=dict(propriedades),
+            )
+        )
+
+    if count != len(restrictions):
+        raise GeodataIndisponivel(
+            "A resposta espacial declara uma contagem diferente do número de features."
+        )
+
+    return SpatialRestrictionAssessment(
+        source=source,
+        layer=layer,
+        operation=operation,
+        version_ids=tuple(str(item) for item in version_ids),
+        restriction_count=count,
+        restrictions=tuple(restrictions),
+        response_digest=digest_de(texto),
     )
 
 

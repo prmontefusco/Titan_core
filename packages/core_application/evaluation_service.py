@@ -57,7 +57,7 @@ class RuleEvaluationEngine:
             status=status,
             severity=rule.severity,
             reason=reason,
-            evaluated_at=snapshot.as_of,
+            evaluated_at=snapshot.effective_knowledge_cutoff(),
             snapshot_hash=snapshot.snapshot_hash,
             inputs_hash=inputs_hash,
             corrective_action=rule.corrective_action if status in _ACTIONABLE_STATUSES else "",
@@ -71,14 +71,14 @@ class RuleEvaluationEngine:
         available_evidence_types: frozenset[str],
     ) -> tuple[RuleResultStatus, str, tuple[str, ...]]:
         # 1. Aplicabilidade temporal: a Regra não vigora no instante do snapshot.
-        as_of = snapshot.as_of
-        if rule.valid_from is not None and as_of < rule.valid_from:
+        reference_time = snapshot.effective_reference_time()
+        if rule.valid_from is not None and reference_time < rule.valid_from:
             return (
                 RuleResultStatus.NAO_APLICAVEL,
                 f"Regra '{rule.code}' entra em vigor apenas em {rule.valid_from.isoformat()}.",
                 (),
             )
-        if rule.valid_to is not None and as_of > rule.valid_to:
+        if rule.valid_to is not None and reference_time > rule.valid_to:
             return (
                 RuleResultStatus.NAO_APLICAVEL,
                 f"Regra '{rule.code}' deixou de vigorar em {rule.valid_to.isoformat()}.",
@@ -283,7 +283,7 @@ class PolicyEvaluationService:
             fact_snapshot=snapshot,
             rule_results=rule_results,
             outcome=outcome,
-            evaluated_at=evaluated_at or snapshot.as_of,
+            evaluated_at=evaluated_at or snapshot.effective_knowledge_cutoff(),
             engine_version=self.engine.engine_version,
             evaluation_hash=evaluation_hash,
             executor_reference=executor_reference,

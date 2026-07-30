@@ -7,8 +7,13 @@ conformidade.
 """
 
 import json
+import urllib.error
+import urllib.request
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from email.message import Message
+from io import BytesIO
+from typing import cast
 
 import pytest
 
@@ -18,6 +23,7 @@ from packages.livestock_infrastructure.geodata import (
     GeodataIndisponivel,
     GeodataNaoConfigurado,
     interpretar_resposta,
+    interpretar_restricoes_espaciais,
 )
 
 # Uma resposta como a que o Titan_geodata devolve de verdade.
@@ -52,9 +58,51 @@ RESPOSTA: dict[str, object] = {
     },
 }
 
+RESPOSTA_IBAMA: dict[str, object] = {
+    "operation": "intersects",
+    "dataset": {
+        "source": "IBAMA",
+        "layer": "IBAMA_EMBARGOS",
+        "version_ids": ["ibama_v1"],
+    },
+    "count": 1,
+    "features": [
+        {
+            "type": "Feature",
+            "geometry": {
+                "type": "MultiPolygon",
+                "coordinates": [
+                    [
+                        [
+                            [-54.5, -21.5],
+                            [-54.5, -20.5],
+                            [-53.5, -20.5],
+                            [-53.5, -21.5],
+                            [-54.5, -21.5],
+                        ]
+                    ]
+                ],
+            },
+            "properties": {
+                "id": 10,
+                "version_id": "ibama_v1",
+                "num_tad": "9999/2026",
+                "uf_sigla": "MS",
+                "municipio": "Dourados",
+                "nom_embarg": "Fazenda Exemplo",
+                "area_ha": 150.5,
+            },
+        }
+    ],
+}
+
 
 def _bruto(dados: Mapping[str, object] | None = None) -> bytes:
     return json.dumps(dados if dados is not None else RESPOSTA).encode("utf-8")
+
+
+def _bruto_ibama(dados: Mapping[str, object] | None = None) -> bytes:
+    return json.dumps(dados if dados is not None else RESPOSTA_IBAMA).encode("utf-8")
 
 
 def test_a_resposta_e_interpretada_sem_perder_nada() -> None:
@@ -135,6 +183,28 @@ def test_resposta_que_nao_e_json_e_recusada() -> None:
         interpretar_resposta(b"<html>erro do proxy</html>")
 
 
+def test_restricoes_espaciais_sao_interpretadas_sem_julgamento() -> None:
+    assessment = interpretar_restricoes_espaciais(_bruto_ibama())
+
+    assert assessment.source == "IBAMA"
+    assert assessment.layer == "IBAMA_EMBARGOS"
+    assert assessment.operation == "intersects"
+    assert assessment.version_ids == ("ibama_v1",)
+    assert assessment.restriction_count == 1
+    assert assessment.restrictions[0].attributes["nom_embarg"] == "Fazenda Exemplo"
+    assert assessment.restrictions[0].polygon_digest == digest_de(
+        assessment.restrictions[0].polygon_payload
+    )
+
+
+def test_resposta_espacial_com_contagem_incoerente_e_recusada() -> None:
+    torta = dict(RESPOSTA_IBAMA)
+    torta["count"] = 2
+
+    with pytest.raises(GeodataIndisponivel, match="contagem"):
+        interpretar_restricoes_espaciais(_bruto_ibama(torta))
+
+
 def test_cliente_sem_configuracao_e_recusado_na_construcao() -> None:
     """Falhar ao construir evita descobrir a falta de chave na primeira consulta."""
     with pytest.raises(GeodataNaoConfigurado):
@@ -150,3 +220,90 @@ def test_parametros_malformados_sao_recusados(codigo: str, uf: str) -> None:
 
     with pytest.raises(ValueError):
         cliente.fetch(codigo, uf)
+
+
+def test_poligono_malformado_e_recusado_antes_da_rede() -> None:
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(ValueError, match="Polygon ou MultiPolygon"):
+        cliente.fetch_ibama_overlaps(
+            polygon_payload=json.dumps({"type": "Point", "coordinates": [-53.9, -21.9]})
+        )
+
+
+def test_cliente_envia_post_para_o_endpoint_espacial(monkeypatch: pytest.MonkeyPatch) -> None:
+    pedido_capturado: dict[str, object] = {}
+
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_ibama()
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        pedido_capturado["request"] = request
+        pedido_capturado["timeout"] = timeout
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    assessment = cliente.fetch_ibama_overlaps(
+        polygon_payload=json.dumps(
+            {
+                "type": "Polygon",
+                "coordinates": [
+                    [[-54.0, -22.0], [-54.0, -21.0], [-53.0, -21.0], [-53.0, -22.0], [-54.0, -22.0]]
+                ],
+            }
+        )
+    )
+
+    request = pedido_capturado["request"]
+    assert isinstance(request, urllib.request.Request)
+    assert request.full_url == "http://provider.invalido/api/v1/ibama/spatial/polygon"
+    assert request.get_method() == "POST"
+    assert request.headers["X-api-key"] == "chave"
+    assert pedido_capturado["timeout"] == cliente.timeout_seconds
+    body = json.loads(cast(bytes, request.data).decode("utf-8"))
+    assert body["srid"] == 4326
+    assert body["geometry"]["type"] == "Polygon"
+    assert assessment.restriction_count == 1
+
+
+def test_erro_http_da_consulta_espacial_vira_indisponibilidade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _urlopen(_: object, timeout: int) -> object:
+        raise urllib.error.HTTPError(
+            url="http://provider.invalido/api/v1/ibama/spatial/polygon",
+            code=503,
+            msg="Service Unavailable",
+            hdrs=Message(),
+            fp=BytesIO(b'{"detail":"temporariamente fora"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(GeodataIndisponivel, match="consulta espacial do IBAMA"):
+        cliente.fetch_ibama_overlaps(
+            polygon_payload=json.dumps(
+                {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [-54.0, -22.0],
+                            [-54.0, -21.0],
+                            [-53.0, -21.0],
+                            [-53.0, -22.0],
+                            [-54.0, -22.0],
+                        ]
+                    ],
+                }
+            )
+        )

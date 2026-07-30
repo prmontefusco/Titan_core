@@ -9,6 +9,7 @@ from enum import Enum
 from typing import Any
 from uuid import UUID
 
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.facts import reference_from_dict, reference_to_dict
 from packages.core_domain.rule import SeverityLevel
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -116,6 +117,8 @@ def compute_decision_hash(
     result: DecisionResult,
     reasons: Sequence[DecisionReason],
     engine_version: int,
+    authority_profile_id: TypedId,
+    emission_method: DecisionEmissionMethod,
 ) -> str:
     """Digest SHA-256 determinístico da Decision.
 
@@ -130,6 +133,8 @@ def compute_decision_hash(
         "purpose": purpose,
         "result": result.value,
         "engine_version": engine_version,
+        "authority_profile_id": str(authority_profile_id.value),
+        "emission_method": emission_method.value,
         "reasons": sorted(
             (
                 {
@@ -169,6 +174,9 @@ class Decision:
     issued_at: datetime
     engine_version: int
     decision_hash: str
+    authority_profile_id: TypedId
+    authority_reference: UniversalReference
+    emission_method: DecisionEmissionMethod
     affected_subjects: tuple[UniversalReference, ...] = field(default_factory=tuple)
     evidence_references: tuple[UniversalReference, ...] = field(default_factory=tuple)
     corrective_actions: tuple[str, ...] = field(default_factory=tuple)
@@ -180,10 +188,14 @@ class Decision:
             raise ValueError("evaluation_id deve ser do tipo 'evaluation'.")
         if self.policy_id.entity_type != "policy":
             raise ValueError("policy_id deve ser do tipo 'policy'.")
+        if self.authority_profile_id.entity_type != "authority_profile":
+            raise ValueError("authority_profile_id deve ser do tipo 'authority_profile'.")
         if not isinstance(self.organization_id, OrganizationId):
             raise TypeError("organization_id deve ser OrganizationId.")
         if not isinstance(self.result, DecisionResult):
             raise TypeError("result deve ser um DecisionResult válido.")
+        if not isinstance(self.emission_method, DecisionEmissionMethod):
+            raise TypeError("emission_method deve ser um DecisionEmissionMethod válido.")
         if not isinstance(self.purpose, str) or not self.purpose.strip():
             raise ValueError("Toda Decision exige finalidade (purpose) não vazia.")
         if not isinstance(self.policy_version, int) or self.policy_version < 1:
@@ -209,6 +221,8 @@ class Decision:
             result=self.result,
             reasons=self.reasons,
             engine_version=self.engine_version,
+            authority_profile_id=self.authority_profile_id,
+            emission_method=self.emission_method,
         )
 
     def is_reproducible(self) -> bool:

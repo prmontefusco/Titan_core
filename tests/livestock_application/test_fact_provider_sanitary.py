@@ -15,11 +15,17 @@ from packages.livestock_application.establishment_qualification_service import (
     establishment_qualification_fact_type,
 )
 from packages.livestock_application.fact_provider import (
+    ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
     LivestockFactProvider,
     sanitary_requirement_fact_type,
 )
+from packages.livestock_application.movement_service import PropertyStayRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_domain.animal import Animal, AnimalSex
+from packages.livestock_domain.environmental_embargo_assertion import (
+    EnvironmentalEmbargoAssertionStatus,
+    PropertyEnvironmentalEmbargoAssertion,
+)
 from packages.livestock_domain.establishment_qualification import (
     EstablishmentQualification,
     EstablishmentQualificationStatus,
@@ -29,6 +35,7 @@ from packages.livestock_domain.establishment_qualification_assertion import (
     EstablishmentQualificationAssertion,
 )
 from packages.livestock_domain.external_counterparty import CounterpartyType, ExternalCounterparty
+from packages.livestock_domain.movement import PropertyStay, StayStatus
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.treatment import TreatmentApplication
@@ -145,6 +152,41 @@ class _InMemoryAssertionRepo:
         ]
 
 
+class _InMemoryEmbargoAssertionRepo:
+    def __init__(self, assertions: list[PropertyEnvironmentalEmbargoAssertion]) -> None:
+        self._assertions = assertions
+
+    def save(self, assertion: PropertyEnvironmentalEmbargoAssertion) -> None:
+        self._assertions.append(assertion)
+
+    def list_by_property(
+        self, organization_id: OrganizationId, property_id: TypedId
+    ) -> list[PropertyEnvironmentalEmbargoAssertion]:
+        return [
+            item
+            for item in self._assertions
+            if item.organization_id == organization_id and item.property_id == property_id
+        ]
+
+
+class _InMemoryStayRepo(PropertyStayRepositoryPort):
+    def __init__(self, active_by_animal: dict[TypedId, PropertyStay]) -> None:
+        self._active_by_animal = active_by_animal
+
+    def save(self, stay: PropertyStay) -> None: ...
+
+    def update(self, stay: PropertyStay) -> None: ...
+
+    def delete_by_animal(self, animal_id: TypedId) -> None: ...
+
+    def get_active_stay(self, animal_id: TypedId) -> PropertyStay | None:
+        return self._active_by_animal.get(animal_id)
+
+    def get_timeline(self, animal_id: TypedId) -> list[PropertyStay]:
+        active = self.get_active_stay(animal_id)
+        return [] if active is None else [active]
+
+
 def _org() -> OrganizationId:
     return OrganizationId(uuid4())
 
@@ -167,6 +209,41 @@ def _campaign(org_id: OrganizationId, code: str) -> SanitaryCampaign:
         name=f"Campanha {code}",
         starts_at=agora - timedelta(days=90),
         ends_at=agora + timedelta(days=90),
+    )
+
+
+def _embargo_assertion(
+    org_id: OrganizationId,
+    property_id: TypedId,
+    *,
+    observed_at: datetime,
+    status: EnvironmentalEmbargoAssertionStatus = EnvironmentalEmbargoAssertionStatus.COM_RESTRICAO,
+) -> PropertyEnvironmentalEmbargoAssertion:
+    return PropertyEnvironmentalEmbargoAssertion.create(
+        organization_id=org_id,
+        property_id=property_id,
+        geometry_id=TypedId.new("property_geometry"),
+        geometry_version=3,
+        source_name="IBAMA",
+        source_layer="IBAMA_EMBARGOS",
+        operation="intersects",
+        status=status,
+        source_digest="a" * 64,
+        response_digest="b" * 64,
+        version_ids=("ibama_v3",),
+        restrictions_payload=(
+            {
+                "source": "IBAMA",
+                "layer": "IBAMA_EMBARGOS",
+                "feature_id": 99,
+                "version_id": "ibama_v3",
+                "polygon_digest": "c" * 64,
+                "attributes": {"nom_embarg": "Area teste"},
+            },
+        )
+        if status is EnvironmentalEmbargoAssertionStatus.COM_RESTRICAO
+        else (),
+        observed_at=observed_at,
     )
 
 
@@ -325,3 +402,65 @@ def test_qualificacao_de_estabelecimento_prefere_assercao_bitemporal_ao_legado()
     assert len(fatos) == 1
     assert fatos[0].payload["qualification_status"] == "HABILITADO"
     assert fatos[0].payload["asserted_status"] == "QUALIFIED"
+
+
+def test_emite_fato_de_embargo_ambiental_da_assertion_mais_recente_da_propriedade_atual() -> None:
+    org_id = _org()
+    property_id = TypedId.new("rural_property")
+    animal = Animal(
+        animal_id=TypedId.new("animal"),
+        organization_id=org_id,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.MALE,
+    )
+    agora = datetime.now(UTC)
+    stay = PropertyStay(
+        stay_id=TypedId.new("property_stay"),
+        organization_id=org_id,
+        animal_id=animal.animal_id,
+        property_id=property_id,
+        start_time=agora - timedelta(days=5),
+        end_time=None,
+        status=StayStatus.ACTIVE,
+        source_movement_id=TypedId.new("animal_movement"),
+    )
+    antiga = _embargo_assertion(org_id, property_id, observed_at=agora - timedelta(days=3))
+    recente = _embargo_assertion(org_id, property_id, observed_at=agora - timedelta(days=1))
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        stay_repository=_InMemoryStayRepo({animal.animal_id: stay}),
+        environmental_embargo_assertion_repository=_InMemoryEmbargoAssertionRepo([antiga, recente]),
+    )
+
+    snapshot = provider.get_snapshot(org_id, animal.animal_id, agora)
+    fatos = [f for f in snapshot.facts if f.fact_type == ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE]
+
+    assert len(fatos) == 1
+    assert fatos[0].observed_at == recente.observed_at
+    assert fatos[0].payload["assertion_id"] == recente.assertion_id.value.hex
+    assert fatos[0].payload["property_id"] == property_id.value.hex
+    assert fatos[0].payload["status"] == "COM_RESTRICAO"
+    assert fatos[0].payload["restriction_count"] == 1
+
+
+def test_nao_emite_fato_de_embargo_sem_assertion_conhecida_ate_o_instante() -> None:
+    org_id = _org()
+    property_id = TypedId.new("rural_property")
+    animal = Animal(
+        animal_id=TypedId.new("animal"),
+        organization_id=org_id,
+        birth_property_id=property_id,
+        sex=AnimalSex.MALE,
+    )
+    agora = datetime.now(UTC)
+    futura = _embargo_assertion(org_id, property_id, observed_at=agora + timedelta(days=1))
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        environmental_embargo_assertion_repository=_InMemoryEmbargoAssertionRepo([futura]),
+    )
+
+    snapshot = provider.get_snapshot(org_id, animal.animal_id, agora)
+
+    assert [f for f in snapshot.facts if f.fact_type == ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE] == []

@@ -562,6 +562,47 @@ class TestCorrecaoDeSlaughter:
         )
         assert correcao.event.inputs[0].subject_reference.target_id == cenario.animal_id
 
+    def test_correção_que_libera_entrada_permite_nova_transformacao(
+        self, recorder: LivestockEventRecorder, context: LivestockOperationContext
+    ) -> None:
+        cenario = Cenario(recorder, context)
+        cenario.abater()
+        original = cenario.service.register_slaughter(
+            context=context,
+            animal_id=cenario.animal_id,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=1),
+            outputs=cenario.outputs(2),
+        )
+        animal_novo = Animal(
+            animal_id=TypedId.new("animal"),
+            organization_id=cenario.organization_id,
+            birth_property_id=TypedId.new("rural_property"),
+            sex=AnimalSex.MALE,
+        )
+        cenario.animals.save(animal_novo)
+        cenario.abater(animal_id=animal_novo.animal_id)
+
+        cenario.service.correct_slaughter(
+            context=context,
+            corrects_transformation_id=original.event.event_id,
+            correction_reason="Ajuste de rastreabilidade.",
+            animal_id=cenario.animal_id,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=1),
+            outputs=cenario.outputs(2),
+        )
+
+        resultado = cenario.service.register_slaughter(
+            context=context,
+            animal_id=animal_novo.animal_id,
+            facility_property_id=cenario.facility_id,
+            occurred_at=ONTEM + timedelta(hours=2),
+            outputs=cenario.outputs(2),
+        )
+
+        assert resultado.event.event_id != original.event.event_id
+
     def test_recusa_corrigir_evento_de_outro_process_type(
         self, recorder: LivestockEventRecorder, context: LivestockOperationContext
     ) -> None:

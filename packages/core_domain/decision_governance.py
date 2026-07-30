@@ -11,6 +11,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
 
@@ -24,14 +25,19 @@ class GovernanceStatus(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DecisionAuthorityProfile:
-    """Perfil de autoridade humana credenciada para emitir intervenções (overrides)."""
+    """Perfil resolvido pelo servidor para emitir Decision oficial."""
 
     authority_id: TypedId
     organization_id: OrganizationId
     principal_reference: UniversalReference
     role_name: str
+    purpose: str
+    emission_method: DecisionEmissionMethod = DecisionEmissionMethod.HUMAN
+    approvals_required: int = 0
     max_delegated_severity: str = "CRITICAL"
     is_active: bool = True
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.authority_id.entity_type != "authority_profile":
@@ -40,6 +46,35 @@ class DecisionAuthorityProfile:
             raise TypeError("organization_id deve ser OrganizationId.")
         if not isinstance(self.role_name, str) or not self.role_name.strip():
             raise ValueError("role_name deve ser uma string não vazia.")
+        if not isinstance(self.purpose, str) or not self.purpose.strip():
+            raise ValueError("purpose deve ser uma string não vazia.")
+        if self.approvals_required < 0:
+            raise ValueError("approvals_required não pode ser negativo.")
+        if self.valid_from is not None:
+            require_utc(self.valid_from, field_name="valid_from")
+        if self.valid_to is not None:
+            require_utc(self.valid_to, field_name="valid_to")
+        if (
+            self.valid_from is not None
+            and self.valid_to is not None
+            and self.valid_to < self.valid_from
+        ):
+            raise ValueError("valid_to não pode ser anterior a valid_from.")
+
+    def can_issue_at(
+        self,
+        issued_at: datetime,
+        *,
+        expected_method: DecisionEmissionMethod,
+    ) -> bool:
+        require_utc(issued_at, field_name="issued_at")
+        if not self.is_active or self.emission_method is not expected_method:
+            return False
+        if self.valid_from is not None and issued_at < self.valid_from:
+            return False
+        if self.valid_to is not None and issued_at > self.valid_to:
+            return False
+        return self.approvals_required == 0
 
 
 @dataclass(frozen=True, slots=True)

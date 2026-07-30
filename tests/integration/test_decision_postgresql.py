@@ -17,6 +17,8 @@ from packages.core_application.evaluation_service import (
 from packages.core_application.policy_service import PolicyService
 from packages.core_application.rule_service import RuleService
 from packages.core_domain.decision import DecisionReasonCode, DecisionResult
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.rule import ComparisonOperator, RuleCondition, SeverityLevel
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
@@ -36,6 +38,22 @@ def db_connection() -> Iterator[Connection]:
     with engine.connect() as conn:
         with conn.begin():
             yield conn
+
+
+def _authority(org_id: OrganizationId, purpose: str) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="INTEGRATION_AUTOMATED_DECISION_ENGINE",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+    )
 
 
 def test_decision_is_preserved_explainable_and_isolated(db_connection: Connection) -> None:
@@ -108,7 +126,8 @@ def test_decision_is_preserved_explainable_and_isolated(db_connection: Connectio
     )
     evaluation_repo.save(evaluation)
 
-    decision = DecisionService().decide(evaluation)
+    authority = _authority(org_id_1, evaluation.purpose)
+    decision = DecisionService().decide(evaluation, authority)
     assert decision.result == DecisionResult.REJEITADA
     decision_repo.save(decision)
 
@@ -126,7 +145,7 @@ def test_decision_is_preserved_explainable_and_isolated(db_connection: Connectio
     # A decisão é reconstruível a partir da Evaluation preservada no banco.
     evaluation_do_banco = evaluation_repo.get_by_id(evaluation.evaluation_id)
     assert evaluation_do_banco is not None
-    reconstruida = DecisionService().decide(evaluation_do_banco)
+    reconstruida = DecisionService().decide(evaluation_do_banco, authority)
     assert reconstruida.decision_hash == decision.decision_hash
     assert reconstruida.result == decision.result
 

@@ -14,6 +14,9 @@ from packages.core_infrastructure.persistence import (
 from packages.core_infrastructure.persistence.checkpoints import integrity_checkpoints_table
 from packages.core_infrastructure.persistence.crypto import key_registry_table
 from packages.core_infrastructure.persistence.decision import decisions_table
+from packages.core_infrastructure.persistence.decision_governance import (
+    decision_authority_profiles_table,
+)
 from packages.core_infrastructure.persistence.dossier import dossiers_table
 from packages.core_infrastructure.persistence.evaluation import evaluations_table
 from packages.core_infrastructure.persistence.events import (
@@ -66,6 +69,7 @@ from packages.livestock_infrastructure.persistence import (
     medications_table,
     prescription_targets_table,
     prescriptions_table,
+    property_environmental_embargo_assertions_table,
     property_geometries_table,
     property_stays_table,
     reproductive_event_offspring_table,
@@ -105,6 +109,7 @@ assert rule_timeline_events_table.metadata is target_metadata
 assert rule_adoptions_table.metadata is target_metadata
 assert evaluations_table.metadata is target_metadata
 assert decisions_table.metadata is target_metadata
+assert decision_authority_profiles_table.metadata is target_metadata
 assert relations_table.metadata is target_metadata
 assert reference_projection_table.metadata is target_metadata
 assert nonconformities_table.metadata is target_metadata
@@ -137,6 +142,7 @@ assert establishment_qualifications_table.metadata is target_metadata
 assert reproductive_events_table.metadata is target_metadata
 assert reproductive_event_offspring_table.metadata is target_metadata
 assert property_geometries_table.metadata is target_metadata
+assert property_environmental_embargo_assertions_table.metadata is target_metadata
 assert transformation_events_table.metadata is target_metadata
 assert traceable_items_table.metadata is target_metadata
 

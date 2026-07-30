@@ -62,6 +62,10 @@ class EstablishmentQualificationAssertionRepositoryPort(Protocol):
     ) -> list[EstablishmentQualificationAssertion]: ...
 
 
+class QualificationSourceVersionContentHashConflict(ValueError):
+    """A mesma versao de fonte apareceu com conteudo diferente."""
+
+
 @dataclass(frozen=True, slots=True)
 class QualificationAssertionInput:
     """Um item declarado pela fonte, sem confiança — o Titan a computa."""
@@ -130,6 +134,10 @@ class QualificationAssertionImportService:
             context.organization_id, source, source_version
         )
         if existing is not None:
+            if existing.content_hash != content_hash:
+                raise QualificationSourceVersionContentHashConflict(
+                    "A mesma source_version ja foi importada com content_hash diferente."
+                )
             return QualificationAssertionImportResult(
                 source_artifact_id=existing.artifact_id,
                 already_imported=True,

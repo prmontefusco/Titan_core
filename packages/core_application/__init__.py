@@ -9,6 +9,10 @@ from packages.core_application.crypto import (
     SigningProviderPort,
     TrustValidatorPort,
 )
+from packages.core_application.decision_governance_service import (
+    DecisionGovernanceRepositoryPort,
+    DecisionGovernanceService,
+)
 from packages.core_application.decision_service import DecisionRepositoryPort, DecisionService
 from packages.core_application.document_service import (
     AttachmentRepositoryPort,
@@ -147,6 +151,8 @@ __all__ = [
     "EvaluationRepositoryPort",
     "DecisionService",
     "DecisionRepositoryPort",
+    "DecisionGovernanceService",
+    "DecisionGovernanceRepositoryPort",
     "RecordedEvent",
     "RelationService",
     "RelationRepositoryPort",

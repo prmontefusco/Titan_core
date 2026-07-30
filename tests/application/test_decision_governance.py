@@ -16,6 +16,7 @@ from packages.core_domain.decision import (
     DecisionResult,
     compute_decision_hash,
 )
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.decision_governance import (
     DecisionAuthorityProfile,
     GovernanceStatus,
@@ -167,6 +168,14 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
         result=DecisionResult.INDETERMINADA,
         reasons=(reason,),
         engine_version=1,
+        authority_profile_id=TypedId(entity_type="authority_profile", value=uuid4()),
+        emission_method=DecisionEmissionMethod.HUMAN,
+    )
+    authority_profile_id = TypedId(entity_type="authority_profile", value=uuid4())
+    authority_reference = UniversalReference(
+        target_id=TypedId.new("user"),
+        organization_id=org_id,
+        contract_version=1,
     )
     original_decision = Decision(
         decision_id=dec_id,
@@ -182,9 +191,13 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
         reasons=(reason,),
         issued_at=now,
         engine_version=1,
+        decision_hash=dec_hash,
+        authority_profile_id=authority_profile_id,
+        authority_reference=authority_reference,
+        emission_method=DecisionEmissionMethod.HUMAN,
         evidence_references=(),
         affected_subjects=(),
-        decision_hash=dec_hash,
+        corrective_actions=(),
     )
 
     service = DecisionGovernanceService()
@@ -208,6 +221,8 @@ def test_decision_governance_proposal_override_and_contestation() -> None:
             contract_version=1,
         ),
         role_name="FISCAL_AUDITOR_SENIOR",
+        purpose="AUDITORIA",
+        emission_method=DecisionEmissionMethod.HUMAN,
     )
 
     override = service.apply_override(

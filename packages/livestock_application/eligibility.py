@@ -1,11 +1,4 @@
-"""Elegibilidade farmacológica (Passo 9.5 - Titan Livestock).
-
-Uma regra BLOQUEANTE que reprova um animal em período de carência. Ela não
-recalcula nada: consome o fato `livestock.withdrawal` produzido pelo
-`LivestockFactProvider` (que usa o cálculo versionado do Passo 9.4) e o avalia
-pela maquinária do Core (Policy → Rule → Evaluation → Decision), preservando
-motivo, evidência (o snapshot dos fatos), versão da regra e sujeito afetado.
-"""
+"""Elegibilidade farmacologica (Passo 9.5 - Titan Livestock)."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -18,6 +11,8 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.decision import Decision
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
@@ -25,7 +20,7 @@ from packages.livestock_application.fact_provider import (
     LOT_ELIGIBILITY_FACT_TYPE,
     WITHDRAWAL_FACT_TYPE,
 )
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 ELIGIBILITY_POLICY_CODE = "pol-elegibilidade-farmacologica"
 ELIGIBILITY_RULE_CODE = "rule-carencia-farmacologica"
@@ -33,25 +28,45 @@ LOT_ELIGIBILITY_RULE_CODE = "rule-carencia-lote"
 ELIGIBILITY_PURPOSE = "ELEGIBILIDADE_FARMACOLOGICA"
 ELIGIBILITY_RULE_ADOPTION_SCOPE = "livestock.animal"
 _CORRECTIVE_ACTION = (
-    "Animal em carência: aguardar o fim do prazo (ver eligible_from) antes de "
+    "Animal em carencia: aguardar o fim do prazo (ver eligible_from) antes de "
     "destinar ou movimentar; conferir os lotes bloqueadores."
 )
 _LOT_CORRECTIVE_ACTION = (
-    "Lote com animal em carência: remover o(s) animal(is) bloqueador(es) do lote "
-    "(ver blocking_animals) ou aguardar o fim da carência, e reavaliar."
+    "Lote com animal em carencia: remover o(s) animal(is) bloqueador(es) do lote "
+    "(ver blocking_animals) ou aguardar o fim da carencia, e reavaliar."
 )
+
+
+def automated_decision_authority(
+    organization_id: OrganizationId,
+    *,
+    purpose: str,
+    role_name: str = "LIVESTOCK_AUTOMATED_DECISION_ENGINE",
+) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=organization_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=organization_id,
+            contract_version=1,
+        ),
+        role_name=role_name,
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+    )
 
 
 def build_eligibility_policy(
     organization_id: OrganizationId, published_at: datetime | None = None
 ) -> Policy:
-    """Política publicada que agrupa a regra de carência."""
     draft = Policy(
         policy_id=TypedId.new("policy"),
         organization_id=organization_id,
         code=ELIGIBILITY_POLICY_CODE,
-        name="Elegibilidade farmacológica",
-        description="Reprova animal em período de carência de medicamento.",
+        name="Elegibilidade farmacologica",
+        description="Reprova animal em periodo de carencia de medicamento.",
         version=1,
         status=PolicyStatus.DRAFT,
     )
@@ -59,14 +74,13 @@ def build_eligibility_policy(
 
 
 def build_eligibility_rule(policy_id: TypedId, organization_id: OrganizationId) -> Rule:
-    """Regra bloqueante: animal em carência (`in_withdrawal == True`) reprova."""
     return Rule(
         rule_id=TypedId.new("rule"),
         policy_id=policy_id,
         organization_id=organization_id,
         code=ELIGIBILITY_RULE_CODE,
-        name="Carência farmacológica",
-        description="Bloqueia animal dentro do período de carência de medicamento.",
+        name="Carencia farmacologica",
+        description="Bloqueia animal dentro do periodo de carencia de medicamento.",
         severity=SeverityLevel.BLOCKING,
         normative_source="titan-livestock-withdrawal-v1",
         conditions=(
@@ -75,7 +89,7 @@ def build_eligibility_rule(policy_id: TypedId, organization_id: OrganizationId) 
                 payload_key="in_withdrawal",
                 operator=ComparisonOperator.EQUALS,
                 expected_value=False,
-                description="Animal não pode estar em período de carência.",
+                description="Animal nao pode estar em periodo de carencia.",
             ),
         ),
         corrective_action=_CORRECTIVE_ACTION,
@@ -83,14 +97,13 @@ def build_eligibility_rule(policy_id: TypedId, organization_id: OrganizationId) 
 
 
 def build_lot_eligibility_rule(policy_id: TypedId, organization_id: OrganizationId) -> Rule:
-    """Regra bloqueante de lote: qualquer animal em carência reprova o lote."""
     return Rule(
         rule_id=TypedId.new("rule"),
         policy_id=policy_id,
         organization_id=organization_id,
         code=LOT_ELIGIBILITY_RULE_CODE,
-        name="Carência farmacológica no lote",
-        description="Bloqueia lote que contém animal em período de carência.",
+        name="Carencia farmacologica no lote",
+        description="Bloqueia lote que contem animal em periodo de carencia.",
         severity=SeverityLevel.BLOCKING,
         normative_source="titan-livestock-withdrawal-v1",
         conditions=(
@@ -99,7 +112,7 @@ def build_lot_eligibility_rule(policy_id: TypedId, organization_id: Organization
                 payload_key="has_animal_in_withdrawal",
                 operator=ComparisonOperator.EQUALS,
                 expected_value=False,
-                description="Nenhum animal do lote pode estar em carência.",
+                description="Nenhum animal do lote pode estar em carencia.",
             ),
         ),
         corrective_action=_LOT_CORRECTIVE_ACTION,
@@ -116,8 +129,6 @@ class DecisionRepositoryPort(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class GovernedRuleReference:
-    """Referencia a versao de regra governada adotada para uma avaliacao."""
-
     adoption_id: TypedId
     rule_identity_id: TypedId
     rule_version_id: TypedId
@@ -148,18 +159,6 @@ class GovernedRuleReference:
 
 @dataclass(frozen=True, slots=True)
 class PharmacologicalEligibilityService:
-    """Avalia a elegibilidade farmacológica de um animal.
-
-    Compõe o fornecedor de fatos da vertical com a política e a regra
-    farmacológicas e delega a decisão ao Core, sem reimplementar avaliação.
-
-    A avaliação e a decisão são gravadas nas tabelas do Core. Sem isso o bloqueio
-    e a reavaliação existiriam só durante a chamada, e a linha do tempo do Passo
-    10.1 não teria como mostrar por que um animal foi barrado — que é o fato
-    central do Marco 9. A vertical não cria armazenamento próprio para isso: a
-    fonte da verdade continua sendo o Core.
-    """
-
     fact_provider: FactProviderPort
     policy: Policy
     rule: Rule
@@ -182,7 +181,7 @@ class PharmacologicalEligibilityService:
         at_time: datetime,
     ) -> tuple[Evaluation, Decision]:
         if self.lot_rule is None:
-            raise RuntimeError("O serviço não foi configurado com a regra de lote (lot_rule).")
+            raise RuntimeError("O servico nao foi configurado com a regra de lote (lot_rule).")
         return self._evaluate(organization_id, lot_id, self.lot_rule, at_time)
 
     def _evaluate(
@@ -199,10 +198,14 @@ class PharmacologicalEligibilityService:
             snapshot=snapshot,
             purpose=ELIGIBILITY_PURPOSE,
         )
-        decision = DecisionService().decide(evaluation)
-        # A ordem importa: a decisão referencia a avaliação, então gravar a
-        # decisão primeiro deixaria uma referência pendurada se a segunda escrita
-        # falhasse.
+        decision = DecisionService().decide(
+            evaluation,
+            automated_decision_authority(
+                organization_id,
+                purpose=evaluation.purpose,
+                role_name="LIVESTOCK_PHARMACOLOGICAL_ELIGIBILITY_ENGINE",
+            ),
+        )
         self.evaluation_repository.save(evaluation)
         self.decision_repository.save(decision)
         return evaluation, decision

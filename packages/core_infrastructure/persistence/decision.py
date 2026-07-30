@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from packages.core_domain.decision import Decision, DecisionReason, DecisionResult
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.facts import reference_from_dict, reference_to_dict
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.core_infrastructure.persistence.organizations import organization_metadata
@@ -40,6 +41,9 @@ decisions_table = Table(
     Column("result", String(50), nullable=False),
     Column("engine_version", Integer, nullable=False),
     Column("issued_at", DateTime(timezone=True), nullable=False),
+    Column("authority_profile_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("authority_reference", JSONB, nullable=False),
+    Column("emission_method", String(50), nullable=False),
     Column("snapshot_hash", String(64), nullable=False),
     Column("decision_hash", String(64), nullable=False),
     Column("reasons", JSONB, nullable=False),
@@ -64,6 +68,14 @@ decisions_table = Table(
         ["core_audit.policies.policy_id"],
         name="fk_decisions_policy",
     ),
+    ForeignKeyConstraint(
+        ["authority_profile_id", "record_owner_organization_id"],
+        [
+            "core_audit.decision_authority_profiles.authority_profile_id",
+            "core_audit.decision_authority_profiles.record_owner_organization_id",
+        ],
+        name="fk_decisions_authority_profile",
+    ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
 )
@@ -81,6 +93,9 @@ _SELECT_COLUMNS = """
     result,
     engine_version,
     issued_at,
+    authority_profile_id,
+    authority_reference,
+    emission_method,
     snapshot_hash,
     decision_hash,
     reasons,
@@ -116,6 +131,9 @@ class TransactionalDecisionRepository:
                     result,
                     engine_version,
                     issued_at,
+                    authority_profile_id,
+                    authority_reference,
+                    emission_method,
                     snapshot_hash,
                     decision_hash,
                     reasons,
@@ -135,6 +153,9 @@ class TransactionalDecisionRepository:
                     :result,
                     :engine_version,
                     :issued_at,
+                    :authority_profile_id,
+                    :authority_reference,
+                    :emission_method,
                     :snapshot_hash,
                     :decision_hash,
                     :reasons,
@@ -157,6 +178,9 @@ class TransactionalDecisionRepository:
                 "result": decision.result.value,
                 "engine_version": decision.engine_version,
                 "issued_at": decision.issued_at,
+                "authority_profile_id": decision.authority_profile_id.value,
+                "authority_reference": json.dumps(reference_to_dict(decision.authority_reference)),
+                "emission_method": decision.emission_method.value,
                 "snapshot_hash": decision.snapshot_hash,
                 "decision_hash": decision.decision_hash,
                 "reasons": json.dumps([r.to_dict() for r in decision.reasons]),
@@ -217,9 +241,13 @@ class TransactionalDecisionRepository:
             return json.loads(value) if isinstance(value, str) else value
 
         raw_reasons = _loaded(row.reasons)  # type: ignore[attr-defined]
+        raw_authority_reference = _loaded(row.authority_reference)  # type: ignore[attr-defined]
         raw_affected = _loaded(row.affected_subjects)  # type: ignore[attr-defined]
         raw_evidence = _loaded(row.evidence_references)  # type: ignore[attr-defined]
         raw_actions = _loaded(row.corrective_actions)  # type: ignore[attr-defined]
+        authority_reference = reference_from_dict(raw_authority_reference)
+        if authority_reference is None:
+            raise ValueError("authority_reference persistida da decision deve ser valida.")
 
         return Decision(
             decision_id=TypedId(entity_type="decision", value=row.decision_id),  # type: ignore[attr-defined]
@@ -239,6 +267,12 @@ class TransactionalDecisionRepository:
             issued_at=issued_at,
             engine_version=row.engine_version,  # type: ignore[attr-defined]
             decision_hash=row.decision_hash,  # type: ignore[attr-defined]
+            authority_profile_id=TypedId(
+                entity_type="authority_profile",
+                value=row.authority_profile_id,  # type: ignore[attr-defined]
+            ),
+            authority_reference=authority_reference,
+            emission_method=DecisionEmissionMethod(row.emission_method),  # type: ignore[attr-defined]
             affected_subjects=tuple(
                 ref for ref in (reference_from_dict(i) for i in raw_affected) if ref is not None
             ),

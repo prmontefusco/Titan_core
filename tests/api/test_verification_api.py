@@ -1,4 +1,4 @@
-"""Testes do contrato público da API de verificação externa (ADR-0039/Passo 7.7)."""
+"""Testes do contrato publico da API de verificacao externa (ADR-0039/Passo 7.7)."""
 
 import json
 from datetime import UTC, datetime
@@ -18,11 +18,13 @@ from packages.core_application.verification_service import (
     DOSSIER_COMPONENT,
     VerificationBundleService,
 )
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.verification import SignatureMaterial
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 client = TestClient(app)
 ENDPOINT = "/v1/verification/bundles"
@@ -38,11 +40,27 @@ ANCORA = {
 }
 
 
+def _authority(org_id: OrganizationId, purpose: str) -> DecisionAuthorityProfile:
+    return DecisionAuthorityProfile(
+        authority_id=TypedId.new("authority_profile"),
+        organization_id=org_id,
+        principal_reference=UniversalReference(
+            target_id=TypedId.new("service_identity"),
+            organization_id=org_id,
+            contract_version=1,
+        ),
+        role_name="AUTOMATED_VERIFICATION_DECISION_ENGINE",
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+        approvals_required=0,
+    )
+
+
 def _pacote_exportado(algorithm: str = "ED25519") -> dict[str, Any]:
     org_id = OrganizationId.new()
     subject_id = TypedId.new("batch")
     policy = Policy.create_draft(
-        organization_id=org_id, code="pol-sanitaria", name="Política"
+        organization_id=org_id, code="pol-sanitaria", name="Politica"
     ).publish()
     rule = Rule.create(
         policy_id=policy.policy_id,
@@ -74,7 +92,7 @@ def _pacote_exportado(algorithm: str = "ED25519") -> dict[str, Any]:
     evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
         policy=policy, rules=[rule], snapshot=snapshot, purpose="CONFORMIDADE"
     )
-    decision = DecisionService().decide(evaluation)
+    decision = DecisionService().decide(evaluation, _authority(org_id, evaluation.purpose))
     dossier = DossierService().build(
         decision=decision, evaluation=evaluation, policy=policy, rules=[rule]
     )
@@ -105,7 +123,6 @@ def test_intact_bundle_returns_dimensional_report() -> None:
     assert resposta.status_code == 200
     corpo = resposta.json()
 
-    # Nunca um booleano: não existe campo `valid`.
     assert "valid" not in corpo
     assert corpo["aggregate_status"] == "VALIDA"
     assert len(corpo["dimensions"]) == 8
@@ -127,7 +144,6 @@ def test_response_declares_what_was_not_done() -> None:
     assert "CONTENT_TRUTH_NOT_ASSERTED" in codigos
     assert "CURRENT_REVOCATION_NOT_CHECKED" in codigos
     assert "RESULT_DEPENDS_ON_VERIFIER_INSTANCE" in codigos
-    # Assinatura válida só vale contra a âncora que o próprio chamador escolheu.
     assert "SIGNATURE_VALID_ONLY_AGAINST_CALLER_SUPPLIED_ANCHOR" in codigos
 
 
@@ -139,7 +155,6 @@ def test_tampered_bundle_is_a_successful_response_with_invalid_result() -> None:
 
     resposta = client.post(ENDPOINT, json={"bundle": pacote, "trust_anchors": [ANCORA]})
 
-    # 200 mesmo para INVALIDA: erro de protocolo não se confunde com resultado.
     assert resposta.status_code == 200
     corpo = resposta.json()
     assert corpo["aggregate_status"] == "INVALIDA"
@@ -168,7 +183,6 @@ def test_unsupported_algorithm_is_indeterminate_not_an_error() -> None:
     assinatura = next(d for d in corpo["dimensions"] if d["dimension"] == "ASSINATURA")
     assert assinatura["status"] == "INDETERMINADA"
     assert assinatura["reason_code"] == "ALGORITMO_NAO_SUPORTADO_PELO_VERIFICADOR"
-    # Dimensão obrigatória não avaliada nunca produz agregado válido.
     assert corpo["aggregate_status"] != "VALIDA"
 
 
@@ -295,5 +309,4 @@ def test_endpoint_is_documented_as_public_verification() -> None:
     operacao = esquema["paths"][ENDPOINT]["post"]
 
     assert operacao["tags"] == ["verificação"]
-    # Verificação externa não exige identidade Titan.
     assert "security" not in operacao
