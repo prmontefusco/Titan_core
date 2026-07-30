@@ -35,6 +35,21 @@ from packages.core_infrastructure.persistence.rule_governance import (
     TransactionalRuleIdentityRepository,
     TransactionalRuleTimelineRepository,
 )
+from packages.livestock_application.establishment_qualification_service import (
+    establishment_qualification_fact_type,
+)
+from packages.livestock_application.fact_provider import (
+    ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+    WITHDRAWAL_FACT_TYPE,
+    sanitary_requirement_fact_type,
+)
+from packages.livestock_application.market_eligibility import (
+    ELIGIBILITY_RULE_CODE,
+    ENVIRONMENTAL_EMBARGO_RULE_CODE,
+    ESTABLISHMENT_RULE_CODE,
+    SANITARY_RULE_CODE,
+    TRACEABILITY_RULE_CODE,
+)
 from packages.shared_kernel import UniversalReference
 
 router = APIRouter(prefix="/v1/rule-governance", tags=["rule-governance"])
@@ -139,6 +154,128 @@ class TimelineEventResponse(BaseModel):
     reason: str
 
 
+class RuleTemplateConditionResponse(BaseModel):
+    fact_type: str
+    payload_key: str
+    operator: str
+    expected_value: Any = None
+    description: str
+
+
+class RuleTemplateParameterResponse(BaseModel):
+    name: str
+    description: str
+    example: str
+
+
+class RuleFactTypeCatalogResponse(BaseModel):
+    fact_type: str
+    description: str
+    payload_keys: list[str]
+    parameterized: bool = False
+    example_fact_type: str | None = None
+
+
+class RuleTemplateCatalogResponse(BaseModel):
+    template_code: str
+    rule_code: str
+    name: str
+    purpose_hint: str
+    scope_hint: str
+    normative_source_hint: str
+    required_evidence_types: list[str]
+    conditions: list[RuleTemplateConditionResponse]
+    justification_hint: str
+    corrective_action_hint: str
+    parameters: list[RuleTemplateParameterResponse] = Field(default_factory=list)
+
+
+class LivestockMarketRuleCatalogResponse(BaseModel):
+    catalog_version: int
+    vertical: str
+    fact_types: list[RuleFactTypeCatalogResponse]
+    templates: list[RuleTemplateCatalogResponse]
+
+
+class MaterializarTemplateRegraRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: str = Field(default="", max_length=2000)
+    normative_source: str = Field(default="", max_length=255)
+    parameters: dict[str, str] = Field(default_factory=dict)
+
+
+class MaterializedRuleDraftResponse(BaseModel):
+    template_code: str
+    rule_code: str
+    name: str
+    description: str
+    severity: str
+    normative_source: str
+    required_evidence_types: list[str]
+    conditions: list[RuleTemplateConditionResponse]
+    justification: str
+    corrective_action: str
+
+
+class SugerirFluxoGovernancaRegraRequest(BaseModel):
+    market_purpose: str = Field(min_length=1, max_length=120)
+    adoption_scope: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=255)
+    normative_source: str = Field(default="", max_length=255)
+    identity_code: str | None = Field(default=None, max_length=120)
+    identity_purpose: str | None = Field(default=None, max_length=500)
+    identity_scope: str | None = Field(default=None, max_length=500)
+    identity_description: str = Field(default="", max_length=2000)
+    version_description: str = Field(default="", max_length=2000)
+    adoption_reason: str = Field(default="", max_length=2000)
+    parameters: dict[str, str] = Field(default_factory=dict)
+
+
+class SuggestedRuleIdentityDraftResponse(BaseModel):
+    code: str
+    purpose: str
+    scope: str
+    source_type: str
+    vertical: str
+    description: str
+
+
+class SuggestedRuleAdoptionDraftResponse(BaseModel):
+    purpose: str
+    scope: str
+    reason: str
+
+
+class SuggestedGovernanceFlowResponse(BaseModel):
+    template_code: str
+    identity: SuggestedRuleIdentityDraftResponse
+    version: MaterializedRuleDraftResponse
+    adoption: SuggestedRuleAdoptionDraftResponse
+
+
+class ExecutarFluxoGovernancaRegraRequest(BaseModel):
+    policy_id: str
+    market_purpose: str = Field(min_length=1, max_length=120)
+    adoption_scope: str = Field(min_length=1, max_length=160)
+    name: str = Field(min_length=1, max_length=255)
+    normative_source: str = Field(default="", max_length=255)
+    identity_code: str | None = Field(default=None, max_length=120)
+    identity_purpose: str | None = Field(default=None, max_length=500)
+    identity_scope: str | None = Field(default=None, max_length=500)
+    identity_description: str = Field(default="", max_length=2000)
+    version_description: str = Field(default="", max_length=2000)
+    adoption_reason: str = Field(default="", max_length=2000)
+    create_adoption: bool = True
+    parameters: dict[str, str] = Field(default_factory=dict)
+
+
+class ExecutedGovernanceFlowResponse(BaseModel):
+    template_code: str
+    identity: RuleIdentityResponse
+    version: RuleVersionResponse
+    adoption: RuleAdoptionResponse | None
+
+
 def _actor(contexto: OrganizationContext) -> UniversalReference:
     return UniversalReference(
         target_id=contexto.actor_id,
@@ -218,6 +355,441 @@ def _timeline_response(event: RuleTimelineEvent) -> TimelineEventResponse:
         occurred_at=event.occurred_at,
         rule_version_id=str(event.rule_version_id.value) if event.rule_version_id else None,
         reason=event.reason,
+    )
+
+
+def _catalogo_regras_mercado_livestock() -> LivestockMarketRuleCatalogResponse:
+    return LivestockMarketRuleCatalogResponse(
+        catalog_version=1,
+        vertical="livestock",
+        fact_types=[
+            RuleFactTypeCatalogResponse(
+                fact_type=WITHDRAWAL_FACT_TYPE,
+                description="Fato consolidado de carencia farmacologica do animal.",
+                payload_keys=[
+                    "in_withdrawal",
+                    "eligible_from",
+                    "rule_version",
+                    "blocking_batches",
+                    "contributions",
+                ],
+            ),
+            RuleFactTypeCatalogResponse(
+                fact_type=ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+                description="Ultima assercao conhecida de embargo ambiental IBAMA da propriedade.",
+                payload_keys=[
+                    "status",
+                    "property_id",
+                    "geometry_id",
+                    "geometry_version",
+                    "source_name",
+                    "source_layer",
+                    "operation",
+                    "restriction_count",
+                    "version_ids",
+                    "response_digest",
+                ],
+            ),
+            RuleFactTypeCatalogResponse(
+                fact_type=establishment_qualification_fact_type("exportacao-china"),
+                description="Qualificacao de estabelecimento por mercado de destino.",
+                payload_keys=[
+                    "qualification_status",
+                    "asserted_status",
+                    "source_artifact_id",
+                    "confidence_tier",
+                ],
+                parameterized=True,
+                example_fact_type=establishment_qualification_fact_type("exportacao-china"),
+            ),
+            RuleFactTypeCatalogResponse(
+                fact_type=sanitary_requirement_fact_type("brucelose"),
+                description="Status de atendimento de uma campanha sanitaria especifica.",
+                payload_keys=[
+                    "status",
+                    "campaign_id",
+                    "application_id",
+                ],
+                parameterized=True,
+                example_fact_type=sanitary_requirement_fact_type("brucelose"),
+            ),
+        ],
+        templates=[
+            RuleTemplateCatalogResponse(
+                template_code="pharmacological-withdrawal-v1",
+                rule_code=ELIGIBILITY_RULE_CODE,
+                name="Carencia farmacologica do animal",
+                purpose_hint=("Usar quando o mercado exige animal fora da carencia medicamentosa."),
+                scope_hint="livestock.animal",
+                normative_source_hint=(
+                    "Lei nacional, protocolo do frigorifico ou exigencia do mercado."
+                ),
+                required_evidence_types=["livestock.treatment_applied"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type=WITHDRAWAL_FACT_TYPE,
+                        payload_key="in_withdrawal",
+                        operator=ComparisonOperator.EQUALS.value,
+                        expected_value=False,
+                        description=(
+                            "O animal precisa estar fora da carencia no momento da avaliacao."
+                        ),
+                    )
+                ],
+                justification_hint="Mercado exige ausencia de carencia farmacologica ativa.",
+                corrective_action_hint="Aguardar o fim da carencia antes da comercializacao.",
+            ),
+            RuleTemplateCatalogResponse(
+                template_code="minimum-traceability-v1",
+                rule_code=TRACEABILITY_RULE_CODE,
+                name="Rastreabilidade minima por propriedade de origem",
+                purpose_hint=(
+                    "Usar quando o mercado exige vinculo minimo com propriedade e historico "
+                    "auditavel."
+                ),
+                scope_hint="livestock.animal",
+                normative_source_hint=(
+                    "Exigencia contratual ou protocolo de rastreabilidade do mercado."
+                ),
+                required_evidence_types=["livestock.animal", "livestock.rural_property"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type="livestock.animal",
+                        payload_key="birth_property_id",
+                        operator=ComparisonOperator.NOT_EQUALS.value,
+                        expected_value=None,
+                        description="O animal precisa ter propriedade de nascimento conhecida.",
+                    )
+                ],
+                justification_hint="Sem origem minima conhecida, a cadeia nao sustenta auditoria.",
+                corrective_action_hint="Completar a origem auditavel do animal antes da venda.",
+            ),
+            RuleTemplateCatalogResponse(
+                template_code="environmental-embargo-ibama-v1",
+                rule_code=ENVIRONMENTAL_EMBARGO_RULE_CODE,
+                name="Embargo ambiental IBAMA",
+                purpose_hint=(
+                    "Usar quando o mercado recusa animais vinculados a propriedade com "
+                    "restricao ambiental."
+                ),
+                scope_hint="livestock.animal",
+                normative_source_hint=(
+                    "EUDR, regra do frigorifico ou protocolo ambiental do mercado."
+                ),
+                required_evidence_types=["livestock.property_geometry", "ibama.embargo_layer"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type=ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+                        payload_key="status",
+                        operator=ComparisonOperator.EQUALS.value,
+                        expected_value="SEM_RESTRICAO",
+                        description=(
+                            "A propriedade relevante do animal precisa estar sem restricao "
+                            "conhecida."
+                        ),
+                    )
+                ],
+                justification_hint=(
+                    "Restricao ambiental conhecida impede a elegibilidade deste mercado."
+                ),
+                corrective_action_hint=(
+                    "Resolver a restricao ou redirecionar para mercado compativel."
+                ),
+            ),
+            RuleTemplateCatalogResponse(
+                template_code="slaughterhouse-qualification-v1",
+                rule_code=ESTABLISHMENT_RULE_CODE,
+                name="Habilitacao do estabelecimento por mercado",
+                purpose_hint=(
+                    "Usar quando o mercado depende da habilitacao do frigorifico escolhido."
+                ),
+                scope_hint="livestock.slaughterhouse",
+                normative_source_hint=(
+                    "Lista oficial do pais de destino ou protocolo do estabelecimento."
+                ),
+                required_evidence_types=["livestock.establishment_qualification.<mercado>"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type=establishment_qualification_fact_type("{{market_purpose}}"),
+                        payload_key="qualification_status",
+                        operator=ComparisonOperator.EQUALS.value,
+                        expected_value="HABILITADO",
+                        description=(
+                            "O estabelecimento precisa estar habilitado para o mercado escolhido."
+                        ),
+                    )
+                ],
+                justification_hint=(
+                    "Sem habilitacao do estabelecimento, o animal nao pode seguir para este "
+                    "destino."
+                ),
+                corrective_action_hint=(
+                    "Escolher estabelecimento habilitado ou aguardar habilitacao."
+                ),
+                parameters=[
+                    RuleTemplateParameterResponse(
+                        name="market_purpose",
+                        description=(
+                            "Codigo do mercado usado no fact_type da qualificacao do "
+                            "estabelecimento."
+                        ),
+                        example="exportacao-china",
+                    )
+                ],
+            ),
+            RuleTemplateCatalogResponse(
+                template_code="sanitary-requirement-campaign-v1",
+                rule_code=SANITARY_RULE_CODE,
+                name="Campanha sanitaria obrigatoria",
+                purpose_hint="Usar quando o mercado exige uma campanha ou vacina especifica.",
+                scope_hint="livestock.animal",
+                normative_source_hint=(
+                    "Lei nacional, protocolo internacional ou exigencia sanitaria do mercado."
+                ),
+                required_evidence_types=["livestock.sanitary_requirement.<campanha>"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type=sanitary_requirement_fact_type("{{campaign_code}}"),
+                        payload_key="status",
+                        operator=ComparisonOperator.EQUALS.value,
+                        expected_value="SATISFEITO",
+                        description="A campanha sanitaria exigida precisa estar satisfeita.",
+                    )
+                ],
+                justification_hint="Campanha sanitaria exigida nao atendida para este destino.",
+                corrective_action_hint=(
+                    "Aplicar a campanha obrigatoria e aguardar a situacao ficar satisfeita."
+                ),
+                parameters=[
+                    RuleTemplateParameterResponse(
+                        name="campaign_code",
+                        description="Codigo canonico da campanha sanitaria exigida.",
+                        example="brucelose",
+                    )
+                ],
+            ),
+        ],
+    )
+
+
+def _obrigar_parametro(parameters: dict[str, str], nome: str) -> str:
+    valor = parameters.get(nome, "").strip()
+    if not valor:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason_code="PARAMETRO_DE_TEMPLATE_INVALIDO",
+            title="Parametro de template invalido",
+            detail=f"O parametro '{nome}' precisa ser informado para materializar o template.",
+        )
+    return valor
+
+
+def _substituir_placeholders(valor: str, parameters: dict[str, str]) -> str:
+    materializado = valor
+    for nome, conteudo in parameters.items():
+        materializado = materializado.replace(f"{{{{{nome}}}}}", conteudo.strip())
+    return materializado
+
+
+def _materializar_template_livestock(
+    template_code: str,
+    body: MaterializarTemplateRegraRequest,
+) -> MaterializedRuleDraftResponse:
+    templates = {
+        item.template_code: item for item in _catalogo_regras_mercado_livestock().templates
+    }
+    template = templates.get(template_code)
+    if template is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Template nao encontrado",
+            detail="Template de regra nao encontrado neste catalogo.",
+        )
+
+    parameters = {chave: valor.strip() for chave, valor in body.parameters.items()}
+    for parametro in template.parameters:
+        _obrigar_parametro(parameters, parametro.name)
+
+    conditions = [
+        RuleTemplateConditionResponse(
+            fact_type=_substituir_placeholders(condition.fact_type, parameters),
+            payload_key=condition.payload_key,
+            operator=condition.operator,
+            expected_value=condition.expected_value,
+            description=condition.description,
+        )
+        for condition in template.conditions
+    ]
+    required_evidence_types = [
+        _substituir_placeholders(item, parameters) for item in template.required_evidence_types
+    ]
+    normative_source = body.normative_source.strip() or template.normative_source_hint
+
+    return MaterializedRuleDraftResponse(
+        template_code=template.template_code,
+        rule_code=template.rule_code,
+        name=body.name,
+        description=body.description,
+        severity=SeverityLevel.BLOCKING.value,
+        normative_source=normative_source,
+        required_evidence_types=required_evidence_types,
+        conditions=conditions,
+        justification=template.justification_hint,
+        corrective_action=template.corrective_action_hint,
+    )
+
+
+def _exigir_permissao(contexto: OrganizationContext, code: str) -> None:
+    if code not in contexto.permission_codes:
+        raise DomainProblem(
+            status_code=status.HTTP_403_FORBIDDEN,
+            reason_code="PERMISSAO_AUSENTE",
+            title="Permissao ausente",
+            detail=f"A operacao exige a permissao {code}.",
+        )
+
+
+def _slug_regra(valor: str) -> str:
+    slug = "".join(caractere.lower() if caractere.isalnum() else "-" for caractere in valor.strip())
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-")
+
+
+def _sugerir_fluxo_governanca_livestock(
+    template_code: str,
+    body: SugerirFluxoGovernancaRegraRequest,
+) -> SuggestedGovernanceFlowResponse:
+    versao = _materializar_template_livestock(
+        template_code,
+        MaterializarTemplateRegraRequest(
+            name=body.name,
+            description=body.version_description,
+            normative_source=body.normative_source,
+            parameters=body.parameters,
+        ),
+    )
+    identity_code = (body.identity_code or versao.rule_code).strip()
+    identity_purpose = (
+        body.identity_purpose or f"Aplicar '{body.name}' para o mercado '{body.market_purpose}'."
+    ).strip()
+    identity_scope = (body.identity_scope or body.adoption_scope).strip()
+    if not identity_code:
+        identity_code = _slug_regra(f"{versao.rule_code}-{body.market_purpose}")
+    adoption_reason = body.adoption_reason.strip() or (
+        f"Ativar regra governada para o mercado '{body.market_purpose}'."
+    )
+    return SuggestedGovernanceFlowResponse(
+        template_code=template_code,
+        identity=SuggestedRuleIdentityDraftResponse(
+            code=identity_code,
+            purpose=identity_purpose,
+            scope=identity_scope,
+            source_type=RuleSourceType.INTERNAL_POLICY.value,
+            vertical="livestock",
+            description=body.identity_description,
+        ),
+        version=versao,
+        adoption=SuggestedRuleAdoptionDraftResponse(
+            purpose=body.market_purpose,
+            scope=body.adoption_scope,
+            reason=adoption_reason,
+        ),
+    )
+
+
+def _executar_fluxo_governanca_livestock(
+    connection: Connection,
+    contexto: OrganizationContext,
+    template_code: str,
+    body: ExecutarFluxoGovernancaRegraRequest,
+) -> ExecutedGovernanceFlowResponse:
+    _exigir_permissao(contexto, RULE_GOVERNANCE_CRIAR)
+    fluxo = _sugerir_fluxo_governanca_livestock(
+        template_code,
+        SugerirFluxoGovernancaRegraRequest(
+            market_purpose=body.market_purpose,
+            adoption_scope=body.adoption_scope,
+            name=body.name,
+            normative_source=body.normative_source,
+            identity_code=body.identity_code,
+            identity_purpose=body.identity_purpose,
+            identity_scope=body.identity_scope,
+            identity_description=body.identity_description,
+            version_description=body.version_description,
+            adoption_reason=body.adoption_reason,
+            parameters=body.parameters,
+        ),
+    )
+    policy_id = typed_id_or_problem(body.policy_id, entity_type="policy", campo="policy_id")
+    service = _servico(connection)
+    actor = _actor(contexto)
+    try:
+        identity = service.create_identity(
+            organization_id=contexto.organization_id,
+            code=fluxo.identity.code,
+            purpose=fluxo.identity.purpose,
+            scope=fluxo.identity.scope,
+            source_type=RuleSourceType.INTERNAL_POLICY,
+            actor=actor,
+            vertical=fluxo.identity.vertical,
+            description=fluxo.identity.description,
+        )
+        version = service.publish_rule_version(
+            organization_id=contexto.organization_id,
+            rule_identity_id=identity.rule_identity_id,
+            policy_id=policy_id,
+            name=fluxo.version.name,
+            description=fluxo.version.description,
+            severity=SeverityLevel(fluxo.version.severity),
+            normative_source=fluxo.version.normative_source,
+            required_evidence_types=tuple(fluxo.version.required_evidence_types),
+            conditions=tuple(
+                RuleCondition(
+                    fact_type=condition.fact_type,
+                    payload_key=condition.payload_key,
+                    operator=ComparisonOperator(condition.operator),
+                    expected_value=condition.expected_value,
+                    description=condition.description,
+                )
+                for condition in fluxo.version.conditions
+            ),
+            justification=fluxo.version.justification,
+            corrective_action=fluxo.version.corrective_action,
+            actor=actor,
+        )
+        adoption = None
+        if body.create_adoption:
+            _exigir_permissao(contexto, RULE_GOVERNANCE_ADOTAR)
+            adoption = service.adopt_rule_version(
+                organization_id=contexto.organization_id,
+                rule_identity_id=identity.rule_identity_id,
+                rule_version_id=version.rule_id,
+                purpose=fluxo.adoption.purpose,
+                scope=fluxo.adoption.scope,
+                reason=fluxo.adoption.reason,
+                actor=actor,
+            )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+    return ExecutedGovernanceFlowResponse(
+        template_code=template_code,
+        identity=_identity_response(identity),
+        version=_rule_response(version),
+        adoption=None if adoption is None else _adoption_response(adoption),
     )
 
 
@@ -447,3 +1019,79 @@ def consultar_timeline_regra(
         offset=paginacao.offset,
     )
     return montar_pagina([_timeline_response(event) for event in events], paginacao)
+
+
+@router.get(
+    "/catalogs/livestock-market-rules",
+    response_model=LivestockMarketRuleCatalogResponse,
+    summary="Consultar catalogo inicial de fatos e templates para regras de mercado da vertical",
+    description=(
+        "Publica os fact_types e templates base usados hoje pela vertical Livestock "
+        "para que a criacao de regras governadas nao dependa de montar conditions "
+        "do zero."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_catalogo_regras_mercado_livestock(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(RULE_GOVERNANCE_LER))],
+) -> LivestockMarketRuleCatalogResponse:
+    del contexto
+    return _catalogo_regras_mercado_livestock()
+
+
+@router.post(
+    "/catalogs/livestock-market-rules/templates/{template_code}/drafts",
+    response_model=MaterializedRuleDraftResponse,
+    summary="Materializar um template de regra de mercado em rascunho publicavel",
+    description=(
+        "Transforma um template do catalogo em um rascunho pronto para ser usado "
+        "no corpo de publicacao de versao de regra."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def materializar_template_regra_mercado_livestock(
+    template_code: str,
+    corpo: MaterializarTemplateRegraRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(RULE_GOVERNANCE_PUBLICAR))],
+) -> MaterializedRuleDraftResponse:
+    del contexto
+    return _materializar_template_livestock(template_code, corpo)
+
+
+@router.post(
+    "/catalogs/livestock-market-rules/templates/{template_code}/governance-flow",
+    response_model=SuggestedGovernanceFlowResponse,
+    summary="Sugerir o fluxo completo de governanca para uma regra de mercado",
+    description=(
+        "Devolve os rascunhos sugeridos para criar a identidade da regra, "
+        "publicar a versao materializada e adotar a regra no mercado desejado."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def sugerir_fluxo_governanca_regra_mercado_livestock(
+    template_code: str,
+    corpo: SugerirFluxoGovernancaRegraRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(RULE_GOVERNANCE_PUBLICAR))],
+) -> SuggestedGovernanceFlowResponse:
+    del contexto
+    return _sugerir_fluxo_governanca_livestock(template_code, corpo)
+
+
+@router.post(
+    "/catalogs/livestock-market-rules/templates/{template_code}/execute",
+    response_model=ExecutedGovernanceFlowResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Executar o fluxo assistido de governanca para uma regra de mercado",
+    description=(
+        "Cria a identidade da regra, publica a versao materializada e, quando "
+        "solicitado, ja registra a adocao para o mercado informado."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def executar_fluxo_governanca_regra_mercado_livestock(
+    template_code: str,
+    corpo: ExecutarFluxoGovernancaRegraRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(RULE_GOVERNANCE_PUBLICAR))],
+    connection: ConnectionDependency,
+) -> ExecutedGovernanceFlowResponse:
+    return _executar_fluxo_governanca_livestock(connection, contexto, template_code, corpo)

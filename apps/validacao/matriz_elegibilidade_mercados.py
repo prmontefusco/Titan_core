@@ -7,6 +7,7 @@ python -m uv run --locked python -m apps.validacao.matriz_elegibilidade_mercados
 import argparse
 import os
 import sys
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import create_engine
@@ -18,7 +19,16 @@ from apps.validacao.__main__ import (
     _ambiente,
     _descobrir_organizacao,
 )
-from apps.validacao.runner import AMARELO, CINZA, FIM, NEGRITO, Cliente, Requisicao, Roteiro
+from apps.validacao.runner import (
+    AMARELO,
+    CINZA,
+    FIM,
+    NEGRITO,
+    Cliente,
+    Requisicao,
+    Resposta,
+    Roteiro,
+)
 from packages.core_application.policy_service import PolicyService
 from packages.core_application.rule_governance_service import RuleGovernanceService
 from packages.core_domain.rule import ComparisonOperator, RuleCondition, SeverityLevel
@@ -40,9 +50,17 @@ from packages.livestock_application.establishment_qualification_service import (
 )
 from packages.livestock_application.market_eligibility import (
     DEFAULT_MARKET_PROFILES,
+    ENVIRONMENTAL_EMBARGO_RULE_CODE,
     ESTABLISHMENT_RULE_CODE,
     TRACEABILITY_RULE_CODE,
     MarketEligibilityPurpose,
+)
+from packages.livestock_domain.environmental_embargo_assertion import (
+    EnvironmentalEmbargoAssertionStatus,
+    PropertyEnvironmentalEmbargoAssertion,
+)
+from packages.livestock_infrastructure.persistence import (
+    TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
 )
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
@@ -207,13 +225,120 @@ def _preparar_regras_de_mercado(database_url: str, organizacao: str) -> None:
                     reason="Regra adotada para a habilitacao do estabelecimento na China.",
                     actor=actor,
                 )
+            environmental_identity = identities.get_by_organization_and_code(
+                organization_id,
+                ENVIRONMENTAL_EMBARGO_RULE_CODE,
+            )
+            if environmental_identity is None:
+                environmental_identity = service.create_identity(
+                    organization_id=organization_id,
+                    code=ENVIRONMENTAL_EMBARGO_RULE_CODE,
+                    purpose="Embargo ambiental por mercado.",
+                    scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    source_type=RuleSourceType.INTERNAL_POLICY,
+                    actor=actor,
+                    vertical="livestock",
+                    description=(
+                        "Regra ficticia de embargo ambiental para validar matriz comercial."
+                    ),
+                )
+            environmental_policy_service = PolicyService(TransactionalPolicyRepository(conexao))
+            environmental_policy_draft = environmental_policy_service.create_draft(
+                organization_id=organization_id,
+                code=f"validacao-embargo-{uuid4().hex[:8]}",
+                name="Policy de embargo ambiental",
+                description="Registro ficticio criado pelo roteiro executavel.",
+            )
+            environmental_policy = environmental_policy_service.publish_policy(
+                environmental_policy_draft.policy_id
+            )
+            environmental_rule = service.publish_rule_version(
+                organization_id=organization_id,
+                rule_identity_id=environmental_identity.rule_identity_id,
+                policy_id=environmental_policy.policy_id,
+                name="Ausencia de embargo ambiental do IBAMA",
+                actor=actor,
+                severity=SeverityLevel.BLOCKING,
+                normative_source="politica interna ficticia",
+                conditions=(
+                    RuleCondition(
+                        fact_type="livestock.environmental_embargo.ibama",
+                        payload_key="status",
+                        operator=ComparisonOperator.EQUALS,
+                        expected_value="SEM_RESTRICAO",
+                        description="A propriedade nao pode ter embargo ambiental do IBAMA.",
+                    ),
+                ),
+                justification="UE exige ausencia de embargo ambiental conhecido.",
+                corrective_action="Resolver o embargo ou registrar nova assertion valida.",
+            )
+            existing_environmental = adoptions.get_active_by_identity_and_scope(
+                organization_id,
+                environmental_identity.rule_identity_id,
+                MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code,
+                ELIGIBILITY_RULE_ADOPTION_SCOPE,
+            )
+            if existing_environmental is None:
+                service.adopt_rule_version(
+                    organization_id=organization_id,
+                    rule_identity_id=environmental_identity.rule_identity_id,
+                    rule_version_id=environmental_rule.rule_id,
+                    purpose=MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code,
+                    scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    reason="Regra adotada para embargo ambiental na UE.",
+                    actor=actor,
+                )
     finally:
         engine.dispose()
 
 
-def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
+def _registrar_assertion_embargo(database_url: str, organizacao: str, property_id: str) -> None:
+    engine = create_engine(database_url)
+    try:
+        with engine.connect() as conexao, conexao.begin():
+            organization_id = OrganizationId.parse(organizacao)
+            set_local_organization_context(conexao, organization_id)
+            TransactionalPropertyEnvironmentalEmbargoAssertionRepository(conexao).save(
+                PropertyEnvironmentalEmbargoAssertion.create(
+                    organization_id=organization_id,
+                    property_id=TypedId.parse("rural_property", property_id),
+                    geometry_id=TypedId.new("property_geometry"),
+                    geometry_version=1,
+                    source_name="IBAMA",
+                    source_layer="IBAMA_EMBARGOS",
+                    operation="intersects",
+                    status=EnvironmentalEmbargoAssertionStatus.COM_RESTRICAO,
+                    source_digest="a" * 64,
+                    response_digest="b" * 64,
+                    version_ids=("ibama_v1",),
+                    restrictions_payload=(
+                        {
+                            "source": "IBAMA",
+                            "layer": "IBAMA_EMBARGOS",
+                            "feature_id": 101,
+                            "version_id": "ibama_v1",
+                            "polygon_digest": "c" * 64,
+                            "attributes": {"nom_embarg": "Area de validacao"},
+                        },
+                    ),
+                    observed_at=datetime.now(UTC),
+                )
+            )
+    finally:
+        engine.dispose()
+
+
+def _montar_roteiro(
+    operador: Cliente, auditor: Cliente, database_url: str, organizacao: str
+) -> Roteiro:
     ids: dict[str, str] = {}
     roteiro = Roteiro("ADR-0044 - Matriz de elegibilidade por mercado", diario=operador.diario)
+
+    def _guardar_propriedade(resposta: Resposta) -> None:
+        items = resposta["items"] or []
+        property_id = str(items[0]["property_id"])
+        ids.update(property_id=property_id)
+        _registrar_assertion_embargo(database_url, organizacao, property_id)
 
     roteiro.passo(
         "1",
@@ -221,7 +346,7 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
         lambda: operador.get("/v1/livestock/properties?limit=1"),
         200,
         conferir=lambda r: None if r["items"] else "nenhuma propriedade disponivel",
-        guardar=lambda r: ids.update(property_id=str(r["items"][0]["property_id"])),
+        guardar=_guardar_propriedade,
         porque="Nenhum identificador e copiado a mao; o roteiro descobre onde o animal nasce.",
     )
     roteiro.passo(
@@ -255,7 +380,7 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente) -> Roteiro:
         porque=(
             "China e Estados Unidos foram preparados; sem estabelecimento "
             "selecionado, a China deve aparecer como condicionada e a Uniao "
-            "Europeia como ausencia declarada."
+            "Europeia deve reprovar por embargo ambiental governado."
         ),
     )
     roteiro.passo(
@@ -287,8 +412,8 @@ def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
         return False
     europe = MarketEligibilityPurpose.EXPORTACAO_UNIAO_EUROPEIA.code
     china = MarketEligibilityPurpose.EXPORTACAO_CHINA.code
-    europe_gaps = by_market[europe].get("gaps")
     europe_requirements = by_market[europe].get("requirements")
+    europe_reasons = by_market[europe].get("reasons")
     china_reasons = by_market[china].get("reasons")
     china_requirements = by_market[china].get("requirements")
     china_adoption = by_market[china].get("adoption")
@@ -296,13 +421,15 @@ def _matriz_tem_forma_esperada(markets: list[dict[str, object]]) -> bool:
     china_dependency = by_market[china].get("dependency")
     china_gaps = by_market[china].get("gaps")
     return (
-        isinstance(europe_gaps, list)
-        and bool(europe_gaps)
-        and europe_gaps[0].get("code") == "REGRA_GOVERNADA_AUSENTE"
+        by_market[europe].get("status") == "NAO_ELEGIVEL"
         and isinstance(europe_requirements, list)
         and [item.get("rule_code") for item in europe_requirements]
-        == [ELIGIBILITY_RULE_CODE, TRACEABILITY_RULE_CODE]
-        and [item.get("status") for item in europe_requirements] == ["AUSENTE", "AUSENTE"]
+        == [ELIGIBILITY_RULE_CODE, TRACEABILITY_RULE_CODE, ENVIRONMENTAL_EMBARGO_RULE_CODE]
+        and [item.get("status") for item in europe_requirements]
+        == ["AUSENTE", "AUSENTE", "NAO_ELEGIVEL"]
+        and isinstance(europe_reasons, list)
+        and bool(europe_reasons)
+        and europe_reasons[0].get("rule_code") == ENVIRONMENTAL_EMBARGO_RULE_CODE
         and by_market[china].get("status") == "CONDICIONADO"
         and isinstance(china_reasons, list)
         and bool(china_reasons)
@@ -380,6 +507,8 @@ def main() -> int:
     codigo = _montar_roteiro(
         cliente("titan_operador", "operador"),
         cliente("titan_auditor", "auditor"),
+        database_url,
+        organizacao,
     ).executar(pausar=opcoes.pausar)
     if codigo == 0:
         print(f"{AMARELO}O script confere forma e status; a leitura de negocio segue humana.{FIM}")

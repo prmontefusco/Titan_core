@@ -33,6 +33,7 @@ from packages.core_infrastructure.persistence.relations import TransactionalRela
 from packages.livestock_application.authorization import (
     ANIMAL_REGISTRAR_GENEALOGIA,
     ANIMAL_REGISTRAR_SAIDA,
+    ELIGIBILITY_EXECUTAR,
     ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR,
     LOT_CRIAR,
     MOVEMENT_REGISTRAR,
@@ -40,6 +41,12 @@ from packages.livestock_application.authorization import (
     PROPERTY_REGISTRAR_GEOMETRIA,
     REPRODUCTION_REGISTRAR,
     VETERINARIAN_CRIAR,
+)
+from packages.livestock_application.environmental_embargo_assertion_service import (
+    EnvironmentalEmbargoAssertionService,
+)
+from packages.livestock_application.environmental_embargo_service import (
+    EnvironmentalEmbargoService,
 )
 from packages.livestock_application.establishment_qualification_service import (
     EstablishmentQualificationService,
@@ -85,6 +92,9 @@ from packages.livestock_infrastructure.geodata import (
     CarNaoEncontrado,
     GeodataIndisponivel,
     GeodataNaoConfigurado,
+)
+from packages.livestock_infrastructure.persistence import (
+    TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
 )
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
@@ -1374,6 +1384,40 @@ def _geometria(registro: Any) -> GeometriaResponse:
     )
 
 
+def _embargo_assertion(registro: Any) -> "EmbargoAmbientalAssertionResponse":
+    return EmbargoAmbientalAssertionResponse(
+        assertion_id=str(registro.assertion_id.value),
+        property_id=str(registro.property_id.value),
+        geometry_id=(None if registro.geometry_id is None else str(registro.geometry_id.value)),
+        geometry_version=registro.geometry_version,
+        source_name=registro.source_name,
+        source_layer=registro.source_layer,
+        operation=registro.operation,
+        status=registro.status.value,
+        source_digest=registro.source_digest,
+        response_digest=registro.response_digest,
+        version_ids=list(registro.version_ids),
+        restriction_count=registro.restriction_count,
+        restrictions=[
+            RestricaoEspacialGravadaResponse(
+                source=str(item.get("source", "")),
+                layer=str(item.get("layer", "")),
+                feature_id=(
+                    int(item["feature_id"]) if isinstance(item.get("feature_id"), int) else None
+                ),
+                version_id=(
+                    str(item["version_id"]) if item.get("version_id") is not None else None
+                ),
+                polygon_digest=str(item.get("polygon_digest", "")),
+                attributes=dict(item.get("attributes") or {}),
+            )
+            for item in registro.restrictions_payload
+        ],
+        observed_at=registro.observed_at,
+        recorded_at=registro.recorded_at,
+    )
+
+
 @router.post(
     "/properties/{property_id}/geometry",
     response_model=GeometriaResponse,
@@ -1431,6 +1475,33 @@ class ImportacaoResponse(BaseModel):
 
     gravadas: list[GeometriaResponse]
     recusadas: list[CamadaRecusadaResponse]
+
+
+class RestricaoEspacialGravadaResponse(BaseModel):
+    source: str
+    layer: str
+    feature_id: int | None
+    version_id: str | None
+    polygon_digest: str
+    attributes: dict[str, Any]
+
+
+class EmbargoAmbientalAssertionResponse(BaseModel):
+    assertion_id: str
+    property_id: str
+    geometry_id: str | None
+    geometry_version: int | None
+    source_name: str
+    source_layer: str
+    operation: str
+    status: str
+    source_digest: str | None
+    response_digest: str | None
+    version_ids: list[str]
+    restriction_count: int
+    restrictions: list[RestricaoEspacialGravadaResponse]
+    observed_at: datetime
+    recorded_at: datetime
 
 
 class ImportarCarRequest(BaseModel):
@@ -1517,6 +1588,66 @@ def importar_geometria_do_car(
     )
 
 
+@router.post(
+    "/properties/{property_id}/environmental-embargoes/ibama/assertions",
+    response_model=EmbargoAmbientalAssertionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Congelar a avaliacao de embargo ambiental do IBAMA",
+    description=(
+        "Executa a avaliacao espacial sobre a geometria vigente da propriedade e "
+        "grava uma assercao auditavel com a versao da geometria, os digests e o "
+        "payload minimo das restricoes declaradas pelo provider.\n\n"
+        "Isto ainda nao decide conformidade nem elegibilidade de mercado: apenas "
+        "congela o fato observado para reuso posterior."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_assertion_embargo_ambiental_ibama(
+    property_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ELIGIBILITY_EXECUTAR))],
+    connection: ConnectionDependency,
+) -> EmbargoAmbientalAssertionResponse:
+    cliente = car_lookup_opcional()
+    if cliente is None:
+        raise DomainProblem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            reason_code="PROVIDER_NAO_CONFIGURADO",
+            title="Avaliacao espacial indisponivel",
+            detail="Avaliacao espacial exige TITAN_GEODATA_URL e TITAN_GEODATA_API_KEY.",
+        )
+    assessment_service = EnvironmentalEmbargoService(
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+        geodata_lookup=cliente,
+    )
+    service = EnvironmentalEmbargoAssertionService(
+        assessment_service=assessment_service,
+        repository=TransactionalPropertyEnvironmentalEmbargoAssertionRepository(
+            connection=connection
+        ),
+        recorder=_recorder(connection),
+    )
+    try:
+        assertion = service.record_ibama_assertion(
+            context=operation_context(contexto),
+            property_id=typed_id_or_problem(
+                property_id, entity_type="rural_property", campo="property_id"
+            ),
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Propriedade") from error
+    except GeodataIndisponivel as error:
+        raise DomainProblem(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            reason_code="PROVIDER_INDISPONIVEL",
+            title="O provider de geodados nao respondeu",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise _conflito(error) from error
+    return _embargo_assertion(assertion)
+
+
 # ============ Importacao de Asserções de Qualificação de Estabelecimento ============
 # ADR-0045: SourceArtifact + EstablishmentQualificationAssertion, bitemporal.
 # `confidence` NAO e campo de entrada -- e computado pelo Titan a partir da
@@ -1599,6 +1730,7 @@ def importar_assercoes_qualificacao_estabelecimento(
     from packages.livestock_application.qualification_assertion_import_service import (
         QualificationAssertionImportService,
         QualificationAssertionInput,
+        QualificationSourceVersionContentHashConflict,
     )
     from packages.livestock_domain.establishment_qualification_assertion import AssertionStatus
     from packages.livestock_domain.qualification_source_artifact import SourceCoverage
@@ -1660,6 +1792,13 @@ def importar_assercoes_qualificacao_estabelecimento(
         )
     except KeyError as error:
         raise _nao_encontrado("Estabelecimento") from error
+    except QualificationSourceVersionContentHashConflict as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="SOURCE_VERSION_CONTENT_HASH_CONFLICT",
+            title="Versao de fonte conflita com conteudo anterior",
+            detail=str(error),
+        ) from error
     except ValueError as error:
         raise _conflito(error) from error
 

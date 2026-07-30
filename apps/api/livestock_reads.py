@@ -41,6 +41,13 @@ from packages.livestock_application.authorization import (
     TREATMENT_LER,
     VETERINARIAN_LER,
 )
+from packages.livestock_application.environmental_embargo_assertion_service import (
+    EnvironmentalEmbargoAssertionService,
+)
+from packages.livestock_application.environmental_embargo_service import (
+    EnvironmentalEmbargoAssessment,
+    EnvironmentalEmbargoService,
+)
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.geometry_service import PropertyGeometryService
 from packages.livestock_application.parentage_service import (
@@ -53,6 +60,9 @@ from packages.livestock_infrastructure.geodata import (
     CarNaoEncontrado,
     GeodataIndisponivel,
     GeodataNaoConfigurado,
+)
+from packages.livestock_infrastructure.persistence import (
+    TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
 )
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
@@ -822,6 +832,97 @@ def _geometria_servico(connection: Any) -> PropertyGeometryService:
     )
 
 
+def _embargo_ambiental_servico(connection: Any) -> EnvironmentalEmbargoService:
+    cliente = car_lookup_opcional()
+    if cliente is None:
+        raise GeodataNaoConfigurado(
+            "Avaliacao espacial exige TITAN_GEODATA_URL e TITAN_GEODATA_API_KEY."
+        )
+    return EnvironmentalEmbargoService(
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+        geodata_lookup=cliente,
+    )
+
+
+def _embargo_assertion_servico(connection: Any) -> EnvironmentalEmbargoAssertionService:
+    return EnvironmentalEmbargoAssertionService(
+        assessment_service=_embargo_ambiental_servico(connection),
+        repository=TransactionalPropertyEnvironmentalEmbargoAssertionRepository(
+            connection=connection
+        ),
+        recorder=LivestockEventRecorder(
+            event_log=DomainEventRepository(connection=connection),
+            clock=SystemClock(),
+        ),
+    )
+
+
+def _resumo_embargo_ambiental(
+    assessment: EnvironmentalEmbargoAssessment,
+) -> "AvaliacaoEmbargoAmbientalResponse":
+    return AvaliacaoEmbargoAmbientalResponse(
+        property_id=str(assessment.property_id.value),
+        geometry_id=(None if assessment.geometry_id is None else str(assessment.geometry_id.value)),
+        geometry_version=assessment.geometry_version,
+        status=assessment.status.value,
+        source=assessment.source,
+        layer=assessment.layer,
+        operation=assessment.operation,
+        source_digest=assessment.source_digest,
+        response_digest=assessment.response_digest,
+        version_ids=list(assessment.version_ids),
+        restriction_count=assessment.restriction_count,
+        restrictions=[
+            RestricaoEspacialResumo(
+                source=item.source,
+                layer=item.layer,
+                feature_id=item.feature_id,
+                version_id=item.version_id,
+                polygon_digest=item.polygon_digest,
+                geojson=json.loads(item.polygon_payload),
+                attributes=item.attributes,
+            )
+            for item in assessment.restrictions
+        ],
+        gaps=[gap.to_dict() for gap in assessment.gaps],
+    )
+
+
+def _resumo_embargo_assertion(registro: Any) -> "EmbargoAmbientalAssertionResumo":
+    return EmbargoAmbientalAssertionResumo(
+        assertion_id=str(registro.assertion_id.value),
+        property_id=str(registro.property_id.value),
+        geometry_id=(None if registro.geometry_id is None else str(registro.geometry_id.value)),
+        geometry_version=registro.geometry_version,
+        source_name=registro.source_name,
+        source_layer=registro.source_layer,
+        operation=registro.operation,
+        status=registro.status.value,
+        source_digest=registro.source_digest,
+        response_digest=registro.response_digest,
+        version_ids=list(registro.version_ids),
+        restriction_count=registro.restriction_count,
+        restrictions=[
+            RestricaoEspacialGravadaResumo(
+                source=str(item.get("source", "")),
+                layer=str(item.get("layer", "")),
+                feature_id=(
+                    int(item["feature_id"]) if isinstance(item.get("feature_id"), int) else None
+                ),
+                version_id=(
+                    str(item["version_id"]) if item.get("version_id") is not None else None
+                ),
+                polygon_digest=str(item.get("polygon_digest", "")),
+                attributes=dict(item.get("attributes") or {}),
+            )
+            for item in registro.restrictions_payload
+        ],
+        observed_at=registro.observed_at,
+        recorded_at=registro.recorded_at,
+    )
+
+
 @router.get(
     "/properties/{property_id}/geometry",
     response_model=GeometriaResumo | None,
@@ -914,6 +1015,59 @@ class CarPreviewResumo(BaseModel):
     attributes: dict[str, Any]
 
 
+class RestricaoEspacialResumo(BaseModel):
+    source: str
+    layer: str
+    feature_id: int | None
+    version_id: str | None
+    polygon_digest: str
+    geojson: dict[str, Any]
+    attributes: dict[str, Any]
+
+
+class AvaliacaoEmbargoAmbientalResponse(BaseModel):
+    property_id: str
+    geometry_id: str | None
+    geometry_version: int | None
+    status: str
+    source: str
+    layer: str
+    operation: str
+    source_digest: str | None
+    response_digest: str | None
+    version_ids: list[str]
+    restriction_count: int
+    restrictions: list[RestricaoEspacialResumo]
+    gaps: list[dict[str, str]]
+
+
+class RestricaoEspacialGravadaResumo(BaseModel):
+    source: str
+    layer: str
+    feature_id: int | None
+    version_id: str | None
+    polygon_digest: str
+    attributes: dict[str, Any]
+
+
+class EmbargoAmbientalAssertionResumo(BaseModel):
+    assertion_id: str
+    property_id: str
+    geometry_id: str | None
+    geometry_version: int | None
+    source_name: str
+    source_layer: str
+    operation: str
+    status: str
+    source_digest: str | None
+    response_digest: str | None
+    version_ids: list[str]
+    restriction_count: int
+    restrictions: list[RestricaoEspacialGravadaResumo]
+    observed_at: datetime
+    recorded_at: datetime
+
+
 @router.get(
     "/properties/car-preview",
     response_model=CarPreviewResumo,
@@ -967,6 +1121,77 @@ def consultar_car(
         geojson=json.loads(imovel.polygon_payload),
         attributes=imovel.attributes,
     )
+
+
+@router.get(
+    "/properties/{property_id}/environmental-embargoes/ibama",
+    response_model=AvaliacaoEmbargoAmbientalResponse,
+    summary="Avaliar embargos ambientais do IBAMA sobre a geometria vigente",
+    description=(
+        "Consulta o provider geoespacial configurado usando o poligono vigente da "
+        "propriedade e devolve as feicoes do IBAMA que intersectam essa geometria.\n\n"
+        "Isto ainda nao decide conformidade nem elegibilidade de mercado: declara o "
+        "que o provider respondeu, com a versao da geometria e da base consultada."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def avaliar_embargos_ambientais_ibama(
+    property_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
+) -> AvaliacaoEmbargoAmbientalResponse:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    try:
+        assessment = _embargo_ambiental_servico(connection).assess_ibama_embargoes(
+            contexto.organization_id,
+            alvo,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Propriedade") from error
+    except GeodataNaoConfigurado as error:
+        raise DomainProblem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            reason_code="PROVIDER_NAO_CONFIGURADO",
+            title="Avaliacao espacial indisponivel",
+            detail=str(error),
+        ) from error
+    except GeodataIndisponivel as error:
+        raise DomainProblem(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            reason_code="PROVIDER_INDISPONIVEL",
+            title="O provider de geodados nao respondeu",
+            detail=str(error),
+        ) from error
+    return _resumo_embargo_ambiental(assessment)
+
+
+@router.get(
+    "/properties/{property_id}/environmental-embargoes/ibama/assertions",
+    response_model=Pagina[EmbargoAmbientalAssertionResumo],
+    summary="Listar assercoes gravadas de embargo ambiental do IBAMA",
+    description=(
+        "Devolve o historico auditavel das observacoes espaciais ja congeladas para "
+        "a propriedade, da mais recente para a mais antiga. Aqui a pergunta nao e "
+        "o que o provider responderia agora, e sim o que o Titan registrou em cada momento."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_assertions_embargo_ambiental_ibama(
+    property_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
+) -> Any:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    propriedade = TransactionalRuralPropertyRepository(connection=connection).get_by_id(alvo)
+    if propriedade is None or propriedade.organization_id != contexto.organization_id:
+        raise _nao_encontrado("Propriedade")
+    encontrados = _embargo_assertion_servico(connection).list_for_property(
+        contexto.organization_id,
+        alvo,
+    )
+    janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
+    return montar_pagina([_resumo_embargo_assertion(item) for item in janela], paginacao)
 
 
 # -- Propriedades ------------------------------------------------------------
