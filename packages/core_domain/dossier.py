@@ -29,7 +29,13 @@ from packages.shared_kernel.serialization import CanonicalSerializer
 #
 # Versão 3: o documento passou a admitir uma seção de vertical, sob a chave
 # `vertical`, isolada e autodescrita. Também aditiva.
-DOSSIER_DOCUMENT_VERSION = 3
+#
+# Versão 4: a seção `decision` passou a preservar a cadeia de autoridade e
+# emissão (`authority_profile_id`, `authority_reference`, `emission_method`) —
+# ADR-0055 §6 exige que o Dossier preserve ou referencie o
+# `DecisionAuthorityProfile` e a identidade do emissor quando existentes.
+# Aditiva: um leitor da versão 3 continua encontrando tudo que esperava.
+DOSSIER_DOCUMENT_VERSION = 4
 
 _SERIALIZER = CanonicalSerializer()
 

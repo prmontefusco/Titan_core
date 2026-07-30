@@ -207,6 +207,15 @@ class DossierService:
                 "decision_hash": decision.decision_hash,
                 "reasons": [r.to_dict() for r in decision.reasons],
                 "corrective_actions": list(decision.corrective_actions),
+                # ADR-0055 §6: o Dossier preserva a cadeia de autoridade e
+                # emissão -- quem decidiu, sob qual perfil e por qual método --
+                # e não apenas o resultado.
+                "authority_profile_id": str(decision.authority_profile_id.value),
+                "authority_reference": {
+                    "entity_type": decision.authority_reference.target_id.entity_type,
+                    "id": str(decision.authority_reference.target_id.value),
+                },
+                "emission_method": decision.emission_method.value,
                 "affected_subjects": [
                     {
                         "entity_type": s.target_id.entity_type,

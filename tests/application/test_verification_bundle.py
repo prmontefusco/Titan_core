@@ -28,6 +28,8 @@ from packages.core_domain.verification import (
     ComponentRequirement,
     DimensionResult,
     SignatureMaterial,
+    SignaturePurpose,
+    SignatureTarget,
     ValidationReport,
     VerificationBundle,
     VerificationDimension,
@@ -98,12 +100,24 @@ def _dossie() -> Dossier:
     )
 
 
+def _alvo_pendente() -> SignatureTarget:
+    """Alvo provisório: `build_from_dossier` rebinda `target_identifier` para o
+    digest do manifesto real, que só existe depois que o manifesto é montado."""
+    return SignatureTarget(
+        target_type="bundle_manifest",
+        target_identifier="pendente",
+        domain="titan.verification_bundle",
+        contract_version=1,
+        purpose=SignaturePurpose.EMISSAO,
+    )
+
+
 def _assinatura() -> SignatureMaterial:
     return SignatureMaterial(
         key_id="chave-institucional-1",
         algorithm="sha256",
         profile="INSTITUTIONAL_SIGNATURE",
-        signed_digest="",
+        signature_target=_alvo_pendente(),
         signature_value="assinatura-de-teste",
         signed_at=AGORA,
         certificate_chain=("cert-emissor",),
@@ -149,7 +163,7 @@ def test_unsupported_algorithm_never_yields_a_valid_aggregate() -> None:
             key_id="chave-institucional-1",
             algorithm="ALGORITMO-EXOTICO-2048",
             profile="INSTITUTIONAL_SIGNATURE",
-            signed_digest="",
+            signature_target=_alvo_pendente(),
             signature_value="assinatura-de-teste",
             signed_at=AGORA,
             revocation_material=("crl",),
@@ -299,6 +313,48 @@ def test_tampered_manifest_is_detected() -> None:
     assert falha is not None
     assert falha.reason_code is VerificationReasonCode.MANIFESTO_ADULTERADO
     assert falha.failure_point == "manifest"
+
+
+def test_signature_targeting_a_different_object_type_is_invalid() -> None:
+    """ADR-0055 invariante 28: assinatura de objeto não se estende implicitamente
+    a objeto relacionado -- uma assinatura sobre `dossier`, por exemplo, não
+    comprova o `bundle_manifest` ainda que o resto do pacote esteja íntegro."""
+    bundle = _pacote_completo()
+    assert bundle.signature is not None
+    alvo_errado = SignatureTarget(
+        target_type="dossier",
+        target_identifier=bundle.manifest.manifest_digest,
+        domain="titan.dossier",
+        contract_version=4,
+        purpose=SignaturePurpose.EMISSAO,
+    )
+    assinatura_com_alvo_errado = SignatureMaterial(
+        key_id=bundle.signature.key_id,
+        algorithm=bundle.signature.algorithm,
+        profile=bundle.signature.profile,
+        signature_target=alvo_errado,
+        signature_value=bundle.signature.signature_value,
+        signed_at=bundle.signature.signed_at,
+        certificate_chain=bundle.signature.certificate_chain,
+        revocation_material=bundle.signature.revocation_material,
+    )
+
+    relatorio = BundleVerifier().verify(
+        VerificationBundle(
+            manifest=bundle.manifest,
+            payloads=bundle.payloads,
+            signature=assinatura_com_alvo_errado,
+        ),
+        verified_at=AGORA,
+        trust_anchors=ANCORAS,
+    )
+
+    assinatura = relatorio.result_for(VerificationDimension.ASSINATURA)
+    assert assinatura is not None
+    assert assinatura.status is VerificationStatus.INVALIDA
+    assert assinatura.reason_code is VerificationReasonCode.ASSINATURA_NAO_CONFERE
+    assert assinatura.failure_point == "signature.signature_target.target_type"
+    assert relatorio.status is VerificationStatus.INVALIDA
 
 
 def test_without_trust_anchor_signature_is_indeterminate() -> None:

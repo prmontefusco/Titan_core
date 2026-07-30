@@ -123,6 +123,11 @@ def test_dossier_is_self_contained_and_verifiable_offline() -> None:
     assert doc["evaluation"]["outcome"] == EvaluationOutcome.CONDICOES_NAO_SATISFEITAS.value
     assert doc["decision"]["result"] == decision.result.value
     assert doc["decision"]["reasons"][0]["rule_code"] == "rule-atestado"
+    assert doc["decision"]["authority_profile_id"] == str(decision.authority_profile_id.value)
+    assert doc["decision"]["authority_reference"]["id"] == str(
+        decision.authority_reference.target_id.value
+    )
+    assert doc["decision"]["emission_method"] == decision.emission_method.value
     assert doc["evidences"]
 
 
@@ -381,7 +386,7 @@ def test_new_documents_declare_the_new_version() -> None:
     )
 
     assert dossier.document["document_version"] == DOSSIER_DOCUMENT_VERSION
-    assert DOSSIER_DOCUMENT_VERSION == 3
+    assert DOSSIER_DOCUMENT_VERSION == 4
 
 
 def test_vertical_content_lives_under_one_declared_key() -> None:

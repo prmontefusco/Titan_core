@@ -1,6 +1,6 @@
 # DOMAIN.md
 
-**Versão:** 1.20  
+**Versão:** 1.21  
 **Status:** Visão de destino congelada  
 **Projeto:** Titan Core
 
@@ -1017,6 +1017,10 @@ Referência estável a um Document. O conteúdo binário pertence à infraestrut
 Comprovação criptográfica de autoria, integridade ou aprovação.
 
 Nunca deve ser confundida com autenticação.
+
+Toda `Signature` declara um `SignatureTarget` normativamente inequívoco (ADR-0055 §8): tipo do objeto assinado, identidade ou digest exato, domínio semântico, versão do contrato de identidade e finalidade (`SignaturePurpose` — emissão, revisão, aprovação, selo temporal, preservação). A finalidade não é inferida apenas por chave, certificado ou posição da assinatura.
+
+Assinatura de um objeto não se estende implicitamente a objetos relacionados: assinatura sobre `dossier_hash` não protege automaticamente `VerificationBundle`, e assinatura sobre `bundle_hash` não demonstra automaticamente aprovação de `Decision`. Assinaturas de emissor, `Decision`, autoridade, aprovação, selo temporal e preservação possuem escopos distintos e não são intercambiáveis. Assinatura válida não prova automaticamente autoridade ou conformidade — competência decisória é avaliada separadamente via `DecisionAuthorityProfile`.
 
 ---
 

@@ -90,6 +90,8 @@ from packages.core_domain.synchronization import (
 from packages.core_domain.verification import (
     BundleVerifier,
     SignatureMaterial,
+    SignaturePurpose,
+    SignatureTarget,
     VerificationBundle,
     VerificationStatus,
 )
@@ -500,7 +502,13 @@ def _run_full_scenario(connection: Connection) -> CoreProof:
             key_id="chave-da-prova",
             algorithm="sha256",
             profile="INSTITUTIONAL_SIGNATURE",
-            signed_digest="",
+            signature_target=SignatureTarget(
+                target_type="bundle_manifest",
+                target_identifier="pendente",
+                domain="titan.verification_bundle",
+                contract_version=1,
+                purpose=SignaturePurpose.EMISSAO,
+            ),
             signature_value="assinatura-exclusivamente-ficticia",
             signed_at=T0 + timedelta(hours=2),
             certificate_chain=("cert-emissor-ficticio",),

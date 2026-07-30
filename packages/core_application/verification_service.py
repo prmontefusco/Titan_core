@@ -13,6 +13,8 @@ from packages.core_domain.verification import (
     BundleManifest,
     ComponentRequirement,
     SignatureMaterial,
+    SignaturePurpose,
+    SignatureTarget,
     VerificationBundle,
     build_manifest,
     compute_digest,
@@ -115,13 +117,21 @@ class VerificationBundleService:
         )
 
         # A assinatura cobre o digest do manifesto, que por sua vez cobre todos os
-        # componentes: assinar o manifesto é assinar o conjunto.
+        # componentes: assinar o manifesto é assinar o conjunto. O alvo é
+        # rebindado para o manifesto real -- que só existe a partir daqui --
+        # preservando a finalidade (`purpose`) que o chamador declarou.
         assinatura_final = (
             SignatureMaterial(
                 key_id=signature.key_id,
                 algorithm=signature.algorithm,
                 profile=signature.profile,
-                signed_digest=manifesto.manifest_digest,
+                signature_target=SignatureTarget(
+                    target_type="bundle_manifest",
+                    target_identifier=manifesto.manifest_digest,
+                    domain="titan.verification_bundle",
+                    contract_version=manifesto.format_version,
+                    purpose=signature.signature_target.purpose,
+                ),
                 signature_value=signature.signature_value,
                 signed_at=signature.signed_at,
                 certificate_chain=signature.certificate_chain,
@@ -148,7 +158,13 @@ class VerificationBundleService:
                     "key_id": bundle.signature.key_id,
                     "algorithm": bundle.signature.algorithm,
                     "profile": bundle.signature.profile,
-                    "signed_digest": bundle.signature.signed_digest,
+                    "signature_target": {
+                        "target_type": bundle.signature.signature_target.target_type,
+                        "target_identifier": bundle.signature.signature_target.target_identifier,
+                        "domain": bundle.signature.signature_target.domain,
+                        "contract_version": bundle.signature.signature_target.contract_version,
+                        "purpose": bundle.signature.signature_target.purpose.value,
+                    },
                     "signature_value": bundle.signature.signature_value,
                     "signed_at": (
                         bundle.signature.signed_at.isoformat()
@@ -198,7 +214,13 @@ class VerificationBundleService:
                 key_id=raw_signature["key_id"],
                 algorithm=raw_signature["algorithm"],
                 profile=raw_signature["profile"],
-                signed_digest=raw_signature["signed_digest"],
+                signature_target=SignatureTarget(
+                    target_type=raw_signature["signature_target"]["target_type"],
+                    target_identifier=raw_signature["signature_target"]["target_identifier"],
+                    domain=raw_signature["signature_target"]["domain"],
+                    contract_version=raw_signature["signature_target"]["contract_version"],
+                    purpose=SignaturePurpose(raw_signature["signature_target"]["purpose"]),
+                ),
                 signature_value=raw_signature["signature_value"],
                 signed_at=(
                     datetime.fromisoformat(raw_signature["signed_at"])

@@ -204,6 +204,51 @@ class BundleManifest:
         return compute_digest(_SERIALIZER.serialize(self.protected_content()))
 
 
+class SignaturePurpose(Enum):
+    """Escopos de assinatura da ADR-0055 §8 — distintos e não intercambiáveis.
+
+    Assinatura de emissor, `Decision`, autoridade, aprovação, selo temporal e
+    preservação nunca se confundem: cada uma prova algo diferente.
+    """
+
+    EMISSAO = "EMISSAO"
+    REVISAO = "REVISAO"
+    APROVACAO = "APROVACAO"
+    SELO_TEMPORAL = "SELO_TEMPORAL"
+    PRESERVACAO = "PRESERVACAO"
+
+
+@dataclass(frozen=True, slots=True)
+class SignatureTarget:
+    """Alvo normativo inequívoco de uma `Signature` (ADR-0055 §8, invariantes 27-29).
+
+    Declara o que foi assinado — tipo, identidade exata, domínio semântico,
+    versão do contrato e finalidade — para que a assinatura nunca seja
+    interpretada por inferência de chave, certificado ou posição, e nunca se
+    estenda implicitamente a um objeto relacionado que não foi de fato assinado.
+    """
+
+    target_type: str
+    target_identifier: str
+    domain: str
+    contract_version: int
+    purpose: SignaturePurpose
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.target_type, str) or not self.target_type.strip():
+            raise ValueError("target_type deve ser uma string não vazia.")
+        if not isinstance(self.target_identifier, str) or not self.target_identifier.strip():
+            raise ValueError("target_identifier deve ser uma string não vazia.")
+        if not isinstance(self.domain, str) or not self.domain.strip():
+            raise ValueError("domain deve ser uma string não vazia.")
+        if isinstance(self.contract_version, bool) or not isinstance(self.contract_version, int):
+            raise TypeError("contract_version deve ser um número inteiro.")
+        if self.contract_version < 1:
+            raise ValueError("contract_version deve ser maior ou igual a 1.")
+        if not isinstance(self.purpose, SignaturePurpose):
+            raise TypeError("purpose deve ser um SignaturePurpose válido.")
+
+
 @dataclass(frozen=True, slots=True)
 class SignatureMaterial:
     """Material de assinatura transportado no pacote.
@@ -214,7 +259,7 @@ class SignatureMaterial:
     key_id: str
     algorithm: str
     profile: str
-    signed_digest: str
+    signature_target: SignatureTarget
     signature_value: str
     signed_at: datetime | None = None
     certificate_chain: tuple[str, ...] = field(default_factory=tuple)
@@ -505,7 +550,24 @@ class BundleVerifier:
                 failure_point=assinatura.key_id,
             )
 
-        if assinatura.signed_digest != bundle.manifest.manifest_digest:
+        # ADR-0055 invariante 28: assinatura de objeto não se estende
+        # implicitamente a objetos relacionados. Uma assinatura cujo alvo
+        # declarado não é o próprio BundleManifest não comprova o pacote, ainda
+        # que o restante do material pareça coerente.
+        alvo = assinatura.signature_target
+        if alvo.target_type != "bundle_manifest":
+            return DimensionResult(
+                dimension=VerificationDimension.ASSINATURA,
+                status=VerificationStatus.INVALIDA,
+                reason_code=VerificationReasonCode.ASSINATURA_NAO_CONFERE,
+                detail=(
+                    f"A assinatura declara alvo do tipo '{alvo.target_type}', não "
+                    "'bundle_manifest'; não comprova este pacote."
+                ),
+                failure_point="signature.signature_target.target_type",
+            )
+
+        if alvo.target_identifier != bundle.manifest.manifest_digest:
             return DimensionResult(
                 dimension=VerificationDimension.ASSINATURA,
                 status=VerificationStatus.INVALIDA,
@@ -513,7 +575,7 @@ class BundleVerifier:
                 detail=(
                     "A assinatura cobre um digest de manifesto diferente do presente no pacote."
                 ),
-                failure_point="signature.signed_digest",
+                failure_point="signature.signature_target.target_identifier",
             )
 
         esperado = trust_anchors[assinatura.key_id]

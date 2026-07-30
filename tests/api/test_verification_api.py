@@ -23,7 +23,7 @@ from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
-from packages.core_domain.verification import SignatureMaterial
+from packages.core_domain.verification import SignatureMaterial, SignaturePurpose, SignatureTarget
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 client = TestClient(app)
@@ -105,7 +105,13 @@ def _pacote_exportado(algorithm: str = "ED25519") -> dict[str, Any]:
             key_id="chave-institucional-1",
             algorithm=algorithm,
             profile="INSTITUTIONAL_SIGNATURE",
-            signed_digest="",
+            signature_target=SignatureTarget(
+                target_type="bundle_manifest",
+                target_identifier="pendente",
+                domain="titan.verification_bundle",
+                contract_version=1,
+                purpose=SignaturePurpose.EMISSAO,
+            ),
             signature_value="assinatura-de-teste",
             signed_at=AGORA,
             revocation_material=("crl",),
