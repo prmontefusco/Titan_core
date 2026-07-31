@@ -161,6 +161,25 @@ def test_decision_can_be_reproduced_from_the_document_alone() -> None:
     assert doc["decision"]["result"] == "rejeitada"
 
 
+def test_dossier_exposes_temporal_limitations_of_the_snapshot() -> None:
+    _, _, policy, rule, evaluation, decision = _cenario()
+    dossier = DossierService().build(
+        decision=decision, evaluation=evaluation, policy=policy, rules=[rule]
+    )
+
+    assert (
+        dossier.document["evaluation"]["knowledge_cutoff"]
+        == evaluation.fact_snapshot.effective_knowledge_cutoff().isoformat()
+    )
+    assert dossier.document["evaluation"]["knowledge_limitations"] == list(
+        evaluation.fact_snapshot.knowledge_limitations
+    )
+    assert any(
+        "accepted_at" in limitation
+        for limitation in dossier.document["evaluation"]["knowledge_limitations"]
+    )
+
+
 def test_hash_changes_when_any_content_changes() -> None:
     _, _, policy, rule, evaluation, decision = _cenario()
     dossier = DossierService().build(

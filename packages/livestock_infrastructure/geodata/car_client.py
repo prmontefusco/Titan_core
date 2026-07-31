@@ -247,7 +247,11 @@ class GeodataCarClient(CarLookupPort):
         url = f"{self.base_url.rstrip('/')}{CAMINHO_IBAMA_POLIGONO}"
         pedido = urllib.request.Request(
             url,
-            headers={"X-API-Key": self.api_key, "Accept": "application/json"},
+            headers={
+                "X-API-Key": self.api_key,
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
             method="POST",
             data=json.dumps(
                 {"geometry": geometry, "srid": srid},

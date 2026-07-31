@@ -46,12 +46,14 @@ class DomainProblem(Exception):
         reason_code: str,
         title: str,
         detail: str,
+        extra: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(detail)
         self.status_code = status_code
         self.reason_code = reason_code
         self.title = title
         self.detail = detail
+        self.extra = extra or {}
 
 
 def problem_response(
@@ -84,6 +86,7 @@ async def domain_problem_handler(request: Request, exception: Exception) -> JSON
         reason_code=exception.reason_code,
         title=exception.title,
         detail=exception.detail,
+        extra=exception.extra,
     )
 
 

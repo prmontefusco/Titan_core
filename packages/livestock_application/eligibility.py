@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from packages.core_application.decision_governance_service import (
+    DecisionGovernanceRepositoryPort,
+    DecisionGovernanceService,
+)
 from packages.core_application.decision_service import DecisionService
 from packages.core_application.evaluation_service import (
     PolicyEvaluationService,
@@ -12,7 +16,12 @@ from packages.core_application.evaluation_service import (
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.decision import Decision
 from packages.core_domain.decision_authority import DecisionEmissionMethod
-from packages.core_domain.decision_governance import DecisionAuthorityProfile
+from packages.core_domain.decision_governance import (
+    DecisionAuthorityProfile,
+    DecisionEmissionRefusalCode,
+    DecisionEmissionRefused,
+    DecisionProposal,
+)
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
@@ -132,6 +141,12 @@ class DecisionAuthorityProfileRepositoryPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class HumanReviewRequired(Exception):
+    evaluation: Evaluation
+    proposal: DecisionProposal
+
+
+@dataclass(frozen=True, slots=True)
 class GovernedRuleReference:
     adoption_id: TypedId
     rule_identity_id: TypedId
@@ -169,6 +184,7 @@ class PharmacologicalEligibilityService:
     evaluation_repository: EvaluationRepositoryPort
     decision_repository: DecisionRepositoryPort
     authority_profile_repository: DecisionAuthorityProfileRepositoryPort | None = None
+    governance_repository: DecisionGovernanceRepositoryPort | None = None
     lot_rule: Rule | None = None
 
     def evaluate_animal(
@@ -208,9 +224,20 @@ class PharmacologicalEligibilityService:
             purpose=evaluation.purpose,
             role_name="LIVESTOCK_PHARMACOLOGICAL_ELIGIBILITY_ENGINE",
         )
-        decision = DecisionService().decide(evaluation, authority)
         self.evaluation_repository.save(evaluation)
         if self.authority_profile_repository is not None:
             self.authority_profile_repository.save(authority)
+        try:
+            decision = DecisionService().decide(evaluation, authority)
+        except DecisionEmissionRefused as exc:
+            if (
+                exc.code is DecisionEmissionRefusalCode.REVIEW_REQUIRED
+                and self.governance_repository is not None
+            ):
+                proposal = DecisionGovernanceService(
+                    repository=self.governance_repository
+                ).create_proposal(evaluation=evaluation)
+                raise HumanReviewRequired(evaluation=evaluation, proposal=proposal) from exc
+            raise
         self.decision_repository.save(decision)
         return evaluation, decision

@@ -12,13 +12,18 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.decision_governance import DecisionAuthorityProfile, ReviewConclusion
+from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
+from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
 from packages.core_infrastructure.persistence.decision_governance import (
     TransactionalDecisionAuthorityProfileRepository,
     TransactionalDecisionGovernanceRepository,
 )
+from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
+from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
@@ -45,7 +50,7 @@ def _authority(org_id: OrganizationId, purpose: str) -> DecisionAuthorityProfile
     )
 
 
-def _evaluation(org_id: OrganizationId) -> tuple[Policy, Rule, object]:
+def _evaluation(org_id: OrganizationId) -> tuple[Policy, Rule, Evaluation]:
     instant = datetime.now(UTC)
     policy = Policy.create_draft(
         organization_id=org_id,
@@ -110,7 +115,10 @@ def test_governance_roundtrip_postgresql() -> None:
                     {"org_id": str(org_id.value)},
                 )
 
-                _, _, evaluation = _evaluation(org_id)
+                policy, rule, evaluation = _evaluation(org_id)
+                TransactionalPolicyRepository(conn).save(policy)
+                TransactionalRuleRepository(conn).save(rule)
+                TransactionalEvaluationRepository(conn).save(evaluation)
                 authority = _authority(org_id, evaluation.purpose)
                 TransactionalDecisionAuthorityProfileRepository(conn).save(authority)
 
@@ -128,13 +136,15 @@ def test_governance_roundtrip_postgresql() -> None:
                     conclusion=ReviewConclusion.APROVA,
                     reasoning="Revisao presencial concluida.",
                 )
+                decision = service.emit_after_approval(
+                    evaluation=evaluation,
+                    proposal=proposal,
+                    review=review,
+                    authority_profile=authority,
+                )
+                TransactionalDecisionRepository(conn).save(decision)
                 contestation = service.file_contestation(
-                    decision=service.emit_after_approval(
-                        evaluation=evaluation,
-                        proposal=proposal,
-                        review=review,
-                        authority_profile=authority,
-                    ),
+                    decision=decision,
                     contested_by=UniversalReference(
                         target_id=TypedId.new("user"),
                         organization_id=org_id,

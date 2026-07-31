@@ -6,14 +6,18 @@ enxergar o que é de outra organização.
 """
 
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
 from apps.api.pagination import LIMITE_MAXIMO
 from packages.core_application.policy_service import PolicyService
+from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_infrastructure.persistence import set_local_organization_context
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionGovernanceRepository,
+)
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
@@ -21,6 +25,10 @@ from packages.livestock_application.eligibility import (
 )
 from packages.livestock_application.establishment_qualification_service import (
     establishment_qualification_fact_type,
+)
+from packages.livestock_application.fact_provider import (
+    WITHDRAWAL_FACT_TYPE,
+    LivestockFactProvider,
 )
 from packages.livestock_application.market_eligibility import (
     ENVIRONMENTAL_EMBARGO_RULE_CODE,
@@ -35,6 +43,7 @@ from packages.livestock_domain.environmental_embargo_assertion import (
 from packages.livestock_infrastructure.persistence import (
     TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
 )
+from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
 
 pytestmark = pytest.mark.skipif(
@@ -751,6 +760,72 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     ]
     assert all(requisito["adoption"] is None for requisito in requisitos_europa)
     assert all(requisito["rule_version"] is None for requisito in requisitos_europa)
+
+
+def test_elegibilidade_abre_proposta_quando_emissao_automatica_exige_revisao_humana(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+
+    def _snapshot_conflitante(
+        self: LivestockFactProvider,
+        organization_id: OrganizationId,
+        target_id: TypedId,
+        at_time: datetime,
+    ) -> FactSnapshot:
+        return FactSnapshot.create(
+            organization_id=organization_id,
+            target_id=target_id,
+            as_of=at_time,
+            facts=(
+                Fact.create(
+                    fact_type=WITHDRAWAL_FACT_TYPE,
+                    payload={"in_withdrawal": False},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="sanitary.attestation",
+                    payload={"result": "approved"},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="sanitary.attestation",
+                    payload={"result": "rejected"},
+                    observed_at=at_time,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(
+        LivestockFactProvider,
+        "get_snapshot",
+        _snapshot_conflitante,
+    )
+
+    resposta = operador.post(
+        f"/v1/livestock/animals/{animal}/eligibility",
+        json={},
+        headers=cabecalho,
+    )
+
+    assert resposta.status_code == 409, resposta.text
+    corpo = resposta.json()
+    assert corpo["reason_code"] == "REVISAO_HUMANA_NECESSARIA"
+    assert corpo["evaluation_outcome"] == "evidencia_conflitante"
+    assert corpo["evaluation_id"]
+    assert corpo["proposal_id"]
+    assert corpo["proposal_result"] == "indeterminada"
+
+    set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
+    proposta = TransactionalDecisionGovernanceRepository(ambiente.connection).get_proposal(
+        TypedId(entity_type="decision_proposal", value=UUID(corpo["proposal_id"]))
+    )
+    assert proposta is not None
+    assert str(proposta.evaluation_id.value) == corpo["evaluation_id"]
+    assert proposta.proposed_result.value == "indeterminada"
 
 
 def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(

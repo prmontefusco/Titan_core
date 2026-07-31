@@ -38,6 +38,7 @@ from packages.core_domain.recall import (
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
 from packages.core_infrastructure.persistence.decision_governance import (
     TransactionalDecisionAuthorityProfileRepository,
+    TransactionalDecisionGovernanceRepository,
 )
 from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import (
@@ -63,6 +64,7 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
     ELIGIBILITY_RULE_CODE,
     GovernedRuleReference,
+    HumanReviewRequired,
     PharmacologicalEligibilityService,
 )
 from packages.livestock_application.eligibility_policy_provider import (
@@ -139,6 +141,24 @@ from packages.shared_kernel import OrganizationId, UniversalReference
 from packages.shared_kernel import TypedId as SharedTypedId
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
+
+
+def _human_review_problem(exc: HumanReviewRequired) -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_409_CONFLICT,
+        reason_code="REVISAO_HUMANA_NECESSARIA",
+        title="Revisao humana necessaria",
+        detail=(
+            "A avaliacao foi preservada, mas a emissao automatica da decision foi "
+            "recusada e uma proposta formal de revisao humana foi aberta."
+        ),
+        extra={
+            "evaluation_id": str(exc.evaluation.evaluation_id.value),
+            "evaluation_outcome": exc.evaluation.outcome.value,
+            "proposal_id": str(exc.proposal.proposal_id.value),
+            "proposal_result": exc.proposal.proposed_result.value,
+        },
+    )
 
 
 class ElegibilidadeResponse(BaseModel):
@@ -989,34 +1009,44 @@ def _executar_avaliacao_orientada_a_mercado(
         rule_repository=rule_repository,
     ).current(organizacao)
 
-    matrix = MarketEligibilityService(
-        adoption_reader=TransactionalRuleAdoptionRepository(connection),
-        rule_reader=rule_repository,
-        policy_reader=policy_repository,
-        fact_provider=fact_provider,
-        evaluation_repository=evaluations,
-        decision_repository=decisions,
-        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
-        profiles=profiles,
-    ).evaluate(
-        organization_id=organizacao,
-        subject_id=animal_id,
-        at_time=instante,
-        selected_subjects=selected_subjects,
-    )
-
-    executed_requirement = matrix.first_executed_requirement()
-    if executed_requirement is None or executed_requirement.execution is None:
-        evaluation, decision = PharmacologicalEligibilityService(
+    try:
+        matrix = MarketEligibilityService(
+            adoption_reader=TransactionalRuleAdoptionRepository(connection),
+            rule_reader=rule_repository,
+            policy_reader=policy_repository,
             fact_provider=fact_provider,
-            policy=policy,
-            rule=rule,
             evaluation_repository=evaluations,
             decision_repository=decisions,
             authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
                 connection
             ),
-        ).evaluate_animal(organizacao, animal_id, instante)
+            governance_repository=TransactionalDecisionGovernanceRepository(connection),
+            profiles=profiles,
+        ).evaluate(
+            organization_id=organizacao,
+            subject_id=animal_id,
+            at_time=instante,
+            selected_subjects=selected_subjects,
+        )
+    except HumanReviewRequired as exc:
+        raise _human_review_problem(exc) from exc
+
+    executed_requirement = matrix.first_executed_requirement()
+    if executed_requirement is None or executed_requirement.execution is None:
+        try:
+            evaluation, decision = PharmacologicalEligibilityService(
+                fact_provider=fact_provider,
+                policy=policy,
+                rule=rule,
+                evaluation_repository=evaluations,
+                decision_repository=decisions,
+                authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                    connection
+                ),
+                governance_repository=TransactionalDecisionGovernanceRepository(connection),
+            ).evaluate_animal(organizacao, animal_id, instante)
+        except HumanReviewRequired as exc:
+            raise _human_review_problem(exc) from exc
     else:
         persisted_evaluation = evaluations.get_by_id(
             SharedTypedId(
@@ -1100,14 +1130,20 @@ def executar_elegibilidade(
     ).current(organizacao)
     governed_rule = _governed_rule_reference(connection, organizacao)
 
-    evaluation, decision = PharmacologicalEligibilityService(
-        fact_provider=fact_provider,
-        policy=policy,
-        rule=rule,
-        evaluation_repository=evaluations,
-        decision_repository=decisions,
-        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
-    ).evaluate_animal(organizacao, alvo, datetime.now(UTC))
+    try:
+        evaluation, decision = PharmacologicalEligibilityService(
+            fact_provider=fact_provider,
+            policy=policy,
+            rule=rule,
+            evaluation_repository=evaluations,
+            decision_repository=decisions,
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                connection
+            ),
+            governance_repository=TransactionalDecisionGovernanceRepository(connection),
+        ).evaluate_animal(organizacao, alvo, datetime.now(UTC))
+    except HumanReviewRequired as exc:
+        raise _human_review_problem(exc) from exc
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),
@@ -1190,17 +1226,23 @@ def executar_elegibilidade_lote(
     policy, animal_rule = policy_provider.current(organizacao)
     lot_rule = policy_provider.current_lot_rule(organizacao, policy)
 
-    evaluation, decision = PharmacologicalEligibilityService(
-        fact_provider=fact_provider,
-        policy=policy,
-        # `rule` não é usado por evaluate_lot (que consulta lot_rule), mas o
-        # campo é obrigatório no serviço; a regra de animal já está em mãos.
-        rule=animal_rule,
-        evaluation_repository=evaluations,
-        decision_repository=decisions,
-        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
-        lot_rule=lot_rule,
-    ).evaluate_lot(organizacao, alvo, datetime.now(UTC))
+    try:
+        evaluation, decision = PharmacologicalEligibilityService(
+            fact_provider=fact_provider,
+            policy=policy,
+            # `rule` não é usado por evaluate_lot (que consulta lot_rule), mas o
+            # campo é obrigatório no serviço; a regra de animal já está em mãos.
+            rule=animal_rule,
+            evaluation_repository=evaluations,
+            decision_repository=decisions,
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                connection
+            ),
+            governance_repository=TransactionalDecisionGovernanceRepository(connection),
+            lot_rule=lot_rule,
+        ).evaluate_lot(organizacao, alvo, datetime.now(UTC))
+    except HumanReviewRequired as exc:
+        raise _human_review_problem(exc) from exc
 
     return ElegibilidadeLoteResponse(
         lot_id=str(alvo.value),
@@ -1262,21 +1304,27 @@ def executar_matriz_de_mercado(
         rule_repository=TransactionalRuleRepository(connection=connection),
     ).current(organizacao)
 
-    matrix = MarketEligibilityService(
-        adoption_reader=TransactionalRuleAdoptionRepository(connection),
-        rule_reader=TransactionalRuleRepository(connection=connection),
-        policy_reader=TransactionalPolicyRepository(connection=connection),
-        fact_provider=fact_provider,
-        evaluation_repository=evaluations,
-        decision_repository=decisions,
-        authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(connection),
-        profiles=DEFAULT_MARKET_PROFILES,
-    ).evaluate(
-        organization_id=organizacao,
-        subject_id=alvo,
-        at_time=instante,
-        selected_subjects=selected_subjects,
-    )
+    try:
+        matrix = MarketEligibilityService(
+            adoption_reader=TransactionalRuleAdoptionRepository(connection),
+            rule_reader=TransactionalRuleRepository(connection=connection),
+            policy_reader=TransactionalPolicyRepository(connection=connection),
+            fact_provider=fact_provider,
+            evaluation_repository=evaluations,
+            decision_repository=decisions,
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                connection
+            ),
+            governance_repository=TransactionalDecisionGovernanceRepository(connection),
+            profiles=DEFAULT_MARKET_PROFILES,
+        ).evaluate(
+            organization_id=organizacao,
+            subject_id=alvo,
+            at_time=instante,
+            selected_subjects=selected_subjects,
+        )
+    except HumanReviewRequired as exc:
+        raise _human_review_problem(exc) from exc
 
     executed_requirement = matrix.first_executed_requirement()
     if executed_requirement is None or executed_requirement.execution is None:
@@ -1289,6 +1337,7 @@ def executar_matriz_de_mercado(
             authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
                 connection
             ),
+            governance_repository=TransactionalDecisionGovernanceRepository(connection),
         ).evaluate_animal(organizacao, alvo, instante)
     else:
         persisted_evaluation = evaluations.get_by_id(

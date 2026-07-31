@@ -268,6 +268,7 @@ def test_cliente_envia_post_para_o_endpoint_espacial(monkeypatch: pytest.MonkeyP
     assert request.full_url == "http://provider.invalido/api/v1/ibama/spatial/polygon"
     assert request.get_method() == "POST"
     assert request.headers["X-api-key"] == "chave"
+    assert request.headers["Content-type"] == "application/json"
     assert pedido_capturado["timeout"] == cliente.timeout_seconds
     body = json.loads(cast(bytes, request.data).decode("utf-8"))
     assert body["srid"] == 4326

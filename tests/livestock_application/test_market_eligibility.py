@@ -11,11 +11,20 @@ from packages.core_domain.decision import (
     DecisionResult,
 )
 from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import (
+    ContestationRecord,
+    DecisionOverride,
+    DecisionProposal,
+    DecisionReview,
+)
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import RuleAdoption, RuleAdoptionStatus
-from packages.livestock_application.eligibility import ELIGIBILITY_RULE_ADOPTION_SCOPE
+from packages.livestock_application.eligibility import (
+    ELIGIBILITY_RULE_ADOPTION_SCOPE,
+    HumanReviewRequired,
+)
 from packages.livestock_application.establishment_qualification_service import (
     establishment_qualification_fact_type,
 )
@@ -204,6 +213,41 @@ class InMemoryDecisions:
 
     def save(self, decision: object) -> None:
         self.saved.append(decision)
+
+
+@dataclass
+class InMemoryDecisionGovernanceRepo:
+    proposals: list[DecisionProposal] = field(default_factory=list)
+
+    def save_proposal(self, proposal: DecisionProposal) -> None:
+        self.proposals.append(proposal)
+
+    def get_proposal(self, proposal_id: TypedId) -> DecisionProposal | None:
+        return next(
+            (proposal for proposal in self.proposals if proposal.proposal_id == proposal_id),
+            None,
+        )
+
+    def save_review(self, review: DecisionReview) -> None:
+        raise AssertionError("nao deveria registrar review neste teste")
+
+    def get_review(self, review_id: TypedId) -> DecisionReview | None:
+        return None
+
+    def list_reviews_by_proposal(self, proposal_id: TypedId) -> list[DecisionReview]:
+        return []
+
+    def save_override(self, override: DecisionOverride) -> None:
+        raise AssertionError("nao deveria registrar override neste teste")
+
+    def get_override(self, override_id: TypedId) -> DecisionOverride | None:
+        return None
+
+    def save_contestation(self, contestation: ContestationRecord) -> None:
+        raise AssertionError("nao deveria registrar contestacao neste teste")
+
+    def get_contestation(self, contestation_id: TypedId) -> ContestationRecord | None:
+        return None
 
 
 def _reason(message: str = "Animal em carencia.") -> DecisionReason:
@@ -851,3 +895,79 @@ def test_market_with_adopted_environmental_embargo_rule_can_block_by_governed_fa
     ]
     assert entry.requirements[1].rule_code == ENVIRONMENTAL_EMBARGO_RULE_CODE
     assert entry.requirements[1].reasons[0].rule_code == ENVIRONMENTAL_EMBARGO_RULE_CODE
+
+
+def test_market_evaluation_creates_proposal_when_review_is_required() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+    governance = InMemoryDecisionGovernanceRepo()
+
+    adoption = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    rule = rules.add_from_adoption(adoption, code="rule-carencia-farmacologica")
+    policies.add_from_rule(rule)
+
+    class ConflictingFactProvider(InMemoryFactProvider):
+        def get_snapshot(
+            self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+        ) -> FactSnapshot:
+            snapshot = super().get_snapshot(organization_id, target_id, at_time)
+            return FactSnapshot.create(
+                organization_id=organization_id,
+                target_id=target_id,
+                as_of=at_time,
+                facts=snapshot.facts
+                + (
+                    Fact.create(
+                        fact_type="sanitary.attestation",
+                        payload={"result": "approved"},
+                        observed_at=at_time,
+                    ),
+                    Fact.create(
+                        fact_type="sanitary.attestation",
+                        payload={"result": "rejected"},
+                        observed_at=at_time,
+                    ),
+                ),
+            )
+
+    service = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=ConflictingFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        governance_repository=governance,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
+    )
+
+    try:
+        service.evaluate(
+            org_id,
+            subject_id=animal_id,
+            at_time=datetime.now(UTC),
+        )
+    except HumanReviewRequired as exc:
+        assert exc.proposal.evaluation_id == exc.evaluation.evaluation_id
+        assert governance.proposals == [exc.proposal]
+    else:
+        raise AssertionError("era esperado review humana obrigatoria")
+
+    assert len(evaluations.saved) == 1
+    assert decisions.saved == []

@@ -47,6 +47,7 @@ class Fact:
     observed_at: datetime
     source_reference: UniversalReference | None = None
     recorded_at: datetime | None = None
+    accepted_at: datetime | None = None
     known_at: datetime | None = None
     discovered_at: datetime | None = None
 
@@ -59,7 +60,7 @@ class Fact:
             raise TypeError("payload deve ser um dicionário.")
         if not isinstance(self.observed_at, datetime):
             raise TypeError("observed_at deve ser um datetime.")
-        for field_name in ("recorded_at", "known_at", "discovered_at"):
+        for field_name in ("recorded_at", "accepted_at", "known_at", "discovered_at"):
             value = getattr(self, field_name)
             if value is not None and not isinstance(value, datetime):
                 raise TypeError(f"{field_name} deve ser um datetime ou None.")
@@ -72,6 +73,7 @@ class Fact:
         observed_at: datetime,
         source_reference: UniversalReference | None = None,
         recorded_at: datetime | None = None,
+        accepted_at: datetime | None = None,
         known_at: datetime | None = None,
         discovered_at: datetime | None = None,
     ) -> "Fact":
@@ -82,6 +84,7 @@ class Fact:
             observed_at=observed_at,
             source_reference=source_reference,
             recorded_at=recorded_at,
+            accepted_at=accepted_at,
             known_at=known_at,
             discovered_at=discovered_at,
         )
@@ -109,6 +112,20 @@ class Fact:
             return "recorded_at_fallback"
         return "observed_at_fallback"
 
+    def temporal_limitations(self) -> tuple[str, ...]:
+        limitations: list[str] = []
+        if self.knowledge_time_source() != "known_at":
+            limitations.append(
+                f"Fact {self.fact_id.value} usa {self.knowledge_time_source()} como "
+                "aproximacao do conhecimento historico."
+            )
+        if self.accepted_at is None:
+            limitations.append(
+                f"Fact {self.fact_id.value} nao declara accepted_at; a admissibilidade "
+                "normativa deste material nao foi verificada pelo Core."
+            )
+        return tuple(limitations)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "fact_id": str(self.fact_id.value),
@@ -117,6 +134,7 @@ class Fact:
             "observed_at": self.observed_at.isoformat(),
             "source_reference": reference_to_dict(self.source_reference),
             "recorded_at": None if self.recorded_at is None else self.recorded_at.isoformat(),
+            "accepted_at": None if self.accepted_at is None else self.accepted_at.isoformat(),
             "known_at": None if self.known_at is None else self.known_at.isoformat(),
             "discovered_at": (
                 None if self.discovered_at is None else self.discovered_at.isoformat()
@@ -135,6 +153,11 @@ class Fact:
                 None
                 if data.get("recorded_at") is None
                 else datetime.fromisoformat(data["recorded_at"])
+            ),
+            accepted_at=(
+                None
+                if data.get("accepted_at") is None
+                else datetime.fromisoformat(data["accepted_at"])
             ),
             known_at=(
                 None if data.get("known_at") is None else datetime.fromisoformat(data["known_at"])
@@ -252,14 +275,7 @@ class FactSnapshot:
         )
         limitations = tuple(
             sorted(
-                {
-                    (
-                        f"Fact {fact.fact_id.value} usa {fact.knowledge_time_source()} como "
-                        "aproximacao do conhecimento historico."
-                    )
-                    for fact in sorted_facts
-                    if fact.knowledge_time_source() != "known_at"
-                }
+                {limitation for fact in sorted_facts for limitation in fact.temporal_limitations()}
             )
         )
 
@@ -285,6 +301,7 @@ class FactSnapshot:
                     "observed_at": f.observed_at,
                     "source_reference": reference_to_dict(f.source_reference),
                     "recorded_at": f.recorded_at,
+                    "accepted_at": f.accepted_at,
                     "known_at": f.known_at,
                     "discovered_at": f.discovered_at,
                 }

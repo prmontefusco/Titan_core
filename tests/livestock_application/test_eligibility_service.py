@@ -4,8 +4,17 @@ from datetime import UTC, datetime, timedelta
 
 from packages.core_domain.decision import DecisionResult
 from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import (
+    ContestationRecord,
+    DecisionOverride,
+    DecisionProposal,
+    DecisionReview,
+)
+from packages.core_domain.evaluation import EvaluationOutcome
 from packages.core_domain.evidence import ConfidenceTier
+from packages.core_domain.facts import Fact, FactSnapshot
 from packages.livestock_application.eligibility import (
+    HumanReviewRequired,
     PharmacologicalEligibilityService,
     build_eligibility_policy,
     build_eligibility_rule,
@@ -68,6 +77,41 @@ class _NullPropertyRepo(RuralPropertyRepositoryPort):
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
     ) -> list[RuralProperty]:
         return []
+
+
+class _InMemoryDecisionGovernanceRepo:
+    def __init__(self) -> None:
+        self.proposals: list[DecisionProposal] = []
+
+    def save_proposal(self, proposal: DecisionProposal) -> None:
+        self.proposals.append(proposal)
+
+    def get_proposal(self, proposal_id: TypedId) -> DecisionProposal | None:
+        return next(
+            (proposal for proposal in self.proposals if proposal.proposal_id == proposal_id),
+            None,
+        )
+
+    def save_review(self, review: DecisionReview) -> None:
+        raise AssertionError("nao deveria registrar review neste teste")
+
+    def get_review(self, review_id: TypedId) -> DecisionReview | None:
+        return None
+
+    def list_reviews_by_proposal(self, proposal_id: TypedId) -> list[DecisionReview]:
+        return []
+
+    def save_override(self, override: DecisionOverride) -> None:
+        raise AssertionError("nao deveria registrar override neste teste")
+
+    def get_override(self, override_id: TypedId) -> DecisionOverride | None:
+        return None
+
+    def save_contestation(self, contestation: ContestationRecord) -> None:
+        raise AssertionError("nao deveria registrar contestacao neste teste")
+
+    def get_contestation(self, contestation_id: TypedId) -> ContestationRecord | None:
+        return None
 
 
 def _service(
@@ -322,3 +366,78 @@ def test_imported_treatment_fact_blocks_eligibility_with_provenance(
     assert contribuicao["origin"] == "IMPORTED_ASSERTION"
     assert contribuicao["asserted_by"] == "Fazenda Origem Importada"
     assert contribuicao["confidence_tier"] == "CRYPTOGRAPHICALLY_ATTESTED"
+
+
+def test_review_required_persists_evaluation_and_creates_proposal(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    org_id = context.organization_id
+    animal_id = TypedId.new("animal")
+    now = datetime.now(UTC)
+
+    class ConflictingFactProvider(LivestockFactProvider):
+        def get_snapshot(
+            self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+        ) -> FactSnapshot:
+            return FactSnapshot.create(
+                organization_id=organization_id,
+                target_id=target_id,
+                as_of=at_time,
+                facts=(
+                    Fact.create(
+                        fact_type=WITHDRAWAL_FACT_TYPE,
+                        payload={"in_withdrawal": False},
+                        observed_at=at_time,
+                    ),
+                    Fact.create(
+                        fact_type="sanitary.attestation",
+                        payload={"result": "approved"},
+                        observed_at=at_time,
+                    ),
+                    Fact.create(
+                        fact_type="sanitary.attestation",
+                        payload={"result": "rejected"},
+                        observed_at=at_time,
+                    ),
+                ),
+            )
+
+    animal = Animal(
+        animal_id=animal_id,
+        organization_id=org_id,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.FEMALE,
+    )
+    fact_provider = ConflictingFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        withdrawal_calculator=WithdrawalCalculator(
+            application_repository=InMemoryApplicationRepo(),
+            batch_repository=InMemoryBatchRepo({}),
+            medication_repository=InMemoryMedicationRepo({}),
+        ),
+    )
+    evaluations = FakeEvaluationRepository()
+    decisions = FakeDecisionRepository()
+    governance = _InMemoryDecisionGovernanceRepo()
+    policy = build_eligibility_policy(org_id)
+    service = PharmacologicalEligibilityService(
+        fact_provider=fact_provider,
+        policy=policy,
+        rule=build_eligibility_rule(policy.policy_id, org_id),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        governance_repository=governance,
+    )
+
+    try:
+        service.evaluate_animal(org_id, animal_id, now)
+    except HumanReviewRequired as exc:
+        assert exc.evaluation.outcome is EvaluationOutcome.EVIDENCIA_CONFLITANTE
+        assert exc.proposal.evaluation_id == exc.evaluation.evaluation_id
+        assert governance.proposals == [exc.proposal]
+    else:
+        raise AssertionError("era esperado review humana obrigatoria")
+
+    assert len(evaluations.saved) == 1
+    assert decisions.saved == []

@@ -201,4 +201,28 @@ def test_fact_snapshot_declares_when_knowledge_cutoff_uses_fallbacks() -> None:
     )
 
     assert snapshot.knowledge_limitations
-    assert "recorded_at_fallback" in snapshot.knowledge_limitations[0]
+    assert any(
+        "recorded_at_fallback" in limitation for limitation in snapshot.knowledge_limitations
+    )
+
+
+def test_fact_snapshot_declares_when_normative_acceptance_is_not_known() -> None:
+    org_id = OrganizationId.new()
+    target_id = TypedId.new("batch")
+    instant = datetime.now(UTC)
+    fact = Fact.create(
+        fact_type="sanitary.inspection",
+        payload={"result": "approved"},
+        observed_at=instant,
+        known_at=instant,
+        accepted_at=None,
+    )
+
+    snapshot = FactSnapshot.create(
+        organization_id=org_id,
+        target_id=target_id,
+        as_of=instant,
+        facts=[fact],
+    )
+
+    assert any("accepted_at" in limitation for limitation in snapshot.knowledge_limitations)

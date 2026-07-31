@@ -211,6 +211,10 @@ class DossierService:
                 "engine_version": evaluation.engine_version,
                 "evaluated_at": evaluation.evaluated_at.isoformat(),
                 "snapshot_hash": evaluation.fact_snapshot.snapshot_hash,
+                "knowledge_cutoff": (
+                    evaluation.fact_snapshot.effective_knowledge_cutoff().isoformat()
+                ),
+                "knowledge_limitations": list(evaluation.fact_snapshot.knowledge_limitations),
                 "evaluation_hash": evaluation.evaluation_hash,
                 "rule_versions": [
                     {"code": code, "version": version} for code, version in evaluation.rule_versions

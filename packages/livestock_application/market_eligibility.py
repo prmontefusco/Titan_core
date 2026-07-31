@@ -6,6 +6,10 @@ from datetime import datetime
 from enum import Enum
 from typing import Protocol
 
+from packages.core_application.decision_governance_service import (
+    DecisionGovernanceRepositoryPort,
+    DecisionGovernanceService,
+)
 from packages.core_application.decision_service import DecisionService
 from packages.core_application.evaluation_service import (
     PolicyEvaluationService,
@@ -13,7 +17,11 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.decision import Decision, DecisionReason, DecisionResult
-from packages.core_domain.decision_governance import DecisionAuthorityProfile
+from packages.core_domain.decision_governance import (
+    DecisionAuthorityProfile,
+    DecisionEmissionRefusalCode,
+    DecisionEmissionRefused,
+)
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import Rule
@@ -22,6 +30,7 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
     ELIGIBILITY_RULE_CODE,
     GovernedRuleReference,
+    HumanReviewRequired,
     automated_decision_authority,
 )
 from packages.shared_kernel import OrganizationId, TypedId
@@ -460,6 +469,7 @@ class MarketEligibilityService:
     evaluation_repository: MarketEvaluationRepositoryPort | None = None
     decision_repository: MarketDecisionRepositoryPort | None = None
     authority_profile_repository: MarketDecisionAuthorityProfileRepositoryPort | None = None
+    governance_repository: DecisionGovernanceRepositoryPort | None = None
     profiles: Sequence[MarketProfile] = DEFAULT_MARKET_PROFILES
 
     def evaluate(
@@ -791,10 +801,21 @@ class MarketEligibilityService:
                 purpose=evaluation.purpose,
                 role_name="LIVESTOCK_MARKET_ELIGIBILITY_ENGINE",
             )
-            decision = DecisionService().decide(evaluation, authority)
             self.evaluation_repository.save(evaluation)
             if self.authority_profile_repository is not None:
                 self.authority_profile_repository.save(authority)
+            try:
+                decision = DecisionService().decide(evaluation, authority)
+            except DecisionEmissionRefused as exc:
+                if (
+                    exc.code is DecisionEmissionRefusalCode.REVIEW_REQUIRED
+                    and self.governance_repository is not None
+                ):
+                    proposal = DecisionGovernanceService(
+                        repository=self.governance_repository
+                    ).create_proposal(evaluation=evaluation)
+                    raise HumanReviewRequired(evaluation=evaluation, proposal=proposal) from exc
+                raise
             self.decision_repository.save(decision)
             return MarketRequirementResult(
                 rule_code=requirement.rule_code,
