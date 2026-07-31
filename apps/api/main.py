@@ -18,6 +18,7 @@ from apps.api.configuration import exigir_configuracao
 from apps.api.core_rule_governance import router as core_rule_governance_router
 from apps.api.livestock_animals import router as livestock_animals_router
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
+from apps.api.livestock_entity_type_requests import router as livestock_entity_type_requests_router
 from apps.api.livestock_medications import router as livestock_medications_router
 from apps.api.livestock_queries import router as livestock_queries_router
 from apps.api.livestock_reads import router as livestock_reads_router
@@ -120,6 +121,7 @@ for livestock_router in (
     livestock_reads_router,
     livestock_writes_router,
     livestock_transformations_router,
+    livestock_entity_type_requests_router,
 ):
     app.include_router(livestock_router)
 

@@ -30,7 +30,7 @@ from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
     organization_metadata,
 )
-from packages.shared_kernel import TypedId
+from packages.shared_kernel import OrganizationId, TypedId
 
 permissions_table = Table(
     "permissions",
@@ -167,6 +167,38 @@ class AuthorizationRepository:
                 record_owner_organization_id=permission.record_owner_organization_id.value,
                 code=permission.code,
             )
+        )
+
+    def get_permission_id_by_code(self, code: str) -> TypedId | None:
+        """`code` é único globalmente (item 2 da ADR-0031) — não depende de Organization."""
+        value = self.connection.execute(
+            select(permissions_table.c.permission_id).where(permissions_table.c.code == code)
+        ).scalar_one_or_none()
+        return None if value is None else TypedId(entity_type="permission", value=value)
+
+    def get_role_by_name(self, organization_id: OrganizationId, name: str) -> Role | None:
+        """Reaproveita um Role já criado em vez de duplicar (nome único por Organization)."""
+        row = self.connection.execute(
+            select(roles_table.c.role_id).where(
+                roles_table.c.organization_id == organization_id.value,
+                roles_table.c.name == name,
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        permission_ids = self.connection.execute(
+            select(role_permissions_table.c.permission_id)
+            .where(role_permissions_table.c.role_id == row.role_id)
+            .order_by(role_permissions_table.c.permission_id)
+        ).scalars()
+        return Role(
+            role_id=TypedId(entity_type="role", value=row.role_id),
+            organization_id=organization_id,
+            record_owner_organization_id=organization_id,
+            name=name,
+            permission_ids=tuple(
+                TypedId(entity_type="permission", value=value) for value in permission_ids
+            ),
         )
 
     def add_role(self, role: Role) -> None:

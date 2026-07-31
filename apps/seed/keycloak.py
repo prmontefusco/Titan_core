@@ -187,6 +187,96 @@ class AdminKeycloak:
             },
         ]
 
+    def garantir_atributo_de_perfil_select(
+        self,
+        *,
+        nome: str,
+        rotulo: str,
+        opcoes: list[str],
+        rotulos_das_opcoes: dict[str, str],
+    ) -> None:
+        """Acrescenta um atributo de escolha única ao perfil declarativo do realm.
+
+        O valor escolhido não concede nada por si só (ADR-0031: sem
+        autoatribuição) — é só uma conveniência de UX que o frontend lê como
+        sugestão para pré-preencher o pedido real de tipo de entidade, que
+        continua exigindo aprovação. Por isso fica de fora do Access Token e só
+        entra no ID Token: nenhuma rota da API precisa confiar nele.
+
+        Reaproveita o perfil (username/email/nome) em vez de substituí-lo — o
+        endpoint de perfil é *set*, não *patch*: mandar só o atributo novo
+        apagaria os demais.
+        """
+        _, perfil = _requisicao(
+            "GET", f"{self.base_url}/admin/realms/{self.realm}/users/profile", token=self.token
+        )
+        atributos = perfil.get("attributes", [])
+        if any(atributo["name"] == nome for atributo in atributos):
+            return
+
+        atributos.append(
+            {
+                "name": nome,
+                "displayName": rotulo,
+                "validations": {"options": {"options": opcoes}},
+                "annotations": {
+                    "inputType": "select-radiobuttons",
+                    "inputOptionLabels": rotulos_das_opcoes,
+                },
+                "permissions": {"view": ["admin", "user"], "edit": ["admin", "user"]},
+                "multivalued": False,
+            }
+        )
+        perfil["attributes"] = atributos
+        _requisicao(
+            "PUT",
+            f"{self.base_url}/admin/realms/{self.realm}/users/profile",
+            token=self.token,
+            json_body=perfil,
+        )
+
+    def garantir_mapeador_de_atributo_no_id_token(
+        self, client_id: str, *, nome_atributo: str, nome_claim: str
+    ) -> None:
+        _, existentes = _requisicao(
+            "GET",
+            f"{self.base_url}/admin/realms/{self.realm}/clients"
+            f"?{urllib.parse.urlencode({'clientId': client_id})}",
+            token=self.token,
+        )
+        if not existentes:
+            raise KeycloakError(f"Client '{client_id}' não existe neste realm.")
+        id_interno = str(existentes[0]["id"])
+
+        caminho = (
+            f"{self.base_url}/admin/realms/{self.realm}/clients/{id_interno}"
+            "/protocol-mappers/models"
+        )
+        _, atuais = _requisicao("GET", caminho, token=self.token)
+        nome_mapeador = f"titan-{nome_claim}"
+        if any(mapeador["name"] == nome_mapeador for mapeador in (atuais or [])):
+            return
+
+        _requisicao(
+            "POST",
+            caminho,
+            token=self.token,
+            json_body={
+                "name": nome_mapeador,
+                "protocol": "openid-connect",
+                "protocolMapper": "oidc-usermodel-attribute-mapper",
+                "consentRequired": False,
+                "config": {
+                    "user.attribute": nome_atributo,
+                    "claim.name": nome_claim,
+                    "jsonType.label": "String",
+                    "id.token.claim": "true",
+                    "access.token.claim": "false",
+                    "userinfo.token.claim": "true",
+                },
+            },
+        )
+
     def token_de_usuario(self, *, client_id: str, username: str, senha: str) -> str:
         _, corpo = _requisicao(
             "POST",
@@ -219,6 +309,7 @@ class AdminKeycloak:
             token=self.token,
             json_body={
                 "username": username,
+                "email": f"{username}@titan-validacao.invalid",
                 "enabled": True,
                 "emailVerified": True,
                 "firstName": username,

@@ -175,6 +175,15 @@ SUPERFICIE_ESPERADA = {
     # cadeia pode ser corrigido.
     ("/v1/livestock/transformations/slaughter/{event_id}/corrections", "post"),
     ("/v1/livestock/transformations/deboning/{event_id}/corrections", "post"),
+    # Pedido de tipo de entidade (EntityTypeRequest, ADR-0031). POST é a única
+    # rota da vertical que não exige OrganizationContext -- por definição, quem
+    # pede ainda não tem Membership na Organization-alvo. As demais exigem a
+    # permissão de decisão (ENTITY_TYPE_REQUEST_LER/DECIDIR), nunca papel.
+    ("/v1/livestock/entity-type-requests", "post"),
+    ("/v1/livestock/entity-type-requests", "get"),
+    ("/v1/livestock/entity-type-requests/mine", "get"),
+    ("/v1/livestock/entity-type-requests/{request_id}/approve", "post"),
+    ("/v1/livestock/entity-type-requests/{request_id}/deny", "post"),
 }
 
 

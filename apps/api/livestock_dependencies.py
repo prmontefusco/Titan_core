@@ -34,7 +34,12 @@ from packages.core_application.organization_context import (
     OrganizationContextDenied,
     OrganizationContextService,
 )
-from packages.core_domain import AuthenticatedPrincipal, OrganizationContext
+from packages.core_domain import (
+    AuthenticatedPrincipal,
+    ExternalIdentity,
+    OrganizationContext,
+    User,
+)
 from packages.core_infrastructure.organization_context import (
     PostgresqlIdentityAndAccessReader,
 )
@@ -42,6 +47,11 @@ from packages.core_infrastructure.persistence.database import (
     DatabaseSettings,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.external_identities import (
+    ExternalIdentityRepository,
+)
+from packages.core_infrastructure.persistence.organizations import set_local_organization_context
+from packages.core_infrastructure.persistence.users import UserRepository
 from packages.livestock_application.event_recorder import LivestockOperationContext
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
@@ -205,3 +215,40 @@ def uuid_or_problem(raw: str, *, campo: str) -> UUID:
             title="Identificador inválido",
             detail=f"O campo {campo} deve conter um UUID.",
         ) from error
+
+
+def resolve_or_provision_user(
+    principal: Annotated[AuthenticatedPrincipal, Depends(require_authenticated_principal)],
+    connection: ConnectionDependency,
+) -> TypedId:
+    """Resolve o User vinculado ao principal, criando o vínculo no primeiro contato.
+
+    Pedir para ser um tipo de entidade (EntityTypeRequest) é, por definição, algo
+    que quem ainda não tem Membership faz — não dá para exigir OrganizationContext
+    aqui, ele não existe ainda. A ADR-0005 permite criação automática de User "se
+    permitida, com política e auditoria próprias" (não por claim do provider, e
+    nunca concedendo Membership ou Role sozinha): esta é essa política, restrita a
+    este único ponto de entrada, e auditável pelo próprio ExternalIdentity criado.
+    """
+    operadora = operator_organization_id()
+    set_local_organization_context(connection, operadora)
+    identidade = ExternalIdentityRepository(connection).resolve(principal)
+    if identidade is not None:
+        return identidade.internal_principal_id
+
+    usuario = User.create(platform_operator_organization_id=operadora)
+    UserRepository(connection).add(usuario)
+    ExternalIdentityRepository(connection).add(
+        ExternalIdentity.link_user(
+            operator_organization_id=operadora,
+            issuer=principal.issuer,
+            subject=principal.subject,
+            user_id=usuario.user_id,
+            linked_at=datetime.now(UTC),
+            linked_by_actor_id=TypedId(entity_type="actor", value=usuario.user_id.value),
+        )
+    )
+    return usuario.user_id
+
+
+UserIdDependency = Annotated[TypedId, Depends(resolve_or_provision_user)]

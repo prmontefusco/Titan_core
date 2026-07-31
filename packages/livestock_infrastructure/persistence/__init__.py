@@ -85,12 +85,19 @@ from packages.livestock_infrastructure.persistence.veterinarian_repository impor
     veterinarians_table,
 )
 
+from .entity_type_request_grant import TransactionalMembershipGrant
+from .entity_type_request_repository import (
+    TransactionalEntityTypeRequestRepository,
+    entity_type_requests_table,
+)
 from .environmental_embargo_assertion_repository import (
     TransactionalPropertyEnvironmentalEmbargoAssertionRepository,
     property_environmental_embargo_assertions_table,
 )
 
 __all__ = [
+    "TransactionalEntityTypeRequestRepository",
+    "TransactionalMembershipGrant",
     "TransactionalAnimalMovementRepository",
     "TransactionalAnimalRepository",
     "TransactionalLivestockLotRepository",
@@ -110,6 +117,7 @@ __all__ = [
     "TransactionalSanitaryCampaignRepository",
     "TransactionalQualificationSourceArtifactRepository",
     "TransactionalEstablishmentQualificationAssertionRepository",
+    "entity_type_requests_table",
     "qualification_source_artifacts_table",
     "establishment_qualification_assertions_table",
     "property_environmental_embargo_assertions_table",

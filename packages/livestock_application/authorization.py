@@ -14,6 +14,8 @@ autorização existe de fato, e não como intenção.
 
 from typing import Final
 
+from packages.livestock_domain.entity_type_request import EntityKind
+
 # -- Permissões --------------------------------------------------------------
 
 ANIMAL_CRIAR: Final = "LIVESTOCK_ANIMAL.CRIAR"
@@ -73,6 +75,13 @@ TRANSFORMATION_REGISTRAR: Final = "LIVESTOCK_TRANSFORMATION.REGISTRAR"
 # de um único sujeito mostra — a mesma razão que separou ANIMAL_LER_GENEALOGIA
 # de ANIMAL_LER. Permissão própria, distinta de TIMELINE_LER.
 TRACEABILITY_LER: Final = "LIVESTOCK_TRACEABILITY.LER"
+# Decidir um EntityTypeRequest concede Membership e Role de verdade (ADR-0031
+# proíbe autoatribuição) — por isso é permissão própria, distinta de só
+# enxergar a fila de pedidos pendentes. Fica **fora** de LEITURA/ESCRITA de
+# propósito: se entrasse lá, todo OPERADOR_PECUARIO ganharia autoridade de
+# aprovar gente na Organization sem essa decisão ter sido tomada de verdade.
+ENTITY_TYPE_REQUEST_LER: Final = "LIVESTOCK_ENTITY_TYPE_REQUEST.LER"
+ENTITY_TYPE_REQUEST_DECIDIR: Final = "LIVESTOCK_ENTITY_TYPE_REQUEST.DECIDIR"
 
 # A leitura é permissão própria por área, e não uma só para tudo. Papel de
 # consulta restrita — um comprador que só precisa ver o dossiê, um técnico que só
@@ -117,12 +126,29 @@ ESCRITA: Final = frozenset(
     }
 )
 
-LIVESTOCK_PERMISSIONS: Final = LEITURA | ESCRITA
+# Administração da própria Organization (hoje: decidir EntityTypeRequest) —
+# deliberadamente separada de LEITURA/ESCRITA, que qualquer operador ganha.
+ADMINISTRACAO: Final = frozenset({ENTITY_TYPE_REQUEST_LER, ENTITY_TYPE_REQUEST_DECIDIR})
+
+LIVESTOCK_PERMISSIONS: Final = LEITURA | ESCRITA | ADMINISTRACAO
 
 # -- Papéis ------------------------------------------------------------------
 
 OPERADOR_PECUARIO: Final = "OPERADOR_PECUARIO"
 AUDITOR: Final = "AUDITOR"
+# Concede e nega EntityTypeRequest — nada além disso. Um admin com toda LEITURA
+# ou ESCRITA sem evidência de necessidade seria conveniência, não capacidade
+# comprovada; ampliar exige incremento próprio quando o caso de uso aparecer.
+ADMIN_MESTRE: Final = "ADMIN_MESTRE"
+# Estes três ainda não têm capacidade própria definida no domínio — nasceram do
+# catálogo de tipos de entidade (EntityKind) antes de qualquer caso de uso
+# concreto usá-los. Um Role sem Permission é honesto: aprovar o pedido já entrega
+# o vínculo à Organization, e a capacidade chega em incremento futuro, quando
+# existir.
+FRIGORIFICO: Final = "FRIGORIFICO"
+VETERINARIO: Final = "VETERINARIO"
+CERTIFICADOR: Final = "CERTIFICADOR"
+CONSUMIDOR: Final = "CONSUMIDOR"
 
 ROLE_PERMISSIONS: Final = {
     # O operador lê o que opera: cadastrar sem poder consultar o que se cadastrou
@@ -130,4 +156,23 @@ ROLE_PERMISSIONS: Final = {
     OPERADOR_PECUARIO: ESCRITA | (LEITURA - frozenset({DOSSIER_LER})),
     # Auditor não escreve nada. É o que torna o teste negativo inequívoco.
     AUDITOR: LEITURA,
+    ADMIN_MESTRE: ADMINISTRACAO,
+    FRIGORIFICO: frozenset(),
+    VETERINARIO: frozenset(),
+    CERTIFICADOR: frozenset(),
+    CONSUMIDOR: frozenset(),
+}
+
+# Mapeia cada EntityKind (o que a pessoa pediu para ser) ao Role concedido
+# quando o pedido é aprovado. PRODUTOR e AUDITOR reaproveitam papéis que já
+# existem — "Produtor e funcionários" é exatamente o que OPERADOR_PECUARIO já
+# significa — em vez de duplicar o mesmo conjunto de permissões sob outro nome.
+ENTITY_KIND_ROLE_NAMES: Final = {
+    EntityKind.ADMIN: ADMIN_MESTRE,
+    EntityKind.PRODUTOR: OPERADOR_PECUARIO,
+    EntityKind.FRIGORIFICO: FRIGORIFICO,
+    EntityKind.VETERINARIO: VETERINARIO,
+    EntityKind.AUDITOR: AUDITOR,
+    EntityKind.CERTIFICADOR: CERTIFICADOR,
+    EntityKind.CONSUMIDOR: CONSUMIDOR,
 }
