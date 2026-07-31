@@ -245,6 +245,43 @@ curl.exe --include http://127.0.0.1:8000/rota-inexistente
 
 O endpoint `/health` informa somente a saúde do processo e não expõe domínio. Encerre o servidor com `Ctrl+C`.
 
+## Web (apps/web)
+
+Frontend React (Vite + TypeScript), autenticado via Keycloak com Authorization Code + PKCE S256 (ADR-0005/ADR-0028), usando o client público `titan-web` do realm local. Não implementa cadastro próprio: "criar conta" é o self-registration do Keycloak (`registrationAllowed`), e login é sempre um redirect para o provider — nenhuma senha passa pelo Titan.
+
+```text
+cd apps/web
+npm install
+npm run dev
+```
+
+Outros comandos:
+
+```text
+npm run build
+npm run test
+npm run lint
+```
+
+A API precisa aceitar a origem do Vite (`http://localhost:5173`) via CORS antes do login funcionar ponta a ponta:
+
+```powershell
+$env:TITAN_CORS_ORIGINS = "http://localhost:5173"
+python -m uv run --locked uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
+```
+
+Variáveis opcionais (ver `apps/web/.env.example`, copiar para `.env.local` para sobrescrever): `VITE_TITAN_OIDC_ISSUER`, `VITE_TITAN_OIDC_CLIENT_ID`, `VITE_TITAN_API_BASE_URL`. Os padrões já apontam para a stack local.
+
+**Realm existente:** o `--import-realm` do Keycloak não reaplica `config/keycloak/titan-realm.json` sobre um realm `titan` já provisionado no volume local. Um volume novo do provider importa o client `titan-web` (destrói qualquer User/realm local já criado — confirme antes de remover `titan_keycloak_postgres_data`):
+
+```text
+docker compose rm --stop --force keycloak keycloak-postgres
+docker volume rm titan_keycloak_postgres_data
+docker compose up --detach --wait keycloak
+```
+
+Alternativamente, o client pode ser criado manualmente no Admin Console (`http://localhost:8080`) espelhando `titan-swagger`, trocando os redirect URIs para `http://localhost:5173/*`.
+
 ## Docker Compose
 
 Após a criação de `compose.yaml` no Passo 1.4:
