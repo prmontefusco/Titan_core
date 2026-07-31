@@ -36,6 +36,7 @@ services:
       - "127.0.0.1:${TITAN_OIDC_PORT:-8080}:8080"
     volumes:
       - ./config/keycloak/titan-realm.json:/opt/keycloak/data/import/titan-realm.json:ro
+      - ./config/keycloak/themes/titan:/opt/keycloak/themes/titan:ro
     healthcheck:
       test:
         - CMD-SHELL

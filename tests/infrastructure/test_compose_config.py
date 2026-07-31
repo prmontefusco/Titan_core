@@ -133,12 +133,16 @@ def test_keycloak_is_pinned_and_locally_scoped() -> None:
     # (ex.: create_host_path). Afirmar o dicionário inteiro tornaria o teste refém da
     # versão instalada, então verificamos o que de fato importa: o realm é montado
     # somente leitura, a partir do arquivo correto, no caminho esperado.
-    assert len(keycloak["volumes"]) == 1
-    realm_volume = keycloak["volumes"][0]
+    assert len(keycloak["volumes"]) == 2
+    realm_volume, theme_volume = keycloak["volumes"]
     assert realm_volume["type"] == "bind"
     assert realm_volume["source"] == str(Path("config/keycloak/titan-realm.json").resolve())
     assert realm_volume["target"] == "/opt/keycloak/data/import/titan-realm.json"
     assert realm_volume["read_only"] is True
+    assert theme_volume["type"] == "bind"
+    assert theme_volume["source"] == str(Path("config/keycloak/themes/titan").resolve())
+    assert theme_volume["target"] == "/opt/keycloak/themes/titan"
+    assert theme_volume["read_only"] is True
 
 
 def test_keycloak_waits_for_its_dedicated_database_and_has_readiness() -> None:

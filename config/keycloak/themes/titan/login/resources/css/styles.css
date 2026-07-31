@@ -1,0 +1,78 @@
+/* Tema Titan sobre o keycloak.v2 (Patternfly v5). Seletores confirmados
+   contra o DOM real renderizado localmente — ver DEVELOPMENT.md.
+
+   O layout padrão do keycloak.v2 põe a marca (#kc-header) numa segunda
+   coluna do grid via `grid-template-columns: var(--pf-v5-c-login__container--xl--GridTemplateColumns)`,
+   e essa regra resiste a `!important` (mesma especificidade, mesma origem,
+   sem @layer envolvido -- não veio à tona por que exatamente). Em vez de
+   brigar com o grid, escondemos a coluna da marca e desenhamos a logo
+   dentro do próprio cartão, onde o CSS deste tema já manda sem disputa. */
+
+body {
+  background-image: url("../img/background.jpg");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+}
+
+.pf-v5-c-login__container {
+  justify-items: center;
+  text-align: center;
+}
+
+/* Especificidade extra (ancestrais de tipo) para vencer a mesma regra do
+   patternfly.min.css, que por algum motivo não cede a !important sozinho
+   com especificidade igual. */
+html body .pf-v5-c-login__container {
+  grid-template-columns: 1fr !important;
+}
+
+#kc-header {
+  display: none;
+}
+
+.pf-v5-c-login__main {
+  background-color: rgba(20, 24, 20, 0.82);
+  border-radius: 12px;
+  padding: 2rem;
+  backdrop-filter: blur(2px);
+  max-width: 420px;
+}
+
+.pf-v5-c-login__main-header::before {
+  content: "";
+  display: block;
+  background-image: url("../img/logo.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 1rem;
+}
+
+.pf-v5-c-login__main-header .pf-v5-c-title {
+  color: #f4f4f4;
+}
+
+.pf-v5-c-login__main-header .pf-v5-c-title::after {
+  content: "Bem-vindo ao Futuro da Pecuária";
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 400;
+  margin-top: 0.35rem;
+  color: #d7d7d7;
+}
+
+.pf-v5-c-login__main-body,
+.pf-v5-c-form-control label {
+  color: #f4f4f4;
+}
+
+.pf-v5-c-button.pf-m-primary {
+  --pf-v5-c-button--m-primary--BackgroundColor: #2f9e44;
+}
+
+.pf-v5-c-button.pf-m-primary:hover {
+  --pf-v5-c-button--m-primary--BackgroundColor: #268a3a;
+}

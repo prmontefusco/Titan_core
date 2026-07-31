@@ -6,6 +6,7 @@
   "resetPasswordAllowed": true,
   "rememberMe": false,
   "sslRequired": "external",
+  "loginTheme": "titan",
   "clients": [
     {
       "clientId": "titan-api",

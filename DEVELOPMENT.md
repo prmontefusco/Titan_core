@@ -282,6 +282,23 @@ docker compose up --detach --wait keycloak
 
 Alternativamente, o client pode ser criado manualmente no Admin Console (`http://localhost:8080`) espelhando `titan-swagger`, trocando os redirect URIs para `http://localhost:5173/*`.
 
+**Campo "tipo de entidade" no cadastro do Keycloak:** não vem do `--import-realm` (o formato de perfil declarativo do realm não está no `titan-realm.json`). Depois que o Keycloak subir, rode uma vez:
+
+```powershell
+$env:TITAN_KEYCLOAK_PROFILE_SETUP_CONFIRM = "1"
+python -m uv run --locked python -m apps.keycloak_profile_setup
+```
+
+Idempotente — pode rodar de novo sem duplicar. Só altera o perfil de registro e adiciona um mapeador ao client `titan-web`; não concede Membership nem Role (isso continua exigindo aprovação via `EntityTypeRequest`, ADR-0031).
+
+**Tema visual de login/cadastro:** `config/keycloak/themes/titan/login/` estende o tema `keycloak.v2` (Patternfly v5) com o fundo, a logo e os textos em PT-BR do Titan — montado como volume em `compose.yaml` (`./config/keycloak/themes/titan:/opt/keycloak/themes/titan:ro`) e ativado via `loginTheme` no `titan-realm.json`. `--import-realm` só registra um tema novo se o diretório já estiver montado *antes* do container subir; se o volume for adicionado depois, recrie o serviço:
+
+```powershell
+docker compose up -d keycloak
+```
+
+CSS e mensagens (`resources/css/styles.css`, `messages/messages_en.properties`) recarregam sozinhos em `start-dev` — sem rebuild. `messages_en.properties` carrega texto em português porque `internationalizationEnabled` está desligado neste realm (só existe um idioma, não há por que ligar i18n de verdade). Uma regra do Patternfly (`grid-template-columns` de `.pf-v5-c-login__container`) não cede a `!important` com a mesma especificidade por um motivo não identificado — a correção usa um seletor com ascendente de tipo (`html body .pf-v5-c-login__container`) para ganhar especificidade real, documentado no topo do `styles.css`.
+
 ## Docker Compose
 
 Após a criação de `compose.yaml` no Passo 1.4:
