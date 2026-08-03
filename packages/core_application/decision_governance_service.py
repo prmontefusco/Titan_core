@@ -170,9 +170,7 @@ class DecisionGovernanceService:
         authority_profile: DecisionAuthorityProfile,
     ) -> None:
         if not reviews:
-            raise ValueError(
-                "Emissão humana exige ao menos uma review aprovadora da proposta."
-            )
+            raise ValueError("Emissão humana exige ao menos uma review aprovadora da proposta.")
 
         required_approvals = max(1, authority_profile.approvals_required)
         seen_review_ids: set[TypedId] = set()
@@ -207,9 +205,7 @@ class DecisionGovernanceService:
             seen_reviewers.add(reviewer_key)
 
         if len(reviews) < required_approvals:
-            raise ValueError(
-                "A proposta ainda não possui aprovações suficientes para emissão."
-            )
+            raise ValueError("A proposta ainda não possui aprovações suficientes para emissão.")
 
     def apply_override(
         self,

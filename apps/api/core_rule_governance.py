@@ -576,7 +576,7 @@ def _obrigar_parametro(parameters: dict[str, str], nome: str) -> str:
     valor = parameters.get(nome, "").strip()
     if not valor:
         raise DomainProblem(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="PARAMETRO_DE_TEMPLATE_INVALIDO",
             title="Parametro de template invalido",
             detail=f"O parametro '{nome}' precisa ser informado para materializar o template.",

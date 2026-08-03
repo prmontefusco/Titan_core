@@ -686,6 +686,9 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     corpo = resposta.json()
     assert corpo["animal_id"] == animal
     assert corpo["evaluation_id"]
+    assert corpo["knowledge_cutoff"]
+    assert corpo["knowledge_limitations"]
+    assert any("accepted_at" in limitation for limitation in corpo["knowledge_limitations"])
     assert corpo["decision_id"]
     por_mercado = {item["market"]: item for item in corpo["markets"]}
     assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
@@ -816,6 +819,9 @@ def test_elegibilidade_abre_proposta_quando_emissao_automatica_exige_revisao_hum
     assert corpo["reason_code"] == "REVISAO_HUMANA_NECESSARIA"
     assert corpo["evaluation_outcome"] == "evidencia_conflitante"
     assert corpo["evaluation_id"]
+    assert corpo["knowledge_cutoff"]
+    assert corpo["knowledge_limitations"]
+    assert any("accepted_at" in limitation for limitation in corpo["knowledge_limitations"])
     assert corpo["proposal_id"]
     assert corpo["proposal_result"] == "indeterminada"
 
@@ -879,6 +885,9 @@ def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(
     ]
     assert corpo["market_gaps"][0]["market"] == MarketEligibilityPurpose.EXPORTACAO_CHINA.code
     assert corpo["market_gaps"][0]["code"] == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+    assert corpo["knowledge_cutoff"]
+    assert corpo["knowledge_limitations"]
+    assert any("accepted_at" in limitation for limitation in corpo["knowledge_limitations"])
     por_mercado = {item["market"]: item for item in corpo["markets"]}
     assert set(por_mercado) == {
         MarketEligibilityPurpose.EXPORTACAO_CHINA.code,

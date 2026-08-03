@@ -155,6 +155,10 @@ def _human_review_problem(exc: HumanReviewRequired) -> DomainProblem:
         extra={
             "evaluation_id": str(exc.evaluation.evaluation_id.value),
             "evaluation_outcome": exc.evaluation.outcome.value,
+            "knowledge_cutoff": (
+                exc.evaluation.fact_snapshot.effective_knowledge_cutoff().isoformat()
+            ),
+            "knowledge_limitations": list(exc.evaluation.fact_snapshot.knowledge_limitations),
             "proposal_id": str(exc.proposal.proposal_id.value),
             "proposal_result": exc.proposal.proposed_result.value,
         },
@@ -166,6 +170,8 @@ class ElegibilidadeResponse(BaseModel):
     result: str
     outcome: str
     evaluation_id: str
+    knowledge_cutoff: str
+    knowledge_limitations: list[str]
     decision_id: str
     dossier_id: str
     reasons: list[str]
@@ -182,6 +188,8 @@ class LinhaDoTempoResponse(BaseModel):
 class MatrizMercadoResponse(BaseModel):
     animal_id: str
     evaluation_id: str
+    knowledge_cutoff: str
+    knowledge_limitations: list[str]
     decision_id: str
     dossier_id: str
     markets: list[dict[str, Any]]
@@ -207,6 +215,8 @@ class AvaliacaoMercadosResponse(BaseModel):
     required_subjects: list[dict[str, str]]
     market_gaps: list[dict[str, str]]
     evaluation_id: str
+    knowledge_cutoff: str
+    knowledge_limitations: list[str]
     decision_id: str
     dossier_id: str
     markets: list[dict[str, Any]]
@@ -1166,6 +1176,8 @@ def executar_elegibilidade(
         result=decision.result.value,
         outcome=evaluation.outcome.value,
         evaluation_id=str(evaluation.evaluation_id.value),
+        knowledge_cutoff=evaluation.fact_snapshot.effective_knowledge_cutoff().isoformat(),
+        knowledge_limitations=list(evaluation.fact_snapshot.knowledge_limitations),
         decision_id=str(decision.decision_id.value),
         dossier_id=str(dossier.dossier_id.value),
         reasons=[razao.message for razao in decision.reasons],
@@ -1178,6 +1190,8 @@ class ElegibilidadeLoteResponse(BaseModel):
     result: str
     outcome: str
     evaluation_id: str
+    knowledge_cutoff: str
+    knowledge_limitations: list[str]
     decision_id: str
     reasons: list[str]
 
@@ -1249,6 +1263,8 @@ def executar_elegibilidade_lote(
         result=decision.result.value,
         outcome=evaluation.outcome.value,
         evaluation_id=str(evaluation.evaluation_id.value),
+        knowledge_cutoff=evaluation.fact_snapshot.effective_knowledge_cutoff().isoformat(),
+        knowledge_limitations=list(evaluation.fact_snapshot.knowledge_limitations),
         decision_id=str(decision.decision_id.value),
         reasons=[razao.message for razao in decision.reasons],
     )
@@ -1384,6 +1400,8 @@ def executar_matriz_de_mercado(
     return MatrizMercadoResponse(
         animal_id=str(alvo.value),
         evaluation_id=str(evaluation.evaluation_id.value),
+        knowledge_cutoff=evaluation.fact_snapshot.effective_knowledge_cutoff().isoformat(),
+        knowledge_limitations=list(evaluation.fact_snapshot.knowledge_limitations),
         decision_id=str(decision.decision_id.value),
         dossier_id=str(dossier.dossier_id.value),
         markets=matrix.to_dict(),
@@ -1450,6 +1468,8 @@ def executar_avaliacao_orientada_a_mercados(
         required_subjects=_required_subjects(matrix),
         market_gaps=_market_gaps(matrix),
         evaluation_id=str(evaluation.evaluation_id.value),
+        knowledge_cutoff=evaluation.fact_snapshot.effective_knowledge_cutoff().isoformat(),
+        knowledge_limitations=list(evaluation.fact_snapshot.knowledge_limitations),
         decision_id=str(decision.decision_id.value),
         dossier_id=str(dossier.dossier_id.value),
         markets=[

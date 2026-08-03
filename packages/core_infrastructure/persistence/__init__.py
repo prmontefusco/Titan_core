@@ -8,6 +8,10 @@ from packages.core_infrastructure.persistence.database import (
     check_database_connection,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+    TransactionalDecisionGovernanceRepository,
+)
 from packages.core_infrastructure.persistence.events import (
     DomainEventRepository,
     EventAppendConflict,
@@ -31,10 +35,6 @@ from packages.core_infrastructure.persistence.rule_governance import (
     TransactionalRuleAdoptionRepository,
     TransactionalRuleIdentityRepository,
     TransactionalRuleTimelineRepository,
-)
-from packages.core_infrastructure.persistence.decision_governance import (
-    TransactionalDecisionAuthorityProfileRepository,
-    TransactionalDecisionGovernanceRepository,
 )
 from packages.core_infrastructure.persistence.timestamping import TimestampAuditRepository
 from packages.core_infrastructure.persistence.users import UserRepository

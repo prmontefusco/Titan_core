@@ -304,9 +304,7 @@ class TransactionalDecisionGovernanceRepository:
 
     def __post_init__(self) -> None:
         if not isinstance(self.connection, Connection) or not self.connection.in_transaction():
-            raise RuntimeError(
-                "TransactionalDecisionGovernanceRepository exige transacao ativa."
-            )
+            raise RuntimeError("TransactionalDecisionGovernanceRepository exige transacao ativa.")
 
     def save_proposal(self, proposal: DecisionProposal) -> None:
         self.connection.execute(
@@ -370,9 +368,7 @@ class TransactionalDecisionGovernanceRepository:
         if row is None:
             return None
         created_at = (
-            row.created_at.replace(tzinfo=UTC)
-            if row.created_at.tzinfo is None
-            else row.created_at
+            row.created_at.replace(tzinfo=UTC) if row.created_at.tzinfo is None else row.created_at
         )
         return DecisionProposal(
             proposal_id=TypedId(entity_type="decision_proposal", value=row.proposal_id),
@@ -570,9 +566,7 @@ class TransactionalDecisionGovernanceRepository:
         if authority is None:
             raise ValueError("authority_profile persistida do override deve existir.")
         applied_at = (
-            row.applied_at.replace(tzinfo=UTC)
-            if row.applied_at.tzinfo is None
-            else row.applied_at
+            row.applied_at.replace(tzinfo=UTC) if row.applied_at.tzinfo is None else row.applied_at
         )
         return DecisionOverride(
             override_id=TypedId(entity_type="decision_override", value=row.override_id),
