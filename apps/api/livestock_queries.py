@@ -255,6 +255,7 @@ class PerfilMercadoRequisitoResponse(BaseModel):
 class PerfilMercadoResponse(BaseModel):
     market: str
     declared_withdrawal_period_days: int | None
+    withdrawal_basis: dict[str, Any] | None = None
     requirements: list[PerfilMercadoRequisitoResponse]
 
 
@@ -541,6 +542,9 @@ def _perfil_mercado_response(profile: MarketProfile) -> PerfilMercadoResponse:
     return PerfilMercadoResponse(
         market=profile.market.code,
         declared_withdrawal_period_days=profile.declared_withdrawal_period_days,
+        withdrawal_basis=(
+            None if profile.withdrawal_basis is None else profile.withdrawal_basis.to_dict()
+        ),
         requirements=[
             PerfilMercadoRequisitoResponse(
                 rule_code=requirement.rule_code,
@@ -1072,20 +1076,36 @@ def _executar_avaliacao_orientada_a_mercado(
         )
         if persisted_evaluation is None or persisted_decision is None:
             raise RuntimeError("A matriz registrou uma avaliacao por mercado sem persistencia.")
-        evaluation = persisted_evaluation
-        decision = persisted_decision
-        if executed_requirement.governed_rule is None:
-            raise RuntimeError("A matriz executou requisito sem regra governada associada.")
-        persisted_rule = rule_repository.get_by_id(
-            executed_requirement.governed_rule.rule_version_id
-        )
-        if persisted_rule is None:
-            raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
-        persisted_policy = policy_repository.get_by_id(persisted_rule.policy_id)
-        if persisted_policy is None:
-            raise RuntimeError("A matriz executou requisito com policy ausente.")
-        policy = persisted_policy
-        rule = persisted_rule
+        if persisted_evaluation.subject_id != animal_id:
+            try:
+                evaluation, decision = PharmacologicalEligibilityService(
+                    fact_provider=fact_provider,
+                    policy=policy,
+                    rule=rule,
+                    evaluation_repository=evaluations,
+                    decision_repository=decisions,
+                    authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                        connection
+                    ),
+                    governance_repository=TransactionalDecisionGovernanceRepository(connection),
+                ).evaluate_animal(organizacao, animal_id, instante)
+            except HumanReviewRequired as exc:
+                raise _human_review_problem(exc) from exc
+        else:
+            evaluation = persisted_evaluation
+            decision = persisted_decision
+            if executed_requirement.governed_rule is None:
+                raise RuntimeError("A matriz executou requisito sem regra governada associada.")
+            persisted_rule = rule_repository.get_by_id(
+                executed_requirement.governed_rule.rule_version_id
+            )
+            if persisted_rule is None:
+                raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
+            persisted_policy = policy_repository.get_by_id(persisted_rule.policy_id)
+            if persisted_policy is None:
+                raise RuntimeError("A matriz executou requisito com policy ausente.")
+            policy = persisted_policy
+            rule = persisted_rule
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),
@@ -1370,22 +1390,38 @@ def executar_matriz_de_mercado(
         )
         if persisted_evaluation is None or persisted_decision is None:
             raise RuntimeError("A matriz registrou uma avaliacao por mercado sem persistencia.")
-        evaluation = persisted_evaluation
-        decision = persisted_decision
-        if executed_requirement.governed_rule is None:
-            raise RuntimeError("A matriz executou requisito sem regra governada associada.")
-        persisted_rule = TransactionalRuleRepository(connection=connection).get_by_id(
-            executed_requirement.governed_rule.rule_version_id
-        )
-        if persisted_rule is None:
-            raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
-        persisted_policy = TransactionalPolicyRepository(connection=connection).get_by_id(
-            persisted_rule.policy_id
-        )
-        if persisted_policy is None:
-            raise RuntimeError("A matriz executou requisito com policy ausente.")
-        policy = persisted_policy
-        rule = persisted_rule
+        if persisted_evaluation.subject_id != alvo:
+            try:
+                evaluation, decision = PharmacologicalEligibilityService(
+                    fact_provider=fact_provider,
+                    policy=policy,
+                    rule=rule,
+                    evaluation_repository=evaluations,
+                    decision_repository=decisions,
+                    authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                        connection
+                    ),
+                    governance_repository=TransactionalDecisionGovernanceRepository(connection),
+                ).evaluate_animal(organizacao, alvo, instante)
+            except HumanReviewRequired as exc:
+                raise _human_review_problem(exc) from exc
+        else:
+            evaluation = persisted_evaluation
+            decision = persisted_decision
+            if executed_requirement.governed_rule is None:
+                raise RuntimeError("A matriz executou requisito sem regra governada associada.")
+            persisted_rule = TransactionalRuleRepository(connection=connection).get_by_id(
+                executed_requirement.governed_rule.rule_version_id
+            )
+            if persisted_rule is None:
+                raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
+            persisted_policy = TransactionalPolicyRepository(connection=connection).get_by_id(
+                persisted_rule.policy_id
+            )
+            if persisted_policy is None:
+                raise RuntimeError("A matriz executou requisito com policy ausente.")
+            policy = persisted_policy
+            rule = persisted_rule
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),

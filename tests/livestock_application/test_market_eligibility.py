@@ -1,7 +1,7 @@
 """Testes da matriz de elegibilidade por mercado (ADR-0044)."""
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from packages.core_domain.decision import (
@@ -35,6 +35,7 @@ from packages.livestock_application.market_eligibility import (
     DEFAULT_MARKET_PROFILES,
     ENVIRONMENTAL_EMBARGO_RULE_CODE,
     ESTABLISHMENT_RULE_CODE,
+    MarketWithdrawalBasis,
     TRACEABILITY_RULE_CODE,
     MarketEligibilityGapCode,
     MarketEligibilityPurpose,
@@ -193,6 +194,45 @@ class InMemoryFactProvider:
                 Fact.create(
                     fact_type=ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
                     payload={"status": "SEM_RESTRICAO", "restriction_count": 0},
+                    observed_at=at_time,
+                ),
+            ),
+        )
+
+
+@dataclass
+class LocalWithdrawalAlreadyEndedFactProvider:
+    def get_snapshot(
+        self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+    ) -> FactSnapshot:
+        applied_at = at_time - timedelta(days=40)
+        return FactSnapshot.create(
+            organization_id=organization_id,
+            target_id=target_id,
+            as_of=at_time,
+            facts=(
+                Fact.create(
+                    fact_type="livestock.treatment_applied",
+                    payload={"source": "teste"},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="livestock.withdrawal",
+                    payload={
+                        "in_withdrawal": False,
+                        "eligible_from": (applied_at + timedelta(days=10)).isoformat(),
+                        "blocking_batches": [],
+                        "contributions": [
+                            {
+                                "medication_batch_id": str(TypedId.new("medication_batch").value),
+                                "applied_at": applied_at.isoformat(),
+                                "withdrawal_period_days": 10,
+                                "withdrawal_ends_at": (
+                                    applied_at + timedelta(days=10)
+                                ).isoformat(),
+                            }
+                        ],
+                    },
                     observed_at=at_time,
                 ),
             ),
@@ -533,12 +573,15 @@ def test_market_dependency_without_selected_subject_is_conditioned() -> None:
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
     entry = matrix.entries[0]
-    assert entry.status is MarketEligibilityStatus.CONDICIONADO
+    assert entry.status is MarketEligibilityStatus.INDETERMINADO
     assert entry.dependency is not None
     assert entry.dependency.subject_key == "slaughterhouse"
     assert entry.dependency.subject_label == "estabelecimento"
     assert entry.dependency.selected_subject_id is None
-    assert entry.requirements[0].status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.requirements[0].status is MarketEligibilityStatus.INDETERMINADO
+    assert entry.requirements[0].gaps[0].code is (
+        MarketEligibilityGapCode.CARENCIA_POR_MERCADO_AUSENTE
+    )
     assert entry.requirements[1].rule_code == ESTABLISHMENT_RULE_CODE
     assert entry.requirements[1].status is MarketEligibilityStatus.CONDICIONADO
     assert entry.requirements[1].dependency is not None
@@ -624,17 +667,65 @@ def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> N
     )
 
     entry = matrix.entries[0]
-    assert entry.status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.status is MarketEligibilityStatus.INDETERMINADO
     assert cast(Decision, decisions.saved[-1]).emission_method is DecisionEmissionMethod.AUTOMATED
     assert entry.dependency is not None
     assert entry.dependency.selected_subject_id == str(slaughterhouse_id.value)
     assert [requirement.status for requirement in entry.requirements] == [
-        MarketEligibilityStatus.ELEGIVEL,
+        MarketEligibilityStatus.INDETERMINADO,
         MarketEligibilityStatus.ELEGIVEL,
     ]
     assert entry.requirements[1].execution is not None
     assert entry.requirements[1].dependency is not None
     assert entry.requirements[1].dependency.selected_subject_id == str(slaughterhouse_id.value)
+
+
+def test_market_specific_withdrawal_basis_does_not_silently_reuse_local_medication_period() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+    china = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    china_rule = rules.add_from_adoption(china, code="rule-carencia-farmacologica")
+    policies.add_from_rule(china_rule)
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=LocalWithdrawalAlreadyEndedFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                withdrawal_basis=MarketWithdrawalBasis(
+                    source_kind="VERTICAL_CONFIGURATION",
+                    declared_period_days=30,
+                    rationale="Mercado exige janela mais restritiva que a bula local.",
+                ),
+            ),
+        ),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC),
+    )
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.NAO_ELEGIVEL
+    assert entry.withdrawal_basis is not None
+    assert entry.withdrawal_basis.source_kind == "VERTICAL_CONFIGURATION"
+    assert cast(Decision, decisions.saved[-1]).result is DecisionResult.REJEITADA
 
 
 def test_market_projection_requires_reevaluation_when_policy_used_is_not_current() -> None:

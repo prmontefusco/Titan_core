@@ -691,17 +691,15 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     assert any("accepted_at" in limitation for limitation in corpo["knowledge_limitations"])
     assert corpo["decision_id"]
     por_mercado = {item["market"]: item for item in corpo["markets"]}
-    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
+    assert por_mercado["exportacao-china"]["status"] == "INDETERMINADO"
     assert por_mercado["exportacao-china"]["projection_status"] == "ATUAL"
-    assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-estados-unidos"]["status"] == "INDETERMINADO"
     assert por_mercado["exportacao-uniao-europeia"]["status"] == "AUSENTE"
     assert por_mercado["exportacao-china"]["governed_rule"]["purpose"] == "exportacao-china"
     assert por_mercado["exportacao-china"]["adoption"]["purpose"] == "exportacao-china"
     assert por_mercado["exportacao-china"]["adoption"]["reason"] == (
         "Regra adotada para exportacao-china."
     )
-    assert por_mercado["exportacao-china"]["execution"]["evaluation_id"]
-    assert por_mercado["exportacao-china"]["execution"]["decision_id"]
     assert por_mercado["exportacao-china"]["rule_version"]["code"] == (
         "rule-carencia-farmacologica"
     )
@@ -717,20 +715,16 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
         "subject_label": "estabelecimento",
         "selected_subject_id": None,
     }
-    assert por_mercado["exportacao-china"]["gaps"][0]["code"] == (
-        "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
-    )
-    assert por_mercado["exportacao-china"]["reasons"][0]["code"] == "regra_atendida"
+    assert por_mercado["exportacao-china"]["gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
     assert (
-        por_mercado["exportacao-china"]["reasons"][0]["rule_code"] == "rule-carencia-farmacologica"
+        por_mercado["exportacao-china"]["requirements"][0]["gaps"][0]["code"]
+        == "CARENCIA_POR_MERCADO_AUSENTE"
     )
     assert [
         requisito["rule_code"] for requisito in por_mercado["exportacao-china"]["requirements"]
     ] == ["rule-carencia-farmacologica", "rule-habilitacao-estabelecimento"]
-    assert por_mercado["exportacao-china"]["requirements"][0]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-china"]["requirements"][0]["status"] == "INDETERMINADO"
     assert por_mercado["exportacao-china"]["requirements"][0]["projection_status"] == "ATUAL"
-    assert por_mercado["exportacao-china"]["requirements"][0]["execution"]["evaluation_id"]
-    assert por_mercado["exportacao-china"]["requirements"][0]["execution"]["decision_id"]
     assert por_mercado["exportacao-china"]["requirements"][0]["adoption"]["purpose"] == (
         "exportacao-china"
     )
@@ -746,10 +740,8 @@ def test_matriz_de_mercado_mostra_destinos_e_regras_ausentes(
     assert por_mercado["exportacao-china"]["requirements"][1]["gaps"][0]["code"] == (
         "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
     )
-    assert (
-        por_mercado["exportacao-china"]["execution"]["decision_id"]
-        != por_mercado["exportacao-estados-unidos"]["execution"]["decision_id"]
-    )
+    assert por_mercado["exportacao-china"]["execution"] is None
+    assert por_mercado["exportacao-estados-unidos"]["execution"] is None
     requisitos_europa = por_mercado["exportacao-uniao-europeia"]["requirements"]
     assert [requisito["rule_code"] for requisito in requisitos_europa] == [
         "rule-carencia-farmacologica",
@@ -868,13 +860,16 @@ def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(
         MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
         MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
     ]
-    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
-    assert corpo["can_sell_to_any_requested_market"] is True
-    assert "ao menos um mercado solicitado elegivel" in corpo["executive_summary"]
-    assert corpo["eligible_markets"] == [MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code]
+    assert corpo["commercial_outlook"] == "INCONCLUSIVO"
+    assert corpo["can_sell_to_any_requested_market"] is False
+    assert "Nenhum mercado solicitado pode ser promovido" in corpo["executive_summary"]
+    assert corpo["eligible_markets"] == []
     assert corpo["blocked_markets"] == []
-    assert corpo["conditioned_markets"] == [MarketEligibilityPurpose.EXPORTACAO_CHINA.code]
-    assert corpo["indeterminate_markets"] == []
+    assert corpo["conditioned_markets"] == []
+    assert set(corpo["indeterminate_markets"]) == {
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+    }
     assert corpo["missing_markets"] == []
     assert corpo["required_subjects"] == [
         {
@@ -884,7 +879,7 @@ def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(
         }
     ]
     assert corpo["market_gaps"][0]["market"] == MarketEligibilityPurpose.EXPORTACAO_CHINA.code
-    assert corpo["market_gaps"][0]["code"] == "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+    assert corpo["market_gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
     assert corpo["knowledge_cutoff"]
     assert corpo["knowledge_limitations"]
     assert any("accepted_at" in limitation for limitation in corpo["knowledge_limitations"])
@@ -893,12 +888,13 @@ def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(
         MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
         MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
     }
-    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
-    assert "selecione o estabelecimento exigido" in por_mercado["exportacao-china"]["summary"]
-    assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
-    assert por_mercado["exportacao-estados-unidos"]["summary"] == (
-        "Mercado elegivel para comercializacao."
+    assert por_mercado["exportacao-china"]["status"] == "INDETERMINADO"
+    assert (
+        "nao declarou o prazo de carencia usado na avaliacao"
+        in (por_mercado["exportacao-china"]["summary"])
     )
+    assert por_mercado["exportacao-estados-unidos"]["status"] == "INDETERMINADO"
+    assert "prazo de carencia aplicavel" in por_mercado["exportacao-estados-unidos"]["summary"]
 
 
 def test_avaliacao_orientada_a_mercados_recusa_mercado_desconhecido(
@@ -950,19 +946,21 @@ def test_explicacao_comercial_do_animal_resume_mercados_e_proxima_acao(
     corpo = resposta.json()
     assert corpo["subject_type"] == "animal"
     assert corpo["subject_id"] == animal
-    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
+    assert corpo["commercial_outlook"] == "INCONCLUSIVO"
     assert "Estados Unidos" in corpo["narrative"]
     assert "China" in corpo["narrative"]
     assert corpo["recommended_next_action"] == (
         "Selecionar e qualificar o estabelecimento exigido para os mercados condicionados."
     )
     por_mercado = {item["market"]: item for item in corpo["markets"]}
-    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
+    assert por_mercado["exportacao-china"]["status"] == "INDETERMINADO"
     assert por_mercado["exportacao-china"]["next_action"] == (
         "Selecionar o estabelecimento exigido e repetir a avaliacao deste mercado."
     )
     assert por_mercado["exportacao-china"]["affected_animal_ids"] == []
-    assert any("estabelecimento exigido" in why for why in por_mercado["exportacao-china"]["why"])
+    assert any(
+        "prazo de carencia aplicavel" in why for why in por_mercado["exportacao-china"]["why"]
+    )
 
 
 def test_listar_perfis_de_mercado_publica_requisitos_e_dependencias(
@@ -982,7 +980,8 @@ def test_listar_perfis_de_mercado_publica_requisitos_e_dependencias(
         MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
         MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
     }
-    assert perfis["exportacao-estados-unidos"]["declared_withdrawal_period_days"] == 30
+    assert perfis["exportacao-estados-unidos"]["declared_withdrawal_period_days"] is None
+    assert perfis["exportacao-estados-unidos"]["withdrawal_basis"] is None
     assert [req["rule_code"] for req in perfis["exportacao-uniao-europeia"]["requirements"]] == [
         ELIGIBILITY_RULE_CODE,
         TRACEABILITY_RULE_CODE,
@@ -1042,10 +1041,14 @@ def test_avaliacao_orientada_a_mercados_para_lote_agrega_os_animais_vigentes(
     corpo = resposta.json()
     assert corpo["lot_id"] == lote
     assert corpo["member_count"] == 2
-    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
-    assert corpo["can_sell_to_any_requested_market"] is True
-    assert corpo["eligible_markets"] == [MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code]
-    assert corpo["conditioned_markets"] == [MarketEligibilityPurpose.EXPORTACAO_CHINA.code]
+    assert corpo["commercial_outlook"] == "INCONCLUSIVO"
+    assert corpo["can_sell_to_any_requested_market"] is False
+    assert corpo["eligible_markets"] == []
+    assert corpo["conditioned_markets"] == []
+    assert set(corpo["indeterminate_markets"]) == {
+        MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
+        MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
+    }
     assert corpo["required_subjects"] == [
         {
             "market": MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
@@ -1058,17 +1061,13 @@ def test_avaliacao_orientada_a_mercados_para_lote_agrega_os_animais_vigentes(
         MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
         MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
     }
-    assert por_mercado["exportacao-estados-unidos"]["status"] == "ELEGIVEL"
+    assert por_mercado["exportacao-estados-unidos"]["status"] == "INDETERMINADO"
     assert (
-        "Todos os 2 animais vigentes do lote estao elegiveis"
-        in por_mercado["exportacao-estados-unidos"]["summary"]
+        "ainda nao possuem base suficiente para conclusao"
+        in (por_mercado["exportacao-estados-unidos"]["summary"])
     )
-    assert sorted(por_mercado["exportacao-estados-unidos"]["eligible_animal_ids"]) == sorted(
-        animais
-    )
-    assert por_mercado["exportacao-china"]["status"] == "CONDICIONADO"
-    assert "depende da escolha do estabelecimento" in por_mercado["exportacao-china"]["summary"]
-    assert sorted(por_mercado["exportacao-china"]["conditioned_animal_ids"]) == sorted(animais)
+    assert por_mercado["exportacao-china"]["status"] == "INDETERMINADO"
+    assert "prazo de carencia aplicavel" in por_mercado["exportacao-china"]["summary"]
 
 
 def test_avaliacao_orientada_a_mercados_para_lote_usa_frigorifico_escolhido(
@@ -1128,32 +1127,32 @@ def test_avaliacao_orientada_a_mercados_para_lote_usa_frigorifico_escolhido(
 
     assert resposta.status_code == 201, resposta.text
     corpo = resposta.json()
-    assert corpo["commercial_outlook"] == "TOTALMENTE_COMERCIALIZAVEL"
-    assert corpo["can_sell_to_any_requested_market"] is True
-    assert corpo["eligible_markets"] == [
+    assert corpo["commercial_outlook"] == "INCONCLUSIVO"
+    assert corpo["can_sell_to_any_requested_market"] is False
+    assert corpo["eligible_markets"] == []
+    assert corpo["conditioned_markets"] == []
+    assert set(corpo["indeterminate_markets"]) == {
         MarketEligibilityPurpose.EXPORTACAO_CHINA.code,
         MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS.code,
-    ]
-    assert corpo["conditioned_markets"] == []
+    }
     assert corpo["required_subjects"] == []
     por_mercado = {item["market"]: item for item in corpo["markets"]}
     china = por_mercado[MarketEligibilityPurpose.EXPORTACAO_CHINA.code]
-    assert china["status"] == "ELEGIVEL"
+    assert china["status"] == "INDETERMINADO"
     assert china["dependency"] == {
         "subject_key": "slaughterhouse",
         "subject_label": "estabelecimento",
         "selected_subject_id": slaughterhouse_id,
     }
-    assert "Todos os 2 animais vigentes do lote estao elegiveis" in china["summary"]
-    assert sorted(china["eligible_animal_ids"]) == sorted(animais)
+    assert "ainda nao possuem base suficiente para conclusao" in china["summary"]
     for animal in china["animals"]:
-        assert animal["status"] == "ELEGIVEL"
+        assert animal["status"] == "INDETERMINADO"
         assert animal["dependency"] == {
             "subject_key": "slaughterhouse",
             "subject_label": "estabelecimento",
             "selected_subject_id": slaughterhouse_id,
         }
-        assert animal["summary"] == "Mercado elegivel com o estabelecimento selecionado."
+        assert "nao declarou o prazo de carencia usado na avaliacao" in animal["summary"]
 
 
 def test_explicacao_comercial_do_lote_resume_animais_afetados(
@@ -1348,13 +1347,13 @@ def test_matriz_de_mercado_mostra_sujeito_escolhido_e_falha_fechado_sem_avaliado
 
     assert resposta.status_code == 201, resposta.text
     china = {item["market"]: item for item in resposta.json()["markets"]}["exportacao-china"]
-    assert china["status"] == "ELEGIVEL"
+    assert china["status"] == "INDETERMINADO"
     assert china["dependency"] == {
         "subject_key": "slaughterhouse",
         "subject_label": "estabelecimento",
         "selected_subject_id": slaughterhouse_id,
     }
-    assert china["gaps"] == []
+    assert china["gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
     assert china["requirements"][0]["status"] == "ELEGIVEL"
     assert china["requirements"][1]["rule_code"] == "rule-habilitacao-estabelecimento"
     assert china["requirements"][1]["status"] == "ELEGIVEL"
