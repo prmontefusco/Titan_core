@@ -8,28 +8,17 @@ from typing import Any
 from sqlalchemy import create_engine
 
 from apps.worker.config import WorkerSettings
+from apps.worker.livestock_handlers import WorkerHandlerRegistry
 from packages.core_application import (
     ConsumerReceipt,
     IncomingMessageEnvelope,
     OutboxReconciliationService,
-    ProcessingOutcome,
 )
 from packages.core_infrastructure.persistence.inbox import TransactionalInboxRepository
 from packages.core_infrastructure.persistence.outbox import (
     TransactionalOutboxReconciliationRepository,
 )
 from packages.core_infrastructure.rabbitmq_consumer import RabbitMQPikaConsumer
-
-
-class DefaultWorkerHandler:
-    def handle(
-        self, envelope: IncomingMessageEnvelope
-    ) -> tuple[ProcessingOutcome, str | None, str | None]:
-        return (
-            ProcessingOutcome.SUCCESS,
-            f"effect:{envelope.message_id.value}",
-            f"decision:{envelope.semantic_operation_id.value}",
-        )
 
 
 def run_reconciliation(settings: WorkerSettings) -> None:
@@ -56,7 +45,7 @@ def run_worker() -> None:
         consumer_id=settings.worker_id,
         prefetch_count=1,
     )
-    handler = DefaultWorkerHandler()
+    handler_registry = WorkerHandlerRegistry.default()
 
     def _shutdown_handler(signum: int, frame: Any) -> None:
         print(f"[Worker {settings.worker_id}] Recebido sinal {signum}. Iniciando shutdown...")
@@ -73,6 +62,7 @@ def run_worker() -> None:
                 repo = TransactionalInboxRepository(
                     connection=connection, consumer_id=settings.worker_id
                 )
+                handler = handler_registry.resolve(envelope)
                 return repo.process_message(envelope=envelope, handler=handler)
 
     print(f"[Worker {settings.worker_id}] Iniciado. Escutando a fila '{settings.queue_name}'...")

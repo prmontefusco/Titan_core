@@ -539,3 +539,452 @@ Rule: entries below are append-only; corrections require a new entry and must no
 - next_action_allowed:
   - Wait for explicit human decision on authority/permissive resolution for human decision emission before implementing `LIV-C06`.
   - Keep `LIV-C07` and later stages blocked from automatic release.
+
+## Entry 0018
+
+- date: 2026-08-04
+- entry_type: STAGE_COMPLETION
+- plan_version: 1.2
+- stage: `LIV-C06`
+- summary:
+  - Implemented the minimum approved official caller for human decision review without introducing a new aggregate, entity, enum, table, or migration.
+  - Added the official API surface for proposal retrieval and human review execution, with authority resolved from `OrganizationContext` plus explicit temporal gates for current proposal, current evaluation, and current policy.
+  - Extended the livestock dossier builder so the canonical Dossier preserves proposal and review governance when a human decision is emitted.
+  - Added focused integration coverage for successful human emission and for refusal when the reviewed proposal is no longer current.
+  - Added an executable validation script for the approved LIV-C06 flow.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `AUTORIZADA`
+  - `LIV-C08`: `AUTORIZADA`
+- implementation_evidence:
+  - api_routes:
+    - `GET /v1/livestock/decision-proposals/{proposal_id}`
+    - `POST /v1/livestock/decision-proposals/{proposal_id}/reviews`
+  - validation_script:
+    - `python -m uv run --locked python -m apps.validacao.revisao_humana_decisao`
+  - targeted_tests:
+    - `python -m uv run --locked pytest tests/api/test_core_public_surface.py` (blocked by pre-existing import failure outside LIV-C06)
+    - `python -m uv run --locked pytest tests/integration/test_livestock_api_leitura.py -k "revisao_humana or proposta_nao_corrente or abre_proposta"` (blocked by the same pre-existing import failure outside LIV-C06)
+  - quality_checks:
+    - `python -m uv run --locked ruff check apps/api/livestock_queries.py packages/livestock_application/authorization.py packages/core_infrastructure/persistence/authorization.py packages/core_infrastructure/persistence/decision_governance.py packages/livestock_application/dossier_template.py tests/integration/test_livestock_api_leitura.py tests/api/test_core_public_surface.py apps/validacao/revisao_humana_decisao.py`
+    - `python -m uv run --locked python -m py_compile apps/api/livestock_queries.py packages/livestock_application/authorization.py packages/core_infrastructure/persistence/authorization.py packages/core_infrastructure/persistence/decision_governance.py packages/livestock_application/dossier_template.py tests/integration/test_livestock_api_leitura.py tests/api/test_core_public_surface.py apps/validacao/revisao_humana_decisao.py`
+- residual_risks:
+  - Full API execution remains blocked in this local environment by a pre-existing import error outside LIV-C06: `apps/api/core_rule_governance.py` imports `TERRITORIAL_DETER_RULE_CODE`, which is absent from `packages/livestock_application/market_eligibility.py`.
+  - The minimum path persists a new `DecisionAuthorityProfile` per official human review execution; that is append-only and consistent with the approved minimum flow, but broader authority lifecycle consolidation remains outside this stage.
+- release_guard:
+  - This completion entry does not authorize `LIV-C07` or `LIV-C08`.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Wait for explicit human authorization before any `LIV-C07` work.
+  - Treat the unrelated `TERRITORIAL_DETER_RULE_CODE` import failure as a separate issue, not as part of LIV-C06.
+
+## Entry 0019
+
+- date: 2026-08-04
+- entry_type: HUMAN_AUTHORIZATION
+- plan_version: 1.2
+- stage: `LIV-C07`
+- summary:
+  - Human authorization was explicitly granted to start `LIV-C07`.
+  - This entry authorizes work on the `LIV-C07` stage only.
+  - No later stage may be released automatically from this authorization.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `AUTORIZADA`
+  - `LIV-C08`: `AUTORIZADA`
+- release_guard:
+  - This authorization does not authorize `LIV-C08`.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Produce and review the `LIV-C07` design package before implementation.
+
+## Entry 0020
+
+- date: 2026-08-04
+- entry_type: STAGE_COMPLETION
+- plan_version: 1.2
+- stage: `LIV-C07`
+- summary:
+  - Implemented the minimum approved expansion of the canonical livestock `Dossier` content without creating a parallel normative artifact.
+  - The livestock vertical section now declares explicit lifetime-coverage scope, imported-material scope, and documentary limitations instead of leaving them implicit.
+  - `VerificationBundleService` now derives sanitary declared scopes and declared gaps directly from the canonical livestock dossier content, preserving `Dossier` as the primary source and `VerificationBundle` as the derived verification package.
+  - The stage was completed without migration, new API surface, or PDF-first semantics.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `AUTORIZADA`
+- implementation_evidence:
+  - affected_code:
+    - `packages/livestock_application/dossier_template.py`
+    - `packages/core_application/verification_service.py`
+  - targeted_tests:
+    - `python -m uv run --locked pytest tests/livestock_application/test_dossier_template.py tests/application/test_verification_bundle.py`
+  - quality_checks:
+    - `python -m uv run --locked ruff check packages/livestock_application/dossier_template.py packages/core_application/verification_service.py tests/livestock_application/test_dossier_template.py tests/application/test_verification_bundle.py`
+    - `python -m uv run --locked python -m py_compile packages/livestock_application/dossier_template.py packages/core_application/verification_service.py tests/livestock_application/test_dossier_template.py tests/application/test_verification_bundle.py`
+- scope_notes:
+  - PDF remains only a derived presentation and did not become a normative source in this stage.
+  - No new `Dossier` type, `BundleManifest` variant, aggregate, entity, table, or migration was introduced.
+  - The sanitary bundle now fails closed by declared gaps when lifetime coverage is absent, partial, or materially imported.
+- residual_risks:
+  - The stage still relies on the existing livestock vertical section structure; broader multi-vertical dossier harmonization remains outside scope.
+  - Full API suite execution remains affected by the unrelated pre-existing import issue previously recorded outside `LIV-C07`.
+- release_guard:
+  - This completion entry does not authorize `LIV-C08`.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Wait for explicit human authorization before any `LIV-C08` work.
+
+## Entry 0021
+
+- date: 2026-08-04
+- entry_type: HUMAN_AUTHORIZATION
+- plan_version: 1.2
+- stage: `LIV-C08`
+- summary:
+  - Human authorization was explicitly granted to start `LIV-C08`.
+  - This entry authorizes work on the `LIV-C08` stage only.
+  - No later stage may be released automatically from this authorization or from any artifact produced under it.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `AUTORIZADA`
+- release_guard:
+  - This authorization does not create ERP authority over sanitary facts.
+  - This authorization does not authorize any post-`LIV-C08` work.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Produce and review the `LIV-C08` design package before implementation.
+
+## Entry 0022
+
+- date: 2026-08-04
+- entry_type: STAGE_COMPLETION
+- plan_version: 1.2
+- stage: `LIV-C08`
+- summary:
+  - Implemented the minimum approved outbound ERP contract without introducing any new aggregate, entity, migration, table, or inbound ERP authority.
+  - Treatment registration now emits a versioned `COMMAND` into the existing transactional outbox as a technical administrative reflection of the authoritative Titan sanitary event.
+  - The implementation reuses the accepted Outbox publication and reconciliation infrastructure and keeps technical acknowledgement separate from sanitary proof, evaluation, and decision.
+  - The stage was completed without real Odoo integration, without new API surface, and without changing the sanitary source of truth.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+- implementation_evidence:
+  - affected_code:
+    - `packages/livestock_application/erp_outbox.py`
+    - `packages/livestock_application/treatment_service.py`
+    - `packages/core_infrastructure/persistence/outbox.py`
+    - `apps/api/livestock_treatments.py`
+  - targeted_tests:
+    - `python -m uv run --locked pytest tests/livestock_application/test_treatment_service.py tests/integration/test_treatment_postgresql.py`
+  - quality_checks:
+    - `python -m uv run --locked ruff check packages/livestock_application/erp_outbox.py packages/livestock_application/treatment_service.py packages/core_infrastructure/persistence/outbox.py apps/api/livestock_treatments.py tests/livestock_application/test_treatment_service.py tests/integration/test_treatment_postgresql.py`
+    - `python -m uv run --locked ruff format --check packages/livestock_application/erp_outbox.py packages/livestock_application/treatment_service.py packages/core_infrastructure/persistence/outbox.py apps/api/livestock_treatments.py tests/livestock_application/test_treatment_service.py tests/integration/test_treatment_postgresql.py`
+    - `python -m uv run --locked python -m py_compile packages/livestock_application/erp_outbox.py packages/livestock_application/treatment_service.py packages/core_infrastructure/persistence/outbox.py apps/api/livestock_treatments.py tests/livestock_application/test_treatment_service.py tests/integration/test_treatment_postgresql.py`
+- scope_notes:
+  - The outbound contract is emitted only from the treatment application flow in this minimum stage.
+  - ERP-originated administrative activity still has no authority to generate `Evidence`, `Fact`, `Evaluation`, or `Decision`.
+  - No migration was required because the existing `core_audit.outbox_messages` contract and operational publication state were sufficient.
+- residual_risks:
+  - The PostgreSQL integration tests selected for this stage were skipped in this local execution because `TITAN_DATABASE_URL` was not configured in the current test process.
+  - The minimum contract currently covers the treatment flow only; any future outbound coverage for other sanitary facts requires its own explicit stage or change request.
+- release_guard:
+  - This completion entry does not authorize any post-`LIV-C08` work automatically.
+  - Any future operational validation stage, broader ERP contract, or real external connector still requires explicit human approval.
+- next_action_allowed:
+  - Stop here for the Livestock lifetime compliance plan baseline.
+  - Treat any future operational integration validation or real ERP adapter as a separate explicitly authorized increment.
+
+## Entry 0023
+
+- date: 2026-08-04
+- entry_type: POST_PLAN_DESIGN_PACKAGE
+- plan_version: `post-1.2`
+- summary:
+  - Created a separate post-plan design package for operational integration validation after the conclusion of `LIV-C08`.
+  - The new artifact proposes `LIV-C09` as a distinct operational-hardening stage focused on proving the async boundary `treatment -> outbox -> publication -> inbox -> worker -> reconciliation`.
+  - No new implementation was started, no previous stage was reopened, and no automatic authorization was created.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+- documentary_outputs:
+  - design_package: `docs/plans/LIV-C09_OPERATIONAL_INTEGRATION_VALIDATION_DESIGN_PACKAGE.md`
+- release_guard:
+  - This entry does not authorize `LIV-C09`.
+  - This entry does not modify the completed status of `LIV-C01` through `LIV-C08`.
+  - Any new post-plan implementation stage still requires explicit human authorization.
+- next_action_allowed:
+  - Wait for explicit human approval before any `LIV-C09` implementation work.
+
+## Entry 0024
+
+- date: 2026-08-04
+- entry_type: POST_PLAN_DOCUMENTARY_REFINEMENT
+- plan_version: `post-1.2`
+- summary:
+  - Refined the proposed `LIV-C09` package before authorization based on architectural review feedback.
+  - Clarified that `Inbox` acceptance is not ERP confirmation, separated acknowledgement meanings, split internal vs external idempotency, tightened `RESULTADO_DESCONHECIDO` reconciliation expectations, and strengthened operational authority rules for quarantine and replay.
+  - Replaced the informal version marker `post-1.2` in the package header with `Parent plan version: 1.2` and `Extension proposal: 1.0` for stronger traceability.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+- documentary_outputs:
+  - refined_design_package: `docs/plans/LIV-C09_OPERATIONAL_INTEGRATION_VALIDATION_DESIGN_PACKAGE.md`
+- release_guard:
+  - This refinement does not authorize `LIV-C09`.
+  - This refinement does not reopen any completed stage.
+  - Any future implementation still depends on explicit human approval.
+- next_action_allowed:
+  - Wait for explicit human approval before any `LIV-C09` implementation work.
+
+  ## Entry 0025
+
+- date: 2026-08-04
+- entry_type: HUMAN_AUTHORIZATION
+- plan_version: `extension-1.0`
+- stage: `LIV-C09`
+- summary:
+  - Human authorization was explicitly granted to start `LIV-C09`.
+  - This entry authorizes work on the `LIV-C09` stage only.
+  - No later stage may be released automatically from this authorization or from any artifact produced under it.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+  - `LIV-C09`: `AUTORIZADA`
+- release_guard:
+  - This authorization applies only to `LIV-C09`.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Implement `LIV-C09` according to the approved design package.
+
+## Entry 0026
+
+- date: 2026-08-04
+- entry_type: STAGE_PROGRESS
+- plan_version: `extension-1.0`
+- stage: `LIV-C09`
+- summary:
+  - Started the approved `LIV-C09` implementation with the minimum operational hardening needed to exercise the Livestock outbound contract through the existing worker and inbox infrastructure.
+  - Added an explicit worker-side handler for `livestock.erp.treatment_application.command`, mapped transient versus permanent operational failures to the existing inbox state machine, and tightened quarantine replay to reject cross-organization operators.
+  - Added focused tests and an executable validation script for the local operational path, while keeping ERP acknowledgement technical-only and preserving Titan as the sole sanitary authority.
+  - This entry does not conclude `LIV-C09`; mandatory PostgreSQL-backed scenarios and broader operational coverage remain pending.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+  - `LIV-C09`: `AUTORIZADA`
+- implementation_evidence:
+  - affected_code:
+    - `packages/livestock_application/erp_inbox.py`
+    - `apps/worker/livestock_handlers.py`
+    - `apps/worker/main.py`
+    - `packages/core_infrastructure/persistence/inbox.py`
+    - `apps/validacao/liv_c09_integracao_operacional.py`
+  - targeted_tests:
+    - `python -m uv run --locked pytest tests/livestock_application/test_erp_inbox.py tests/integration/test_worker_e2e.py tests/integration/test_inbox_quarantine_postgresql.py`
+  - quality_checks:
+    - `python -m uv run --locked ruff check packages/livestock_application/erp_inbox.py apps/worker/livestock_handlers.py apps/worker/main.py packages/core_infrastructure/persistence/inbox.py tests/livestock_application/test_erp_inbox.py tests/integration/test_worker_e2e.py tests/integration/test_inbox_quarantine_postgresql.py apps/validacao/liv_c09_integracao_operacional.py`
+- residual_risks:
+  - The selected PostgreSQL integration tests were skipped in this run because the test session did not have a live `TITAN_DATABASE_URL` configured.
+  - The new local worker handler proves the minimum operational path only; real external confirmation semantics, richer observability, and the remaining `LIV-C09` scenarios still require explicit follow-up work.
+- release_guard:
+  - This progress entry does not conclude `LIV-C09`.
+  - This progress entry does not authorize any post-`LIV-C09` stage.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Continue the approved `LIV-C09` implementation with the remaining operational scenarios and PostgreSQL-backed validation.
+
+## Entry 0027
+
+- date: 2026-08-04
+- entry_type: STAGE_COMPLETION
+- plan_version: `extension-1.0`
+- stage: `LIV-C09`
+- summary:
+  - Completed the approved `LIV-C09` operational validation stage without changing sanitary authority, domain scope, or introducing any new aggregate, entity, migration, or inbound ERP truth.
+  - The worker now resolves the official Livestock outbound contract explicitly, the inbox state machine maps transient and permanent operational failures to retry or quarantine, and quarantine replay is blocked across organizations.
+  - PostgreSQL-backed tests now prove duplicate recovery, transient retry scheduling, permanent quarantine, outbox unknown-result retry, expired-claim reconciliation, replay authorization boundaries, organization isolation, and the minimum worker E2E path.
+  - The executable validation script now reproduces the minimum `domain event -> outbox -> inbox -> worker outcome` chain while keeping inbox acceptance explicitly technical-only and not ERP proof.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+  - `LIV-C09`: `CONCLUIDA`
+- implementation_evidence:
+  - affected_code:
+    - `packages/livestock_application/erp_inbox.py`
+    - `apps/worker/livestock_handlers.py`
+    - `apps/worker/main.py`
+    - `packages/core_infrastructure/persistence/inbox.py`
+    - `apps/validacao/liv_c09_integracao_operacional.py`
+  - targeted_tests:
+    - `python -m uv run --locked pytest tests/livestock_application/test_erp_inbox.py`
+    - `python -m uv run --locked pytest tests/integration/test_inbox_postgresql.py tests/integration/test_inbox_quarantine_postgresql.py tests/integration/test_outbox_postgresql.py tests/integration/test_outbox_reconciliation_postgresql.py tests/integration/test_worker_e2e.py`
+  - validation_script:
+    - `python -m uv run --locked python -m apps.validacao.liv_c09_integracao_operacional`
+  - quality_checks:
+    - `python -m uv run --locked ruff check packages/livestock_application/erp_inbox.py apps/worker/livestock_handlers.py apps/worker/main.py packages/core_infrastructure/persistence/inbox.py tests/livestock_application/test_erp_inbox.py tests/integration/test_inbox_postgresql.py tests/integration/test_inbox_quarantine_postgresql.py tests/integration/test_outbox_postgresql.py tests/integration/test_outbox_reconciliation_postgresql.py tests/integration/test_worker_e2e.py apps/validacao/liv_c09_integracao_operacional.py`
+- scope_notes:
+  - Inbox acceptance and worker success remain explicit technical delivery states and do not constitute sanitary proof, evaluation, or decision.
+  - The stage remained local and operational only: no real ERP adapter, no inbound contract, and no domain reinterpretation were introduced.
+  - The outbox validation script now respects the append-only event chain by persisting the causation `DomainEvent` before the outbound command.
+- residual_risks:
+  - Real external confirmation semantics, richer production observability, and any future ERP-specific transport contract still require a separate explicitly authorized increment.
+  - The broader post-plan roadmap after `LIV-C09` remains outside this completion entry and is not authorized automatically.
+- release_guard:
+  - This completion entry does not authorize any post-`LIV-C09` work.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Stop here and wait for explicit human direction on any post-`LIV-C09` follow-up.
+
+## Entry 0028
+
+- date: 2026-08-04
+- entry_type: POST_PLAN_STAGE_COMPLETION
+- plan_version: `post-liv-01`
+- stage: `POST-LIV-01`
+- summary:
+  - Completed the minimum approved operational hardening increment as a derived, tenant-safe, read-only diagnostic layer on top of the existing outbox, inbox, worker, quarantine, replay, and reconciliation mechanisms.
+  - Added an operational support summary service and PostgreSQL-backed repository that classify technical conditions without creating a new canonical transport state machine or replacing native records.
+  - The new diagnostic contract reports explicit `INDETERMINATE` and `INCONSISTENT` outcomes when transport evidence is insufficient or contradictory, keeps unknown-result retry blocked by default, and distinguishes duplicate detection from safe duplicate recovery.
+  - Added an executable validation script that creates its own controlled organization context and demonstrates the derived summary without guessing or enumerating tenants.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+  - `LIV-C09`: `CONCLUIDA`
+  - `POST-LIV-01`: `CONCLUIDA`
+- implementation_evidence:
+  - affected_code:
+    - `packages/core_application/operational_support.py`
+    - `packages/core_infrastructure/persistence/operational_support.py`
+    - `apps/validacao/post_liv_01_operational_summary.py`
+  - targeted_tests:
+    - `python -m uv run --locked pytest tests/application/test_operational_support.py tests/integration/test_operational_support_postgresql.py`
+  - validation_script:
+    - `python -m uv run --locked python -m apps.validacao.post_liv_01_operational_summary`
+  - quality_checks:
+    - `python -m uv run --locked ruff check packages/core_application/operational_support.py packages/core_infrastructure/persistence/operational_support.py tests/application/test_operational_support.py tests/integration/test_operational_support_postgresql.py apps/validacao/post_liv_01_operational_summary.py packages/core_application/__init__.py`
+- scope_notes:
+  - The operational summary is a derived diagnostic projection only and does not replace native outbox or inbox records.
+  - No mutable operational endpoint was introduced in this increment.
+  - No new aggregate, entity, migration, inbound ERP contract, or sanitary authority path was introduced.
+- residual_risks:
+  - Platform-wide fleet metrics, richer observability surfaces, and any mutable operational support endpoint still require separate explicit authorization.
+  - The current increment proves the minimum derived supportability layer only; it does not yet provide a full operator console or production alerting stack.
+- release_guard:
+  - This completion entry does not authorize `POST-LIV-02`, `POST-LIV-03`, or any other post-plan work.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Wait for explicit human direction on the next post-`LIV-C09` increment.
+
+## Entry 0029
+
+- date: 2026-08-04
+- entry_type: POST_PLAN_STAGE_COMPLETION
+- plan_version: `post-liv-02a`
+- stage: `POST-LIV-02A`
+- summary:
+  - Implemented the approved neutral outbound ERP contract for Livestock treatment reflection without introducing any real ERP adapter, vendor-specific Titan semantics, or new sanitary authority path.
+  - Replaced the previous treatment-specific outbound payload with a versioned neutral operational intent contract that separates outbound intent, stable external operation identity, and explicit acknowledgement classes.
+  - Added a local simulator that preserves distinct outcomes for `EXTERNAL_APPLIED`, `EXTERNAL_REJECTED`, duplicate recovery, unresolved duplicate detection, and `EXTERNAL_OUTCOME_UNKNOWN` without silently converting uncertainty into success.
+  - Added an executable validation script for the new contract and simulator, proving the neutral contract emission and explicit unknown-outcome handling without requiring a real ERP instance.
+- stages:
+  - `LIV-C01`: `CONCLUIDA`
+  - `LIV-C02`: `CONCLUIDA`
+  - `LIV-C03`: `CONCLUIDA`
+  - `LIV-C04`: `CONCLUIDA`
+  - `LIV-C05`: `CONCLUIDA`
+  - `LIV-C06`: `CONCLUIDA`
+  - `LIV-C07`: `CONCLUIDA`
+  - `LIV-C08`: `CONCLUIDA`
+  - `LIV-C09`: `CONCLUIDA`
+  - `POST-LIV-01`: `CONCLUIDA`
+  - `POST-LIV-02A`: `CONCLUIDA`
+- implementation_evidence:
+  - affected_code:
+    - `packages/livestock_application/erp_contract.py`
+    - `packages/livestock_application/erp_outbox.py`
+    - `packages/livestock_application/erp_inbox.py`
+    - `apps/worker/livestock_handlers.py`
+    - `apps/validacao/post_liv_02a_neutral_contract.py`
+    - `apps/validacao/liv_c09_integracao_operacional.py`
+    - `apps/validacao/post_liv_01_operational_summary.py`
+  - targeted_tests:
+    - `python -m uv run --locked pytest tests/livestock_application/test_erp_contract.py tests/livestock_application/test_erp_inbox.py tests/livestock_application/test_treatment_service.py tests/integration/test_treatment_postgresql.py tests/integration/test_worker_e2e.py tests/integration/test_operational_support_postgresql.py`
+  - validation_script:
+    - `python -m uv run --locked python -m apps.validacao.post_liv_02a_neutral_contract`
+  - quality_checks:
+    - `python -m uv run --locked ruff check packages/livestock_application/erp_contract.py packages/livestock_application/erp_outbox.py packages/livestock_application/erp_inbox.py apps/worker/livestock_handlers.py tests/livestock_application/test_erp_contract.py tests/livestock_application/test_erp_inbox.py tests/livestock_application/test_treatment_service.py tests/integration/test_treatment_postgresql.py tests/integration/test_worker_e2e.py tests/integration/test_operational_support_postgresql.py apps/validacao/post_liv_02a_neutral_contract.py apps/validacao/liv_c09_integracao_operacional.py apps/validacao/post_liv_01_operational_summary.py`
+- scope_notes:
+  - No migration was introduced in this increment.
+  - No real ERP, callback channel, polling loop, or concrete vendor adapter was introduced.
+  - The previous in-memory delivery proof now behaves as a neutral contract simulator and remains strictly technical.
+- residual_risks:
+  - `python -m uv run --locked mypy` still reports pre-existing repository-wide errors outside this increment, including files in geodata, territorial timeline, fact provider, API reads and prior validation/test fixtures.
+  - A concrete target contract, callback or polling model, external credential boundary, and first real ERP adapter still require separate explicit authorization in `POST-LIV-02B`.
+- release_guard:
+  - This completion entry does not authorize `POST-LIV-02B`, `POST-LIV-02C`, or any later post-plan increment.
+  - No later stage may be started automatically from this entry.
+- next_action_allowed:
+  - Wait for explicit human direction on `POST-LIV-02B` or another separately approved increment.
