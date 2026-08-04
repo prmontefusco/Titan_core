@@ -23,6 +23,7 @@ from packages.core_domain.decision_governance import (
     DecisionEmissionRefused,
 )
 from packages.core_domain.evaluation import Evaluation
+from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import Rule
 from packages.core_domain.rule_governance import RuleAdoption
@@ -33,11 +34,16 @@ from packages.livestock_application.eligibility import (
     HumanReviewRequired,
     automated_decision_authority,
 )
+from packages.livestock_application.fact_provider import WITHDRAWAL_FACT_TYPE
+from packages.livestock_domain.withdrawal import compute_withdrawal_ends
 from packages.shared_kernel import OrganizationId, TypedId
 
 TRACEABILITY_RULE_CODE = "rule-rastreabilidade-minima"
 ESTABLISHMENT_RULE_CODE = "rule-habilitacao-estabelecimento"
 ENVIRONMENTAL_EMBARGO_RULE_CODE = "rule-embargo-ambiental-ibama"
+TERRITORIAL_PRODES_RULE_CODE = "rule-desmatamento-prodes"
+TERRITORIAL_DETER_RULE_CODE = "rule-alerta-deter"
+TERRITORIAL_FUNAI_RULE_CODE = "rule-sobreposicao-funai"
 # Regra governada de exigibilidade sanitária (Item 4 da fila do backend).
 # Qual campanha um mercado exige vive na RuleCondition da versão adotada
 # (fact_type=sanitary_requirement_fact_type("<campanha>")), não aqui — o
@@ -105,21 +111,60 @@ class MarketRequirement:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketWithdrawalBasis:
+    source_kind: str
+    declared_period_days: int
+    rationale: str
+
+    def __post_init__(self) -> None:
+        if not self.source_kind.strip():
+            raise ValueError("source_kind da base de carencia nao pode ser vazio.")
+        if self.declared_period_days < 0:
+            raise ValueError("declared_period_days da base de carencia nao pode ser negativo.")
+        if not self.rationale.strip():
+            raise ValueError("rationale da base de carencia nao pode ser vazio.")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "source_kind": self.source_kind,
+            "declared_period_days": self.declared_period_days,
+            "rationale": self.rationale,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class MarketProfile:
     market: MarketEligibilityPurpose
     requirements: tuple[MarketRequirement, ...]
     declared_withdrawal_period_days: int | None = None
+    withdrawal_basis: MarketWithdrawalBasis | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.market, MarketEligibilityPurpose):
             raise TypeError("market do perfil deve ser MarketEligibilityPurpose.")
         if not self.requirements:
             raise ValueError("perfil de mercado exige ao menos um requisito.")
-        if (
-            self.declared_withdrawal_period_days is not None
-            and self.declared_withdrawal_period_days < 0
-        ):
-            raise ValueError("declared_withdrawal_period_days nao pode ser negativo.")
+        if self.declared_withdrawal_period_days is not None and self.withdrawal_basis is not None:
+            if self.declared_withdrawal_period_days != self.withdrawal_basis.declared_period_days:
+                raise ValueError(
+                    "declared_withdrawal_period_days deve coincidir com withdrawal_basis."
+                )
+        if self.withdrawal_basis is None and self.declared_withdrawal_period_days is not None:
+            object.__setattr__(
+                self,
+                "withdrawal_basis",
+                MarketWithdrawalBasis(
+                    source_kind="VERTICAL_CONFIGURATION",
+                    declared_period_days=self.declared_withdrawal_period_days,
+                    rationale="Perfil inicial de mercado configurado para a vertical Livestock.",
+                ),
+            )
+        elif self.withdrawal_basis is not None and self.declared_withdrawal_period_days is None:
+            object.__setattr__(
+                self,
+                "declared_withdrawal_period_days",
+                self.withdrawal_basis.declared_period_days,
+            )
 
 
 DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = (
@@ -140,6 +185,7 @@ DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = (
             ),
         ),
         declared_withdrawal_period_days=None,
+        withdrawal_basis=None,
     ),
     MarketProfile(
         market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
@@ -155,7 +201,8 @@ DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = (
                 dependent_subject_label="estabelecimento",
             ),
         ),
-        declared_withdrawal_period_days=30,
+        declared_withdrawal_period_days=None,
+        withdrawal_basis=None,
     ),
     MarketProfile(
         market=MarketEligibilityPurpose.EXPORTACAO_ESTADOS_UNIDOS,
@@ -165,7 +212,8 @@ DEFAULT_MARKET_PROFILES: tuple[MarketProfile, ...] = (
                 scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
             ),
         ),
-        declared_withdrawal_period_days=30,
+        declared_withdrawal_period_days=None,
+        withdrawal_basis=None,
     ),
 )
 
@@ -388,6 +436,7 @@ class MarketRequirementResult:
     used_policy: MarketPolicySummary | None = None
     current_policy: MarketPolicySummary | None = None
     dependency: MarketDependencySummary | None = None
+    withdrawal_basis: MarketWithdrawalBasis | None = None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -404,6 +453,9 @@ class MarketRequirementResult:
                 None if self.current_policy is None else self.current_policy.to_dict()
             ),
             "dependency": None if self.dependency is None else self.dependency.to_dict(),
+            "withdrawal_basis": (
+                None if self.withdrawal_basis is None else self.withdrawal_basis.to_dict()
+            ),
             "reasons": [reason.to_dict() for reason in self.reasons],
             "gaps": [gap.to_dict() for gap in self.gaps],
         }
@@ -527,7 +579,7 @@ class MarketEligibilityService:
                 organization_id,
                 profile.market.code,
                 requirement,
-                profile.declared_withdrawal_period_days,
+                profile.withdrawal_basis,
                 base_result,
                 base_reasons,
                 subject_id=subject_id,
@@ -611,7 +663,7 @@ class MarketEligibilityService:
         organization_id: OrganizationId,
         market: str,
         requirement: MarketRequirement,
-        declared_withdrawal_period_days: int | None,
+        withdrawal_basis: MarketWithdrawalBasis | None,
         base_result: DecisionResult | None,
         base_reasons: Sequence[DecisionReason],
         *,
@@ -684,10 +736,7 @@ class MarketEligibilityService:
         rule = self.rule_reader.get_by_id(adoption.rule_version_id)
         adoption_summary = MarketRuleAdoptionSummary.from_rule_adoption(adoption)
         rule_version = None if rule is None else MarketRuleVersionSummary.from_rule(rule)
-        if (
-            requirement.rule_code == ELIGIBILITY_RULE_CODE
-            and declared_withdrawal_period_days is None
-        ):
+        if requirement.rule_code == ELIGIBILITY_RULE_CODE and withdrawal_basis is None:
             return MarketRequirementResult(
                 rule_code=requirement.rule_code,
                 scope=requirement.scope,
@@ -706,6 +755,7 @@ class MarketEligibilityService:
                 rule_version=rule_version,
                 reasons=(),
                 dependency=dependency,
+                withdrawal_basis=None,
             )
         if (
             requirement.rule_code not in SUPPORTED_BASE_DECISION_RULE_CODES
@@ -740,6 +790,8 @@ class MarketEligibilityService:
                 evaluation_subject_id,
                 at_time,
             )
+            if requirement.rule_code == ELIGIBILITY_RULE_CODE and withdrawal_basis is not None:
+                snapshot = _with_market_withdrawal_basis(snapshot, withdrawal_basis)
             if rule is None:
                 return MarketRequirementResult(
                     rule_code=requirement.rule_code,
@@ -759,6 +811,7 @@ class MarketEligibilityService:
                     rule_version=None,
                     reasons=(),
                     dependency=dependency,
+                    withdrawal_basis=withdrawal_basis,
                 )
             assert self.policy_reader is not None
             assert self.evaluation_repository is not None
@@ -783,6 +836,7 @@ class MarketEligibilityService:
                     rule_version=rule_version,
                     reasons=(),
                     dependency=dependency,
+                    withdrawal_basis=withdrawal_basis,
                 )
             current_policy = self.policy_reader.get_active_at(
                 organization_id,
@@ -837,6 +891,7 @@ class MarketEligibilityService:
                     else MarketPolicySummary.from_policy(current_policy)
                 ),
                 dependency=dependency,
+                withdrawal_basis=withdrawal_basis,
                 reasons=tuple(
                     MarketEligibilityReason.from_decision_reason(reason)
                     for reason in decision.reasons
@@ -854,6 +909,7 @@ class MarketEligibilityService:
             rule_version=rule_version,
             projection_status=MarketProjectionStatus.ATUAL,
             dependency=dependency,
+            withdrawal_basis=withdrawal_basis,
             reasons=tuple(
                 MarketEligibilityReason.from_decision_reason(reason) for reason in base_reasons
             ),
@@ -905,3 +961,85 @@ def _projection_status_from_policies(
     if current_policy.policy_id != used_policy.policy_id:
         return MarketProjectionStatus.REAVALIACAO_NECESSARIA
     return MarketProjectionStatus.ATUAL
+
+
+def _with_market_withdrawal_basis(
+    snapshot: FactSnapshot,
+    withdrawal_basis: MarketWithdrawalBasis,
+) -> FactSnapshot:
+    local_withdrawal = snapshot.get_latest_fact_by_type(WITHDRAWAL_FACT_TYPE)
+    if local_withdrawal is None:
+        return snapshot
+    contributions = local_withdrawal.payload.get("contributions")
+    if not isinstance(contributions, list):
+        return snapshot
+
+    recomputed_contributions: list[dict[str, object]] = []
+    eligible_from: datetime | None = None
+    for contribution in contributions:
+        applied_raw = contribution.get("applied_at")
+        if not isinstance(applied_raw, str):
+            continue
+        applied_at = datetime.fromisoformat(applied_raw)
+        withdrawal_ends_at = compute_withdrawal_ends(
+            applied_at,
+            withdrawal_basis.declared_period_days,
+        )
+        eligible_from = (
+            withdrawal_ends_at
+            if eligible_from is None or withdrawal_ends_at > eligible_from
+            else eligible_from
+        )
+        recomputed_contributions.append(
+            {
+                **contribution,
+                "market_withdrawal_period_days": withdrawal_basis.declared_period_days,
+                "market_withdrawal_ends_at": withdrawal_ends_at.isoformat(),
+                "market_withdrawal_source_kind": withdrawal_basis.source_kind,
+            }
+        )
+
+    blocking_batches = [
+        str(
+            contribution.get("imported_fact_id")
+            if contribution.get("origin") == "IMPORTED_ASSERTION"
+            else contribution.get("medication_batch_id")
+        )
+        for contribution in recomputed_contributions
+        if isinstance(contribution.get("market_withdrawal_ends_at"), str)
+        and datetime.fromisoformat(str(contribution["market_withdrawal_ends_at"])) > snapshot.as_of
+    ]
+    rewritten_withdrawal = Fact.create(
+        fact_type=WITHDRAWAL_FACT_TYPE,
+        payload={
+            **local_withdrawal.payload,
+            "in_withdrawal": eligible_from is not None and snapshot.as_of < eligible_from,
+            "eligible_from": None if eligible_from is None else eligible_from.isoformat(),
+            "blocking_batches": blocking_batches,
+            "contributions": recomputed_contributions,
+            "market_basis": withdrawal_basis.to_dict(),
+        },
+        observed_at=local_withdrawal.observed_at,
+        source_reference=local_withdrawal.source_reference,
+        recorded_at=local_withdrawal.recorded_at,
+        accepted_at=local_withdrawal.accepted_at,
+        known_at=local_withdrawal.known_at,
+        discovered_at=local_withdrawal.discovered_at,
+    )
+    facts = tuple(
+        rewritten_withdrawal if fact.fact_id == local_withdrawal.fact_id else fact
+        for fact in snapshot.facts
+    )
+    if rewritten_withdrawal not in facts:
+        facts = tuple(
+            rewritten_withdrawal if fact.fact_type == WITHDRAWAL_FACT_TYPE else fact
+            for fact in snapshot.facts
+        )
+    return FactSnapshot.create(
+        organization_id=snapshot.organization_id,
+        target_id=snapshot.target_id,
+        as_of=snapshot.as_of,
+        facts=facts,
+        reference_time=snapshot.effective_reference_time(),
+        knowledge_cutoff=snapshot.effective_knowledge_cutoff(),
+    )
