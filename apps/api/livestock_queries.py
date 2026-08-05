@@ -266,6 +266,7 @@ class PerfilMercadoRequisitoResponse(BaseModel):
 class PerfilMercadoResponse(BaseModel):
     market: str
     declared_withdrawal_period_days: int | None
+    withdrawal_basis: dict[str, Any] | None = None
     requirements: list[PerfilMercadoRequisitoResponse]
 
 
@@ -578,6 +579,7 @@ def _perfil_mercado_response(profile: MarketProfile) -> PerfilMercadoResponse:
     return PerfilMercadoResponse(
         market=profile.market.code,
         declared_withdrawal_period_days=profile.declared_withdrawal_period_days,
+        withdrawal_basis=None,
         requirements=[
             PerfilMercadoRequisitoResponse(
                 rule_code=requirement.rule_code,
@@ -678,8 +680,7 @@ def _resolve_decision_review_authority(
             reason_code="AUTORIDADE_DE_DECISAO_INDETERMINADA",
             title="Autoridade de decisao indeterminada",
             detail=(
-                "Mais de um papel compativel com a emissao humana foi "
-                "resolvido para este contexto."
+                "Mais de um papel compativel com a emissao humana foi resolvido para este contexto."
             ),
         )
 
@@ -858,6 +859,11 @@ def _market_entry_summary(entry: dict[str, Any]) -> str:
         first_gap = gaps[0]
         if isinstance(first_gap, dict):
             message = first_gap.get("message", "faltam elementos para concluir.")
+            if first_gap.get("code") == "CARENCIA_POR_MERCADO_AUSENTE":
+                return (
+                    "Mercado inconclusivo: nao existe prazo de carencia aplicavel "
+                    f"declarado para este mercado; {message}"
+                )
             return f"Mercado inconclusivo: {message}"
     return "Mercado inconclusivo com o conhecimento atual."
 
@@ -904,9 +910,115 @@ def _lot_market_summary(*, market_status: str, entries: Sequence[dict[str, Any]]
     indeterminate_count = sum(
         1 for entry in entries if entry["status"] in {"INDETERMINADO", "AUSENTE"}
     )
+    if any(
+        isinstance(entry.get("dependency"), dict)
+        and entry["dependency"].get("selected_subject_id") is None
+        and any(
+            isinstance(gap, dict) and gap.get("code") == "CARENCIA_POR_MERCADO_AUSENTE"
+            for gap in entry.get("gaps", [])
+        )
+        for entry in entries
+        if isinstance(entry, dict)
+    ):
+        return (
+            "O lote continua inconclusivo neste mercado porque nao existe prazo "
+            "de carencia aplicavel declarado para todos os animais vigentes."
+        )
     return (
         f"O lote continua inconclusivo neste mercado porque {indeterminate_count} de "
         f"{member_count} animais ainda nao possuem base suficiente para conclusao."
+    )
+
+
+def _is_only_missing_withdrawal_basis(entry: dict[str, Any]) -> bool:
+    gaps = entry.get("gaps", [])
+    if isinstance(gaps, list) and gaps:
+        return all(
+            isinstance(gap, dict) and gap.get("code") == "CARENCIA_POR_MERCADO_AUSENTE"
+            for gap in gaps
+        )
+    animals = entry.get("animals", [])
+    if not isinstance(animals, list) or not animals:
+        return False
+    return all(
+        isinstance(animal, dict)
+        and str(animal.get("status")) == "INDETERMINADO"
+        and any(
+            isinstance(gap, dict) and gap.get("code") == "CARENCIA_POR_MERCADO_AUSENTE"
+            for gap in animal.get("gaps", [])
+        )
+        for animal in animals
+    )
+
+
+def _commercial_projection_status(entry: dict[str, Any]) -> str:
+    status_value = str(entry.get("status"))
+    dependency = entry.get("dependency")
+    if (
+        status_value == "INDETERMINADO"
+        and isinstance(dependency, dict)
+        and dependency.get("selected_subject_id") is None
+    ):
+        return "CONDICIONADO"
+    if status_value == "INDETERMINADO" and _is_only_missing_withdrawal_basis(entry):
+        return "ELEGIVEL"
+    return status_value
+
+
+def _project_commercial_explanation(
+    *,
+    requested_markets: Sequence[str],
+    markets: Sequence[dict[str, Any]],
+) -> tuple[
+    str,
+    bool,
+    str,
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+    list[str],
+    list[dict[str, Any]],
+]:
+    projected_markets: list[dict[str, Any]] = []
+    eligible_markets: list[str] = []
+    blocked_markets: list[str] = []
+    conditioned_markets: list[str] = []
+    indeterminate_markets: list[str] = []
+    missing_markets: list[str] = []
+    for entry in markets:
+        projected_status = _commercial_projection_status(entry)
+        projected_entry = {**entry, "status": projected_status}
+        projected_markets.append(projected_entry)
+        market_code = str(entry["market"])
+        if projected_status == "ELEGIVEL":
+            eligible_markets.append(market_code)
+        elif projected_status == "NAO_ELEGIVEL":
+            blocked_markets.append(market_code)
+        elif projected_status == "CONDICIONADO":
+            conditioned_markets.append(market_code)
+        elif projected_status == "INDETERMINADO":
+            indeterminate_markets.append(market_code)
+        elif projected_status == "AUSENTE":
+            missing_markets.append(market_code)
+    commercial_outlook, can_sell, executive_summary = _commercial_outlook(
+        requested_markets=requested_markets,
+        eligible_markets=eligible_markets,
+        blocked_markets=blocked_markets,
+        conditioned_markets=conditioned_markets,
+        indeterminate_markets=indeterminate_markets,
+        missing_markets=missing_markets,
+    )
+    return (
+        commercial_outlook,
+        can_sell,
+        executive_summary,
+        eligible_markets,
+        blocked_markets,
+        conditioned_markets,
+        indeterminate_markets,
+        missing_markets,
+        projected_markets,
     )
 
 
@@ -945,6 +1057,14 @@ def _market_why(entry: dict[str, Any]) -> list[str]:
         animals = entry.get("animals", [])
         if not isinstance(animals, list):
             return [str(entry.get("summary", ""))]
+        dependency = entry.get("dependency")
+        if (
+            entry.get("status") == "CONDICIONADO"
+            and isinstance(dependency, dict)
+            and dependency.get("selected_subject_id") is None
+        ):
+            label = str(dependency.get("subject_label", "sujeito"))
+            return [f"Mercado condicionado: selecione o {label} exigido para concluir a analise."]
         if entry.get("status") == "ELEGIVEL":
             return ["Todos os animais vigentes apareceram elegiveis neste mercado."]
         unique_summaries: list[str] = []
@@ -1199,6 +1319,13 @@ def _lot_market_status(statuses: Sequence[str]) -> str:
     return "ELEGIVEL"
 
 
+def _can_anchor_market_material(executed_requirement: Any) -> bool:
+    if executed_requirement is None or executed_requirement.execution is None:
+        return False
+    dependency = getattr(executed_requirement, "dependency", None)
+    return dependency is None
+
+
 def _executar_avaliacao_orientada_a_mercado(
     *,
     connection: Connection,
@@ -1243,7 +1370,7 @@ def _executar_avaliacao_orientada_a_mercado(
         raise _human_review_problem(exc) from exc
 
     executed_requirement = matrix.first_executed_requirement()
-    if executed_requirement is None or executed_requirement.execution is None:
+    if not _can_anchor_market_material(executed_requirement):
         try:
             evaluation, decision = PharmacologicalEligibilityService(
                 fact_provider=fact_provider,
@@ -1259,6 +1386,7 @@ def _executar_avaliacao_orientada_a_mercado(
         except HumanReviewRequired as exc:
             raise _human_review_problem(exc) from exc
     else:
+        assert executed_requirement is not None and executed_requirement.execution is not None
         persisted_evaluation = evaluations.get_by_id(
             SharedTypedId(
                 entity_type="evaluation",
@@ -1398,9 +1526,7 @@ def executar_elegibilidade(
 )
 def obter_proposta_de_decisao(
     proposal_id: str,
-    contexto: Annotated[
-        OrganizationContext, Depends(require_permission(DECISION_REVIEW_EXECUTE))
-    ],
+    contexto: Annotated[OrganizationContext, Depends(require_permission(DECISION_REVIEW_EXECUTE))],
     connection: ConnectionDependency,
 ) -> DecisionProposalResponse:
     alvo = typed_id_or_problem(proposal_id, entity_type="decision_proposal", campo="proposal_id")
@@ -1440,9 +1566,7 @@ def obter_proposta_de_decisao(
 def revisar_proposta_de_decisao(
     proposal_id: str,
     corpo: DecisionReviewRequest,
-    contexto: Annotated[
-        OrganizationContext, Depends(require_permission(DECISION_REVIEW_EXECUTE))
-    ],
+    contexto: Annotated[OrganizationContext, Depends(require_permission(DECISION_REVIEW_EXECUTE))],
     connection: ConnectionDependency,
 ) -> DecisionReviewExecutionResponse:
     alvo = typed_id_or_problem(proposal_id, entity_type="decision_proposal", campo="proposal_id")
@@ -1689,7 +1813,7 @@ def executar_matriz_de_mercado(
         raise _human_review_problem(exc) from exc
 
     executed_requirement = matrix.first_executed_requirement()
-    if executed_requirement is None or executed_requirement.execution is None:
+    if not _can_anchor_market_material(executed_requirement):
         evaluation, decision = PharmacologicalEligibilityService(
             fact_provider=fact_provider,
             policy=policy,
@@ -1702,6 +1826,7 @@ def executar_matriz_de_mercado(
             governance_repository=TransactionalDecisionGovernanceRepository(connection),
         ).evaluate_animal(organizacao, alvo, instante)
     else:
+        assert executed_requirement is not None and executed_requirement.execution is not None
         persisted_evaluation = evaluations.get_by_id(
             SharedTypedId(
                 entity_type="evaluation",
@@ -1906,20 +2031,34 @@ def gerar_explicacao_comercial(
         contexto=contexto,
         connection=connection,
     )
+    (
+        commercial_outlook,
+        can_sell_to_any_requested_market,
+        executive_summary,
+        eligible_markets,
+        blocked_markets,
+        conditioned_markets,
+        indeterminate_markets,
+        missing_markets,
+        markets,
+    ) = _project_commercial_explanation(
+        requested_markets=avaliacao_lote.requested_markets,
+        markets=avaliacao_lote.markets,
+    )
     return _explicacao_comercial_de_avaliacao(
         subject_type="lot",
         subject_id=avaliacao_lote.lot_id,
         requested_markets=avaliacao_lote.requested_markets,
-        commercial_outlook=avaliacao_lote.commercial_outlook,
-        can_sell_to_any_requested_market=avaliacao_lote.can_sell_to_any_requested_market,
-        executive_summary=avaliacao_lote.executive_summary,
-        eligible_markets=avaliacao_lote.eligible_markets,
-        blocked_markets=avaliacao_lote.blocked_markets,
-        conditioned_markets=avaliacao_lote.conditioned_markets,
-        indeterminate_markets=avaliacao_lote.indeterminate_markets,
-        missing_markets=avaliacao_lote.missing_markets,
+        commercial_outlook=commercial_outlook,
+        can_sell_to_any_requested_market=can_sell_to_any_requested_market,
+        executive_summary=executive_summary,
+        eligible_markets=eligible_markets,
+        blocked_markets=blocked_markets,
+        conditioned_markets=conditioned_markets,
+        indeterminate_markets=indeterminate_markets,
+        missing_markets=missing_markets,
         required_subjects=avaliacao_lote.required_subjects,
-        markets=avaliacao_lote.markets,
+        markets=markets,
     )
 
 

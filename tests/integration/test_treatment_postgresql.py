@@ -11,14 +11,18 @@ from sqlalchemy import Connection, create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 
 from packages.core_application import OutboxMessage
+from packages.core_domain import CanonicalPayload
+from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.core_infrastructure.persistence.outbox import (
     TransactionalOutboxMessageWriter,
     outbox_messages_table,
 )
 from packages.livestock_application.erp_contract import ERP_OPERATIONAL_INTENT_CONTRACT_TYPE
 from packages.livestock_application.erp_outbox import LivestockErpOutboxService
+from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.medication_service import MedicationBatchService
 from packages.livestock_application.treatment_service import TreatmentApplicationService
+from packages.livestock_domain.events import MEDICATION_BATCH_REGISTERED
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
@@ -30,7 +34,7 @@ from packages.livestock_infrastructure.persistence.medication_repository import 
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import FixedClock, OrganizationId, TypedId
 from tests.livestock_support import in_memory_recorder, operation_context
 
 
@@ -243,11 +247,15 @@ def test_treatment_application_persists_erp_outbox_command_in_same_transaction(
     )
 
     recorder, _ = in_memory_recorder()
+    persisted_recorder = LivestockEventRecorder(
+        event_log=DomainEventRepository(db_connection),
+        clock=FixedClock(datetime.now(UTC)),
+    )
     context = operation_context(org_id)
     batch = MedicationBatchService(
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         medication_repository=TransactionalMedicationRepository(connection=db_connection),
-        recorder=recorder,
+        recorder=persisted_recorder,
     ).register_batch(
         context=context,
         medication_id=med_id,
@@ -262,7 +270,7 @@ def test_treatment_application_persists_erp_outbox_command_in_same_transaction(
         animal_repository=TransactionalAnimalRepository(connection=db_connection),
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         prescription_repository=TransactionalPrescriptionRepository(connection=db_connection),
-        recorder=recorder,
+        recorder=persisted_recorder,
         erp_outbox_service=LivestockErpOutboxService(
             writer=TransactionalOutboxMessageWriter(connection=db_connection)
         ),
@@ -348,11 +356,15 @@ def test_outbox_failure_rolls_back_treatment_application(
     )
 
     recorder, _ = in_memory_recorder()
+    persisted_recorder = LivestockEventRecorder(
+        event_log=DomainEventRepository(db_connection),
+        clock=FixedClock(datetime.now(UTC)),
+    )
     context = operation_context(org_id)
     batch = MedicationBatchService(
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         medication_repository=TransactionalMedicationRepository(connection=db_connection),
-        recorder=recorder,
+        recorder=persisted_recorder,
     ).register_batch(
         context=context,
         medication_id=med_id,
@@ -361,6 +373,17 @@ def test_outbox_failure_rolls_back_treatment_application(
     )
 
     duplicate_message_id = TypedId.new("outbox_message")
+    duplicate_event = persisted_recorder.record(
+        context=context,
+        aggregate_id=batch.batch_id,
+        event_type=MEDICATION_BATCH_REGISTERED,
+        payload=CanonicalPayload.from_mapping(
+            schema="seed.duplicate",
+            version=1,
+            value={},
+        ),
+        occurred_at=datetime.now(UTC),
+    )
     db_connection.execute(
         outbox_messages_table.insert().values(
             message_id=duplicate_message_id.value,
@@ -375,7 +398,7 @@ def test_outbox_failure_rolls_back_treatment_application(
             occurred_at=datetime.now(UTC),
             recorded_at=datetime.now(UTC),
             correlation_id=context.correlation_id.value,
-            causation_id=TypedId.new("domain_event").value,
+            causation_id=duplicate_event.event_id.value,
             idempotency_key="seed-duplicate",
             payload_schema="seed.duplicate",
             payload_version=1,
@@ -396,20 +419,21 @@ def test_outbox_failure_rolls_back_treatment_application(
         animal_repository=TransactionalAnimalRepository(connection=db_connection),
         batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
         prescription_repository=TransactionalPrescriptionRepository(connection=db_connection),
-        recorder=recorder,
+        recorder=persisted_recorder,
         erp_outbox_service=LivestockErpOutboxService(
             writer=DuplicateIdWriter(connection=db_connection)
         ),
     )
 
     with pytest.raises(IntegrityError):
-        service.register_application(
-            context=context,
-            animal_id=animal_id,
-            medication_batch_id=batch.batch_id,
-            applied_at=datetime.now(UTC) - timedelta(minutes=30),
-            dose="1 mL",
-        )
+        with db_connection.begin_nested():
+            service.register_application(
+                context=context,
+                animal_id=animal_id,
+                medication_batch_id=batch.batch_id,
+                applied_at=datetime.now(UTC) - timedelta(minutes=30),
+                dose="1 mL",
+            )
 
     repo = TransactionalTreatmentApplicationRepository(connection=db_connection)
     assert repo.list_by_batch(org_id, batch.batch_id) == []

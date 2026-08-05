@@ -155,11 +155,12 @@ class DecisionGovernanceService:
             )
         self._validate_reviews_for_emission(proposal, reviews, authority_profile)
         resolved_authority = replace(authority_profile, approvals_required=0)
+        effective_issued_at = issued_at or max(review.reviewed_at for review in reviews)
 
         return self.decision_service.decide(
             evaluation,
             resolved_authority,
-            issued_at=issued_at,
+            issued_at=effective_issued_at,
             method=DecisionEmissionMethod.HUMAN,
         )
 

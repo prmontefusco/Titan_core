@@ -105,9 +105,9 @@ SUPERFICIE_ESPERADA = {
         "/v1/livestock/external-counterparties/{counterparty_id}/establishment-qualifications",
         "post",
     ),
+    ("/v1/livestock/animals/{animal_id}/documentary-acquisitions", "post"),
     ("/v1/livestock/animals/{animal_id}/received-transfer-artifacts", "get"),
     ("/v1/livestock/animals/{animal_id}/received-transfer-artifacts", "post"),
-    ("/v1/livestock/animals/{animal_id}/documentary-acquisitions", "post"),
     ("/v1/livestock/animals/{animal_id}/imported-facts", "get"),
     ("/v1/livestock/animals/{animal_id}/imported-facts", "post"),
     # Genealogia (Passo 13.2). A maternidade é uma rota só porque é um ato só,
@@ -139,11 +139,11 @@ SUPERFICIE_ESPERADA = {
     # Avaliacao espacial de camada territorial externa: usa a geometria vigente
     # da propriedade, mas nao transforma embargo em atributo do imovel.
     ("/v1/livestock/properties/{property_id}/environmental-embargoes/ibama", "get"),
-    (
-        "/v1/livestock/properties/{property_id}/environmental-embargoes/ibama/assertions",
     ("/v1/livestock/properties/{property_id}/territorial-overlaps/funai", "get"),
     ("/v1/livestock/properties/{property_id}/territorial-timelines/prodes", "get"),
     ("/v1/livestock/properties/{property_id}/territorial-timelines/deter", "get"),
+    (
+        "/v1/livestock/properties/{property_id}/environmental-embargoes/ibama/assertions",
         "get",
     ),
     (

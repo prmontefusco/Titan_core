@@ -145,9 +145,13 @@ class TerritorialTimelineService:
                 ),
             )
 
+        state = _state_for_lookup(
+            external_reference=geometry.external_reference,
+            fallback_state=property_found.state_code,
+        )
         timeline = self.geodata_lookup.fetch_prodes_timeline(
             cod_imovel=geometry.external_reference,
-            state=property_found.state_code,
+            state=state,
             year_from=year_from,
             year_to=year_to,
         )
@@ -208,9 +212,13 @@ class TerritorialTimelineService:
                 ),
             )
 
+        state = _state_for_lookup(
+            external_reference=geometry.external_reference,
+            fallback_state=property_found.state_code,
+        )
         timeline = self.geodata_lookup.fetch_deter_timeline(
             cod_imovel=geometry.external_reference,
-            state=property_found.state_code,
+            state=state,
             year_from=year_from,
             year_to=year_to,
         )
@@ -288,3 +296,11 @@ def _map_timeline_result(
         ),
         response_digest=timeline.response_digest,
     )
+
+
+def _state_for_lookup(*, external_reference: str, fallback_state: str) -> str:
+    prefix, _, _ = external_reference.partition("-")
+    normalized = prefix.strip().upper()
+    if len(normalized) == 2 and normalized.isalpha():
+        return normalized
+    return fallback_state

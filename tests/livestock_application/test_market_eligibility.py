@@ -529,7 +529,24 @@ def test_market_dependency_without_selected_subject_is_conditioned() -> None:
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
         rule_reader=rules,
-        profiles=(DEFAULT_MARKET_PROFILES[1],),
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                    MarketRequirement(
+                        rule_code=ESTABLISHMENT_RULE_CODE,
+                        scope="livestock.slaughterhouse",
+                        dependent_subject_key="slaughterhouse",
+                        dependent_subject_label="estabelecimento",
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
     entry = matrix.entries[0]
@@ -615,7 +632,24 @@ def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> N
         fact_provider=InMemoryFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
-        profiles=(DEFAULT_MARKET_PROFILES[1],),
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                    MarketRequirement(
+                        rule_code=ESTABLISHMENT_RULE_CODE,
+                        scope="livestock.slaughterhouse",
+                        dependent_subject_key="slaughterhouse",
+                        dependent_subject_label="estabelecimento",
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
     ).evaluate(
         org_id,
         subject_id=animal_id,

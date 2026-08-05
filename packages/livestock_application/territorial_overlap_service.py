@@ -105,9 +105,13 @@ class TerritorialOverlapService:
                 ),
             )
 
+        state = _state_for_lookup(
+            external_reference=geometry.external_reference,
+            fallback_state=property_found.state_code,
+        )
         overlap = self.geodata_lookup.fetch_funai_overlap(
             cod_imovel=geometry.external_reference,
-            state=property_found.state_code,
+            state=state,
         )
         return PropertyTerritorialOverlapAssessment(
             property_id=property_id,
@@ -155,3 +159,11 @@ def _gap_result(
         response_digest=None,
         gaps=(TerritorialOverlapGap(code=code, message=message),),
     )
+
+
+def _state_for_lookup(*, external_reference: str, fallback_state: str) -> str:
+    prefix, _, _ = external_reference.partition("-")
+    normalized = prefix.strip().upper()
+    if len(normalized) == 2 and normalized.isalpha():
+        return normalized
+    return fallback_state
