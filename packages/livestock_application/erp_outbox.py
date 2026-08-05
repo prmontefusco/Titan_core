@@ -1,6 +1,7 @@
 """Publicacao do contrato outbound neutro do POST-LIV-02A."""
 
 from dataclasses import dataclass
+from typing import Protocol
 
 from packages.core_application import MessageKind, OutboxMessage
 from packages.core_domain import DomainEvent
@@ -18,7 +19,7 @@ ERP_TREATMENT_COMMAND_TYPE = ERP_OPERATIONAL_INTENT_CONTRACT_TYPE
 ERP_TREATMENT_COMMAND_VERSION = ERP_OPERATIONAL_INTENT_CONTRACT_VERSION
 
 
-class OutboxMessageWriterPort:
+class OutboxMessageWriterPort(Protocol):
     def append(self, message: OutboxMessage) -> None: ...
 
 
