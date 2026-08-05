@@ -55,6 +55,14 @@ from packages.livestock_application.parentage_service import (
     GERACOES_PADRAO,
     ParentageService,
 )
+from packages.livestock_application.territorial_overlap_service import (
+    PropertyTerritorialOverlapAssessment,
+    TerritorialOverlapService,
+)
+from packages.livestock_application.territorial_timeline_service import (
+    PropertyTerritorialTimelineAssessment,
+    TerritorialTimelineService,
+)
 from packages.livestock_domain.geometry import CAMADA_PERIMETRO
 from packages.livestock_infrastructure.geodata import (
     CarNaoEncontrado,
@@ -858,6 +866,32 @@ def _embargo_assertion_servico(connection: Any) -> EnvironmentalEmbargoAssertion
     )
 
 
+def _timeline_territorial_servico(connection: Any) -> TerritorialTimelineService:
+    cliente = car_lookup_opcional()
+    if cliente is None:
+        raise GeodataNaoConfigurado(
+            "Consulta territorial exige TITAN_GEODATA_URL e TITAN_GEODATA_API_KEY."
+        )
+    return TerritorialTimelineService(
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+        geodata_lookup=cliente,
+    )
+
+
+def _sobreposicao_territorial_servico(connection: Any) -> TerritorialOverlapService:
+    cliente = car_lookup_opcional()
+    if cliente is None:
+        raise GeodataNaoConfigurado(
+            "Consulta territorial exige TITAN_GEODATA_URL e TITAN_GEODATA_API_KEY."
+        )
+    return TerritorialOverlapService(
+        property_repository=TransactionalRuralPropertyRepository(connection=connection),
+        geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+        geodata_lookup=cliente,
+    )
+
+
 def _resumo_embargo_ambiental(
     assessment: EnvironmentalEmbargoAssessment,
 ) -> "AvaliacaoEmbargoAmbientalResponse":
@@ -920,6 +954,66 @@ def _resumo_embargo_assertion(registro: Any) -> "EmbargoAmbientalAssertionResumo
         ],
         observed_at=registro.observed_at,
         recorded_at=registro.recorded_at,
+    )
+
+
+def _resumo_timeline_territorial(
+    assessment: PropertyTerritorialTimelineAssessment,
+) -> "TimelineTerritorialResponse":
+    return TimelineTerritorialResponse(
+        property_id=str(assessment.property_id.value),
+        geometry_id=(None if assessment.geometry_id is None else str(assessment.geometry_id.value)),
+        geometry_version=assessment.geometry_version,
+        external_reference=assessment.external_reference,
+        status=assessment.status.value,
+        source=assessment.source,
+        layer=assessment.layer,
+        property_area_hectares=assessment.property_area_hectares,
+        year_from=assessment.year_from,
+        year_to=assessment.year_to,
+        years=[
+            TimelineTerritorialAnoResumo(
+                year=item.get("year"),
+                feature_count=int(item.get("feature_count", 0)),
+                overlap_area_hectares=(
+                    float(item["overlap_area_hectares"])
+                    if isinstance(item.get("overlap_area_hectares"), int | float)
+                    else None
+                ),
+                source_area_hectares=(
+                    float(item["source_area_hectares"])
+                    if isinstance(item.get("source_area_hectares"), int | float)
+                    else None
+                ),
+                version_ids=[
+                    str(version_id) for version_id in item.get("version_ids", []) if version_id
+                ],
+            )
+            for item in assessment.years
+        ],
+        response_digest=assessment.response_digest,
+        gaps=[gap.to_dict() for gap in assessment.gaps],
+    )
+
+
+def _resumo_sobreposicao_territorial(
+    assessment: PropertyTerritorialOverlapAssessment,
+) -> "SobreposicaoTerritorialResponse":
+    return SobreposicaoTerritorialResponse(
+        property_id=str(assessment.property_id.value),
+        geometry_id=(None if assessment.geometry_id is None else str(assessment.geometry_id.value)),
+        geometry_version=assessment.geometry_version,
+        external_reference=assessment.external_reference,
+        status=assessment.status.value,
+        source=assessment.source,
+        layer=assessment.layer,
+        label=assessment.label,
+        feature_count=assessment.feature_count,
+        area_hectares=assessment.area_hectares,
+        source_area_hectares=assessment.source_area_hectares,
+        version_ids=list(assessment.version_ids),
+        response_digest=assessment.response_digest,
+        gaps=[gap.to_dict() for gap in assessment.gaps],
     )
 
 
@@ -1068,6 +1162,47 @@ class EmbargoAmbientalAssertionResumo(BaseModel):
     recorded_at: datetime
 
 
+class TimelineTerritorialAnoResumo(BaseModel):
+    year: int | None
+    feature_count: int
+    overlap_area_hectares: float | None
+    source_area_hectares: float | None
+    version_ids: list[str]
+
+
+class TimelineTerritorialResponse(BaseModel):
+    property_id: str
+    geometry_id: str | None
+    geometry_version: int | None
+    external_reference: str | None
+    status: str
+    source: str
+    layer: str
+    property_area_hectares: float | None
+    year_from: int | None
+    year_to: int | None
+    years: list[TimelineTerritorialAnoResumo]
+    response_digest: str | None
+    gaps: list[dict[str, str]]
+
+
+class SobreposicaoTerritorialResponse(BaseModel):
+    property_id: str
+    geometry_id: str | None
+    geometry_version: int | None
+    external_reference: str | None
+    status: str
+    source: str
+    layer: str
+    label: str
+    feature_count: int
+    area_hectares: float | None
+    source_area_hectares: float | None
+    version_ids: list[str]
+    response_digest: str | None
+    gaps: list[dict[str, str]]
+
+
 @router.get(
     "/properties/car-preview",
     response_model=CarPreviewResumo,
@@ -1192,6 +1327,158 @@ def listar_assertions_embargo_ambiental_ibama(
     )
     janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
     return montar_pagina([_resumo_embargo_assertion(item) for item in janela], paginacao)
+
+
+@router.get(
+    "/properties/{property_id}/territorial-overlaps/funai",
+    response_model=SobreposicaoTerritorialResponse,
+    summary="Consultar a sobreposicao territorial da FUNAI para a propriedade",
+    description=(
+        "Usa a geometria vigente da propriedade e a referencia externa do CAR para "
+        "consultar a sobreposicao territorial atual declarada pelo provider para a "
+        "camada FUNAI_TI.\n\n"
+        "Isto ainda nao decide conformidade nem elegibilidade de mercado: devolve "
+        "a leitura territorial crua, com lacunas declaradas quando a consulta nao "
+        "for reproduzivel."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_sobreposicao_territorial_funai(
+    property_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
+) -> SobreposicaoTerritorialResponse:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    try:
+        assessment = _sobreposicao_territorial_servico(connection).assess_funai_overlap(
+            contexto.organization_id,
+            alvo,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Propriedade") from error
+    except GeodataNaoConfigurado as error:
+        raise DomainProblem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            reason_code="PROVIDER_NAO_CONFIGURADO",
+            title="Consulta territorial indisponivel",
+            detail=str(error),
+        ) from error
+    except GeodataIndisponivel as error:
+        raise DomainProblem(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            reason_code="PROVIDER_INDISPONIVEL",
+            title="O provider de geodados nao respondeu",
+            detail=str(error),
+        ) from error
+    return _resumo_sobreposicao_territorial(assessment)
+
+
+@router.get(
+    "/properties/{property_id}/territorial-timelines/prodes",
+    response_model=TimelineTerritorialResponse,
+    summary="Consultar a timeline territorial do PRODES para a propriedade",
+    description=(
+        "Usa a geometria vigente da propriedade e a referencia externa do CAR para "
+        "consultar a serie temporal declarada pelo provider para a camada TB_PRODES.\n\n"
+        "Isto ainda nao decide conformidade nem elegibilidade de mercado: devolve "
+        "a leitura temporal crua, com lacunas declaradas quando a consulta nao for "
+        "reproduzivel."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_timeline_territorial_prodes(
+    property_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
+    year_from: int | None = Query(default=None, ge=1900, le=2100),
+    year_to: int | None = Query(default=None, ge=1900, le=2100),
+) -> TimelineTerritorialResponse:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    try:
+        assessment = _timeline_territorial_servico(connection).assess_prodes_timeline(
+            contexto.organization_id,
+            alvo,
+            year_from=year_from,
+            year_to=year_to,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Propriedade") from error
+    except GeodataNaoConfigurado as error:
+        raise DomainProblem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            reason_code="PROVIDER_NAO_CONFIGURADO",
+            title="Consulta territorial indisponivel",
+            detail=str(error),
+        ) from error
+    except GeodataIndisponivel as error:
+        raise DomainProblem(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            reason_code="PROVIDER_INDISPONIVEL",
+            title="O provider de geodados nao respondeu",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="PARAMETRO_INVALIDO",
+            title="Parâmetro inválido",
+            detail=str(error),
+        ) from error
+    return _resumo_timeline_territorial(assessment)
+
+
+@router.get(
+    "/properties/{property_id}/territorial-timelines/deter",
+    response_model=TimelineTerritorialResponse,
+    summary="Consultar a timeline territorial do DETER para a propriedade",
+    description=(
+        "Usa a geometria vigente da propriedade e a referencia externa do CAR para "
+        "consultar a serie temporal declarada pelo provider para a camada TB_DETER.\n\n"
+        "Isto ainda nao decide conformidade nem elegibilidade de mercado: devolve "
+        "a leitura temporal crua, com lacunas declaradas quando a consulta nao for "
+        "reproduzivel."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_timeline_territorial_deter(
+    property_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PROPERTY_LER_GEOMETRIA))],
+    connection: ConnectionDependency,
+    year_from: int | None = Query(default=None, ge=1900, le=2100),
+    year_to: int | None = Query(default=None, ge=1900, le=2100),
+) -> TimelineTerritorialResponse:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    try:
+        assessment = _timeline_territorial_servico(connection).assess_deter_timeline(
+            contexto.organization_id,
+            alvo,
+            year_from=year_from,
+            year_to=year_to,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Propriedade") from error
+    except GeodataNaoConfigurado as error:
+        raise DomainProblem(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            reason_code="PROVIDER_NAO_CONFIGURADO",
+            title="Consulta territorial indisponivel",
+            detail=str(error),
+        ) from error
+    except GeodataIndisponivel as error:
+        raise DomainProblem(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            reason_code="PROVIDER_INDISPONIVEL",
+            title="O provider de geodados nao respondeu",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="PARAMETRO_INVALIDO",
+            title="Parâmetro inválido",
+            detail=str(error),
+        ) from error
+    return _resumo_timeline_territorial(assessment)
 
 
 # -- Propriedades ------------------------------------------------------------

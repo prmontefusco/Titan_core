@@ -30,6 +30,10 @@ from packages.core_domain import OrganizationContext
 from packages.core_domain.evidence import ConfidenceTier
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.core_infrastructure.persistence.relations import TransactionalRelationRepository
+from packages.livestock_application.acquisition_continuity_service import (
+    DocumentaryAcquisitionService,
+    DocumentaryImportedFactInput,
+)
 from packages.livestock_application.authorization import (
     ANIMAL_REGISTRAR_GENEALOGIA,
     ANIMAL_REGISTRAR_SAIDA,
@@ -780,6 +784,30 @@ class FatoImportadoResponse(BaseModel):
     imported_at: datetime
 
 
+class RegistrarFatoImportadoDocumentalRequest(BaseModel):
+    fact_type: str = Field(min_length=1, max_length=120)
+    occurred_at: datetime
+    asserted_by: str = Field(min_length=1, max_length=255)
+    confidence_tier: ConfidenceTier
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class RegistrarAquisicaoDocumentalRequest(BaseModel):
+    source_counterparty_id: str
+    bundle_digest: str = Field(min_length=1, max_length=128)
+    bundle_issued_at: datetime
+    transfer_effective_at: datetime
+    coverage_known_from: datetime | None = None
+    coverage_known_until: datetime | None = None
+    issuer_name: str | None = Field(default=None, max_length=255)
+    imported_facts: list[RegistrarFatoImportadoDocumentalRequest] = Field(default_factory=list)
+
+
+class AquisicaoDocumentalResponse(BaseModel):
+    artifact: ArtefatoTransferenciaResponse
+    imported_facts: list[FatoImportadoResponse]
+
+
 def _artefato_transferencia_response(artefato: Any) -> ArtefatoTransferenciaResponse:
     return ArtefatoTransferenciaResponse(
         artifact_id=str(artefato.artifact_id.value),
@@ -818,6 +846,13 @@ def _fato_importado_response(fato: Any) -> FatoImportadoResponse:
         confidence_tier=fato.confidence_tier.value,
         payload=dict(fato.payload),
         imported_at=fato.imported_at,
+    )
+
+
+def _aquisicao_documental_response(resultado: Any) -> AquisicaoDocumentalResponse:
+    return AquisicaoDocumentalResponse(
+        artifact=_artefato_transferencia_response(resultado.artifact),
+        imported_facts=[_fato_importado_response(item) for item in resultado.imported_facts],
     )
 
 
@@ -892,6 +927,69 @@ def registrar_saida(
             else str(saida.destination_counterparty_id.value)
         ),
     )
+
+
+@router.post(
+    "/animals/{animal_id}/documentary-acquisitions",
+    response_model=AquisicaoDocumentalResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar aquisicao documental por artefato e fatos importados",
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_aquisicao_documental(
+    animal_id: str,
+    corpo: RegistrarAquisicaoDocumentalRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
+    connection: ConnectionDependency,
+) -> AquisicaoDocumentalResponse:
+    artifact_service = ReceivedTransferArtifactService(
+        repository=TransactionalReceivedTransferArtifactRepository(connection=connection),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        counterparty_repository=TransactionalExternalCounterpartyRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    imported_fact_service = ImportedLivestockFactService(
+        repository=TransactionalImportedLivestockFactRepository(connection=connection),
+        artifact_repository=TransactionalReceivedTransferArtifactRepository(connection=connection),
+        animal_repository=TransactionalAnimalRepository(connection=connection),
+        recorder=_recorder(connection),
+    )
+    servico = DocumentaryAcquisitionService(
+        artifact_service=artifact_service,
+        imported_fact_service=imported_fact_service,
+    )
+    try:
+        resultado = servico.register_documentary_acquisition(
+            context=operation_context(contexto),
+            animal_id=typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id"),
+            source_counterparty_id=typed_id_or_problem(
+                corpo.source_counterparty_id,
+                entity_type="external_counterparty",
+                campo="source_counterparty_id",
+            ),
+            bundle_digest=corpo.bundle_digest,
+            bundle_issued_at=corpo.bundle_issued_at,
+            transfer_effective_at=corpo.transfer_effective_at,
+            coverage_known_from=corpo.coverage_known_from,
+            coverage_known_until=corpo.coverage_known_until,
+            issuer_name=corpo.issuer_name,
+            imported_facts=tuple(
+                DocumentaryImportedFactInput(
+                    fact_type=item.fact_type,
+                    occurred_at=item.occurred_at,
+                    asserted_by=item.asserted_by,
+                    confidence_tier=item.confidence_tier,
+                    payload=item.payload,
+                )
+                for item in corpo.imported_facts
+            ),
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal ou contraparte") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+
+    return _aquisicao_documental_response(resultado)
 
 
 @router.post(

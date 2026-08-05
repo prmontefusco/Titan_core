@@ -148,6 +148,61 @@ def test_artefato_recebido_declara_lacuna_de_cobertura(
     assert registro.json()["coverage"]["gaps"][0]["code"] == "COVERAGE_BEFORE_TRANSFER"
 
 
+def test_aquisicao_documental_orquestra_artefato_e_fatos_importados(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={
+            "name": "Fazenda Origem",
+            "counterparty_type": "FARM",
+            "identifiers": ["CAR:MT-3333333-3333"],
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+    transferencia = datetime.now(UTC) - timedelta(days=1)
+
+    resposta = operador.post(
+        f"/v1/livestock/animals/{animal_id}/documentary-acquisitions",
+        json={
+            "source_counterparty_id": contraparte.json()["counterparty_id"],
+            "bundle_digest": "d" * 64,
+            "bundle_issued_at": transferencia.isoformat(),
+            "transfer_effective_at": transferencia.isoformat(),
+            "coverage_known_from": (transferencia - timedelta(days=180)).isoformat(),
+            "coverage_known_until": transferencia.isoformat(),
+            "issuer_name": "Fazenda Origem",
+            "imported_facts": [
+                {
+                    "fact_type": "livestock.treatment_applied",
+                    "occurred_at": (transferencia - timedelta(days=30)).isoformat(),
+                    "asserted_by": "Fazenda Origem",
+                    "confidence_tier": "CRYPTOGRAPHICALLY_ATTESTED",
+                    "payload": {"withdrawal_period_days": 45},
+                }
+            ],
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    assert resposta.json()["artifact"]["issuer_name"] == "Fazenda Origem"
+    assert resposta.json()["imported_facts"][0]["origin"] == "IMPORTED_ASSERTION"
+    assert (
+        resposta.json()["imported_facts"][0]["source_artifact_id"]
+        == resposta.json()["artifact"]["artifact_id"]
+    )
+
+    fatos = operador.get(
+        f"/v1/livestock/animals/{animal_id}/imported-facts",
+        headers=_cabecalho(ambiente),
+    )
+    assert fatos.status_code == 200, fatos.text
+    assert fatos.json()["items"][0]["asserted_by"] == "Fazenda Origem"
+
+
 def test_fato_importado_preserva_origem_externa(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:
@@ -234,6 +289,59 @@ def test_fato_importado_alimenta_elegibilidade(
 
     assert elegibilidade.status_code == 201, elegibilidade.text
     assert elegibilidade.json()["result"] == "rejeitada"
+
+
+def test_dossie_de_elegibilidade_declara_cobertura_recebida(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    auditor: ClienteAutenticado,
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={
+            "name": "Fazenda Origem",
+            "counterparty_type": "FARM",
+            "identifiers": ["CAR:MT-2222222-2222"],
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+    transferencia = datetime.now(UTC) - timedelta(days=1)
+    conhecido_ate = transferencia - timedelta(hours=8)
+
+    artefato = operador.post(
+        f"/v1/livestock/animals/{animal_id}/received-transfer-artifacts",
+        json={
+            "source_counterparty_id": contraparte.json()["counterparty_id"],
+            "bundle_digest": "f" * 64,
+            "bundle_issued_at": conhecido_ate.isoformat(),
+            "transfer_effective_at": transferencia.isoformat(),
+            "coverage_known_from": (transferencia - timedelta(days=180)).isoformat(),
+            "coverage_known_until": conhecido_ate.isoformat(),
+            "issuer_name": "Fazenda Origem",
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert artefato.status_code == 201, artefato.text
+
+    elegibilidade = operador.post(
+        f"/v1/livestock/animals/{animal_id}/eligibility",
+        headers=_cabecalho(ambiente),
+    )
+    assert elegibilidade.status_code == 201, elegibilidade.text
+
+    dossie = auditor.get(
+        f"/v1/livestock/dossiers/{elegibilidade.json()['dossier_id']}",
+        headers=_cabecalho(ambiente),
+    )
+    assert dossie.status_code == 200, dossie.text
+
+    coverage = dossie.json()["document"]["vertical"]["content"]["coverage"]
+    assert coverage["status"] == "PARTIAL_DECLARED"
+    assert coverage["basis"] == "received_transfer_artifact"
+    assert coverage["has_declared_gaps"] is True
+    assert coverage["gaps"][0]["code"] == "COVERAGE_BEFORE_TRANSFER"
 
 
 def test_qualificacao_de_estabelecimento_e_registrada_por_mercado(

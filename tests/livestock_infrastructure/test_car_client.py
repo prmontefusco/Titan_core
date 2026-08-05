@@ -24,6 +24,7 @@ from packages.livestock_infrastructure.geodata import (
     GeodataNaoConfigurado,
     interpretar_resposta,
     interpretar_restricoes_espaciais,
+    interpretar_timeline_territorial,
 )
 
 # Uma resposta como a que o Titan_geodata devolve de verdade.
@@ -56,6 +57,55 @@ RESPOSTA: dict[str, object] = {
         "dat_criaca": "2018-07-05T00:00:00",
         "dat_atuali": "2023-07-06T00:00:00",
     },
+}
+
+RESPOSTA_FARM: dict[str, object] = {
+    "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+    "state": "MS",
+    "lookup": {
+        "mode": "cod_imovel",
+        "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+    },
+    "property": RESPOSTA,
+    "layers": [
+        {
+            "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+            "state": "MS",
+            "layer": "AREA_IMOVEL",
+            "label": "Area do Imovel",
+            "scope": "property",
+            "feature_count": 1,
+            "area_hectares": 1363.93,
+            "geometry": RESPOSTA["polygon"],
+        },
+        {
+            "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+            "state": "MS",
+            "source": "FUNAI",
+            "layer": "FUNAI_TI",
+            "label": "Terras Indigenas (FUNAI)",
+            "scope": "restriction",
+            "feature_count": 1,
+            "area_hectares": 123.4,
+            "source_area_hectares": 456.7,
+            "version_ids": ["funai_ms_v1"],
+            "geometry": {
+                "type": "MultiPolygon",
+                "coordinates": [
+                    [
+                        [
+                            [-52.92, -21.21],
+                            [-52.91, -21.21],
+                            [-52.91, -21.20],
+                            [-52.92, -21.20],
+                            [-52.92, -21.21],
+                        ]
+                    ]
+                ],
+            },
+        },
+    ],
+    "coverage": [],
 }
 
 RESPOSTA_IBAMA: dict[str, object] = {
@@ -96,13 +146,78 @@ RESPOSTA_IBAMA: dict[str, object] = {
     ],
 }
 
+RESPOSTA_PRODES_TIMELINE: dict[str, object] = {
+    "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+    "state": "MS",
+    "lookup": {
+        "mode": "cod_imovel",
+        "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+    },
+    "layer": "TB_PRODES",
+    "source": "INPE/TerraBrasilis",
+    "property_area_hectares": 1363.93,
+    "year_from": 2020,
+    "year_to": 2021,
+    "years": [
+        {
+            "year": 2020,
+            "feature_count": 1,
+            "source_area_hectares": 12.5,
+            "overlap_area_hectares": 8.25,
+            "version_ids": ["tb_prodes_ms_2020"],
+        },
+        {
+            "year": 2021,
+            "feature_count": 2,
+            "source_area_hectares": 20.0,
+            "overlap_area_hectares": 11.0,
+            "version_ids": ["tb_prodes_ms_2021", "tb_prodes_ms_2021_b"],
+        },
+    ],
+}
+
+RESPOSTA_DETER_TIMELINE: dict[str, object] = {
+    "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+    "state": "MS",
+    "lookup": {
+        "mode": "cod_imovel",
+        "cod_imovel": "MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+    },
+    "layer": "TB_DETER",
+    "source": "INPE/TerraBrasilis",
+    "property_area_hectares": 1363.93,
+    "year_from": 2026,
+    "year_to": 2026,
+    "years": [
+        {
+            "year": 2026,
+            "feature_count": 1,
+            "source_area_hectares": 3.25,
+            "overlap_area_hectares": 1.75,
+            "version_ids": ["tb_deter_ms_2026"],
+        }
+    ],
+}
+
 
 def _bruto(dados: Mapping[str, object] | None = None) -> bytes:
     return json.dumps(dados if dados is not None else RESPOSTA).encode("utf-8")
 
 
+def _bruto_farm(dados: Mapping[str, object] | None = None) -> bytes:
+    return json.dumps(dados if dados is not None else RESPOSTA_FARM).encode("utf-8")
+
+
 def _bruto_ibama(dados: Mapping[str, object] | None = None) -> bytes:
     return json.dumps(dados if dados is not None else RESPOSTA_IBAMA).encode("utf-8")
+
+
+def _bruto_timeline(dados: Mapping[str, object] | None = None) -> bytes:
+    return json.dumps(dados if dados is not None else RESPOSTA_PRODES_TIMELINE).encode("utf-8")
+
+
+def _bruto_timeline_deter(dados: Mapping[str, object] | None = None) -> bytes:
+    return json.dumps(dados if dados is not None else RESPOSTA_DETER_TIMELINE).encode("utf-8")
 
 
 def test_a_resposta_e_interpretada_sem_perder_nada() -> None:
@@ -112,6 +227,15 @@ def test_a_resposta_e_interpretada_sem_perder_nada() -> None:
     assert imovel.state == "MS"
     assert imovel.layer == "AREA_IMOVEL"
     assert imovel.attributes["mod_fiscal"] == 38.97
+
+
+def test_a_resposta_consolidada_farm_tambem_e_interpretada() -> None:
+    imovel = interpretar_resposta(_bruto_farm())
+
+    assert imovel.cod_imovel == RESPOSTA_FARM["cod_imovel"]
+    assert imovel.state == "MS"
+    assert imovel.layer == "AREA_IMOVEL"
+    assert imovel.attributes["municipio"] == "Santa Rita do Pardo"
 
 
 def test_os_dois_digests_respondem_perguntas_diferentes() -> None:
@@ -203,6 +327,27 @@ def test_resposta_espacial_com_contagem_incoerente_e_recusada() -> None:
 
     with pytest.raises(GeodataIndisponivel, match="contagem"):
         interpretar_restricoes_espaciais(_bruto_ibama(torta))
+
+
+def test_timeline_territorial_e_interpretada_sem_julgamento() -> None:
+    timeline = interpretar_timeline_territorial(_bruto_timeline())
+
+    assert timeline.source == "INPE/TerraBrasilis"
+    assert timeline.layer == "TB_PRODES"
+    assert timeline.property_area_hectares == 1363.93
+    assert timeline.year_from == 2020
+    assert timeline.year_to == 2021
+    assert [item.year for item in timeline.years] == [2020, 2021]
+    assert timeline.years[0].overlap_area_hectares == 8.25
+    assert timeline.years[1].version_ids == ("tb_prodes_ms_2021", "tb_prodes_ms_2021_b")
+
+
+def test_timeline_territorial_sem_lista_de_anos_e_recusada() -> None:
+    torta = dict(RESPOSTA_PRODES_TIMELINE)
+    torta["years"] = {"2020": 1}
+
+    with pytest.raises(GeodataIndisponivel, match="anos como lista"):
+        interpretar_timeline_territorial(_bruto_timeline(torta))
 
 
 def test_cliente_sem_configuracao_e_recusado_na_construcao() -> None:
@@ -308,3 +453,186 @@ def test_erro_http_da_consulta_espacial_vira_indisponibilidade(
                 }
             )
         )
+
+
+def test_cliente_busca_o_imovel_pelo_endpoint_farm(monkeypatch: pytest.MonkeyPatch) -> None:
+    pedido_capturado: dict[str, object] = {}
+
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_farm()
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        pedido_capturado["request"] = request
+        pedido_capturado["timeout"] = timeout
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    imovel = cliente.fetch("MS-5007554-1EF4AA06D08041829247C61FE4412C4F", "ms")
+
+    request = pedido_capturado["request"]
+    assert isinstance(request, urllib.request.Request)
+    assert (
+        request.full_url == "http://provider.invalido/api/v1/sicar/farm"
+        "?cod_imovel=MS-5007554-1EF4AA06D08041829247C61FE4412C4F&state=MS"
+    )
+    assert request.get_method() == "GET"
+    assert request.headers["X-api-key"] == "chave"
+    assert pedido_capturado["timeout"] == cliente.timeout_seconds
+    assert imovel.layer == "AREA_IMOVEL"
+
+
+def test_cliente_reaproveita_farm_para_listar_camadas(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_farm()
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    layers = cliente.fetch_layers("MS-5007554-1EF4AA06D08041829247C61FE4412C4F", "MS")
+
+    assert {item.layer for item in layers} == {"AREA_IMOVEL", "FUNAI_TI"}
+    assert layers[0].polygon_digest == digest_de(layers[0].polygon_payload)
+
+
+def test_cliente_consulta_sobreposicao_funai_pelo_farm(monkeypatch: pytest.MonkeyPatch) -> None:
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_farm()
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    overlap = cliente.fetch_funai_overlap(
+        cod_imovel="MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+        state="MS",
+    )
+
+    assert overlap.source == "FUNAI"
+    assert overlap.layer == "FUNAI_TI"
+    assert overlap.feature_count == 1
+    assert overlap.area_hectares == 123.4
+
+
+def test_cliente_consulta_timeline_do_prodes(monkeypatch: pytest.MonkeyPatch) -> None:
+    pedido_capturado: dict[str, object] = {}
+
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_timeline()
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        pedido_capturado["request"] = request
+        pedido_capturado["timeout"] = timeout
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    timeline = cliente.fetch_prodes_timeline(
+        cod_imovel="MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+        state="ms",
+        year_from=2020,
+        year_to=2021,
+    )
+
+    request = pedido_capturado["request"]
+    assert isinstance(request, urllib.request.Request)
+    assert (
+        request.full_url == "http://provider.invalido/api/v1/sicar/farm/timeline"
+        "?cod_imovel=MS-5007554-1EF4AA06D08041829247C61FE4412C4F"
+        "&state=MS&layer=TB_PRODES&year_from=2020&year_to=2021"
+    )
+    assert request.get_method() == "GET"
+    assert request.headers["X-api-key"] == "chave"
+    assert pedido_capturado["timeout"] == cliente.timeout_seconds
+    assert [item.year for item in timeline.years] == [2020, 2021]
+
+
+def test_cliente_recusa_intervalo_invertido_no_prodes() -> None:
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(ValueError, match="year_from"):
+        cliente.fetch_prodes_timeline(
+            cod_imovel="MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+            state="MS",
+            year_from=2022,
+            year_to=2021,
+        )
+
+
+def test_cliente_consulta_timeline_do_deter(monkeypatch: pytest.MonkeyPatch) -> None:
+    pedido_capturado: dict[str, object] = {}
+
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_timeline_deter()
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        pedido_capturado["request"] = request
+        pedido_capturado["timeout"] = timeout
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    timeline = cliente.fetch_deter_timeline(
+        cod_imovel="MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+        state="ms",
+        year_from=2026,
+        year_to=2026,
+    )
+
+    request = pedido_capturado["request"]
+    assert isinstance(request, urllib.request.Request)
+    assert (
+        request.full_url == "http://provider.invalido/api/v1/sicar/farm/timeline"
+        "?cod_imovel=MS-5007554-1EF4AA06D08041829247C61FE4412C4F"
+        "&state=MS&layer=TB_DETER&year_from=2026&year_to=2026"
+    )
+    assert request.get_method() == "GET"
+    assert request.headers["X-api-key"] == "chave"
+    assert pedido_capturado["timeout"] == cliente.timeout_seconds
+    assert timeline.layer == "TB_DETER"
+    assert timeline.years[0].version_ids == ("tb_deter_ms_2026",)

@@ -16,6 +16,10 @@ from packages.livestock_application.establishment_qualification_service import (
 )
 from packages.livestock_application.fact_provider import (
     ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+    HISTORY_COVERAGE_FACT_TYPE,
+    TERRITORIAL_DETER_FACT_TYPE,
+    TERRITORIAL_FUNAI_FACT_TYPE,
+    TERRITORIAL_PRODES_FACT_TYPE,
     LivestockFactProvider,
     sanitary_requirement_fact_type,
 )
@@ -34,10 +38,18 @@ from packages.livestock_domain.establishment_qualification_assertion import (
     AssertionStatus,
     EstablishmentQualificationAssertion,
 )
-from packages.livestock_domain.external_counterparty import CounterpartyType, ExternalCounterparty
+from packages.livestock_domain.external_counterparty import (
+    CounterpartyType,
+    ExternalCounterparty,
+)
+from packages.livestock_domain.imported_fact import FactOrigin, ImportedLivestockFact
 from packages.livestock_domain.movement import PropertyStay, StayStatus
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
+from packages.livestock_domain.transfer_artifact import (
+    HistoryCoverage,
+    ReceivedTransferArtifact,
+)
 from packages.livestock_domain.treatment import TreatmentApplication
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.test_treatment_service import InMemoryAnimalRepo
@@ -187,6 +199,49 @@ class _InMemoryStayRepo(PropertyStayRepositoryPort):
         return [] if active is None else [active]
 
 
+class _TerritorialTimelineServiceFake:
+    def __init__(
+        self,
+        *,
+        prodes: object,
+        deter: object,
+    ) -> None:
+        self.prodes = prodes
+        self.deter = deter
+
+    def assess_prodes_timeline(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId,
+        *,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> object:
+        return self.prodes
+
+    def assess_deter_timeline(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId,
+        *,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> object:
+        return self.deter
+
+
+class _TerritorialOverlapServiceFake:
+    def __init__(self, *, funai: object) -> None:
+        self.funai = funai
+
+    def assess_funai_overlap(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId,
+    ) -> object:
+        return self.funai
+
+
 def _org() -> OrganizationId:
     return OrganizationId(uuid4())
 
@@ -198,6 +253,34 @@ def _animal(org_id: OrganizationId) -> Animal:
         birth_property_id=TypedId.new("rural_property"),
         sex=AnimalSex.FEMALE,
     )
+
+
+class _InMemoryTransferArtifactRepo:
+    def __init__(self, artifacts: list[ReceivedTransferArtifact]) -> None:
+        self._artifacts = artifacts
+
+    def save(self, artifact: ReceivedTransferArtifact) -> None:
+        self._artifacts.append(artifact)
+
+    def list_by_animal(self, animal_id: TypedId) -> list[ReceivedTransferArtifact]:
+        return [item for item in self._artifacts if item.animal_id == animal_id]
+
+
+class _InMemoryImportedFactRepo:
+    def __init__(self, facts: list[ImportedLivestockFact]) -> None:
+        self._facts = facts
+
+    def save(self, fact: ImportedLivestockFact) -> None:
+        self._facts.append(fact)
+
+    def list_by_animal(
+        self, organization_id: OrganizationId, animal_id: TypedId
+    ) -> list[ImportedLivestockFact]:
+        return [
+            item
+            for item in self._facts
+            if item.organization_id == organization_id and item.animal_id == animal_id
+        ]
 
 
 def _campaign(org_id: OrganizationId, code: str) -> SanitaryCampaign:
@@ -245,6 +328,82 @@ def _embargo_assertion(
         else (),
         observed_at=observed_at,
     )
+
+
+def _territorial_assessment(
+    org_id: OrganizationId,
+    property_id: TypedId,
+    *,
+    layer: str,
+    status: str = "DISPONIVEL",
+    feature_count: int = 1,
+) -> object:
+    class _Gap:
+        def __init__(self, code: str, message: str) -> None:
+            self._payload = {"code": code, "message": message}
+
+        def to_dict(self) -> dict[str, str]:
+            return dict(self._payload)
+
+    class _Assessment:
+        def __init__(self) -> None:
+            self.property_id = property_id
+            self.geometry_id = TypedId.new("property_geometry")
+            self.geometry_version = 4
+            self.external_reference = "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
+            self.source = "INPE/TerraBrasilis"
+            self.layer = layer
+            self.status = type("_Status", (), {"value": status})()
+            self.property_area_hectares = 1500.5
+            self.year_from = 2020
+            self.year_to = 2021
+            self.years = tuple(
+                {
+                    "year": 2020,
+                    "feature_count": feature_count,
+                    "overlap_area_hectares": 8.25,
+                    "source_area_hectares": 12.5,
+                    "version_ids": [f"{layer.lower()}_v1"],
+                }
+                for _ in range(1)
+            )
+            self.response_digest = "f" * 64
+            self.gaps = () if status == "DISPONIVEL" else (_Gap("LACUNA", "sem dados"),)
+
+    return _Assessment()
+
+
+def _territorial_overlap_assessment(
+    property_id: TypedId,
+    *,
+    status: str = "COM_RESTRICAO",
+    feature_count: int = 1,
+) -> object:
+    class _Gap:
+        def __init__(self, code: str, message: str) -> None:
+            self._payload = {"code": code, "message": message}
+
+        def to_dict(self) -> dict[str, str]:
+            return dict(self._payload)
+
+    class _Assessment:
+        def __init__(self) -> None:
+            self.property_id = property_id
+            self.geometry_id = TypedId.new("property_geometry")
+            self.geometry_version = 5
+            self.external_reference = "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
+            self.source = "FUNAI"
+            self.layer = "FUNAI_TI"
+            self.label = "Terras Indigenas (FUNAI)"
+            self.status = type("_Status", (), {"value": status})()
+            self.feature_count = feature_count
+            self.area_hectares = 12.5
+            self.source_area_hectares = 80.0
+            self.version_ids = ("funai_v1",)
+            self.response_digest = "d" * 64
+            self.gaps = () if status != "INDETERMINADA" else (_Gap("LACUNA", "sem dados"),)
+
+    return _Assessment()
 
 
 def test_sanitary_requirement_fact_type_normaliza_o_codigo() -> None:
@@ -353,6 +512,97 @@ def test_sem_repositorios_configurados_nao_emite_fato_sanitario() -> None:
     ]
 
     assert tipos_sanitarios == []
+
+
+def test_emite_fato_de_cobertura_historica_a_partir_do_artefato_recebido() -> None:
+    org_id = _org()
+    animal = _animal(org_id)
+    counterparty_id = TypedId.new("external_counterparty")
+    agora = datetime.now(UTC)
+    artifact = ReceivedTransferArtifact(
+        artifact_id=TypedId.new("received_transfer_artifact"),
+        organization_id=org_id,
+        animal_id=animal.animal_id,
+        source_counterparty_id=counterparty_id,
+        bundle_digest="a" * 64,
+        bundle_issued_at=agora - timedelta(days=2),
+        transfer_effective_at=agora - timedelta(days=1),
+        coverage=HistoryCoverage.from_transfer(
+            known_from=agora - timedelta(days=120),
+            known_until=agora - timedelta(days=2),
+            transfer_effective_at=agora - timedelta(days=1),
+        ),
+        created_at=agora - timedelta(days=1),
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        transfer_artifact_repository=_InMemoryTransferArtifactRepo([artifact]),
+    )
+
+    snapshot = provider.get_snapshot(org_id, animal.animal_id, agora)
+    coverage_facts = [f for f in snapshot.facts if f.fact_type == HISTORY_COVERAGE_FACT_TYPE]
+
+    assert len(coverage_facts) == 1
+    payload = coverage_facts[0].payload
+    assert payload["basis"] == "received_transfer_artifact"
+    assert payload["source_artifact_id"] == artifact.artifact_id.value.hex
+    assert payload["coverage_status"] == "PARTIAL_DECLARED"
+    assert payload["has_declared_gaps"] is True
+    assert payload["gaps"][0]["code"] == "COVERAGE_BEFORE_TRANSFER"
+
+
+def test_sem_artefato_recebido_nao_inventa_fato_de_cobertura() -> None:
+    org_id = _org()
+    animal = _animal(org_id)
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        transfer_artifact_repository=_InMemoryTransferArtifactRepo([]),
+    )
+
+    snapshot = provider.get_snapshot(org_id, animal.animal_id, datetime.now(UTC))
+
+    assert [f for f in snapshot.facts if f.fact_type == HISTORY_COVERAGE_FACT_TYPE] == []
+
+
+def test_emite_fato_sanitario_importado_no_snapshot_com_proveniencia_e_confianca() -> None:
+    org_id = _org()
+    animal = _animal(org_id)
+    imported_fact = ImportedLivestockFact.create(
+        organization_id=org_id,
+        animal_id=animal.animal_id,
+        source_artifact_id=TypedId.new("received_transfer_artifact"),
+        fact_type="livestock.treatment_applied",
+        occurred_at=datetime.now(UTC) - timedelta(days=12),
+        asserted_by="Fazenda Origem",
+        received_by=TypedId.new("actor"),
+        confidence_tier=ConfidenceTier.CRYPTOGRAPHICALLY_ATTESTED,
+        payload={"withdrawal_period_days": 45, "substance": "produto ficticio"},
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        imported_fact_repository=_InMemoryImportedFactRepo([imported_fact]),
+    )
+
+    snapshot = provider.get_snapshot(org_id, animal.animal_id, datetime.now(UTC))
+    imported_facts = [
+        fact
+        for fact in snapshot.facts
+        if fact.fact_type == "livestock.treatment_applied"
+        and fact.payload.get("imported_fact_id") == imported_fact.imported_fact_id.value.hex
+    ]
+
+    assert len(imported_facts) == 1
+    fact = imported_facts[0]
+    assert fact.payload["origin"] == FactOrigin.IMPORTED_ASSERTION.value
+    assert fact.payload["asserted_by"] == "Fazenda Origem"
+    assert fact.payload["confidence_tier"] == "CRYPTOGRAPHICALLY_ATTESTED"
+    assert fact.payload["source_artifact_id"] == imported_fact.source_artifact_id.value.hex
+    assert fact.payload["withdrawal_period_days"] == 45
+    assert fact.source_reference is not None
+    assert fact.source_reference.target_id == imported_fact.source_artifact_id
 
 
 def test_qualificacao_de_estabelecimento_prefere_assercao_bitemporal_ao_legado() -> None:
@@ -464,3 +714,83 @@ def test_nao_emite_fato_de_embargo_sem_assertion_conhecida_ate_o_instante() -> N
     snapshot = provider.get_snapshot(org_id, animal.animal_id, agora)
 
     assert [f for f in snapshot.facts if f.fact_type == ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE] == []
+
+
+def test_emite_fatos_territoriais_de_prodes_e_deter_para_a_propriedade_atual() -> None:
+    org_id = _org()
+    property_id = TypedId.new("rural_property")
+    animal = Animal(
+        animal_id=TypedId.new("animal"),
+        organization_id=org_id,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.MALE,
+    )
+    agora = datetime.now(UTC)
+    stay = PropertyStay(
+        stay_id=TypedId.new("property_stay"),
+        organization_id=org_id,
+        animal_id=animal.animal_id,
+        property_id=property_id,
+        start_time=agora - timedelta(days=5),
+        end_time=None,
+        status=StayStatus.ACTIVE,
+        source_movement_id=TypedId.new("animal_movement"),
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        stay_repository=_InMemoryStayRepo({animal.animal_id: stay}),
+        territorial_timeline_service=_TerritorialTimelineServiceFake(
+            prodes=_territorial_assessment(org_id, property_id, layer="TB_PRODES"),
+            deter=_territorial_assessment(org_id, property_id, layer="TB_DETER"),
+        ),
+    )
+
+    snapshot = provider.get_snapshot(org_id, animal.animal_id, agora)
+    facts = {fact.fact_type: fact for fact in snapshot.facts}
+
+    assert TERRITORIAL_PRODES_FACT_TYPE in facts
+    assert TERRITORIAL_DETER_FACT_TYPE in facts
+    assert facts[TERRITORIAL_PRODES_FACT_TYPE].payload["has_occurrence"] is True
+    assert facts[TERRITORIAL_PRODES_FACT_TYPE].payload["occurrence_years"] == [2020]
+    assert facts[TERRITORIAL_PRODES_FACT_TYPE].payload["layer"] == "TB_PRODES"
+    assert facts[TERRITORIAL_DETER_FACT_TYPE].payload["layer"] == "TB_DETER"
+    assert facts[TERRITORIAL_DETER_FACT_TYPE].payload["total_feature_count"] == 1
+
+
+def test_emite_fato_territorial_funai_para_a_propriedade_atual() -> None:
+    org_id = _org()
+    property_id = TypedId.new("rural_property")
+    animal = Animal(
+        animal_id=TypedId.new("animal"),
+        organization_id=org_id,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.MALE,
+    )
+    agora = datetime.now(UTC)
+    stay = PropertyStay(
+        stay_id=TypedId.new("property_stay"),
+        organization_id=org_id,
+        animal_id=animal.animal_id,
+        property_id=property_id,
+        start_time=agora - timedelta(days=5),
+        end_time=None,
+        status=StayStatus.ACTIVE,
+        source_movement_id=TypedId.new("animal_movement"),
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        stay_repository=_InMemoryStayRepo({animal.animal_id: stay}),
+        territorial_overlap_service=_TerritorialOverlapServiceFake(
+            funai=_territorial_overlap_assessment(property_id)
+        ),
+    )
+
+    snapshot = provider.get_snapshot(org_id, animal.animal_id, agora)
+    facts = {fact.fact_type: fact for fact in snapshot.facts}
+
+    assert TERRITORIAL_FUNAI_FACT_TYPE in facts
+    assert facts[TERRITORIAL_FUNAI_FACT_TYPE].payload["has_overlap"] is True
+    assert facts[TERRITORIAL_FUNAI_FACT_TYPE].payload["feature_count"] == 1
+    assert facts[TERRITORIAL_FUNAI_FACT_TYPE].payload["layer"] == "FUNAI_TI"
