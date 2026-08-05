@@ -44,7 +44,7 @@ from packages.core_infrastructure.persistence.decision_governance import (
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
-from packages.livestock_application.eligibility import ELIGIBILITY_RULE_CODE
+from packages.livestock_application.eligibility import ELIGIBILITY_PURPOSE, ELIGIBILITY_RULE_CODE
 from packages.livestock_application.eligibility_policy_provider import EligibilityPolicyProvider
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -137,7 +137,7 @@ def _criar_proposta_formal(
             context_hash = compute_context_hash(
                 policy_id=policy.policy_id,
                 policy_version=policy.version,
-                purpose=policy.purpose,
+                purpose=ELIGIBILITY_PURPOSE,
                 engine_version=1,
                 rule_versions=((rule.code, rule.version),),
             )
@@ -146,7 +146,7 @@ def _criar_proposta_formal(
                 evaluation_id=TypedId.new("evaluation"),
                 organization_id=organizacao,
                 subject_id=alvo,
-                purpose=policy.purpose,
+                purpose=ELIGIBILITY_PURPOSE,
                 policy_id=policy.policy_id,
                 policy_version=policy.version,
                 fact_snapshot=snapshot,
