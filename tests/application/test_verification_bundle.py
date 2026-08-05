@@ -18,7 +18,7 @@ from packages.core_application.verification_service import (
 )
 from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.decision_governance import DecisionAuthorityProfile
-from packages.core_domain.dossier import Dossier
+from packages.core_domain.dossier import Dossier, VerticalSection, compute_dossier_hash
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
@@ -442,3 +442,62 @@ def test_declared_gaps_make_coverage_indeterminate() -> None:
     assert cobertura is not None
     assert cobertura.status is VerificationStatus.INDETERMINADA
     assert relatorio.status is VerificationStatus.INDETERMINADA
+
+
+def test_livestock_bundle_derives_scopes_and_gaps_from_the_canonical_dossier() -> None:
+    dossier = _dossie()
+    document = {
+        **dossier.document,
+        "vertical": VerticalSection(
+            namespace="livestock",
+            section_version=2,
+            content={
+                "coverage": {
+                    "status": "PARTIAL_DECLARED",
+                    "declared_scope": "TRANSFER_DECLARED_PARTIAL",
+                    "has_declared_gaps": True,
+                    "gaps": [{"code": "COVERAGE_BEFORE_TRANSFER"}],
+                },
+                "imported_material": {
+                    "has_imported_facts": True,
+                    "declared_scope": "IMPORTED_AND_LOCAL",
+                },
+                "declared_limitations": [
+                    "Cobertura sanitaria parcial declarada; lacunas permanecem abertas."
+                ],
+            },
+        ).to_dict(),
+    }
+    enriquecido = type(dossier)(
+        dossier_id=dossier.dossier_id,
+        organization_id=dossier.organization_id,
+        subject_reference=dossier.subject_reference,
+        purpose=dossier.purpose,
+        decision_id=dossier.decision_id,
+        evaluation_id=dossier.evaluation_id,
+        generated_at=dossier.generated_at,
+        dossier_hash=compute_dossier_hash(document),
+        document_version=dossier.document_version,
+        serialization_version=dossier.serialization_version,
+        document=document,
+    )
+    bundle = VerificationBundleService().build_from_dossier(
+        dossier=enriquecido,
+        audience="auditoria",
+        created_at=AGORA,
+        signature=_assinatura(),
+        verification_policy={"perfil_minimo": "INSTITUTIONAL_SIGNATURE"},
+    )
+
+    assert "prova_sanitaria_vitalicia" in bundle.manifest.declared_scopes
+    assert "coverage:TRANSFER_DECLARED_PARTIAL" in bundle.manifest.declared_scopes
+    assert "material:IMPORTED_AND_LOCAL" in bundle.manifest.declared_scopes
+    assert "historico_importado_declarado" in bundle.manifest.declared_scopes
+    assert any(
+        "Cobertura sanitaria parcial declarada" in gap
+        for gap in bundle.manifest.declared_gaps
+    )
+    assert any(
+        "Material importado acompanha o pacote" in gap
+        for gap in bundle.manifest.declared_gaps
+    )

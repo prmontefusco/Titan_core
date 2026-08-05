@@ -23,7 +23,9 @@ from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
 from packages.core_domain import OrganizationContext
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.core_infrastructure.persistence.evidence import TransactionalEvidenceRepository
+from packages.core_infrastructure.persistence.outbox import TransactionalOutboxMessageWriter
 from packages.livestock_application.authorization import TREATMENT_REGISTRAR
+from packages.livestock_application.erp_outbox import LivestockErpOutboxService
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.treatment_service import TreatmentApplicationService
 from packages.livestock_domain.treatment import TreatmentApplication
@@ -99,6 +101,9 @@ def _servico(connection: Connection) -> TreatmentApplicationService:
         evidence_lookup=TransactionalEvidenceRepository(connection=connection),
         campaign_lookup=TransactionalSanitaryCampaignRepository(connection=connection),
         lot_membership_lookup=TransactionalLotMembershipRepository(connection=connection),
+        erp_outbox_service=LivestockErpOutboxService(
+            writer=TransactionalOutboxMessageWriter(connection=connection)
+        ),
     )
 
 

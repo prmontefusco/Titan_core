@@ -10,8 +10,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol
 
+from packages.core_domain.events import DomainEvent
 from packages.core_domain.evidence import Evidence
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.erp_outbox import LivestockErpOutboxService
 from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
@@ -71,6 +73,7 @@ class TreatmentApplicationService:
     evidence_lookup: EvidenceLookupPort | None = None
     campaign_lookup: SanitaryCampaignLookupPort | None = None
     lot_membership_lookup: LotMembershipLookupPort | None = None
+    erp_outbox_service: LivestockErpOutboxService | None = None
 
     def register_application(
         self,
@@ -111,7 +114,8 @@ class TreatmentApplicationService:
             created_at=datetime.now(UTC),
         )
         self.application_repository.save(application)
-        self._record(context, application)
+        event = self._record(context, application)
+        self._publish_erp_contract(context, application, event)
         return application
 
     def correct_application(
@@ -166,12 +170,13 @@ class TreatmentApplicationService:
             created_at=datetime.now(UTC),
         )
         self.application_repository.save(correction)
-        self._record(context, correction)
+        event = self._record(context, correction)
+        self._publish_erp_contract(context, correction, event)
         return correction
 
     def _record(
         self, context: LivestockOperationContext, application: TreatmentApplication
-    ) -> None:
+    ) -> DomainEvent:
         """A correção é registro novo, com fluxo próprio.
 
         O vínculo com o corrigido viaja em `corrects_application_id`, no payload, e
@@ -179,7 +184,7 @@ class TreatmentApplicationService:
         o serviço não tem como descobrir o `event_id` do evento original para
         apontar para ele. Quem lê a linha do tempo segue o vínculo pelo payload.
         """
-        self.recorder.record(
+        return self.recorder.record(
             context=context,
             aggregate_id=application.application_id,
             event_type=TREATMENT_APPLIED,
@@ -196,6 +201,20 @@ class TreatmentApplicationService:
                 corrects_application_id=application.corrects_application_id,
             ),
             occurred_at=application.applied_at,
+        )
+
+    def _publish_erp_contract(
+        self,
+        context: LivestockOperationContext,
+        application: TreatmentApplication,
+        event: DomainEvent,
+    ) -> None:
+        if self.erp_outbox_service is None:
+            return
+        self.erp_outbox_service.publish_treatment_application(
+            context=context,
+            application=application,
+            event=event,
         )
 
     def _validate_references(

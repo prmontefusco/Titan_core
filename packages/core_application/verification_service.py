@@ -30,6 +30,57 @@ _PROIBIDOS = frozenset(
 )
 
 
+def _livestock_declared_scopes_and_gaps(dossier: Dossier) -> tuple[list[str], list[str]]:
+    vertical = dossier.document.get("vertical")
+    if not isinstance(vertical, Mapping):
+        return [], []
+    if vertical.get("namespace") != "livestock":
+        return [], []
+    content = vertical.get("content")
+    if not isinstance(content, Mapping):
+        return [], []
+
+    scopes = ["integridade", "conteudo_da_decisao"]
+    gaps: list[str] = []
+
+    coverage = content.get("coverage")
+    if isinstance(coverage, Mapping):
+        scopes.append("prova_sanitaria_vitalicia")
+        declared_scope = coverage.get("declared_scope")
+        if isinstance(declared_scope, str) and declared_scope:
+            scopes.append(f"coverage:{declared_scope}")
+        if coverage.get("status") == "NAO_DECLARADA":
+            gaps.append(
+                "Cobertura sanitaria vitalicia nao declarada; "
+                "o pacote nao prova historico completo."
+            )
+        if coverage.get("has_declared_gaps"):
+            gaps.append(
+                "Cobertura sanitaria parcial declarada no dossie; "
+                "existem lacunas historicas abertas."
+            )
+
+    imported = content.get("imported_material")
+    if isinstance(imported, Mapping):
+        declared_scope = imported.get("declared_scope")
+        if isinstance(declared_scope, str) and declared_scope:
+            scopes.append(f"material:{declared_scope}")
+        if imported.get("has_imported_facts"):
+            scopes.append("historico_importado_declarado")
+            gaps.append(
+                "Material importado acompanha o pacote como afirmacao importada; "
+                "nao substitui observacao local."
+            )
+
+    limitations = content.get("declared_limitations")
+    if isinstance(limitations, Sequence) and not isinstance(limitations, (str, bytes)):
+        for limitation in limitations:
+            if isinstance(limitation, str) and limitation not in gaps:
+                gaps.append(limitation)
+
+    return sorted(set(scopes)), gaps
+
+
 def _canonical_bytes(payload: Mapping[str, Any]) -> bytes:
     """Bytes estáveis: mesmo conteúdo produz sempre os mesmos bytes e digest."""
     return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode(
@@ -98,6 +149,9 @@ class VerificationBundleService:
 
         escopos = ["integridade", "conteudo_da_decisao"]
         lacunas = list(declared_gaps)
+        auto_scopes, auto_gaps = _livestock_declared_scopes_and_gaps(dossier)
+        escopos.extend(auto_scopes)
+        lacunas.extend(auto_gaps)
         if signature is None:
             lacunas.append("Sem assinatura: a autenticidade de emissão não é comprovável offline.")
         if verification_policy is None:
@@ -111,8 +165,8 @@ class VerificationBundleService:
             created_at=created_at,
             components=componentes,
             issuer_reference=issuer_reference,
-            declared_scopes=escopos,
-            declared_gaps=lacunas,
+            declared_scopes=tuple(sorted(set(escopos))),
+            declared_gaps=tuple(dict.fromkeys(lacunas)),
             profiles=profiles,
         )
 
