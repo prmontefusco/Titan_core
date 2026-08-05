@@ -38,6 +38,8 @@ from packages.core_domain.decision_governance import (
     DecisionProposal,
     ReviewConclusion,
 )
+from packages.core_domain.evaluation import Evaluation
+from packages.core_domain.policy import Policy
 from packages.core_domain.recall import (
     RecallDirection,
     RecallMode,
@@ -713,7 +715,7 @@ def _resolve_current_human_emission_material(
     connection: Connection,
     contexto: OrganizationContext,
     proposal: DecisionProposal,
-):
+) -> tuple[Evaluation, Policy]:
     governance = TransactionalDecisionGovernanceRepository(connection)
     evaluation_repository = TransactionalEvaluationRepository(connection=connection)
     policy_repository = TransactionalPolicyRepository(connection=connection)
@@ -788,7 +790,6 @@ def _resolve_current_human_emission_material(
                 "a emissao humana foi bloqueada."
             ),
         )
-    return evaluation, policy
     return evaluation, policy
 
 
