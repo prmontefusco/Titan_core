@@ -141,6 +141,9 @@ from packages.livestock_infrastructure.persistence.qualification_assertion_repos
 from packages.livestock_infrastructure.persistence.sanitary_campaign_repository import (
     TransactionalSanitaryCampaignRepository,
 )
+from packages.livestock_infrastructure.persistence.transfer_artifact_repository import (
+    TransactionalReceivedTransferArtifactRepository,
+)
 from packages.livestock_infrastructure.persistence.transformation_repository import (
     TransactionalTraceableItemRepository,
     TransactionalTransformationEventRepository,
@@ -477,6 +480,9 @@ def _eligibility_components(
         # repositório de vínculos, o fact_provider não consegue enumerar quem
         # está no lote para computar has_animal_in_withdrawal/blocking_animals.
         membership_repository=TransactionalLotMembershipRepository(connection=connection),
+        transfer_artifact_repository=TransactionalReceivedTransferArtifactRepository(
+            connection=connection
+        ),
     )
     return application_repository, evaluations, decisions, fact_provider
 
