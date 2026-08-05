@@ -128,9 +128,7 @@ export function AnimalDetail(options: Options) {
           <Link to={`/animals/${animal.animal_id}/timeline`}>Ver timeline</Link>
         </li>
         <li>
-          <button type="button" disabled title="Ainda não disponível nesta versão">
-            Registrar tratamento
-          </button>
+          <Link to={`/animals/${animal.animal_id}/treatments/new`}>Registrar tratamento</Link>
         </li>
         <li>
           <button type="button" disabled title="Ainda não disponível nesta versão">

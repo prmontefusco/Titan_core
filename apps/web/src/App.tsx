@@ -16,6 +16,7 @@ import { LivestockHome } from './pages/LivestockHome'
 import { AnimalSearch } from './pages/AnimalSearch'
 import { AnimalDetail } from './pages/AnimalDetail'
 import { AnimalTimeline } from './pages/AnimalTimeline'
+import { TreatmentForm } from './pages/TreatmentForm'
 import titanLogo from './assets/titan-bode.png'
 
 function Brand() {
@@ -58,6 +59,10 @@ function StatusConteudo({
           <Route path="/animals" element={<AnimalSearch {...options} />} />
           <Route path="/animals/:animalId" element={<AnimalDetail {...options} />} />
           <Route path="/animals/:animalId/timeline" element={<AnimalTimeline {...options} />} />
+          <Route
+            path="/animals/:animalId/treatments/new"
+            element={<TreatmentForm {...options} />}
+          />
           <Route path="/admin" element={<AdminQueue {...options} />} />
         </Routes>
       </>
