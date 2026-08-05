@@ -423,7 +423,8 @@ class GeodataCarClient(CarLookupPort):
         )
         try:
             with urllib.request.urlopen(pedido, timeout=self.timeout_seconds) as resposta:
-                return resposta.read()
+                conteudo: bytes = resposta.read()
+                return conteudo
         except urllib.error.HTTPError as erro:
             if erro.code == 404:
                 raise CarNaoEncontrado(
@@ -474,7 +475,8 @@ class GeodataCarClient(CarLookupPort):
         )
         try:
             with urllib.request.urlopen(pedido, timeout=self.timeout_seconds) as resposta:
-                return resposta.read()
+                conteudo: bytes = resposta.read()
+                return conteudo
         except urllib.error.HTTPError as erro:
             if erro.code == 404:
                 raise CarNaoEncontrado(
