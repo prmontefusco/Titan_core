@@ -494,10 +494,8 @@ def test_livestock_bundle_derives_scopes_and_gaps_from_the_canonical_dossier() -
     assert "material:IMPORTED_AND_LOCAL" in bundle.manifest.declared_scopes
     assert "historico_importado_declarado" in bundle.manifest.declared_scopes
     assert any(
-        "Cobertura sanitaria parcial declarada" in gap
-        for gap in bundle.manifest.declared_gaps
+        "Cobertura sanitaria parcial declarada" in gap for gap in bundle.manifest.declared_gaps
     )
     assert any(
-        "Material importado acompanha o pacote" in gap
-        for gap in bundle.manifest.declared_gaps
+        "Material importado acompanha o pacote" in gap for gap in bundle.manifest.declared_gaps
     )

@@ -197,11 +197,7 @@ class LivestockDossierTemplate:
                     if fact.payload.get("source_artifact_id")
                 }
             ),
-            "declared_scope": (
-                "IMPORTED_AND_LOCAL"
-                if imported_facts
-                else "LOCAL_ONLY"
-            ),
+            "declared_scope": ("IMPORTED_AND_LOCAL" if imported_facts else "LOCAL_ONLY"),
         }
 
     def _declared_limitations(

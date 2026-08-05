@@ -148,9 +148,8 @@ def test_the_dossier_declares_partial_coverage_when_snapshot_brings_it(cenario: 
     assert coverage["has_declared_gaps"] is True
     assert coverage["gaps"][0]["code"] == "COVERAGE_BEFORE_TRANSFER"
     assert coverage["declared_scope"] == "TRANSFER_DECLARED_PARTIAL"
-    assert (
-        "Cobertura sanitaria parcial declarada"
-        in " ".join(section.content["declared_limitations"])
+    assert "Cobertura sanitaria parcial declarada" in " ".join(
+        section.content["declared_limitations"]
     )
 
 
@@ -174,9 +173,8 @@ def test_the_dossier_declares_local_only_when_lifetime_coverage_is_absent(
     assert coverage["status"] == "NAO_DECLARADA"
     assert coverage["declared_scope"] == "LOCAL_ONLY"
     assert section.content["imported_material"]["declared_scope"] == "LOCAL_ONLY"
-    assert (
-        "Cobertura sanitaria vitalicia nao declarada"
-        in " ".join(section.content["declared_limitations"])
+    assert "Cobertura sanitaria vitalicia nao declarada" in " ".join(
+        section.content["declared_limitations"]
     )
 
 

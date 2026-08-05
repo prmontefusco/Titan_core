@@ -149,13 +149,9 @@ def _montar_roteiro(operador: Cliente, auditor: Cliente, *, cod_imovel: str, sta
         conferir=lambda r: (
             None
             if any(
-                item.get("fact_type") == "livestock.territorial.funai"
-                for item in r["fact_types"]
+                item.get("fact_type") == "livestock.territorial.funai" for item in r["fact_types"]
             )
-            and any(
-                item.get("rule_code") == "rule-sobreposicao-funai"
-                for item in r["templates"]
-            )
+            and any(item.get("rule_code") == "rule-sobreposicao-funai" for item in r["templates"])
             else "catalogo nao publicou o fato ou o template governavel da FUNAI"
         ),
         porque=(
