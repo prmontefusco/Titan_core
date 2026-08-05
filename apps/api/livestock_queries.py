@@ -26,15 +26,25 @@ from apps.api.livestock_dependencies import (
 from apps.api.livestock_transformations import BalancoResponse, _balanco_resposta
 from apps.api.pagination import PaginacaoDependency, montar_pagina
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
+from packages.core_application.decision_governance_service import (
+    DecisionGovernanceService,
+)
 from packages.core_application.dossier_service import DossierService, evidence_content
 from packages.core_application.recall_service import RecallService
 from packages.core_domain import OrganizationContext
+from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.decision_governance import (
+    DecisionAuthorityProfile,
+    DecisionProposal,
+    ReviewConclusion,
+)
 from packages.core_domain.recall import (
     RecallDirection,
     RecallMode,
     RecallRequest,
     RecallResult,
 )
+from packages.core_infrastructure.persistence.authorization import AuthorizationRepository
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
 from packages.core_infrastructure.persistence.decision_governance import (
     TransactionalDecisionAuthorityProfileRepository,
@@ -53,6 +63,7 @@ from packages.core_infrastructure.persistence.rule_governance import (
     TransactionalRuleAdoptionRepository,
 )
 from packages.livestock_application.authorization import (
+    DECISION_REVIEW_EXECUTE,
     DOSSIER_LER,
     ELIGIBILITY_EXECUTAR,
     TIMELINE_LER,
@@ -255,8 +266,33 @@ class PerfilMercadoRequisitoResponse(BaseModel):
 class PerfilMercadoResponse(BaseModel):
     market: str
     declared_withdrawal_period_days: int | None
-    withdrawal_basis: dict[str, Any] | None = None
     requirements: list[PerfilMercadoRequisitoResponse]
+
+
+class DecisionProposalResponse(BaseModel):
+    proposal_id: str
+    evaluation_id: str
+    evaluation_hash: str
+    purpose: str
+    proposed_result: str
+    proposed_reasons: list[dict[str, Any]]
+    justification_required: bool
+    created_at: str
+    review_count: int
+    current_proposal: bool
+
+
+class DecisionReviewRequest(BaseModel):
+    conclusion: ReviewConclusion
+    reasoning: str
+
+
+class DecisionReviewExecutionResponse(BaseModel):
+    proposal_id: str
+    review_id: str
+    workflow_status: str
+    decision_id: str | None = None
+    dossier_id: str | None = None
 
 
 class ExplicacaoComercialRequest(BaseModel):
@@ -542,9 +578,6 @@ def _perfil_mercado_response(profile: MarketProfile) -> PerfilMercadoResponse:
     return PerfilMercadoResponse(
         market=profile.market.code,
         declared_withdrawal_period_days=profile.declared_withdrawal_period_days,
-        withdrawal_basis=(
-            None if profile.withdrawal_basis is None else profile.withdrawal_basis.to_dict()
-        ),
         requirements=[
             PerfilMercadoRequisitoResponse(
                 rule_code=requirement.rule_code,
@@ -586,6 +619,170 @@ def _market_codes_by_status(
         indeterminate_markets,
         missing_markets,
     )
+
+
+def _proposal_response(
+    proposal: DecisionProposal,
+    *,
+    review_count: int,
+    current_proposal: bool,
+) -> DecisionProposalResponse:
+    return DecisionProposalResponse(
+        proposal_id=str(proposal.proposal_id.value),
+        evaluation_id=str(proposal.evaluation_id.value),
+        evaluation_hash=proposal.evaluation_hash,
+        purpose=proposal.purpose,
+        proposed_result=proposal.proposed_result.value,
+        proposed_reasons=[reason.to_dict() for reason in proposal.proposed_reasons],
+        justification_required=proposal.justification_required,
+        created_at=proposal.created_at.isoformat(),
+        review_count=review_count,
+        current_proposal=current_proposal,
+    )
+
+
+def _resolve_decision_review_authority(
+    connection: Connection,
+    contexto: OrganizationContext,
+    *,
+    purpose: str,
+) -> DecisionAuthorityProfile:
+    authorization = AuthorizationRepository(connection)
+    permission_id = authorization.get_permission_id_by_code(DECISION_REVIEW_EXECUTE)
+    if permission_id is None:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="AUTORIDADE_DE_DECISAO_AUSENTE",
+            title="Autoridade de decisao indisponivel",
+            detail="A permissao tecnica do fluxo de revisao humana nao esta catalogada.",
+        )
+
+    matching_roles = []
+    for role_id in contexto.role_ids:
+        role = authorization.get_role_by_id(contexto.organization_id, role_id)
+        if role is None:
+            continue
+        if permission_id in role.permission_ids:
+            matching_roles.append(role)
+
+    if not matching_roles:
+        raise DomainProblem(
+            status_code=status.HTTP_403_FORBIDDEN,
+            reason_code="AUTORIDADE_DE_DECISAO_AUSENTE",
+            title="Autoridade de decisao ausente",
+            detail="Nenhum perfil de papel compativel com a emissao humana foi resolvido.",
+        )
+    if len(matching_roles) > 1:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="AUTORIDADE_DE_DECISAO_INDETERMINADA",
+            title="Autoridade de decisao indeterminada",
+            detail=(
+                "Mais de um papel compativel com a emissao humana foi "
+                "resolvido para este contexto."
+            ),
+        )
+
+    authority = DecisionAuthorityProfile(
+        authority_id=SharedTypedId.new("authority_profile"),
+        organization_id=contexto.organization_id,
+        principal_reference=UniversalReference(
+            target_id=contexto.actor_id,
+            organization_id=contexto.organization_id,
+            contract_version=1,
+        ),
+        role_name=matching_roles[0].name,
+        purpose=purpose,
+        emission_method=DecisionEmissionMethod.HUMAN,
+        approvals_required=1,
+        is_active=True,
+        valid_from=contexto.validated_at,
+    )
+    TransactionalDecisionAuthorityProfileRepository(connection).save(authority)
+    return authority
+
+
+def _resolve_current_human_emission_material(
+    connection: Connection,
+    contexto: OrganizationContext,
+    proposal: DecisionProposal,
+):
+    governance = TransactionalDecisionGovernanceRepository(connection)
+    evaluation_repository = TransactionalEvaluationRepository(connection=connection)
+    policy_repository = TransactionalPolicyRepository(connection=connection)
+
+    latest_proposal = governance.latest_proposal_for_evaluation(
+        contexto.organization_id,
+        proposal.evaluation_id,
+        proposal.purpose,
+    )
+    if latest_proposal is None or latest_proposal.proposal_id != proposal.proposal_id:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="PROPOSTA_NAO_CORRENTE",
+            title="Proposta nao corrente",
+            detail=(
+                "A proposta aprovada nao e mais a proposta corrente para esta "
+                "evaluation/purpose; uma emissao humana sobre material superado foi bloqueada."
+            ),
+        )
+
+    evaluation = evaluation_repository.get_by_id(proposal.evaluation_id)
+    if evaluation is None or evaluation.organization_id != contexto.organization_id:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Evaluation da proposta nao foi encontrada nesta organizacao.",
+        )
+
+    current_evaluation = next(
+        (
+            item
+            for item in evaluation_repository.list_by_subject(
+                contexto.organization_id,
+                evaluation.subject_id,
+            )
+            if item.purpose == evaluation.purpose
+        ),
+        None,
+    )
+    if current_evaluation is None or current_evaluation.evaluation_id != evaluation.evaluation_id:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="EVALUATION_NAO_CORRENTE",
+            title="Evaluation nao corrente",
+            detail=(
+                "A proposal referencia uma evaluation superada por material mais recente; "
+                "a emissao humana foi bloqueada."
+            ),
+        )
+
+    policy = policy_repository.get_by_id(evaluation.policy_id)
+    if policy is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Policy da evaluation nao foi encontrada nesta organizacao.",
+        )
+    current_policy = policy_repository.get_active_at(
+        contexto.organization_id,
+        policy.code,
+        contexto.validated_at,
+    )
+    if current_policy is None or current_policy.policy_id != policy.policy_id:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="POLICY_NAO_CORRENTE",
+            title="Policy nao corrente",
+            detail=(
+                "A policy da evaluation nao e mais a policy corrente para esta purpose; "
+                "a emissao humana foi bloqueada."
+            ),
+        )
+    return evaluation, policy
+    return evaluation, policy
 
 
 def _required_subjects(matrix: Any) -> list[dict[str, str]]:
@@ -1076,36 +1273,20 @@ def _executar_avaliacao_orientada_a_mercado(
         )
         if persisted_evaluation is None or persisted_decision is None:
             raise RuntimeError("A matriz registrou uma avaliacao por mercado sem persistencia.")
-        if persisted_evaluation.subject_id != animal_id:
-            try:
-                evaluation, decision = PharmacologicalEligibilityService(
-                    fact_provider=fact_provider,
-                    policy=policy,
-                    rule=rule,
-                    evaluation_repository=evaluations,
-                    decision_repository=decisions,
-                    authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
-                        connection
-                    ),
-                    governance_repository=TransactionalDecisionGovernanceRepository(connection),
-                ).evaluate_animal(organizacao, animal_id, instante)
-            except HumanReviewRequired as exc:
-                raise _human_review_problem(exc) from exc
-        else:
-            evaluation = persisted_evaluation
-            decision = persisted_decision
-            if executed_requirement.governed_rule is None:
-                raise RuntimeError("A matriz executou requisito sem regra governada associada.")
-            persisted_rule = rule_repository.get_by_id(
-                executed_requirement.governed_rule.rule_version_id
-            )
-            if persisted_rule is None:
-                raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
-            persisted_policy = policy_repository.get_by_id(persisted_rule.policy_id)
-            if persisted_policy is None:
-                raise RuntimeError("A matriz executou requisito com policy ausente.")
-            policy = persisted_policy
-            rule = persisted_rule
+        evaluation = persisted_evaluation
+        decision = persisted_decision
+        if executed_requirement.governed_rule is None:
+            raise RuntimeError("A matriz executou requisito sem regra governada associada.")
+        persisted_rule = rule_repository.get_by_id(
+            executed_requirement.governed_rule.rule_version_id
+        )
+        if persisted_rule is None:
+            raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
+        persisted_policy = policy_repository.get_by_id(persisted_rule.policy_id)
+        if persisted_policy is None:
+            raise RuntimeError("A matriz executou requisito com policy ausente.")
+        policy = persisted_policy
+        rule = persisted_rule
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),
@@ -1202,6 +1383,151 @@ def executar_elegibilidade(
         dossier_id=str(dossier.dossier_id.value),
         reasons=[razao.message for razao in decision.reasons],
         governed_rule=None if governed_rule is None else governed_rule.to_dict(),
+    )
+
+
+@router.get(
+    "/decision-proposals/{proposal_id}",
+    response_model=DecisionProposalResponse,
+    summary="Consultar uma proposta formal de decisao",
+    description=(
+        "Recupera a proposta formal preservada quando a emissao automatica foi "
+        "recusada e informa se ela ainda e a proposta corrente para a mesma evaluation."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def obter_proposta_de_decisao(
+    proposal_id: str,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(DECISION_REVIEW_EXECUTE))
+    ],
+    connection: ConnectionDependency,
+) -> DecisionProposalResponse:
+    alvo = typed_id_or_problem(proposal_id, entity_type="decision_proposal", campo="proposal_id")
+    governance = TransactionalDecisionGovernanceRepository(connection)
+    proposal = governance.get_proposal(alvo)
+    if proposal is None or proposal.organization_id != contexto.organization_id:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Proposal nao encontrada nesta organizacao.",
+        )
+    latest = governance.latest_proposal_for_evaluation(
+        contexto.organization_id,
+        proposal.evaluation_id,
+        proposal.purpose,
+    )
+    review_count = len(governance.list_reviews_by_proposal(proposal.proposal_id))
+    return _proposal_response(
+        proposal,
+        review_count=review_count,
+        current_proposal=latest is not None and latest.proposal_id == proposal.proposal_id,
+    )
+
+
+@router.post(
+    "/decision-proposals/{proposal_id}/reviews",
+    response_model=DecisionReviewExecutionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Executar a revisao humana oficial de uma proposta",
+    description=(
+        "Registra a conclusao de revisao humana e, quando a proposta continua "
+        "corrente e ha aprovacoes suficientes, emite a Decision oficial com Dossier."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def revisar_proposta_de_decisao(
+    proposal_id: str,
+    corpo: DecisionReviewRequest,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(DECISION_REVIEW_EXECUTE))
+    ],
+    connection: ConnectionDependency,
+) -> DecisionReviewExecutionResponse:
+    alvo = typed_id_or_problem(proposal_id, entity_type="decision_proposal", campo="proposal_id")
+    governance = TransactionalDecisionGovernanceRepository(connection)
+    proposal = governance.get_proposal(alvo)
+    if proposal is None or proposal.organization_id != contexto.organization_id:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Proposal nao encontrada nesta organizacao.",
+        )
+
+    authority = _resolve_decision_review_authority(
+        connection,
+        contexto,
+        purpose=proposal.purpose,
+    )
+    governance_service = DecisionGovernanceService(repository=governance)
+    review = governance_service.record_review(
+        proposal=proposal,
+        reviewer_reference=UniversalReference(
+            target_id=contexto.actor_id,
+            organization_id=contexto.organization_id,
+            contract_version=1,
+        ),
+        reviewer_authority=authority,
+        conclusion=corpo.conclusion,
+        reasoning=corpo.reasoning,
+    )
+
+    if corpo.conclusion is not ReviewConclusion.APROVA:
+        return DecisionReviewExecutionResponse(
+            proposal_id=str(proposal.proposal_id.value),
+            review_id=str(review.review_id.value),
+            workflow_status="REVIEW_RECORDED",
+        )
+
+    evaluation, policy = _resolve_current_human_emission_material(connection, contexto, proposal)
+    reviews = governance.list_reviews_by_proposal(proposal.proposal_id)
+    approvals = [item for item in reviews if item.conclusion is ReviewConclusion.APROVA]
+    if len(approvals) < max(1, authority.approvals_required):
+        return DecisionReviewExecutionResponse(
+            proposal_id=str(proposal.proposal_id.value),
+            review_id=str(review.review_id.value),
+            workflow_status="AGUARDANDO_APROVACOES",
+        )
+
+    decision = governance_service.emit_after_approvals(
+        evaluation=evaluation,
+        proposal=proposal,
+        reviews=approvals,
+        authority_profile=authority,
+    )
+    TransactionalDecisionRepository(connection).save(decision)
+
+    rule_repository = TransactionalRuleRepository(connection=connection)
+    rules = rule_repository.list_by_policy(contexto.organization_id, policy.policy_id)
+    if not rules:
+        raise RuntimeError("A policy corrente da proposta nao possui rules persistidas.")
+
+    dossier = LivestockDossierTemplate(
+        timeline_service=_timeline_service(connection),
+        application_repository=TransactionalTreatmentApplicationRepository(connection=connection),
+        evidence_lookup=TransactionalEvidenceRepository(connection=connection),
+        dossier_service=DossierService(
+            repository=TransactionalDossierRepository(connection=connection)
+        ),
+    ).build(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        rules=rules,
+        governed_rule=_governed_rule_reference(connection, contexto.organization_id),
+        proposal=proposal,
+        reviews=reviews,
+    )
+    TransactionalDossierRepository(connection=connection).save(dossier)
+
+    return DecisionReviewExecutionResponse(
+        proposal_id=str(proposal.proposal_id.value),
+        review_id=str(review.review_id.value),
+        workflow_status="DECISION_EMITTED",
+        decision_id=str(decision.decision_id.value),
+        dossier_id=str(dossier.dossier_id.value),
     )
 
 
@@ -1390,38 +1716,22 @@ def executar_matriz_de_mercado(
         )
         if persisted_evaluation is None or persisted_decision is None:
             raise RuntimeError("A matriz registrou uma avaliacao por mercado sem persistencia.")
-        if persisted_evaluation.subject_id != alvo:
-            try:
-                evaluation, decision = PharmacologicalEligibilityService(
-                    fact_provider=fact_provider,
-                    policy=policy,
-                    rule=rule,
-                    evaluation_repository=evaluations,
-                    decision_repository=decisions,
-                    authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
-                        connection
-                    ),
-                    governance_repository=TransactionalDecisionGovernanceRepository(connection),
-                ).evaluate_animal(organizacao, alvo, instante)
-            except HumanReviewRequired as exc:
-                raise _human_review_problem(exc) from exc
-        else:
-            evaluation = persisted_evaluation
-            decision = persisted_decision
-            if executed_requirement.governed_rule is None:
-                raise RuntimeError("A matriz executou requisito sem regra governada associada.")
-            persisted_rule = TransactionalRuleRepository(connection=connection).get_by_id(
-                executed_requirement.governed_rule.rule_version_id
-            )
-            if persisted_rule is None:
-                raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
-            persisted_policy = TransactionalPolicyRepository(connection=connection).get_by_id(
-                persisted_rule.policy_id
-            )
-            if persisted_policy is None:
-                raise RuntimeError("A matriz executou requisito com policy ausente.")
-            policy = persisted_policy
-            rule = persisted_rule
+        evaluation = persisted_evaluation
+        decision = persisted_decision
+        if executed_requirement.governed_rule is None:
+            raise RuntimeError("A matriz executou requisito sem regra governada associada.")
+        persisted_rule = TransactionalRuleRepository(connection=connection).get_by_id(
+            executed_requirement.governed_rule.rule_version_id
+        )
+        if persisted_rule is None:
+            raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
+        persisted_policy = TransactionalPolicyRepository(connection=connection).get_by_id(
+            persisted_rule.policy_id
+        )
+        if persisted_policy is None:
+            raise RuntimeError("A matriz executou requisito com policy ausente.")
+        policy = persisted_policy
+        rule = persisted_rule
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),

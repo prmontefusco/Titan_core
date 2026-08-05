@@ -50,6 +50,8 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/treatments", "post"),
     ("/v1/livestock/treatments/{application_id}/corrections", "post"),
     ("/v1/livestock/animals/{animal_id}/eligibility", "post"),
+    ("/v1/livestock/decision-proposals/{proposal_id}", "get"),
+    ("/v1/livestock/decision-proposals/{proposal_id}/reviews", "post"),
     ("/v1/livestock/animals/{animal_id}/eligibility/market-matrix", "post"),
     ("/v1/livestock/market-eligibility/profiles", "get"),
     ("/v1/livestock/market-eligibility/evaluations", "post"),

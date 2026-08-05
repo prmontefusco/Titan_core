@@ -30,13 +30,22 @@ from typing import Any
 
 from packages.core_application.dossier_service import DossierService, evidence_content
 from packages.core_domain.decision import Decision
+from packages.core_domain.decision_governance import (
+    ContestationRecord,
+    DecisionOverride,
+    DecisionProposal,
+    DecisionReview,
+)
 from packages.core_domain.dossier import Dossier, VerticalSection
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.evidence import Evidence
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import Rule
 from packages.livestock_application.eligibility import GovernedRuleReference
-from packages.livestock_application.fact_provider import WITHDRAWAL_FACT_TYPE
+from packages.livestock_application.fact_provider import (
+    HISTORY_COVERAGE_FACT_TYPE,
+    WITHDRAWAL_FACT_TYPE,
+)
 from packages.livestock_application.timeline_service import (
     LivestockTimelineService,
     TimelineCutoff,
@@ -49,7 +58,7 @@ from packages.livestock_application.treatment_service import (
 from packages.shared_kernel import OrganizationId, TypedId
 
 LIVESTOCK_NAMESPACE = "livestock"
-SECTION_VERSION = 1
+SECTION_VERSION = 2
 ANIMAL_FACT_TYPE = "livestock.animal"
 
 
@@ -70,6 +79,10 @@ class LivestockDossierTemplate:
         rules: Sequence[Rule] = (),
         generated_at: datetime | None = None,
         governed_rule: GovernedRuleReference | None = None,
+        proposal: DecisionProposal | None = None,
+        reviews: Sequence[DecisionReview] = (),
+        override: DecisionOverride | None = None,
+        contestations: Sequence[ContestationRecord] = (),
     ) -> Dossier:
         if decision.subject_id.entity_type != "animal":
             raise ValueError(
@@ -87,6 +100,10 @@ class LivestockDossierTemplate:
                 evaluation,
                 governed_rule=governed_rule,
             ),
+            proposal=proposal,
+            reviews=reviews,
+            override=override,
+            contestations=contestations,
         )
 
     def build_section(
@@ -104,8 +121,11 @@ class LivestockDossierTemplate:
             section_version=SECTION_VERSION,
             content={
                 "subject": self._subject(animal_id, evaluation),
+                "coverage": self._coverage(evaluation),
                 "withdrawal": withdrawal,
                 "evidence_chain": self._evidence_chain(organization_id, withdrawal),
+                "imported_material": self._imported_material(evaluation, withdrawal),
+                "declared_limitations": self._declared_limitations(evaluation, withdrawal),
                 "timeline": self._timeline(organization_id, animal_id, decision.issued_at),
                 "governed_rule": None if governed_rule is None else governed_rule.to_dict(),
             },
@@ -121,6 +141,95 @@ class LivestockDossierTemplate:
             "breed": animal.get("breed"),
             "identity_source": "fact_snapshot",
         }
+
+    def _coverage(self, evaluation: Evaluation) -> dict[str, Any]:
+        coverage = _fact_payload(evaluation, HISTORY_COVERAGE_FACT_TYPE)
+        if not coverage:
+            return {
+                "status": "NAO_DECLARADA",
+                "basis": None,
+                "known_from": None,
+                "known_until": None,
+                "has_declared_gaps": False,
+                "gaps": [],
+                "declared_scope": "LOCAL_ONLY",
+            }
+        return {
+            "status": coverage.get("coverage_status", "DECLARED"),
+            "basis": coverage.get("basis"),
+            "known_from": coverage.get("known_from"),
+            "known_until": coverage.get("known_until"),
+            "transfer_effective_at": coverage.get("transfer_effective_at"),
+            "source_artifact_id": coverage.get("source_artifact_id"),
+            "source_counterparty_id": coverage.get("source_counterparty_id"),
+            "has_declared_gaps": bool(coverage.get("has_declared_gaps", False)),
+            "gaps": list(coverage.get("gaps", [])),
+            "declared_scope": (
+                "TRANSFER_DECLARED_PARTIAL"
+                if coverage.get("basis") == "received_transfer_artifact"
+                else "DECLARED"
+            ),
+        }
+
+    def _imported_material(
+        self,
+        evaluation: Evaluation,
+        withdrawal: dict[str, Any],
+    ) -> dict[str, Any]:
+        imported_facts = [
+            fact
+            for fact in evaluation.fact_snapshot.facts
+            if fact.payload.get("origin") == "IMPORTED_ASSERTION"
+        ]
+        contribution_sources = [
+            contribution
+            for contribution in withdrawal.get("contributions", [])
+            if contribution.get("origin") == "IMPORTED_ASSERTION"
+        ]
+        return {
+            "has_imported_facts": bool(imported_facts),
+            "imported_fact_count": len(imported_facts),
+            "imported_withdrawal_contribution_count": len(contribution_sources),
+            "source_artifact_ids": sorted(
+                {
+                    str(fact.payload.get("source_artifact_id"))
+                    for fact in imported_facts
+                    if fact.payload.get("source_artifact_id")
+                }
+            ),
+            "declared_scope": (
+                "IMPORTED_AND_LOCAL"
+                if imported_facts
+                else "LOCAL_ONLY"
+            ),
+        }
+
+    def _declared_limitations(
+        self,
+        evaluation: Evaluation,
+        withdrawal: dict[str, Any],
+    ) -> list[str]:
+        limitations = list(evaluation.fact_snapshot.knowledge_limitations)
+        coverage = self._coverage(evaluation)
+        if coverage["status"] == "NAO_DECLARADA":
+            limitations.append(
+                "Cobertura sanitaria vitalicia nao declarada; este dossie prova apenas o material "
+                "disponivel localmente no snapshot."
+            )
+        if coverage["has_declared_gaps"]:
+            limitations.append(
+                "Cobertura sanitaria parcial declarada; "
+                "lacunas permanecem explicitamente abertas no dossie."
+            )
+        if any(
+            contribution.get("origin") == "IMPORTED_ASSERTION"
+            for contribution in withdrawal.get("contributions", [])
+        ):
+            limitations.append(
+                "Contribuicoes importadas permanecem apresentadas como "
+                "afirmacoes importadas, nao como observacao local."
+            )
+        return limitations
 
     def _evidence_chain(
         self, organization_id: OrganizationId, withdrawal: dict[str, Any]

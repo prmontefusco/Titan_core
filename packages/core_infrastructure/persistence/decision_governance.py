@@ -384,6 +384,57 @@ class TransactionalDecisionGovernanceRepository:
             created_at=created_at,
         )
 
+    def latest_proposal_for_evaluation(
+        self,
+        organization_id: OrganizationId,
+        evaluation_id: TypedId,
+        purpose: str,
+    ) -> DecisionProposal | None:
+        row = self.connection.execute(
+            text(
+                """
+                SELECT proposal_id,
+                       record_owner_organization_id,
+                       evaluation_id,
+                       evaluation_hash,
+                       proposed_result,
+                       proposed_reasons,
+                       purpose,
+                       justification_required,
+                       created_at
+                  FROM core_audit.decision_proposals
+                 WHERE record_owner_organization_id = :org_id
+                   AND evaluation_id = :evaluation_id
+                   AND purpose = :purpose
+                 ORDER BY created_at DESC, proposal_id DESC
+                 LIMIT 1
+                """
+            ),
+            {
+                "org_id": organization_id.value,
+                "evaluation_id": evaluation_id.value,
+                "purpose": purpose,
+            },
+        ).first()
+        if row is None:
+            return None
+        created_at = (
+            row.created_at.replace(tzinfo=UTC) if row.created_at.tzinfo is None else row.created_at
+        )
+        return DecisionProposal(
+            proposal_id=TypedId(entity_type="decision_proposal", value=row.proposal_id),
+            organization_id=OrganizationId(row.record_owner_organization_id),
+            evaluation_id=TypedId(entity_type="evaluation", value=row.evaluation_id),
+            evaluation_hash=row.evaluation_hash,
+            proposed_result=DecisionResult(row.proposed_result),
+            proposed_reasons=tuple(
+                DecisionReason.from_dict(item) for item in _loaded(row.proposed_reasons)
+            ),
+            purpose=row.purpose,
+            justification_required=row.justification_required,
+            created_at=created_at,
+        )
+
     def save_review(self, review: DecisionReview) -> None:
         self.connection.execute(
             text(
