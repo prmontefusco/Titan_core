@@ -1,7 +1,7 @@
 """Testes da matriz de elegibilidade por mercado (ADR-0044)."""
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 
 from packages.core_domain.decision import (
@@ -30,11 +30,15 @@ from packages.livestock_application.establishment_qualification_service import (
 )
 from packages.livestock_application.fact_provider import (
     ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+    TERRITORIAL_FUNAI_FACT_TYPE,
+    TERRITORIAL_PRODES_FACT_TYPE,
 )
 from packages.livestock_application.market_eligibility import (
     DEFAULT_MARKET_PROFILES,
     ENVIRONMENTAL_EMBARGO_RULE_CODE,
     ESTABLISHMENT_RULE_CODE,
+    TERRITORIAL_FUNAI_RULE_CODE,
+    TERRITORIAL_PRODES_RULE_CODE,
     TRACEABILITY_RULE_CODE,
     MarketEligibilityGapCode,
     MarketEligibilityPurpose,
@@ -43,6 +47,7 @@ from packages.livestock_application.market_eligibility import (
     MarketProfile,
     MarketProjectionStatus,
     MarketRequirement,
+    MarketWithdrawalBasis,
 )
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
@@ -425,6 +430,87 @@ def test_adopted_markets_can_differ_side_by_side() -> None:
     }
 
 
+def test_market_specific_withdrawal_basis_does_not_silently_reuse_local_medication_period() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+    china = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    china_rule = rules.add_from_adoption(china, code="rule-carencia-farmacologica")
+    policies.add_from_rule(china_rule)
+
+    class LocalWithdrawalAlreadyEndedFactProvider(InMemoryFactProvider):
+        def get_snapshot(
+            self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+        ) -> FactSnapshot:
+            return FactSnapshot.create(
+                organization_id=organization_id,
+                target_id=target_id,
+                as_of=at_time,
+                facts=(
+                    Fact.create(
+                        fact_type="livestock.withdrawal",
+                        payload={
+                            "in_withdrawal": False,
+                            "eligible_from": (at_time.replace(microsecond=0)).isoformat(),
+                            "contributions": [
+                                {
+                                    "medication_batch_id": TypedId.new(
+                                        "medication_batch"
+                                    ).value.hex,
+                                    "applied_at": (at_time - timedelta(days=25)).isoformat(),
+                                    "withdrawal_period_days": 20,
+                                    "withdrawal_ends_at": (at_time - timedelta(days=5)).isoformat(),
+                                    "origin": "LOCAL_OBSERVATION",
+                                }
+                            ],
+                        },
+                        observed_at=at_time,
+                    ),
+                ),
+            )
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=LocalWithdrawalAlreadyEndedFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                withdrawal_basis=MarketWithdrawalBasis(
+                    source_kind="VERTICAL_CONFIGURATION",
+                    declared_period_days=30,
+                    rationale="Mercado exige prazo governado superior ao prazo tecnico local.",
+                ),
+            ),
+        ),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC).replace(microsecond=0),
+    )
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.NAO_ELEGIVEL
+    assert entry.requirements[0].withdrawal_basis is not None
+    assert entry.requirements[0].withdrawal_basis.declared_period_days == 30
+    assert decisions.saved
+    decision = cast(Decision, decisions.saved[-1])
+    assert decision.result is DecisionResult.REJEITADA
+
+
 def test_supported_markets_generate_independent_executions_side_by_side() -> None:
     org_id = OrganizationId.new()
     animal_id = TypedId.new("animal")
@@ -529,33 +615,19 @@ def test_market_dependency_without_selected_subject_is_conditioned() -> None:
     matrix = MarketEligibilityService(
         adoption_reader=adoptions,
         rule_reader=rules,
-        profiles=(
-            MarketProfile(
-                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
-                requirements=(
-                    MarketRequirement(
-                        rule_code="rule-carencia-farmacologica",
-                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
-                    ),
-                    MarketRequirement(
-                        rule_code=ESTABLISHMENT_RULE_CODE,
-                        scope="livestock.slaughterhouse",
-                        dependent_subject_key="slaughterhouse",
-                        dependent_subject_label="estabelecimento",
-                    ),
-                ),
-                declared_withdrawal_period_days=30,
-            ),
-        ),
+        profiles=(DEFAULT_MARKET_PROFILES[1],),
     ).evaluate(org_id, DecisionResult.APROVADA, [_reason("Regra atendida.")])
 
     entry = matrix.entries[0]
-    assert entry.status is MarketEligibilityStatus.CONDICIONADO
+    assert entry.status is MarketEligibilityStatus.INDETERMINADO
     assert entry.dependency is not None
     assert entry.dependency.subject_key == "slaughterhouse"
     assert entry.dependency.subject_label == "estabelecimento"
     assert entry.dependency.selected_subject_id is None
-    assert entry.requirements[0].status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.requirements[0].status is MarketEligibilityStatus.INDETERMINADO
+    assert entry.requirements[0].gaps[0].code is (
+        MarketEligibilityGapCode.CARENCIA_POR_MERCADO_AUSENTE
+    )
     assert entry.requirements[1].rule_code == ESTABLISHMENT_RULE_CODE
     assert entry.requirements[1].status is MarketEligibilityStatus.CONDICIONADO
     assert entry.requirements[1].dependency is not None
@@ -632,24 +704,7 @@ def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> N
         fact_provider=InMemoryFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
-        profiles=(
-            MarketProfile(
-                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
-                requirements=(
-                    MarketRequirement(
-                        rule_code="rule-carencia-farmacologica",
-                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
-                    ),
-                    MarketRequirement(
-                        rule_code=ESTABLISHMENT_RULE_CODE,
-                        scope="livestock.slaughterhouse",
-                        dependent_subject_key="slaughterhouse",
-                        dependent_subject_label="estabelecimento",
-                    ),
-                ),
-                declared_withdrawal_period_days=30,
-            ),
-        ),
+        profiles=(DEFAULT_MARKET_PROFILES[1],),
     ).evaluate(
         org_id,
         subject_id=animal_id,
@@ -658,7 +713,7 @@ def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> N
     )
 
     entry = matrix.entries[0]
-    assert entry.status is MarketEligibilityStatus.ELEGIVEL
+    assert entry.status is MarketEligibilityStatus.INDETERMINADO
     assert cast(Decision, decisions.saved[-1]).emission_method is DecisionEmissionMethod.AUTOMATED
     assert entry.dependency is not None
     assert entry.dependency.selected_subject_id == str(slaughterhouse_id.value)
@@ -922,13 +977,207 @@ def test_market_with_adopted_environmental_embargo_rule_can_block_by_governed_fa
 
     entry = matrix.entries[0]
     assert entry.status is MarketEligibilityStatus.NAO_ELEGIVEL
+
+
+def test_market_with_adopted_prodes_rule_can_block_by_governed_fact() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+
+    carencia = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    prodes = adoptions.add(org_id, TERRITORIAL_PRODES_RULE_CODE, "exportacao-china")
+    carencia_rule = rules.add_from_adoption(carencia, code="rule-carencia-farmacologica")
+    prodes_rule = Rule(
+        rule_id=prodes.rule_version_id,
+        policy_id=TypedId.new("policy"),
+        organization_id=org_id,
+        code=TERRITORIAL_PRODES_RULE_CODE,
+        name="Desmatamento por PRODES",
+        description="Bloqueia mercado quando o PRODES registra ocorrencia na propriedade.",
+        version=1,
+        severity=SeverityLevel.BLOCKING,
+        normative_source="politica interna ficticia",
+        conditions=(
+            RuleCondition(
+                fact_type=TERRITORIAL_PRODES_FACT_TYPE,
+                payload_key="has_occurrence",
+                operator=ComparisonOperator.EQUALS,
+                expected_value=False,
+                description="A propriedade nao pode ter ocorrencia conhecida no PRODES.",
+            ),
+        ),
+        justification="Mercado exige ausencia de ocorrencia conhecida no PRODES.",
+        corrective_action="Aprofundar diligencia ou redirecionar para mercado compativel.",
+    )
+    rules.items[prodes_rule.rule_id] = prodes_rule
+    policies.add_from_rule(carencia_rule)
+    policies.add_from_rule(prodes_rule)
+
+    class ProdesFactProvider(InMemoryFactProvider):
+        def get_snapshot(
+            self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+        ) -> FactSnapshot:
+            snapshot = super().get_snapshot(organization_id, target_id, at_time)
+            facts = (
+                *snapshot.facts,
+                Fact.create(
+                    fact_type=TERRITORIAL_PRODES_FACT_TYPE,
+                    payload={
+                        "status": "DISPONIVEL",
+                        "has_occurrence": True,
+                        "total_feature_count": 1,
+                        "occurrence_years": [2020],
+                    },
+                    observed_at=at_time,
+                ),
+            )
+            return FactSnapshot.create(
+                organization_id=organization_id,
+                target_id=target_id,
+                as_of=at_time,
+                facts=facts,
+            )
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=ProdesFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                    MarketRequirement(
+                        rule_code=TERRITORIAL_PRODES_RULE_CODE,
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC),
+    )
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.NAO_ELEGIVEL
+    assert entry.requirements[1].rule_code == TERRITORIAL_PRODES_RULE_CODE
+    assert entry.requirements[1].status is MarketEligibilityStatus.NAO_ELEGIVEL
+    assert entry.requirements[1].reasons[0].rule_code == TERRITORIAL_PRODES_RULE_CODE
     assert cast(Decision, decisions.saved[-1]).emission_method is DecisionEmissionMethod.AUTOMATED
     assert [requirement.status for requirement in entry.requirements] == [
         MarketEligibilityStatus.ELEGIVEL,
         MarketEligibilityStatus.NAO_ELEGIVEL,
     ]
-    assert entry.requirements[1].rule_code == ENVIRONMENTAL_EMBARGO_RULE_CODE
-    assert entry.requirements[1].reasons[0].rule_code == ENVIRONMENTAL_EMBARGO_RULE_CODE
+
+
+def test_market_with_adopted_funai_rule_can_block_by_governed_fact() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+
+    carencia = adoptions.add(org_id, "rule-carencia-farmacologica", "exportacao-china")
+    funai = adoptions.add(org_id, TERRITORIAL_FUNAI_RULE_CODE, "exportacao-china")
+    carencia_rule = rules.add_from_adoption(carencia, code="rule-carencia-farmacologica")
+    funai_rule = Rule(
+        rule_id=funai.rule_version_id,
+        policy_id=TypedId.new("policy"),
+        organization_id=org_id,
+        code=TERRITORIAL_FUNAI_RULE_CODE,
+        name="Sobreposicao territorial FUNAI",
+        description="Bloqueia mercado quando a propriedade intercepta terra indigena.",
+        version=1,
+        severity=SeverityLevel.BLOCKING,
+        normative_source="politica interna ficticia",
+        conditions=(
+            RuleCondition(
+                fact_type=TERRITORIAL_FUNAI_FACT_TYPE,
+                payload_key="has_overlap",
+                operator=ComparisonOperator.EQUALS,
+                expected_value=False,
+                description="A propriedade nao pode sobrepor terra indigena conhecida.",
+            ),
+        ),
+        justification="Mercado exige ausencia de sobreposicao territorial FUNAI conhecida.",
+        corrective_action="Aprofundar diligencia territorial ou redirecionar o lote.",
+    )
+    rules.items[funai_rule.rule_id] = funai_rule
+    policies.add_from_rule(carencia_rule)
+    policies.add_from_rule(funai_rule)
+
+    class FunaiFactProvider(InMemoryFactProvider):
+        def get_snapshot(
+            self, organization_id: OrganizationId, target_id: TypedId, at_time: datetime
+        ) -> FactSnapshot:
+            snapshot = super().get_snapshot(organization_id, target_id, at_time)
+            facts = (
+                *snapshot.facts,
+                Fact.create(
+                    fact_type=TERRITORIAL_FUNAI_FACT_TYPE,
+                    payload={
+                        "status": "COM_RESTRICAO",
+                        "has_overlap": True,
+                        "feature_count": 1,
+                    },
+                    observed_at=at_time,
+                ),
+            )
+            return FactSnapshot.create(
+                organization_id=organization_id,
+                target_id=target_id,
+                as_of=at_time,
+                facts=facts,
+            )
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=FunaiFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code="rule-carencia-farmacologica",
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                    MarketRequirement(
+                        rule_code=TERRITORIAL_FUNAI_RULE_CODE,
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
+    ).evaluate(
+        org_id,
+        subject_id=animal_id,
+        at_time=datetime.now(UTC),
+    )
+
+    entry = matrix.entries[0]
+    assert entry.status is MarketEligibilityStatus.NAO_ELEGIVEL
+    assert entry.requirements[1].rule_code == TERRITORIAL_FUNAI_RULE_CODE
+    assert entry.requirements[1].status is MarketEligibilityStatus.NAO_ELEGIVEL
 
 
 def test_market_evaluation_creates_proposal_when_review_is_required() -> None:

@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, Query, status
 from pydantic import BaseModel
 from sqlalchemy import Connection
 
+from apps.api.geodata_dependencies import car_lookup_opcional
 from apps.api.livestock_dependencies import (
     ConnectionDependency,
     require_permission,
@@ -90,6 +91,12 @@ from packages.livestock_application.market_eligibility import (
     MarketEligibilityService,
     MarketProfile,
 )
+from packages.livestock_application.territorial_overlap_service import (
+    TerritorialOverlapService,
+)
+from packages.livestock_application.territorial_timeline_service import (
+    TerritorialTimelineService,
+)
 from packages.livestock_application.timeline_service import (
     LivestockTimelineService,
     TimelineCutoff,
@@ -118,6 +125,9 @@ from packages.livestock_infrastructure.persistence.establishment_qualification_r
 )
 from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
     TransactionalExternalCounterpartyRepository,
+)
+from packages.livestock_infrastructure.persistence.geometry_repository import (
+    TransactionalPropertyGeometryRepository,
 )
 from packages.livestock_infrastructure.persistence.imported_fact_repository import (
     TransactionalImportedLivestockFactRepository,
@@ -452,6 +462,7 @@ def _eligibility_components(
     batch_repository = TransactionalMedicationBatchRepository(connection=connection)
     evaluations = TransactionalEvaluationRepository(connection=connection)
     decisions = TransactionalDecisionRepository(connection=connection)
+    geodata = car_lookup_opcional()
     fact_provider = LivestockFactProvider(
         property_repository=TransactionalRuralPropertyRepository(connection=connection),
         animal_repository=animal_repository,
@@ -470,6 +481,9 @@ def _eligibility_components(
         imported_fact_repository=TransactionalImportedLivestockFactRepository(
             connection=connection
         ),
+        transfer_artifact_repository=TransactionalReceivedTransferArtifactRepository(
+            connection=connection
+        ),
         stay_repository=TransactionalPropertyStayRepository(connection=connection),
         withdrawal_calculator=WithdrawalCalculator(
             application_repository=application_repository,
@@ -478,13 +492,28 @@ def _eligibility_components(
         ),
         sanitary_campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
         treatment_application_repository=application_repository,
+        territorial_timeline_service=(
+            TerritorialTimelineService(
+                property_repository=TransactionalRuralPropertyRepository(connection=connection),
+                geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+                geodata_lookup=geodata,
+            )
+            if geodata is not None
+            else None
+        ),
+        territorial_overlap_service=(
+            TerritorialOverlapService(
+                property_repository=TransactionalRuralPropertyRepository(connection=connection),
+                geometry_repository=TransactionalPropertyGeometryRepository(connection=connection),
+                geodata_lookup=geodata,
+            )
+            if geodata is not None
+            else None
+        ),
         # Necessário para a elegibilidade de LOTE (rule-carencia-lote): sem o
         # repositório de vínculos, o fact_provider não consegue enumerar quem
         # está no lote para computar has_animal_in_withdrawal/blocking_animals.
         membership_repository=TransactionalLotMembershipRepository(connection=connection),
-        transfer_artifact_repository=TransactionalReceivedTransferArtifactRepository(
-            connection=connection
-        ),
     )
     return application_repository, evaluations, decisions, fact_provider
 
@@ -587,7 +616,9 @@ def _perfil_mercado_response(profile: MarketProfile) -> PerfilMercadoResponse:
     return PerfilMercadoResponse(
         market=profile.market.code,
         declared_withdrawal_period_days=profile.declared_withdrawal_period_days,
-        withdrawal_basis=None,
+        withdrawal_basis=(
+            None if profile.withdrawal_basis is None else profile.withdrawal_basis.to_dict()
+        ),
         requirements=[
             PerfilMercadoRequisitoResponse(
                 rule_code=requirement.rule_code,
@@ -1408,20 +1439,36 @@ def _executar_avaliacao_orientada_a_mercado(
         )
         if persisted_evaluation is None or persisted_decision is None:
             raise RuntimeError("A matriz registrou uma avaliacao por mercado sem persistencia.")
-        evaluation = persisted_evaluation
-        decision = persisted_decision
-        if executed_requirement.governed_rule is None:
-            raise RuntimeError("A matriz executou requisito sem regra governada associada.")
-        persisted_rule = rule_repository.get_by_id(
-            executed_requirement.governed_rule.rule_version_id
-        )
-        if persisted_rule is None:
-            raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
-        persisted_policy = policy_repository.get_by_id(persisted_rule.policy_id)
-        if persisted_policy is None:
-            raise RuntimeError("A matriz executou requisito com policy ausente.")
-        policy = persisted_policy
-        rule = persisted_rule
+        if persisted_evaluation.subject_id != animal_id:
+            try:
+                evaluation, decision = PharmacologicalEligibilityService(
+                    fact_provider=fact_provider,
+                    policy=policy,
+                    rule=rule,
+                    evaluation_repository=evaluations,
+                    decision_repository=decisions,
+                    authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                        connection
+                    ),
+                    governance_repository=TransactionalDecisionGovernanceRepository(connection),
+                ).evaluate_animal(organizacao, animal_id, instante)
+            except HumanReviewRequired as exc:
+                raise _human_review_problem(exc) from exc
+        else:
+            evaluation = persisted_evaluation
+            decision = persisted_decision
+            if executed_requirement.governed_rule is None:
+                raise RuntimeError("A matriz executou requisito sem regra governada associada.")
+            persisted_rule = rule_repository.get_by_id(
+                executed_requirement.governed_rule.rule_version_id
+            )
+            if persisted_rule is None:
+                raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
+            persisted_policy = policy_repository.get_by_id(persisted_rule.policy_id)
+            if persisted_policy is None:
+                raise RuntimeError("A matriz executou requisito com policy ausente.")
+            policy = persisted_policy
+            rule = persisted_rule
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),
@@ -1848,22 +1895,35 @@ def executar_matriz_de_mercado(
         )
         if persisted_evaluation is None or persisted_decision is None:
             raise RuntimeError("A matriz registrou uma avaliacao por mercado sem persistencia.")
-        evaluation = persisted_evaluation
-        decision = persisted_decision
-        if executed_requirement.governed_rule is None:
-            raise RuntimeError("A matriz executou requisito sem regra governada associada.")
-        persisted_rule = TransactionalRuleRepository(connection=connection).get_by_id(
-            executed_requirement.governed_rule.rule_version_id
-        )
-        if persisted_rule is None:
-            raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
-        persisted_policy = TransactionalPolicyRepository(connection=connection).get_by_id(
-            persisted_rule.policy_id
-        )
-        if persisted_policy is None:
-            raise RuntimeError("A matriz executou requisito com policy ausente.")
-        policy = persisted_policy
-        rule = persisted_rule
+        if persisted_evaluation.subject_id != alvo:
+            evaluation, decision = PharmacologicalEligibilityService(
+                fact_provider=fact_provider,
+                policy=policy,
+                rule=rule,
+                evaluation_repository=evaluations,
+                decision_repository=decisions,
+                authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                    connection
+                ),
+                governance_repository=TransactionalDecisionGovernanceRepository(connection),
+            ).evaluate_animal(organizacao, alvo, instante)
+        else:
+            evaluation = persisted_evaluation
+            decision = persisted_decision
+            if executed_requirement.governed_rule is None:
+                raise RuntimeError("A matriz executou requisito sem regra governada associada.")
+            persisted_rule = TransactionalRuleRepository(connection=connection).get_by_id(
+                executed_requirement.governed_rule.rule_version_id
+            )
+            if persisted_rule is None:
+                raise RuntimeError("A matriz executou requisito com regra publicada ausente.")
+            persisted_policy = TransactionalPolicyRepository(connection=connection).get_by_id(
+                persisted_rule.policy_id
+            )
+            if persisted_policy is None:
+                raise RuntimeError("A matriz executou requisito com policy ausente.")
+            policy = persisted_policy
+            rule = persisted_rule
 
     dossier = LivestockDossierTemplate(
         timeline_service=_timeline_service(connection),
