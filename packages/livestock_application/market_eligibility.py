@@ -38,9 +38,9 @@ from packages.shared_kernel import OrganizationId, TypedId
 TRACEABILITY_RULE_CODE = "rule-rastreabilidade-minima"
 ESTABLISHMENT_RULE_CODE = "rule-habilitacao-estabelecimento"
 ENVIRONMENTAL_EMBARGO_RULE_CODE = "rule-embargo-ambiental-ibama"
-TERRITORIAL_PRODES_RULE_CODE = "rule-territorial-prodes"
-TERRITORIAL_DETER_RULE_CODE = "rule-territorial-deter"
-TERRITORIAL_FUNAI_RULE_CODE = "rule-territorial-funai"
+TERRITORIAL_PRODES_RULE_CODE = "rule-desmatamento-prodes"
+TERRITORIAL_DETER_RULE_CODE = "rule-alerta-deter"
+TERRITORIAL_FUNAI_RULE_CODE = "rule-sobreposicao-funai"
 # Regra governada de exigibilidade sanitária (Item 4 da fila do backend).
 # Qual campanha um mercado exige vive na RuleCondition da versão adotada
 # (fact_type=sanitary_requirement_fact_type("<campanha>")), não aqui — o

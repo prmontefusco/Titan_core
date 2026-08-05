@@ -188,7 +188,7 @@ def _montar_roteiro(
             if {"livestock.territorial.prodes", "livestock.territorial.deter"}.issubset(
                 {item.get("fact_type") for item in r["fact_types"]}
             )
-            and {"rule-territorial-prodes", "rule-territorial-deter"}.issubset(
+            and {"rule-desmatamento-prodes", "rule-alerta-deter"}.issubset(
                 {item.get("rule_code") for item in r["templates"]}
             )
             else "catalogo nao publicou os fatos ou templates governaveis territoriais"
