@@ -29,6 +29,8 @@ from packages.livestock_infrastructure.geodata import (
     CarLayer,
     CarProperty,
     SpatialRestrictionAssessment,
+    TerritorialOverlapAssessment,
+    TerritorialTimelineAssessment,
 )
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.conftest import FakeEventLog
@@ -116,6 +118,34 @@ class FakeCarLookup:
         self, *, polygon_payload: str, srid: int = 4326
     ) -> SpatialRestrictionAssessment:
         raise AssertionError("Nao deveria consultar embargos do IBAMA nesta importacao.")
+
+    def fetch_prodes_timeline(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> TerritorialTimelineAssessment:
+        raise AssertionError("Nao deveria consultar a timeline PRODES nesta importacao.")
+
+    def fetch_deter_timeline(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> TerritorialTimelineAssessment:
+        raise AssertionError("Nao deveria consultar a timeline DETER nesta importacao.")
+
+    def fetch_funai_overlap(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+    ) -> TerritorialOverlapAssessment:
+        raise AssertionError("Nao deveria consultar sobreposicao FUNAI nesta importacao.")
 
 
 def _camada(nome: str, payload: str) -> CarLayer:

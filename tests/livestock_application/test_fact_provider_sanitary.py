@@ -25,6 +25,18 @@ from packages.livestock_application.fact_provider import (
 )
 from packages.livestock_application.movement_service import PropertyStayRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
+from packages.livestock_application.territorial_overlap_service import (
+    PropertyTerritorialOverlapAssessment,
+    TerritorialOverlapGap,
+    TerritorialOverlapGapCode,
+    TerritorialOverlapStatus,
+)
+from packages.livestock_application.territorial_timeline_service import (
+    PropertyTerritorialTimelineAssessment,
+    TerritorialTimelineGap,
+    TerritorialTimelineGapCode,
+    TerritorialTimelineStatus,
+)
 from packages.livestock_domain.animal import Animal, AnimalSex
 from packages.livestock_domain.environmental_embargo_assertion import (
     EnvironmentalEmbargoAssertionStatus,
@@ -203,8 +215,8 @@ class _TerritorialTimelineServiceFake:
     def __init__(
         self,
         *,
-        prodes: object,
-        deter: object,
+        prodes: PropertyTerritorialTimelineAssessment,
+        deter: PropertyTerritorialTimelineAssessment,
     ) -> None:
         self.prodes = prodes
         self.deter = deter
@@ -216,7 +228,7 @@ class _TerritorialTimelineServiceFake:
         *,
         year_from: int | None = None,
         year_to: int | None = None,
-    ) -> object:
+    ) -> PropertyTerritorialTimelineAssessment:
         return self.prodes
 
     def assess_deter_timeline(
@@ -226,19 +238,19 @@ class _TerritorialTimelineServiceFake:
         *,
         year_from: int | None = None,
         year_to: int | None = None,
-    ) -> object:
+    ) -> PropertyTerritorialTimelineAssessment:
         return self.deter
 
 
 class _TerritorialOverlapServiceFake:
-    def __init__(self, *, funai: object) -> None:
+    def __init__(self, *, funai: PropertyTerritorialOverlapAssessment) -> None:
         self.funai = funai
 
     def assess_funai_overlap(
         self,
         organization_id: OrganizationId,
         property_id: TypedId,
-    ) -> object:
+    ) -> PropertyTerritorialOverlapAssessment:
         return self.funai
 
 
@@ -337,40 +349,39 @@ def _territorial_assessment(
     layer: str,
     status: str = "DISPONIVEL",
     feature_count: int = 1,
-) -> object:
-    class _Gap:
-        def __init__(self, code: str, message: str) -> None:
-            self._payload = {"code": code, "message": message}
-
-        def to_dict(self) -> dict[str, str]:
-            return dict(self._payload)
-
-    class _Assessment:
-        def __init__(self) -> None:
-            self.property_id = property_id
-            self.geometry_id = TypedId.new("property_geometry")
-            self.geometry_version = 4
-            self.external_reference = "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
-            self.source = "INPE/TerraBrasilis"
-            self.layer = layer
-            self.status = type("_Status", (), {"value": status})()
-            self.property_area_hectares = 1500.5
-            self.year_from = 2020
-            self.year_to = 2021
-            self.years = tuple(
-                {
-                    "year": 2020,
-                    "feature_count": feature_count,
-                    "overlap_area_hectares": 8.25,
-                    "source_area_hectares": 12.5,
-                    "version_ids": [f"{layer.lower()}_v1"],
-                }
-                for _ in range(1)
+) -> PropertyTerritorialTimelineAssessment:
+    return PropertyTerritorialTimelineAssessment(
+        property_id=property_id,
+        geometry_id=TypedId.new("property_geometry"),
+        geometry_version=4,
+        external_reference="MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E",
+        source="INPE/TerraBrasilis",
+        layer=layer,
+        status=TerritorialTimelineStatus(status),
+        property_area_hectares=1500.5,
+        year_from=2020,
+        year_to=2021,
+        years=(
+            {
+                "year": 2020,
+                "feature_count": feature_count,
+                "overlap_area_hectares": 8.25,
+                "source_area_hectares": 12.5,
+                "version_ids": [f"{layer.lower()}_v1"],
+            },
+        ),
+        response_digest="f" * 64,
+        gaps=(
+            ()
+            if status == "DISPONIVEL"
+            else (
+                TerritorialTimelineGap(
+                    code=TerritorialTimelineGapCode.REFERENCIA_EXTERNA_AUSENTE,
+                    message="sem dados",
+                ),
             )
-            self.response_digest = "f" * 64
-            self.gaps = () if status == "DISPONIVEL" else (_Gap("LACUNA", "sem dados"),)
-
-    return _Assessment()
+        ),
+    )
 
 
 def _territorial_overlap_assessment(
@@ -378,32 +389,32 @@ def _territorial_overlap_assessment(
     *,
     status: str = "COM_RESTRICAO",
     feature_count: int = 1,
-) -> object:
-    class _Gap:
-        def __init__(self, code: str, message: str) -> None:
-            self._payload = {"code": code, "message": message}
-
-        def to_dict(self) -> dict[str, str]:
-            return dict(self._payload)
-
-    class _Assessment:
-        def __init__(self) -> None:
-            self.property_id = property_id
-            self.geometry_id = TypedId.new("property_geometry")
-            self.geometry_version = 5
-            self.external_reference = "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
-            self.source = "FUNAI"
-            self.layer = "FUNAI_TI"
-            self.label = "Terras Indigenas (FUNAI)"
-            self.status = type("_Status", (), {"value": status})()
-            self.feature_count = feature_count
-            self.area_hectares = 12.5
-            self.source_area_hectares = 80.0
-            self.version_ids = ("funai_v1",)
-            self.response_digest = "d" * 64
-            self.gaps = () if status != "INDETERMINADA" else (_Gap("LACUNA", "sem dados"),)
-
-    return _Assessment()
+) -> PropertyTerritorialOverlapAssessment:
+    return PropertyTerritorialOverlapAssessment(
+        property_id=property_id,
+        geometry_id=TypedId.new("property_geometry"),
+        geometry_version=5,
+        external_reference="MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E",
+        source="FUNAI",
+        layer="FUNAI_TI",
+        label="Terras Indigenas (FUNAI)",
+        status=TerritorialOverlapStatus(status),
+        feature_count=feature_count,
+        area_hectares=12.5,
+        source_area_hectares=80.0,
+        version_ids=("funai_v1",),
+        response_digest="d" * 64,
+        gaps=(
+            ()
+            if status != "INDETERMINADA"
+            else (
+                TerritorialOverlapGap(
+                    code=TerritorialOverlapGapCode.REFERENCIA_EXTERNA_AUSENTE,
+                    message="sem dados",
+                ),
+            )
+        ),
+    )
 
 
 def test_sanitary_requirement_fact_type_normaliza_o_codigo() -> None:

@@ -15,6 +15,8 @@ from packages.livestock_infrastructure.geodata import (
     CarProperty,
     SpatialRestriction,
     SpatialRestrictionAssessment,
+    TerritorialOverlapAssessment,
+    TerritorialTimelineAssessment,
 )
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -103,6 +105,34 @@ class FakeGeodata:
         self.last_polygon_payload = polygon_payload
         self.last_srid = srid
         return self.assessment
+
+    def fetch_prodes_timeline(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> TerritorialTimelineAssessment:
+        raise AssertionError("Nao deveria consultar a timeline PRODES nesta avaliacao.")
+
+    def fetch_deter_timeline(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> TerritorialTimelineAssessment:
+        raise AssertionError("Nao deveria consultar a timeline DETER nesta avaliacao.")
+
+    def fetch_funai_overlap(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+    ) -> TerritorialOverlapAssessment:
+        raise AssertionError("Nao deveria consultar sobreposicao FUNAI nesta avaliacao.")
 
 
 def _property(org_id: OrganizationId, property_id: TypedId) -> RuralProperty:
