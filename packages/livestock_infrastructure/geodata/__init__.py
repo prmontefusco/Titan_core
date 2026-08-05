@@ -10,9 +10,13 @@ from packages.livestock_infrastructure.geodata.car_client import (
     GeodataNaoConfigurado,
     SpatialRestriction,
     SpatialRestrictionAssessment,
+    TerritorialOverlapAssessment,
+    TerritorialTimelineAssessment,
+    TerritorialTimelineYear,
     interpretar_camada,
     interpretar_resposta,
     interpretar_restricoes_espaciais,
+    interpretar_timeline_territorial,
 )
 
 __all__ = [
@@ -25,7 +29,11 @@ __all__ = [
     "GeodataNaoConfigurado",
     "SpatialRestriction",
     "SpatialRestrictionAssessment",
+    "TerritorialOverlapAssessment",
+    "TerritorialTimelineAssessment",
+    "TerritorialTimelineYear",
     "interpretar_camada",
     "interpretar_restricoes_espaciais",
     "interpretar_resposta",
+    "interpretar_timeline_territorial",
 ]

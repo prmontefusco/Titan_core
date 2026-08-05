@@ -69,6 +69,12 @@ from packages.core_application.nonconformity_service import (
     NonConformityRepositoryPort,
     NonConformityService,
 )
+from packages.core_application.operational_support import (
+    OperationalDiagnosticCondition,
+    OperationalSupportRepositoryPort,
+    OperationalSupportService,
+    OperationalSupportSummary,
+)
 from packages.core_application.organization_context import (
     IdentityAndAccessReader,
     OrganizationContextDenied,
@@ -182,6 +188,10 @@ __all__ = [
     "IdempotencyService",
     "OrganizationContextDenied",
     "OrganizationContextService",
+    "OperationalDiagnosticCondition",
+    "OperationalSupportRepositoryPort",
+    "OperationalSupportService",
+    "OperationalSupportSummary",
     "EventOutboxService",
     "BrokerPublicationResult",
     "BrokerPublicationStatus",

@@ -163,29 +163,19 @@ class TransactionalEventOutboxRepository:
         ):
             raise ValueError("EVENT_OUTBOX_DIVERGENTE")
         DomainEventRepository(self.connection).append(event)
-        self.connection.execute(
-            insert(outbox_messages_table).values(
-                message_id=message.message_id.value,
-                record_owner_organization_id=message.organization_id.value,
-                kind=message.kind.value,
-                contract_type=message.contract_type,
-                contract_version=message.contract_version,
-                actor_type=message.actor_reference.target_id.entity_type,
-                actor_id=message.actor_reference.target_id.value,
-                producer_type=message.producer_reference.target_id.entity_type,
-                producer_id=message.producer_reference.target_id.value,
-                occurred_at=message.timestamps.occurred_at,
-                recorded_at=message.timestamps.recorded_at,
-                correlation_id=message.correlation_id.value,
-                causation_id=message.causation_id.value,
-                idempotency_key=message.idempotency_key,
-                payload_schema=message.payload.schema,
-                payload_version=message.payload.version,
-                payload_canonical_bytes=message.payload.canonical_bytes,
-                classification=message.classification,
-                status="PENDENTE",
-            )
-        )
+        self.connection.execute(insert(outbox_messages_table).values(_outbox_values(message)))
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalOutboxMessageWriter:
+    connection: Connection
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.connection, Connection) or not self.connection.in_transaction():
+            raise RuntimeError("TransactionalOutboxMessageWriter exige transacao ativa.")
+
+    def append(self, message: OutboxMessage) -> None:
+        self.connection.execute(insert(outbox_messages_table).values(_outbox_values(message)))
 
 
 @dataclass(frozen=True, slots=True)
@@ -377,6 +367,30 @@ def _payload_from_stored_bytes(
     object.__setattr__(payload, "version", version)
     object.__setattr__(payload, "canonical_bytes", canonical_bytes)
     return payload
+
+
+def _outbox_values(message: OutboxMessage) -> dict[str, Any]:
+    return {
+        "message_id": message.message_id.value,
+        "record_owner_organization_id": message.organization_id.value,
+        "kind": message.kind.value,
+        "contract_type": message.contract_type,
+        "contract_version": message.contract_version,
+        "actor_type": message.actor_reference.target_id.entity_type,
+        "actor_id": message.actor_reference.target_id.value,
+        "producer_type": message.producer_reference.target_id.entity_type,
+        "producer_id": message.producer_reference.target_id.value,
+        "occurred_at": message.timestamps.occurred_at,
+        "recorded_at": message.timestamps.recorded_at,
+        "correlation_id": message.correlation_id.value,
+        "causation_id": message.causation_id.value,
+        "idempotency_key": message.idempotency_key,
+        "payload_schema": message.payload.schema,
+        "payload_version": message.payload.version,
+        "payload_canonical_bytes": message.payload.canonical_bytes,
+        "classification": message.classification,
+        "status": "PENDENTE",
+    }
 
 
 def _reference(

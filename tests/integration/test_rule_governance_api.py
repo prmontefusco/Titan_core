@@ -242,11 +242,17 @@ def test_catalogo_http_de_templates_de_mercado_publica_fatos_e_modelos(ambiente)
     facts = {item["fact_type"]: item for item in corpo["fact_types"]}
     assert "livestock.withdrawal" in facts
     assert "livestock.environmental_embargo.ibama" in facts
+    assert "livestock.territorial.prodes" in facts
+    assert "livestock.territorial.deter" in facts
+    assert "livestock.territorial.funai" in facts
     assert facts["livestock.sanitary_requirement.brucelose"]["parameterized"] is True
 
     templates = {item["rule_code"]: item for item in corpo["templates"]}
     assert "rule-carencia-farmacologica" in templates
     assert "rule-embargo-ambiental-ibama" in templates
+    assert "rule-desmatamento-prodes" in templates
+    assert "rule-alerta-deter" in templates
+    assert "rule-sobreposicao-funai" in templates
     assert "rule-exigibilidade-sanitaria" in templates
     assert (
         templates["rule-habilitacao-estabelecimento"]["conditions"][0]["fact_type"]
@@ -255,6 +261,15 @@ def test_catalogo_http_de_templates_de_mercado_publica_fatos_e_modelos(ambiente)
     assert (
         templates["rule-exigibilidade-sanitaria"]["conditions"][0]["fact_type"]
         == "livestock.sanitary_requirement.{{campaign_code}}"
+    )
+    assert templates["rule-desmatamento-prodes"]["conditions"][0]["fact_type"] == (
+        "livestock.territorial.prodes"
+    )
+    assert templates["rule-alerta-deter"]["conditions"][0]["fact_type"] == (
+        "livestock.territorial.deter"
+    )
+    assert templates["rule-sobreposicao-funai"]["conditions"][0]["fact_type"] == (
+        "livestock.territorial.funai"
     )
 
 

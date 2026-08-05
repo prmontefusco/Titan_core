@@ -30,10 +30,12 @@ from packages.core_application import (
     InboxStatus,
     IncomingMessageEnvelope,
     MessageHandler,
+    PermanentConsumptionError,
     ProcessingOutcome,
     QuarantinedMessageRecord,
     ReplayRequest,
     ReplayResult,
+    TransientConsumptionError,
 )
 from packages.core_infrastructure.persistence.organizations import organization_metadata
 from packages.shared_kernel import OrganizationId, TypedId
@@ -245,7 +247,37 @@ class TransactionalInboxRepository:
             return self._handle_existing_inbox_row(envelope, digest, now_utc, handler)
 
         # Nova mensagem inserida (EM_PROCESSAMENTO): executa o handler sob a mesma transação
-        processing_outcome, effect_ref, decision_ref = handler.handle(envelope)
+        try:
+            processing_outcome, effect_ref, decision_ref = handler.handle(envelope)
+        except TransientConsumptionError as error:
+            return self.record_retry_control_transaction(
+                envelope=envelope,
+                reason=str(error),
+                backoff_seconds=30,
+            )
+        except PermanentConsumptionError as error:
+            self.connection.execute(
+                update(inbox_messages_table)
+                .where(inbox_messages_table.c.message_id == envelope.message_id.value)
+                .values(
+                    status=InboxStatus.EM_QUARENTENA.value,
+                    completed_at=now_utc,
+                )
+            )
+            self._record_attempt(
+                envelope=envelope,
+                attempt_number=1,
+                handling_result=DeliveryHandlingOutcome.QUARANTINED.value,
+                attempted_at=now_utc,
+                reason=str(error),
+            )
+            return ConsumerReceipt(
+                message_id=envelope.message_id,
+                organization_id=envelope.organization_id,
+                handling_outcome=DeliveryHandlingOutcome.QUARANTINED,
+                completed_at=now_utc,
+                reason=str(error),
+            )
         result_digest = hashlib.sha256(
             f"{processing_outcome.value}:{effect_ref}:{decision_ref}".encode()
         ).digest()
@@ -356,7 +388,37 @@ class TransactionalInboxRepository:
                     .where(inbox_messages_table.c.message_id == envelope.message_id.value)
                     .values(status=InboxStatus.EM_PROCESSAMENTO.value)
                 )
-                processing_outcome, effect_ref, decision_ref = handler.handle(envelope)
+                try:
+                    processing_outcome, effect_ref, decision_ref = handler.handle(envelope)
+                except TransientConsumptionError as error:
+                    return self.record_retry_control_transaction(
+                        envelope=envelope,
+                        reason=str(error),
+                        backoff_seconds=30,
+                    )
+                except PermanentConsumptionError as error:
+                    self.connection.execute(
+                        update(inbox_messages_table)
+                        .where(inbox_messages_table.c.message_id == envelope.message_id.value)
+                        .values(
+                            status=InboxStatus.EM_QUARENTENA.value,
+                            completed_at=now_utc,
+                        )
+                    )
+                    self._record_attempt(
+                        envelope=envelope,
+                        attempt_number=row.attempt_number + 1,
+                        handling_result=DeliveryHandlingOutcome.QUARANTINED.value,
+                        attempted_at=now_utc,
+                        reason=str(error),
+                    )
+                    return ConsumerReceipt(
+                        message_id=envelope.message_id,
+                        organization_id=envelope.organization_id,
+                        handling_outcome=DeliveryHandlingOutcome.QUARANTINED,
+                        completed_at=now_utc,
+                        reason=str(error),
+                    )
                 result_digest = hashlib.sha256(
                     f"{processing_outcome.value}:{effect_ref}:{decision_ref}".encode()
                 ).digest()
@@ -624,6 +686,13 @@ class TransactionalInboxQuarantineRepository:
 
         msg_id = row.message_id if row.message_id else row.quarantine_id
         operator_org = request.operator_actor_reference.organization_id
+        if target_org_id is not None and operator_org != OrganizationId(target_org_id):
+            return ReplayResult(
+                quarantine_id=request.quarantine_id,
+                status="FORBIDDEN",
+                processed_at=datetime.now(UTC),
+                reason="Operador nao pertence a Organization da mensagem em quarentena.",
+            )
         fallback_org_id = (
             operator_org.value if operator_org else PyUUID("00000000-0000-0000-0000-000000000000")
         )

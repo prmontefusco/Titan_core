@@ -26,6 +26,15 @@ from packages.livestock_application.sanitary_campaign_service import (
 from packages.livestock_application.sanitary_requirement_service import (
     SanitaryRequirementService,
 )
+from packages.livestock_application.territorial_overlap_service import (
+    PropertyTerritorialOverlapAssessment,
+)
+from packages.livestock_application.territorial_timeline_service import (
+    PropertyTerritorialTimelineAssessment,
+)
+from packages.livestock_application.transfer_artifact_service import (
+    ReceivedTransferArtifactRepositoryPort,
+)
 from packages.livestock_application.treatment_service import TreatmentApplicationRepositoryPort
 from packages.livestock_application.withdrawal_service import WithdrawalCalculator
 from packages.livestock_domain.environmental_embargo_assertion import (
@@ -36,16 +45,21 @@ from packages.livestock_domain.establishment_qualification_assertion import (
     EstablishmentQualificationAssertion,
 )
 from packages.livestock_domain.imported_fact import FactOrigin, ImportedLivestockFact
+from packages.livestock_domain.transfer_artifact import ReceivedTransferArtifact
 from packages.livestock_domain.withdrawal import WITHDRAWAL_RULE_VERSION, compute_withdrawal_ends
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 # Fato de carência consumido pela regra de elegibilidade farmacológica (Passo 9.5).
 WITHDRAWAL_FACT_TYPE = "livestock.withdrawal"
+HISTORY_COVERAGE_FACT_TYPE = "livestock.history_coverage"
 # Fato de elegibilidade do lote, consumido pela regra de bloqueio de lote (Passo 9.6).
 LOT_ELIGIBILITY_FACT_TYPE = "livestock.lot_eligibility"
 IMPORTED_TREATMENT_FACT_TYPE = "livestock.treatment_applied"
 EXTERNAL_COUNTERPARTY_FACT_TYPE = "livestock.external_counterparty"
 ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE = "livestock.environmental_embargo.ibama"
+TERRITORIAL_PRODES_FACT_TYPE = "livestock.territorial.prodes"
+TERRITORIAL_DETER_FACT_TYPE = "livestock.territorial.deter"
+TERRITORIAL_FUNAI_FACT_TYPE = "livestock.territorial.funai"
 # Sem limite de paginação real na leitura para fatos: uma campanha sanitária
 # que exista e não seja lida aqui produziria uma matriz que finge que aquela
 # campanha nunca foi exigida — pior que uma consulta um pouco mais cara.
@@ -76,6 +90,34 @@ class EstablishmentQualificationAssertionReaderPort(Protocol):
     ) -> list[EstablishmentQualificationAssertion]: ...
 
 
+class TerritorialTimelineReaderPort(Protocol):
+    def assess_prodes_timeline(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId,
+        *,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> PropertyTerritorialTimelineAssessment: ...
+
+    def assess_deter_timeline(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId,
+        *,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> PropertyTerritorialTimelineAssessment: ...
+
+
+class TerritorialOverlapReaderPort(Protocol):
+    def assess_funai_overlap(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId,
+    ) -> PropertyTerritorialOverlapAssessment: ...
+
+
 @dataclass(frozen=True, slots=True)
 class LivestockFactProvider(FactProviderPort):
     property_repository: RuralPropertyRepositoryPort
@@ -89,9 +131,12 @@ class LivestockFactProvider(FactProviderPort):
     environmental_embargo_assertion_repository: (
         PropertyEnvironmentalEmbargoAssertionRepositoryPort | None
     ) = None
+    territorial_timeline_service: TerritorialTimelineReaderPort | None = None
+    territorial_overlap_service: TerritorialOverlapReaderPort | None = None
     withdrawal_calculator: WithdrawalCalculator | None = None
     membership_repository: LotMembershipRepositoryPort | None = None
     imported_fact_repository: ImportedFactReaderPort | None = None
+    transfer_artifact_repository: ReceivedTransferArtifactRepositoryPort | None = None
     sanitary_campaign_repository: SanitaryCampaignRepositoryPort | None = None
     treatment_application_repository: TreatmentApplicationRepositoryPort | None = None
 
@@ -167,6 +212,10 @@ class LivestockFactProvider(FactProviderPort):
                         observed_at=at_time,
                     )
                 )
+                fact_list.extend(self._imported_sanitary_facts(organization_id, target_id))
+                coverage_fact = self._history_coverage_fact(organization_id, target_id, at_time)
+                if coverage_fact is not None:
+                    fact_list.append(coverage_fact)
 
                 property_id = None
                 if self.stay_repository is not None:
@@ -202,6 +251,42 @@ class LivestockFactProvider(FactProviderPort):
                                 "response_digest": embargo_assertion.response_digest,
                             },
                             observed_at=embargo_assertion.observed_at,
+                        )
+                    )
+                if property_id is not None and self.territorial_timeline_service is not None:
+                    for fact_type, assessment in (
+                        (
+                            TERRITORIAL_PRODES_FACT_TYPE,
+                            self.territorial_timeline_service.assess_prodes_timeline(
+                                organization_id,
+                                property_id,
+                            ),
+                        ),
+                        (
+                            TERRITORIAL_DETER_FACT_TYPE,
+                            self.territorial_timeline_service.assess_deter_timeline(
+                                organization_id,
+                                property_id,
+                            ),
+                        ),
+                    ):
+                        fact_list.append(
+                            Fact.create(
+                                fact_type=fact_type,
+                                payload=_territorial_timeline_payload(assessment),
+                                observed_at=at_time,
+                            )
+                        )
+                if property_id is not None and self.territorial_overlap_service is not None:
+                    overlap_assessment = self.territorial_overlap_service.assess_funai_overlap(
+                        organization_id,
+                        property_id,
+                    )
+                    fact_list.append(
+                        Fact.create(
+                            fact_type=TERRITORIAL_FUNAI_FACT_TYPE,
+                            payload=_territorial_overlap_payload(overlap_assessment),
+                            observed_at=at_time,
                         )
                     )
 
@@ -415,6 +500,29 @@ class LivestockFactProvider(FactProviderPort):
             facts=tuple(fact_list),
         )
 
+    def _history_coverage_fact(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        at_time: datetime,
+    ) -> Fact | None:
+        if self.transfer_artifact_repository is None:
+            return None
+        artifacts = [
+            artifact
+            for artifact in self.transfer_artifact_repository.list_by_animal(animal_id)
+            if artifact.organization_id == organization_id
+            and artifact.transfer_effective_at <= at_time
+        ]
+        if not artifacts:
+            return None
+        artifact = max(artifacts, key=lambda item: item.transfer_effective_at)
+        return Fact.create(
+            fact_type=HISTORY_COVERAGE_FACT_TYPE,
+            payload=_history_coverage_payload(artifact),
+            observed_at=artifact.created_at,
+        )
+
     def _latest_environmental_embargo_assertion(
         self,
         organization_id: OrganizationId,
@@ -459,6 +567,41 @@ class LivestockFactProvider(FactProviderPort):
             )
         return contributions
 
+    def _imported_sanitary_facts(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+    ) -> list[Fact]:
+        if self.imported_fact_repository is None:
+            return []
+        facts: list[Fact] = []
+        for imported_fact in self.imported_fact_repository.list_by_animal(
+            organization_id, animal_id
+        ):
+            facts.append(
+                Fact.create(
+                    fact_type=imported_fact.fact_type,
+                    payload={
+                        **dict(imported_fact.payload),
+                        "imported_fact_id": imported_fact.imported_fact_id.value.hex,
+                        "source_artifact_id": imported_fact.source_artifact_id.value.hex,
+                        "asserted_by": imported_fact.asserted_by,
+                        "received_by": imported_fact.received_by.value.hex,
+                        "origin": imported_fact.origin.value,
+                        "confidence_tier": imported_fact.confidence_tier.value,
+                    },
+                    observed_at=imported_fact.occurred_at,
+                    source_reference=UniversalReference(
+                        target_id=imported_fact.source_artifact_id,
+                        organization_id=organization_id,
+                        contract_version=1,
+                    ),
+                    recorded_at=imported_fact.imported_at,
+                    known_at=imported_fact.imported_at,
+                )
+            )
+        return facts
+
 
 def _latest_withdrawal_end(contributions: list[dict[str, Any]]) -> datetime | None:
     return max(
@@ -471,3 +614,87 @@ def _blocking_contribution_id(contribution: dict[str, Any]) -> str:
     if contribution.get("origin") == FactOrigin.IMPORTED_ASSERTION.value:
         return str(contribution["imported_fact_id"])
     return str(contribution["medication_batch_id"])
+
+
+def _territorial_timeline_payload(
+    assessment: PropertyTerritorialTimelineAssessment,
+) -> dict[str, Any]:
+    years = list(assessment.years)
+    total_feature_count = sum(
+        feature_count
+        for item in years
+        if isinstance(feature_count := item.get("feature_count"), int)
+    )
+    occurrence_years = [
+        year
+        for item in years
+        if isinstance(year := item.get("year"), int) and item["feature_count"]
+    ]
+    return {
+        "property_id": assessment.property_id.value.hex,
+        "geometry_id": (
+            None if assessment.geometry_id is None else assessment.geometry_id.value.hex
+        ),
+        "geometry_version": assessment.geometry_version,
+        "external_reference": assessment.external_reference,
+        "status": assessment.status.value,
+        "source": assessment.source,
+        "layer": assessment.layer,
+        "property_area_hectares": assessment.property_area_hectares,
+        "year_from": assessment.year_from,
+        "year_to": assessment.year_to,
+        "year_count": len(years),
+        "total_feature_count": total_feature_count,
+        "has_occurrence": total_feature_count > 0,
+        "occurrence_years": occurrence_years,
+        "years": years,
+        "response_digest": assessment.response_digest,
+        "gaps": [gap.to_dict() for gap in assessment.gaps],
+    }
+
+
+def _territorial_overlap_payload(
+    assessment: PropertyTerritorialOverlapAssessment,
+) -> dict[str, Any]:
+    return {
+        "property_id": assessment.property_id.value.hex,
+        "geometry_id": (
+            None if assessment.geometry_id is None else assessment.geometry_id.value.hex
+        ),
+        "geometry_version": assessment.geometry_version,
+        "external_reference": assessment.external_reference,
+        "status": assessment.status.value,
+        "source": assessment.source,
+        "layer": assessment.layer,
+        "label": assessment.label,
+        "feature_count": assessment.feature_count,
+        "has_overlap": assessment.feature_count > 0,
+        "area_hectares": assessment.area_hectares,
+        "source_area_hectares": assessment.source_area_hectares,
+        "version_ids": list(assessment.version_ids),
+        "response_digest": assessment.response_digest,
+        "gaps": [gap.to_dict() for gap in assessment.gaps],
+    }
+
+
+def _history_coverage_payload(artifact: ReceivedTransferArtifact) -> dict[str, Any]:
+    coverage = artifact.coverage
+    return {
+        "source_artifact_id": artifact.artifact_id.value.hex,
+        "source_counterparty_id": artifact.source_counterparty_id.value.hex,
+        "basis": "received_transfer_artifact",
+        "known_from": None if coverage.known_from is None else coverage.known_from.isoformat(),
+        "known_until": None if coverage.known_until is None else coverage.known_until.isoformat(),
+        "transfer_effective_at": artifact.transfer_effective_at.isoformat(),
+        "has_declared_gaps": len(coverage.gaps) > 0,
+        "coverage_status": "PARTIAL_DECLARED" if coverage.gaps else "DECLARED",
+        "gaps": [
+            {
+                "code": gap.code.value,
+                "starts_at": None if gap.starts_at is None else gap.starts_at.isoformat(),
+                "ends_at": None if gap.ends_at is None else gap.ends_at.isoformat(),
+                "description": gap.description,
+            }
+            for gap in coverage.gaps
+        ],
+    }

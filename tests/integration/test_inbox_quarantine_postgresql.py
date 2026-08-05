@@ -81,3 +81,49 @@ def test_inbox_quarantine_postgresql_list_and_replay_flow(
 
     assert replay_result.status == "REQUEUED"
     assert replay_result.quarantine_id == target_record.quarantine_id
+
+
+def test_inbox_quarantine_replay_rejects_cross_organization_operator(
+    db_connection: Connection,
+) -> None:
+    org_id = OrganizationId.new()
+    other_org_id = OrganizationId.new()
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_identity.organizations (organization_id, record_owner_organization_id)
+            VALUES (:org_a, :org_a), (:org_b, :org_b)
+            """
+        ),
+        {"org_a": org_id.value, "org_b": other_org_id.value},
+    )
+
+    inbox_repo = TransactionalInboxRepository(
+        connection=db_connection, consumer_id="quarantine_worker"
+    )
+    inbox_repo.record_untrusted_quarantine(
+        envelope_bytes=b'{"corrupted": true}',
+        alleged_producer="service_test",
+        alleged_org=str(org_id.value),
+        reason_code="INVALID_SIGNATURE",
+    )
+
+    service = InboxQuarantineService(
+        repository=TransactionalInboxQuarantineRepository(connection=db_connection)
+    )
+    record = service.list_quarantined(limit=1)[0]
+    operator_ref = UniversalReference(
+        target_id=TypedId(entity_type="user", value=TypedId.new("user").value),
+        organization_id=other_org_id,
+        contract_version=1,
+    )
+
+    result = service.replay(
+        ReplayRequest(
+            quarantine_id=record.quarantine_id,
+            operator_actor_reference=operator_ref,
+            reason="Tentativa cruzada",
+        )
+    )
+
+    assert result.status == "FORBIDDEN"

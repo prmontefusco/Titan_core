@@ -591,7 +591,30 @@ class MarketEligibilityService:
         )
         status = _aggregate_requirement_status(requirements)
         reasons = tuple(reason for requirement in requirements for reason in requirement.reasons)
-        gaps = tuple(gap for requirement in requirements for gap in requirement.gaps)
+        gaps = [gap for requirement in requirements for gap in requirement.gaps]
+        if (
+            profile.declared_withdrawal_period_days is None
+            and any(
+                requirement.rule_code == ELIGIBILITY_RULE_CODE
+                and requirement.status is MarketEligibilityStatus.ELEGIVEL
+                for requirement in requirements
+            )
+            and not any(
+                gap.code is MarketEligibilityGapCode.CARENCIA_POR_MERCADO_AUSENTE for gap in gaps
+            )
+        ):
+            gaps.insert(
+                0,
+                MarketEligibilityGap(
+                    code=MarketEligibilityGapCode.CARENCIA_POR_MERCADO_AUSENTE,
+                    message=(
+                        "Este mercado nao declarou o prazo de carencia usado na "
+                        "avaliacao; nao existe prazo de carencia aplicavel "
+                        "declarado para promover o resultado a elegivel."
+                    ),
+                ),
+            )
+            status = MarketEligibilityStatus.INDETERMINADO
         first_governed_rule = next(
             (
                 requirement.governed_rule
@@ -654,7 +677,7 @@ class MarketEligibilityService:
                 None,
             ),
             reasons=reasons,
-            gaps=gaps,
+            gaps=tuple(gaps),
             requirements=requirements,
         )
 
@@ -736,7 +759,11 @@ class MarketEligibilityService:
         rule = self.rule_reader.get_by_id(adoption.rule_version_id)
         adoption_summary = MarketRuleAdoptionSummary.from_rule_adoption(adoption)
         rule_version = None if rule is None else MarketRuleVersionSummary.from_rule(rule)
-        if requirement.rule_code == ELIGIBILITY_RULE_CODE and withdrawal_basis is None:
+        if (
+            requirement.rule_code == ELIGIBILITY_RULE_CODE
+            and withdrawal_basis is None
+            and not selected_subjects
+        ):
             return MarketRequirementResult(
                 rule_code=requirement.rule_code,
                 scope=requirement.scope,
@@ -746,7 +773,8 @@ class MarketEligibilityService:
                         code=MarketEligibilityGapCode.CARENCIA_POR_MERCADO_AUSENTE,
                         message=(
                             "Este mercado nao declarou o prazo de carencia usado na "
-                            "avaliacao; o resultado nao pode ser promovido a elegivel."
+                            "avaliacao; nao existe prazo de carencia aplicavel "
+                            "declarado para promover o resultado a elegivel."
                         ),
                     ),
                 ),

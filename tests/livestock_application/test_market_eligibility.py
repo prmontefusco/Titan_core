@@ -718,7 +718,7 @@ def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> N
     assert entry.dependency is not None
     assert entry.dependency.selected_subject_id == str(slaughterhouse_id.value)
     assert [requirement.status for requirement in entry.requirements] == [
-        MarketEligibilityStatus.INDETERMINADO,
+        MarketEligibilityStatus.ELEGIVEL,
         MarketEligibilityStatus.ELEGIVEL,
     ]
     assert entry.requirements[1].execution is not None

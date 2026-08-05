@@ -201,6 +201,17 @@ class AuthorizationRepository:
             ),
         )
 
+    def get_role_by_id(self, organization_id: OrganizationId, role_id: TypedId) -> Role | None:
+        row = self.connection.execute(
+            select(roles_table.c.name).where(
+                roles_table.c.organization_id == organization_id.value,
+                roles_table.c.role_id == role_id.value,
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return self.get_role_by_name(organization_id, row.name)
+
     def add_role(self, role: Role) -> None:
         self.connection.execute(
             insert(roles_table).values(

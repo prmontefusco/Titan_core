@@ -56,6 +56,7 @@ MOVEMENT_LER: Final = "LIVESTOCK_MOVEMENT.LER"
 # conceitos distintos no Core, mas separá-los aqui só se justifica quando
 # existirem atores diferentes para cada um — o que hoje não acontece.
 ELIGIBILITY_EXECUTAR: Final = "LIVESTOCK_ELIGIBILITY.EXECUTAR"
+DECISION_REVIEW_EXECUTE: Final = "LIVESTOCK_DECISION_REVIEW.EXECUTE"
 TIMELINE_LER: Final = "LIVESTOCK_TIMELINE.LER"
 DOSSIER_LER: Final = "DOSSIER.LER"
 # Importar asserções de qualificação (ADR-0045) grava fato de terceiro sobre
@@ -121,6 +122,7 @@ ESCRITA: Final = frozenset(
         VETERINARIAN_CRIAR,
         MOVEMENT_REGISTRAR,
         ELIGIBILITY_EXECUTAR,
+        DECISION_REVIEW_EXECUTE,
         ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR,
         TRANSFORMATION_REGISTRAR,
     }

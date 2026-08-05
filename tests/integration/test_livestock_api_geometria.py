@@ -12,6 +12,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
+from packages.livestock_infrastructure.geodata import (
+    TerritorialOverlapAssessment,
+    TerritorialTimelineAssessment,
+    TerritorialTimelineYear,
+)
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
 
 pytestmark = pytest.mark.skipif(
@@ -252,3 +257,233 @@ def test_auditor_le_a_geometria(
 
     assert lida.status_code == 200, lida.text
     assert lida.json()["version"] == 1
+
+
+class _TimelineLookupFake:
+    def fetch_funai_overlap(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+    ) -> TerritorialOverlapAssessment:
+        assert cod_imovel == "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
+        assert state == "MS"
+        return TerritorialOverlapAssessment(
+            source="FUNAI",
+            layer="FUNAI_TI",
+            label="Terras Indigenas (FUNAI)",
+            feature_count=1,
+            area_hectares=12.5,
+            source_area_hectares=80.0,
+            version_ids=("funai_ms_v1",),
+            response_digest="c" * 64,
+        )
+
+    def fetch_prodes_timeline(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> TerritorialTimelineAssessment:
+        assert cod_imovel == "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
+        assert state == "MS"
+        assert year_from == 2020
+        assert year_to == 2021
+        return TerritorialTimelineAssessment(
+            source="INPE/TerraBrasilis",
+            layer="TB_PRODES",
+            property_area_hectares=1500.5,
+            year_from=2020,
+            year_to=2021,
+            years=(
+                TerritorialTimelineYear(
+                    year=2020,
+                    feature_count=1,
+                    overlap_area_hectares=8.25,
+                    source_area_hectares=12.5,
+                    version_ids=("tb_prodes_ms_2020",),
+                ),
+                TerritorialTimelineYear(
+                    year=2021,
+                    feature_count=2,
+                    overlap_area_hectares=11.0,
+                    source_area_hectares=20.0,
+                    version_ids=("tb_prodes_ms_2021",),
+                ),
+            ),
+            response_digest="a" * 64,
+        )
+
+    def fetch_deter_timeline(
+        self,
+        *,
+        cod_imovel: str,
+        state: str,
+        year_from: int | None = None,
+        year_to: int | None = None,
+    ) -> TerritorialTimelineAssessment:
+        assert cod_imovel == "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
+        assert state == "MS"
+        assert year_from == 2026
+        assert year_to == 2026
+        return TerritorialTimelineAssessment(
+            source="INPE/TerraBrasilis",
+            layer="TB_DETER",
+            property_area_hectares=1500.5,
+            year_from=2026,
+            year_to=2026,
+            years=(
+                TerritorialTimelineYear(
+                    year=2026,
+                    feature_count=1,
+                    overlap_area_hectares=1.75,
+                    source_area_hectares=3.25,
+                    version_ids=("tb_deter_ms_2026",),
+                ),
+            ),
+            response_digest="b" * 64,
+        )
+
+
+def test_consultar_timeline_territorial_prodes(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.api import livestock_reads
+
+    property_id = _propriedade(ambiente, operador)
+    _registrar(
+        ambiente,
+        operador,
+        property_id,
+        source="SICAR_CAR",
+        external_reference="MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E",
+    )
+    monkeypatch.setattr(livestock_reads, "car_lookup_opcional", lambda: _TimelineLookupFake())
+
+    resposta = operador.get(
+        f"/v1/livestock/properties/{property_id}/territorial-timelines/prodes"
+        "?year_from=2020&year_to=2021",
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["status"] == "DISPONIVEL"
+    assert corpo["layer"] == "TB_PRODES"
+    assert corpo["external_reference"] == "MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E"
+    assert [item["year"] for item in corpo["years"]] == [2020, 2021]
+    assert corpo["gaps"] == []
+
+
+def test_consultar_sobreposicao_territorial_funai(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.api import livestock_reads
+
+    property_id = _propriedade(ambiente, operador)
+    _registrar(
+        ambiente,
+        operador,
+        property_id,
+        source="SICAR_CAR",
+        external_reference="MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E",
+    )
+    monkeypatch.setattr(livestock_reads, "car_lookup_opcional", lambda: _TimelineLookupFake())
+
+    resposta = operador.get(
+        f"/v1/livestock/properties/{property_id}/territorial-overlaps/funai",
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["status"] == "COM_RESTRICAO"
+    assert corpo["layer"] == "FUNAI_TI"
+    assert corpo["feature_count"] == 1
+    assert corpo["version_ids"] == ["funai_ms_v1"]
+    assert corpo["gaps"] == []
+
+
+def test_consultar_timeline_territorial_deter(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.api import livestock_reads
+
+    property_id = _propriedade(ambiente, operador)
+    _registrar(
+        ambiente,
+        operador,
+        property_id,
+        source="SICAR_CAR",
+        external_reference="MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E",
+    )
+    monkeypatch.setattr(livestock_reads, "car_lookup_opcional", lambda: _TimelineLookupFake())
+
+    resposta = operador.get(
+        f"/v1/livestock/properties/{property_id}/territorial-timelines/deter"
+        "?year_from=2026&year_to=2026",
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["status"] == "DISPONIVEL"
+    assert corpo["layer"] == "TB_DETER"
+    assert corpo["years"][0]["year"] == 2026
+    assert corpo["years"][0]["version_ids"] == ["tb_deter_ms_2026"]
+
+
+def test_consultar_timeline_territorial_sem_referencia_externa_declara_lacuna(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.api import livestock_reads
+
+    property_id = _propriedade(ambiente, operador)
+    _registrar(ambiente, operador, property_id)
+    monkeypatch.setattr(livestock_reads, "car_lookup_opcional", lambda: _TimelineLookupFake())
+
+    resposta = operador.get(
+        f"/v1/livestock/properties/{property_id}/territorial-timelines/prodes",
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["status"] == "INDETERMINADA"
+    assert corpo["layer"] == "TB_PRODES"
+    assert corpo["years"] == []
+    assert corpo["gaps"][0]["code"] == "REFERENCIA_EXTERNA_AUSENTE"
+
+
+def test_consultar_sobreposicao_funai_sem_referencia_externa_declara_lacuna(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apps.api import livestock_reads
+
+    property_id = _propriedade(ambiente, operador)
+    _registrar(ambiente, operador, property_id)
+    monkeypatch.setattr(livestock_reads, "car_lookup_opcional", lambda: _TimelineLookupFake())
+
+    resposta = operador.get(
+        f"/v1/livestock/properties/{property_id}/territorial-overlaps/funai",
+        headers=_cabecalho(ambiente),
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    corpo = resposta.json()
+    assert corpo["status"] == "INDETERMINADA"
+    assert corpo["layer"] == "FUNAI_TI"
+    assert corpo["feature_count"] == 0
+    assert corpo["gaps"][0]["code"] == "REFERENCIA_EXTERNA_AUSENTE"

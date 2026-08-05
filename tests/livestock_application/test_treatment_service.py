@@ -5,7 +5,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from packages.core_application import OutboxMessage
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.erp_contract import ERP_OPERATIONAL_INTENT_CONTRACT_TYPE
+from packages.livestock_application.erp_outbox import LivestockErpOutboxService
 from packages.livestock_application.event_recorder import (
     LivestockEventRecorder,
     LivestockOperationContext,
@@ -159,6 +162,14 @@ class InMemoryLotMembershipLookup:
         return result
 
 
+class SpyOutboxWriter:
+    def __init__(self) -> None:
+        self.messages: list[OutboxMessage] = []
+
+    def append(self, message: OutboxMessage) -> None:
+        self.messages.append(message)
+
+
 def _scenario(
     recorder: LivestockEventRecorder, context: LivestockOperationContext
 ) -> tuple[TreatmentApplicationService, TypedId, TypedId, InMemoryApplicationRepo]:
@@ -239,6 +250,56 @@ def test_register_application_success(
     # A autoria do registro vem do contexto, e é a mesma do evento.
     assert app.actor_id == context.actor_reference.target_id
     assert event_log.only(TREATMENT_APPLIED).actor_reference == context.actor_reference
+
+
+def test_register_application_emits_erp_outbox_command(
+    recorder: LivestockEventRecorder,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, batch_id, _ = _scenario(recorder, context)
+    writer = SpyOutboxWriter()
+    service = replace(service, erp_outbox_service=LivestockErpOutboxService(writer=writer))
+
+    app = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch_id,
+        applied_at=datetime.now(UTC) - timedelta(hours=1),
+        dose="1 mL",
+        evidence_notes=("observacao operacional",),
+    )
+
+    assert len(writer.messages) == 1
+    message = writer.messages[0]
+    assert message.contract_type == ERP_OPERATIONAL_INTENT_CONTRACT_TYPE
+    assert message.kind.value == "COMMAND"
+    assert message.causation_id.entity_type == "domain_event"
+    assert str(app.application_id.value).encode() in message.payload.canonical_bytes
+    assert b"external_operation_id" in message.payload.canonical_bytes
+    assert b"contract_profile" in message.payload.canonical_bytes
+    assert b"authoritative_source" in message.payload.canonical_bytes
+    assert b"titan" in message.payload.canonical_bytes
+
+
+def test_refused_registration_does_not_emit_erp_outbox_command(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    service, animal_id, _, _ = _scenario(recorder, context)
+    writer = SpyOutboxWriter()
+    service = replace(service, erp_outbox_service=LivestockErpOutboxService(writer=writer))
+
+    with pytest.raises(KeyError, match="Lote"):
+        service.register_application(
+            context=context,
+            animal_id=animal_id,
+            medication_batch_id=TypedId.new("medication_batch"),
+            applied_at=datetime.now(UTC),
+        )
+
+    assert event_log.events == []
+    assert writer.messages == []
 
 
 def test_register_application_accepts_prescription_for_same_medication_and_animal(

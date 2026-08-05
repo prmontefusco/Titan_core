@@ -30,6 +30,7 @@ from packages.core_infrastructure.persistence.organizations import (
 from packages.core_infrastructure.persistence.outbox import (
     OutboxPublicationStateRepository,
     TransactionalEventOutboxRepository,
+    TransactionalOutboxMessageWriter,
 )
 from packages.core_infrastructure.persistence.rule_governance import (
     TransactionalRuleAdoptionRepository,
@@ -57,6 +58,7 @@ __all__ = [
     "StoredDomainEvent",
     "TimestampAuditRepository",
     "TransactionalEventOutboxRepository",
+    "TransactionalOutboxMessageWriter",
     "TransactionalRuleAdoptionRepository",
     "TransactionalRuleIdentityRepository",
     "TransactionalRuleTimelineRepository",

@@ -1,4 +1,4 @@
-"""Teste end-to-end do ciclo completo Outbox -> RabbitMQ -> Worker -> Inbox (ADR-0038)."""
+"""Teste end-to-end do ciclo operacional minimo do LIV-C09."""
 
 import os
 from datetime import UTC, datetime
@@ -14,6 +14,15 @@ from packages.core_application import (
 )
 from packages.core_domain import CanonicalPayload
 from packages.core_infrastructure.persistence.inbox import TransactionalInboxRepository
+from packages.livestock_application.erp_contract import (
+    ERP_OPERATIONAL_INTENT_PAYLOAD_SCHEMA,
+    ERP_OPERATIONAL_INTENT_TYPE,
+)
+from packages.livestock_application.erp_inbox import (
+    LivestockErpInboxHandler,
+    NeutralOperationalIntentSimulatorAdapter,
+)
+from packages.livestock_application.erp_outbox import ERP_TREATMENT_COMMAND_TYPE
 from packages.shared_kernel import OrganizationId, RecordTimestamps, TypedId, UniversalReference
 
 
@@ -50,13 +59,11 @@ def test_worker_e2e_flow() -> None:
                 organization_id=org_id,
                 contract_version=1,
             )
-            payload = CanonicalPayload(schema="titan.test", version=1, value={"key": "val"})
-
             envelope = IncomingMessageEnvelope(
                 message_id=msg_id,
                 organization_id=org_id,
-                kind=MessageKind.DOMAIN_EVENT,
-                contract_type="titan.core.event",
+                kind=MessageKind.COMMAND,
+                contract_type=ERP_TREATMENT_COMMAND_TYPE,
                 contract_version=1,
                 semantic_operation_id=TypedId(
                     entity_type="operation", value=TypedId.new("operation").value
@@ -74,21 +81,39 @@ def test_worker_e2e_flow() -> None:
                     entity_type="domain_event", value=TypedId.new("domain_event").value
                 ),
                 auth_evaluation_mode=AuthorizationEvaluationMode.SERVICE_AUTHORITY_ONLY,
-                purpose="E2E_TESTING",
+                purpose="LIV_C09_E2E",
                 auth_reference=None,
-                payload=payload,
+                payload=CanonicalPayload.from_mapping(
+                    schema=ERP_OPERATIONAL_INTENT_PAYLOAD_SCHEMA,
+                    version=1,
+                    value={
+                        "intent_type": ERP_OPERATIONAL_INTENT_TYPE,
+                        "contract_profile": "POST_LIV_02A_NEUTRAL_EXTERNAL_CONTRACT",
+                        "contract_version": 1,
+                        "external_operation_id": (
+                            f"livestock-treatment-application:"
+                            f"{TypedId.new('treatment_application').value}"
+                        ),
+                        "source_application_id": str(TypedId.new("treatment_application").value),
+                        "requested_effect": "REFLECT_TREATMENT_APPLICATION",
+                        "tenant_scope": "ORGANIZATION_ISOLATED",
+                        "authoritative_source": "titan",
+                        "treatment_application": {
+                            "application_id": str(TypedId.new("treatment_application").value),
+                        },
+                    },
+                ),
                 classification="PROTECTED",
             )
 
-            class E2EHandler:
-                def handle(
-                    self, env: IncomingMessageEnvelope
-                ) -> tuple[ProcessingOutcome, str | None, str | None]:
-                    return (ProcessingOutcome.SUCCESS, "e2e_effect", "e2e_decision")
-
             repo = TransactionalInboxRepository(connection=conn, consumer_id="e2e_worker")
-            receipt = repo.process_message(envelope=envelope, handler=E2EHandler())
+            receipt = repo.process_message(
+                envelope=envelope,
+                handler=LivestockErpInboxHandler(
+                    delivery=NeutralOperationalIntentSimulatorAdapter()
+                ),
+            )
 
             assert receipt.handling_outcome == DeliveryHandlingOutcome.PROCESSED
             assert receipt.processing_outcome == ProcessingOutcome.SUCCESS
-            assert receipt.effect_reference == "e2e_effect"
+            assert receipt.effect_reference is not None

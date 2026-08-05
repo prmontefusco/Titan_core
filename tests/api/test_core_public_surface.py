@@ -50,6 +50,8 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/treatments", "post"),
     ("/v1/livestock/treatments/{application_id}/corrections", "post"),
     ("/v1/livestock/animals/{animal_id}/eligibility", "post"),
+    ("/v1/livestock/decision-proposals/{proposal_id}", "get"),
+    ("/v1/livestock/decision-proposals/{proposal_id}/reviews", "post"),
     ("/v1/livestock/animals/{animal_id}/eligibility/market-matrix", "post"),
     ("/v1/livestock/market-eligibility/profiles", "get"),
     ("/v1/livestock/market-eligibility/evaluations", "post"),
@@ -103,6 +105,7 @@ SUPERFICIE_ESPERADA = {
         "/v1/livestock/external-counterparties/{counterparty_id}/establishment-qualifications",
         "post",
     ),
+    ("/v1/livestock/animals/{animal_id}/documentary-acquisitions", "post"),
     ("/v1/livestock/animals/{animal_id}/received-transfer-artifacts", "get"),
     ("/v1/livestock/animals/{animal_id}/received-transfer-artifacts", "post"),
     ("/v1/livestock/animals/{animal_id}/imported-facts", "get"),
@@ -136,6 +139,9 @@ SUPERFICIE_ESPERADA = {
     # Avaliacao espacial de camada territorial externa: usa a geometria vigente
     # da propriedade, mas nao transforma embargo em atributo do imovel.
     ("/v1/livestock/properties/{property_id}/environmental-embargoes/ibama", "get"),
+    ("/v1/livestock/properties/{property_id}/territorial-overlaps/funai", "get"),
+    ("/v1/livestock/properties/{property_id}/territorial-timelines/prodes", "get"),
+    ("/v1/livestock/properties/{property_id}/territorial-timelines/deter", "get"),
     (
         "/v1/livestock/properties/{property_id}/environmental-embargoes/ibama/assertions",
         "get",

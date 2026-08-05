@@ -6,6 +6,7 @@ depois da decisão aparece dentro dela.
 """
 
 import json
+from dataclasses import replace
 from datetime import datetime
 
 import pytest
@@ -13,12 +14,14 @@ import pytest
 from packages.core_application.dossier_service import DossierService
 from packages.core_domain.decision import DecisionResult
 from packages.core_domain.dossier import Dossier, compute_dossier_hash
+from packages.core_domain.facts import Fact, FactSnapshot
 from packages.livestock_application.dossier_template import (
     LIVESTOCK_NAMESPACE,
     LivestockDossierTemplate,
 )
 from packages.livestock_application.eligibility import GovernedRuleReference
 from packages.livestock_application.event_recorder import LivestockOperationContext
+from packages.livestock_application.fact_provider import HISTORY_COVERAGE_FACT_TYPE
 from packages.shared_kernel import TypedId
 from tests.livestock_application.test_dossier_template_scenario import Cenario
 
@@ -93,6 +96,86 @@ def test_the_chain_reaches_the_evidence_with_its_content_hash(cenario: Cenario) 
     assert len(evidencia["content"]["content_hash"]) == 64
     assert evidencia["content"]["source"]["source_type"] == "DOCUMENT"
     assert evidencia["content"]["confidence"]["tier"] == "DOCUMENTED"
+
+
+def test_the_dossier_declares_partial_coverage_when_snapshot_brings_it(cenario: Cenario) -> None:
+    evaluation, decision = cenario.avaliar()
+    coverage_fact = Fact.create(
+        fact_type=HISTORY_COVERAGE_FACT_TYPE,
+        payload={
+            "basis": "received_transfer_artifact",
+            "known_from": "2026-01-01T00:00:00+00:00",
+            "known_until": "2026-07-01T00:00:00+00:00",
+            "transfer_effective_at": "2026-07-02T00:00:00+00:00",
+            "source_artifact_id": TypedId.new("received_transfer_artifact").value.hex,
+            "source_counterparty_id": TypedId.new("external_counterparty").value.hex,
+            "has_declared_gaps": True,
+            "coverage_status": "PARTIAL_DECLARED",
+            "gaps": [
+                {
+                    "code": "COVERAGE_BEFORE_TRANSFER",
+                    "starts_at": "2026-07-01T00:00:00+00:00",
+                    "ends_at": "2026-07-02T00:00:00+00:00",
+                    "description": "A cobertura recebida termina antes da transferencia efetiva.",
+                }
+            ],
+        },
+        observed_at=decision.issued_at,
+    )
+    snapshot = FactSnapshot.create(
+        organization_id=evaluation.organization_id,
+        target_id=evaluation.subject_id,
+        as_of=evaluation.fact_snapshot.as_of,
+        facts=(*evaluation.fact_snapshot.facts, coverage_fact),
+        reference_time=evaluation.fact_snapshot.reference_time,
+        knowledge_cutoff=evaluation.fact_snapshot.knowledge_cutoff,
+    )
+    template = LivestockDossierTemplate(
+        timeline_service=cenario.timeline_service(),
+        application_repository=cenario.application_repository,
+        evidence_lookup=cenario.evidence_lookup,
+        dossier_service=DossierService(),
+    )
+
+    section = template.build_section(
+        decision=decision,
+        evaluation=replace(evaluation, fact_snapshot=snapshot),
+    )
+
+    coverage = section.content["coverage"]
+    assert coverage["status"] == "PARTIAL_DECLARED"
+    assert coverage["basis"] == "received_transfer_artifact"
+    assert coverage["has_declared_gaps"] is True
+    assert coverage["gaps"][0]["code"] == "COVERAGE_BEFORE_TRANSFER"
+    assert coverage["declared_scope"] == "TRANSFER_DECLARED_PARTIAL"
+    assert "Cobertura sanitaria parcial declarada" in " ".join(
+        section.content["declared_limitations"]
+    )
+
+
+def test_the_dossier_declares_local_only_when_lifetime_coverage_is_absent(
+    cenario: Cenario,
+) -> None:
+    evaluation, decision = cenario.avaliar()
+    template = LivestockDossierTemplate(
+        timeline_service=cenario.timeline_service(),
+        application_repository=cenario.application_repository,
+        evidence_lookup=cenario.evidence_lookup,
+        dossier_service=DossierService(),
+    )
+
+    section = template.build_section(
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    coverage = section.content["coverage"]
+    assert coverage["status"] == "NAO_DECLARADA"
+    assert coverage["declared_scope"] == "LOCAL_ONLY"
+    assert section.content["imported_material"]["declared_scope"] == "LOCAL_ONLY"
+    assert "Cobertura sanitaria vitalicia nao declarada" in " ".join(
+        section.content["declared_limitations"]
+    )
 
 
 def test_operator_notes_never_pose_as_evidence(cenario: Cenario) -> None:

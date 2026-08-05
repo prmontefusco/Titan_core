@@ -40,6 +40,9 @@ from packages.livestock_application.establishment_qualification_service import (
 )
 from packages.livestock_application.fact_provider import (
     ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
+    TERRITORIAL_DETER_FACT_TYPE,
+    TERRITORIAL_FUNAI_FACT_TYPE,
+    TERRITORIAL_PRODES_FACT_TYPE,
     WITHDRAWAL_FACT_TYPE,
     sanitary_requirement_fact_type,
 )
@@ -48,6 +51,9 @@ from packages.livestock_application.market_eligibility import (
     ENVIRONMENTAL_EMBARGO_RULE_CODE,
     ESTABLISHMENT_RULE_CODE,
     SANITARY_RULE_CODE,
+    TERRITORIAL_DETER_RULE_CODE,
+    TERRITORIAL_FUNAI_RULE_CODE,
+    TERRITORIAL_PRODES_RULE_CODE,
     TRACEABILITY_RULE_CODE,
 )
 from packages.shared_kernel import UniversalReference
@@ -391,6 +397,67 @@ def _catalogo_regras_mercado_livestock() -> LivestockMarketRuleCatalogResponse:
                 ],
             ),
             RuleFactTypeCatalogResponse(
+                fact_type=TERRITORIAL_PRODES_FACT_TYPE,
+                description="Serie temporal conhecida do PRODES para a propriedade relevante.",
+                payload_keys=[
+                    "status",
+                    "property_id",
+                    "geometry_id",
+                    "geometry_version",
+                    "external_reference",
+                    "year_from",
+                    "year_to",
+                    "year_count",
+                    "total_feature_count",
+                    "has_occurrence",
+                    "occurrence_years",
+                    "years",
+                    "response_digest",
+                    "gaps",
+                ],
+            ),
+            RuleFactTypeCatalogResponse(
+                fact_type=TERRITORIAL_DETER_FACT_TYPE,
+                description="Serie temporal conhecida do DETER para a propriedade relevante.",
+                payload_keys=[
+                    "status",
+                    "property_id",
+                    "geometry_id",
+                    "geometry_version",
+                    "external_reference",
+                    "year_from",
+                    "year_to",
+                    "year_count",
+                    "total_feature_count",
+                    "has_occurrence",
+                    "occurrence_years",
+                    "years",
+                    "response_digest",
+                    "gaps",
+                ],
+            ),
+            RuleFactTypeCatalogResponse(
+                fact_type=TERRITORIAL_FUNAI_FACT_TYPE,
+                description=(
+                    "Sobreposicao territorial atual conhecida da FUNAI para a "
+                    "propriedade relevante."
+                ),
+                payload_keys=[
+                    "status",
+                    "property_id",
+                    "geometry_id",
+                    "geometry_version",
+                    "external_reference",
+                    "feature_count",
+                    "has_overlap",
+                    "area_hectares",
+                    "source_area_hectares",
+                    "version_ids",
+                    "response_digest",
+                    "gaps",
+                ],
+            ),
+            RuleFactTypeCatalogResponse(
                 fact_type=establishment_qualification_fact_type("exportacao-china"),
                 description="Qualificacao de estabelecimento por mercado de destino.",
                 payload_keys=[
@@ -494,6 +561,106 @@ def _catalogo_regras_mercado_livestock() -> LivestockMarketRuleCatalogResponse:
                 ),
                 corrective_action_hint=(
                     "Resolver a restricao ou redirecionar para mercado compativel."
+                ),
+            ),
+            RuleTemplateCatalogResponse(
+                template_code="territorial-prodes-v1",
+                rule_code=TERRITORIAL_PRODES_RULE_CODE,
+                name="Desmatamento por serie temporal PRODES",
+                purpose_hint=(
+                    "Usar quando o mercado considera ocorrencias historicas de desmatamento "
+                    "na propriedade relevante."
+                ),
+                scope_hint="livestock.animal",
+                normative_source_hint=(
+                    "EUDR, protocolo ambiental interno ou criterio temporal do mercado."
+                ),
+                required_evidence_types=["livestock.property_geometry", "inpe.prodes_layer"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type=TERRITORIAL_PRODES_FACT_TYPE,
+                        payload_key="has_occurrence",
+                        operator=ComparisonOperator.EQUALS.value,
+                        expected_value=False,
+                        description=(
+                            "A serie temporal conhecida do PRODES nao pode registrar "
+                            "ocorrencias na propriedade relevante no intervalo consultado."
+                        ),
+                    )
+                ],
+                justification_hint=(
+                    "Ocorrencia historica conhecida de desmatamento pode impedir a "
+                    "elegibilidade deste mercado."
+                ),
+                corrective_action_hint=(
+                    "Revisar o intervalo temporal, aprofundar a diligencia ou redirecionar "
+                    "para mercado compativel."
+                ),
+            ),
+            RuleTemplateCatalogResponse(
+                template_code="territorial-deter-v1",
+                rule_code=TERRITORIAL_DETER_RULE_CODE,
+                name="Alerta territorial por serie temporal DETER",
+                purpose_hint=(
+                    "Usar quando o mercado considera alertas recentes de desmatamento "
+                    "na propriedade relevante."
+                ),
+                scope_hint="livestock.animal",
+                normative_source_hint=(
+                    "EUDR, protocolo ambiental interno ou monitoramento continuo do mercado."
+                ),
+                required_evidence_types=["livestock.property_geometry", "inpe.deter_layer"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type=TERRITORIAL_DETER_FACT_TYPE,
+                        payload_key="has_occurrence",
+                        operator=ComparisonOperator.EQUALS.value,
+                        expected_value=False,
+                        description=(
+                            "A serie temporal conhecida do DETER nao pode registrar "
+                            "alertas na propriedade relevante no intervalo consultado."
+                        ),
+                    )
+                ],
+                justification_hint=(
+                    "Alerta territorial conhecido pode exigir bloqueio, diligencia "
+                    "adicional ou reavaliacao."
+                ),
+                corrective_action_hint=(
+                    "Validar o alerta e completar a diligencia antes da comercializacao."
+                ),
+            ),
+            RuleTemplateCatalogResponse(
+                template_code="territorial-funai-v1",
+                rule_code=TERRITORIAL_FUNAI_RULE_CODE,
+                name="Sobreposicao territorial com terra indigena da FUNAI",
+                purpose_hint=(
+                    "Usar quando o mercado exige ausencia de sobreposicao territorial "
+                    "conhecida com terra indigena."
+                ),
+                scope_hint="livestock.animal",
+                normative_source_hint=(
+                    "EUDR, protocolo do frigorifico ou politica territorial do mercado."
+                ),
+                required_evidence_types=["livestock.property_geometry", "funai.territorial_layer"],
+                conditions=[
+                    RuleTemplateConditionResponse(
+                        fact_type=TERRITORIAL_FUNAI_FACT_TYPE,
+                        payload_key="has_overlap",
+                        operator=ComparisonOperator.EQUALS.value,
+                        expected_value=False,
+                        description=(
+                            "A propriedade relevante nao pode ter sobreposicao territorial "
+                            "conhecida com terra indigena."
+                        ),
+                    )
+                ],
+                justification_hint=(
+                    "Mercado exige ausencia de sobreposicao territorial conhecida com terra "
+                    "indigena na base consultada."
+                ),
+                corrective_action_hint=(
+                    "Aprofundar diligencia territorial ou redirecionar para mercado compativel."
                 ),
             ),
             RuleTemplateCatalogResponse(

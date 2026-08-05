@@ -12,12 +12,14 @@ import pytest
 
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
 from apps.api.pagination import LIMITE_MAXIMO
+from packages.core_application.decision_governance_service import DecisionGovernanceService
 from packages.core_application.policy_service import PolicyService
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_infrastructure.persistence import set_local_organization_context
 from packages.core_infrastructure.persistence.decision_governance import (
     TransactionalDecisionGovernanceRepository,
 )
+from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
@@ -824,6 +826,155 @@ def test_elegibilidade_abre_proposta_quando_emissao_automatica_exige_revisao_hum
     assert proposta is not None
     assert str(proposta.evaluation_id.value) == corpo["evaluation_id"]
     assert proposta.proposed_result.value == "indeterminada"
+
+
+def test_revisao_humana_oficial_emite_decision_e_dossier(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    auditor: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+
+    def _snapshot_conflitante(
+        self: LivestockFactProvider,
+        organization_id: OrganizationId,
+        target_id: TypedId,
+        at_time: datetime,
+    ) -> FactSnapshot:
+        return FactSnapshot.create(
+            organization_id=organization_id,
+            target_id=target_id,
+            as_of=at_time,
+            facts=(
+                Fact.create(
+                    fact_type=WITHDRAWAL_FACT_TYPE,
+                    payload={"in_withdrawal": False},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="sanitary.attestation",
+                    payload={"result": "approved"},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="sanitary.attestation",
+                    payload={"result": "rejected"},
+                    observed_at=at_time,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(LivestockFactProvider, "get_snapshot", _snapshot_conflitante)
+
+    elegibilidade = operador.post(
+        f"/v1/livestock/animals/{animal}/eligibility",
+        json={},
+        headers=cabecalho,
+    )
+    assert elegibilidade.status_code == 409, elegibilidade.text
+    proposal_id = elegibilidade.json()["proposal_id"]
+
+    proposta = operador.get(
+        f"/v1/livestock/decision-proposals/{proposal_id}",
+        headers=cabecalho,
+    )
+    assert proposta.status_code == 200, proposta.text
+    proposta_corpo = proposta.json()
+    assert proposta_corpo["proposal_id"] == proposal_id
+    assert proposta_corpo["review_count"] == 0
+    assert proposta_corpo["current_proposal"] is True
+
+    revisao = operador.post(
+        f"/v1/livestock/decision-proposals/{proposal_id}/reviews",
+        json={"conclusion": "APROVA", "reasoning": "Conflito revisado com emissao humana."},
+        headers=cabecalho,
+    )
+    assert revisao.status_code == 201, revisao.text
+    revisao_corpo = revisao.json()
+    assert revisao_corpo["proposal_id"] == proposal_id
+    assert revisao_corpo["workflow_status"] == "DECISION_EMITTED"
+    assert revisao_corpo["decision_id"]
+    assert revisao_corpo["dossier_id"]
+
+    dossie = auditor.get(
+        f"/v1/livestock/dossiers/{revisao_corpo['dossier_id']}",
+        headers=cabecalho,
+    )
+    assert dossie.status_code == 200, dossie.text
+    documento = dossie.json()["document"]
+    governance = documento["governance"]
+    assert governance["proposal"]["proposal_id"] == proposal_id
+    assert len(governance["reviews"]) == 1
+    assert governance["reviews"][0]["conclusion"] == "APROVA"
+    assert documento["decision"]["emission_method"] == "HUMAN"
+
+
+def test_revisao_humana_oficial_bloqueia_proposta_nao_corrente(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cabecalho = _cabecalho(ambiente)
+    animal = _criar_animais(ambiente, operador, 1)[0]
+
+    def _snapshot_conflitante(
+        self: LivestockFactProvider,
+        organization_id: OrganizationId,
+        target_id: TypedId,
+        at_time: datetime,
+    ) -> FactSnapshot:
+        return FactSnapshot.create(
+            organization_id=organization_id,
+            target_id=target_id,
+            as_of=at_time,
+            facts=(
+                Fact.create(
+                    fact_type=WITHDRAWAL_FACT_TYPE,
+                    payload={"in_withdrawal": False},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="sanitary.attestation",
+                    payload={"result": "approved"},
+                    observed_at=at_time,
+                ),
+                Fact.create(
+                    fact_type="sanitary.attestation",
+                    payload={"result": "rejected"},
+                    observed_at=at_time,
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(LivestockFactProvider, "get_snapshot", _snapshot_conflitante)
+
+    elegibilidade = operador.post(
+        f"/v1/livestock/animals/{animal}/eligibility",
+        json={},
+        headers=cabecalho,
+    )
+    assert elegibilidade.status_code == 409, elegibilidade.text
+    proposal_id = elegibilidade.json()["proposal_id"]
+    evaluation_id = elegibilidade.json()["evaluation_id"]
+
+    set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
+    evaluation = TransactionalEvaluationRepository(ambiente.connection).get_by_id(
+        TypedId(entity_type="evaluation", value=UUID(evaluation_id))
+    )
+    assert evaluation is not None
+    governance = TransactionalDecisionGovernanceRepository(ambiente.connection)
+    nova_proposta = DecisionGovernanceService(repository=governance).create_proposal(evaluation)
+    assert nova_proposta.proposal_id.value != UUID(proposal_id)
+
+    revisao = operador.post(
+        f"/v1/livestock/decision-proposals/{proposal_id}/reviews",
+        json={"conclusion": "APROVA", "reasoning": "Tentativa sobre proposta superada."},
+        headers=cabecalho,
+    )
+    assert revisao.status_code == 409, revisao.text
+    assert revisao.json()["reason_code"] == "PROPOSTA_NAO_CORRENTE"
 
 
 def test_avaliacao_orientada_a_mercados_filtra_os_mercados_solicitados(

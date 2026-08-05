@@ -2,14 +2,27 @@
 
 import os
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import Connection, create_engine, text
+from sqlalchemy import Connection, create_engine, select, text
+from sqlalchemy.exc import IntegrityError
 
+from packages.core_application import OutboxMessage
+from packages.core_domain import CanonicalPayload
+from packages.core_infrastructure.persistence.events import DomainEventRepository
+from packages.core_infrastructure.persistence.outbox import (
+    TransactionalOutboxMessageWriter,
+    outbox_messages_table,
+)
+from packages.livestock_application.erp_contract import ERP_OPERATIONAL_INTENT_CONTRACT_TYPE
+from packages.livestock_application.erp_outbox import LivestockErpOutboxService
+from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.medication_service import MedicationBatchService
 from packages.livestock_application.treatment_service import TreatmentApplicationService
+from packages.livestock_domain.events import MEDICATION_BATCH_REGISTERED
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
@@ -21,7 +34,7 @@ from packages.livestock_infrastructure.persistence.medication_repository import 
 from packages.livestock_infrastructure.persistence.treatment_repository import (
     TransactionalTreatmentApplicationRepository,
 )
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import FixedClock, OrganizationId, TypedId
 from tests.livestock_support import in_memory_recorder, operation_context
 
 
@@ -173,3 +186,254 @@ def test_treatment_application_correction_and_rls(db_connection: Connection) -> 
     db_connection.execute(text("RESET ROLE"))
     db_connection.execute(text(f"DROP OWNED BY {quoted_role}"))
     db_connection.execute(text(f"DROP ROLE {quoted_role}"))
+
+
+def test_treatment_application_persists_erp_outbox_command_in_same_transaction(
+    db_connection: Connection,
+) -> None:
+    org_id = OrganizationId(uuid4())
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_identity.organizations (organization_id, record_owner_organization_id)
+            VALUES (:org, :org)
+            """
+        ),
+        {"org": org_id.value},
+    )
+    db_connection.execute(
+        text("SELECT set_config('titan.organization_id', :org_id, true)"),
+        {"org_id": str(org_id.value)},
+    )
+
+    prop_id = TypedId.new("rural_property")
+    animal_id = TypedId.new("animal")
+    med_id = TypedId.new("medication")
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_audit.rural_properties (
+                property_id, record_owner_organization_id, code, name,
+                municipality, state_code, created_at
+            ) VALUES (:p, :org, 'P-01', 'Fazenda 1', 'RP', 'SP', NOW())
+            """
+        ),
+        {"p": prop_id.value, "org": org_id.value},
+    )
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_audit.animals (
+                animal_id, record_owner_organization_id, birth_property_id, sex, created_at
+            ) VALUES (:a, :org, :p, 'FEMALE', NOW())
+            """
+        ),
+        {"a": animal_id.value, "org": org_id.value, "p": prop_id.value},
+    )
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_audit.medications (
+                medication_id, record_owner_organization_id, trade_name,
+                active_ingredient, manufacturer, withdrawal_period_days,
+                product_class, created_at
+            ) VALUES (
+                :m, :org, 'Ivomec', 'Ivermectina', 'Boehringer', 122,
+                'PHARMACOLOGICAL', NOW()
+            )
+            """
+        ),
+        {"m": med_id.value, "org": org_id.value},
+    )
+
+    recorder, _ = in_memory_recorder()
+    persisted_recorder = LivestockEventRecorder(
+        event_log=DomainEventRepository(db_connection),
+        clock=FixedClock(datetime.now(UTC)),
+    )
+    context = operation_context(org_id)
+    batch = MedicationBatchService(
+        batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
+        medication_repository=TransactionalMedicationRepository(connection=db_connection),
+        recorder=persisted_recorder,
+    ).register_batch(
+        context=context,
+        medication_id=med_id,
+        batch_number="LOTE-2026-OUTBOX",
+        expiry_date=datetime.now(UTC) + timedelta(days=365),
+    )
+
+    service = TreatmentApplicationService(
+        application_repository=TransactionalTreatmentApplicationRepository(
+            connection=db_connection
+        ),
+        animal_repository=TransactionalAnimalRepository(connection=db_connection),
+        batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
+        prescription_repository=TransactionalPrescriptionRepository(connection=db_connection),
+        recorder=persisted_recorder,
+        erp_outbox_service=LivestockErpOutboxService(
+            writer=TransactionalOutboxMessageWriter(connection=db_connection)
+        ),
+    )
+
+    application = service.register_application(
+        context=context,
+        animal_id=animal_id,
+        medication_batch_id=batch.batch_id,
+        applied_at=datetime.now(UTC) - timedelta(hours=1),
+        dose="1 mL",
+    )
+
+    rows = db_connection.execute(
+        select(outbox_messages_table).where(
+            outbox_messages_table.c.record_owner_organization_id == org_id.value,
+            outbox_messages_table.c.contract_type == ERP_OPERATIONAL_INTENT_CONTRACT_TYPE,
+        )
+    ).all()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.kind == "COMMAND"
+    assert row.causation_id is not None
+    assert str(application.application_id.value).encode() in bytes(row.payload_canonical_bytes)
+
+
+def test_outbox_failure_rolls_back_treatment_application(
+    db_connection: Connection,
+) -> None:
+    org_id = OrganizationId(uuid4())
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_identity.organizations (organization_id, record_owner_organization_id)
+            VALUES (:org, :org)
+            """
+        ),
+        {"org": org_id.value},
+    )
+    db_connection.execute(
+        text("SELECT set_config('titan.organization_id', :org_id, true)"),
+        {"org_id": str(org_id.value)},
+    )
+
+    prop_id = TypedId.new("rural_property")
+    animal_id = TypedId.new("animal")
+    med_id = TypedId.new("medication")
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_audit.rural_properties (
+                property_id, record_owner_organization_id, code, name,
+                municipality, state_code, created_at
+            ) VALUES (:p, :org, 'P-01', 'Fazenda 1', 'RP', 'SP', NOW())
+            """
+        ),
+        {"p": prop_id.value, "org": org_id.value},
+    )
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_audit.animals (
+                animal_id, record_owner_organization_id, birth_property_id, sex, created_at
+            ) VALUES (:a, :org, :p, 'FEMALE', NOW())
+            """
+        ),
+        {"a": animal_id.value, "org": org_id.value, "p": prop_id.value},
+    )
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_audit.medications (
+                medication_id, record_owner_organization_id, trade_name,
+                active_ingredient, manufacturer, withdrawal_period_days,
+                product_class, created_at
+            ) VALUES (
+                :m, :org, 'Ivomec', 'Ivermectina', 'Boehringer', 122,
+                'PHARMACOLOGICAL', NOW()
+            )
+            """
+        ),
+        {"m": med_id.value, "org": org_id.value},
+    )
+
+    recorder, _ = in_memory_recorder()
+    persisted_recorder = LivestockEventRecorder(
+        event_log=DomainEventRepository(db_connection),
+        clock=FixedClock(datetime.now(UTC)),
+    )
+    context = operation_context(org_id)
+    batch = MedicationBatchService(
+        batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
+        medication_repository=TransactionalMedicationRepository(connection=db_connection),
+        recorder=persisted_recorder,
+    ).register_batch(
+        context=context,
+        medication_id=med_id,
+        batch_number="LOTE-2026-ROLLBACK",
+        expiry_date=datetime.now(UTC) + timedelta(days=365),
+    )
+
+    duplicate_message_id = TypedId.new("outbox_message")
+    duplicate_event = persisted_recorder.record(
+        context=context,
+        aggregate_id=batch.batch_id,
+        event_type=MEDICATION_BATCH_REGISTERED,
+        payload=CanonicalPayload.from_mapping(
+            schema="seed.duplicate",
+            version=1,
+            value={},
+        ),
+        occurred_at=datetime.now(UTC),
+    )
+    db_connection.execute(
+        outbox_messages_table.insert().values(
+            message_id=duplicate_message_id.value,
+            record_owner_organization_id=org_id.value,
+            kind="COMMAND",
+            contract_type="seed.duplicate",
+            contract_version=1,
+            actor_type="actor",
+            actor_id=context.actor_reference.target_id.value,
+            producer_type=context.source_reference.target_id.entity_type,
+            producer_id=context.source_reference.target_id.value,
+            occurred_at=datetime.now(UTC),
+            recorded_at=datetime.now(UTC),
+            correlation_id=context.correlation_id.value,
+            causation_id=duplicate_event.event_id.value,
+            idempotency_key="seed-duplicate",
+            payload_schema="seed.duplicate",
+            payload_version=1,
+            payload_canonical_bytes=b"{}",
+            classification="PROTECTED",
+            status="PENDENTE",
+        )
+    )
+
+    class DuplicateIdWriter(TransactionalOutboxMessageWriter):
+        def append(self, message: OutboxMessage) -> None:
+            super().append(replace(message, message_id=duplicate_message_id))
+
+    service = TreatmentApplicationService(
+        application_repository=TransactionalTreatmentApplicationRepository(
+            connection=db_connection
+        ),
+        animal_repository=TransactionalAnimalRepository(connection=db_connection),
+        batch_repository=TransactionalMedicationBatchRepository(connection=db_connection),
+        prescription_repository=TransactionalPrescriptionRepository(connection=db_connection),
+        recorder=persisted_recorder,
+        erp_outbox_service=LivestockErpOutboxService(
+            writer=DuplicateIdWriter(connection=db_connection)
+        ),
+    )
+
+    with pytest.raises(IntegrityError):
+        with db_connection.begin_nested():
+            service.register_application(
+                context=context,
+                animal_id=animal_id,
+                medication_batch_id=batch.batch_id,
+                applied_at=datetime.now(UTC) - timedelta(minutes=30),
+                dose="1 mL",
+            )
+
+    repo = TransactionalTreatmentApplicationRepository(connection=db_connection)
+    assert repo.list_by_batch(org_id, batch.batch_id) == []
