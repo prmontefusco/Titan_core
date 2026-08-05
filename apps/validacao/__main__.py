@@ -62,21 +62,42 @@ class Rebanho:
         return self.ids[apelido]
 
 
-def _descobrir_organizacao(database_url: str) -> str:
+def _descobrir_organizacao(
+    database_url: str,
+    *,
+    issuer: str | None = None,
+    subject: str | None = None,
+) -> str:
     """A Organization em que o usuário de demonstração de fato opera.
 
     Não é a operadora — a operadora é onde a identidade vive, e é justamente
-    onde ele **não** opera. Quem responde é o vínculo, e o vínculo mais recente
-    é o da última semeadura.
+    onde ele **não** opera. Quando o principal é conhecido, responde o vínculo
+    mais recente desse usuário; sem isso, cai no atalho histórico do vínculo
+    ativo mais recente do banco.
     """
     engine = create_engine(database_url)
     with engine.connect() as conexao:
-        linha = conexao.execute(
-            text(
-                "SELECT organization_id FROM core_identity.memberships "
-                "WHERE status = 'ATIVA' ORDER BY valid_from DESC LIMIT 1"
-            )
-        ).fetchone()
+        if issuer and subject:
+            linha = conexao.execute(
+                text(
+                    "SELECT memberships.organization_id "
+                    "FROM core_identity.memberships AS memberships "
+                    "JOIN core_identity.external_identities AS external_identities "
+                    "  ON external_identities.internal_principal_id = memberships.user_id "
+                    "WHERE external_identities.issuer = :issuer "
+                    "  AND external_identities.subject = :subject "
+                    "  AND memberships.status = 'ATIVA' "
+                    "ORDER BY memberships.valid_from DESC LIMIT 1"
+                ),
+                {"issuer": issuer, "subject": subject},
+            ).fetchone()
+        else:
+            linha = conexao.execute(
+                text(
+                    "SELECT organization_id FROM core_identity.memberships "
+                    "WHERE status = 'ATIVA' ORDER BY valid_from DESC LIMIT 1"
+                )
+            ).fetchone()
     engine.dispose()
     if linha is None:
         raise SystemExit(
