@@ -11,6 +11,7 @@ from packages.livestock_application.event_recorder import (
 )
 from packages.livestock_application.imported_fact_service import ImportedLivestockFactService
 from packages.livestock_domain.events import IMPORTED_FACT_RECORDED, TRANSFER_ARTIFACT_RECEIVED
+from packages.shared_kernel import TypedId
 from tests.livestock_application.conftest import FakeEventLog
 from tests.livestock_application.test_imported_fact_service import InMemoryImportedFactRepo
 from tests.livestock_application.test_transfer_artifact_service import _service as artifact_service
@@ -19,7 +20,7 @@ from tests.livestock_application.test_transfer_artifact_service import _service 
 def _build_service(
     recorder: LivestockEventRecorder,
     context: LivestockOperationContext,
-) -> tuple[DocumentaryAcquisitionService, object, object]:
+) -> tuple[DocumentaryAcquisitionService, TypedId, TypedId]:
     transfer_service, animal_id, counterparty_id = artifact_service(recorder, context)
     service = DocumentaryAcquisitionService(
         artifact_service=transfer_service,
