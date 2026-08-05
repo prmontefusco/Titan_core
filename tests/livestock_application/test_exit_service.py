@@ -76,7 +76,11 @@ class InMemoryAnimalRepo(AnimalRepositoryPort):
         return self._saidas.get_by_animal(animal_id)
 
     def list_by_organization(
-        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+        self,
+        organization_id: OrganizationId,
+        limit: int = 50,
+        offset: int = 0,
+        identifier: str | None = None,
     ) -> list[Animal]:
         return list(self.animals.values())
 

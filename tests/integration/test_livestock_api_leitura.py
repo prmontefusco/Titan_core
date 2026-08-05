@@ -416,6 +416,44 @@ def test_o_animal_cadastrado_aparece_na_listagem(
     assert corpo["offset"] == 0
 
 
+def test_listagem_filtra_por_trecho_do_identificador(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    """A busca de animal (LIV-PROD-01) precisa achar um animal específico num rebanho grande."""
+    alvo = operador.post(
+        "/v1/livestock/animals",
+        json={
+            "birth_property_id": str(ambiente.property_id.value),
+            "sex": "FEMALE",
+            "initial_identifier_type": "OFFICIAL_SISBOV",
+            "initial_identifier_value": "BR99881122",
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert alvo.status_code == 201, alvo.text
+    outro = operador.post(
+        "/v1/livestock/animals",
+        json={
+            "birth_property_id": str(ambiente.property_id.value),
+            "sex": "MALE",
+            "initial_identifier_type": "OFFICIAL_SISBOV",
+            "initial_identifier_value": "BR11223344",
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert outro.status_code == 201, outro.text
+
+    parcial = operador.get(
+        "/v1/livestock/animals?identifier=9988", headers=_cabecalho(ambiente)
+    ).json()
+    assert [item["animal_id"] for item in parcial["items"]] == [alvo.json()["animal_id"]]
+
+    sem_match = operador.get(
+        "/v1/livestock/animals?identifier=00000000", headers=_cabecalho(ambiente)
+    ).json()
+    assert sem_match["items"] == []
+
+
 def test_a_pagina_indica_se_ha_mais_sem_precisar_contar_tudo(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:

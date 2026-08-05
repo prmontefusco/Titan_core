@@ -61,9 +61,20 @@ class InMemoryAnimalRepository(AnimalRepositoryPort):
         return self.saidas.get(animal_id.value.hex)
 
     def list_by_organization(
-        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+        self,
+        organization_id: OrganizationId,
+        limit: int = 50,
+        offset: int = 0,
+        identifier: str | None = None,
     ) -> list[Animal]:
         filtered = [a for a in self.animals.values() if a.organization_id == organization_id]
+        if identifier is not None and identifier.strip():
+            agulha = identifier.strip().lower()
+            filtered = [
+                a
+                for a in filtered
+                if any(agulha in tag.identifier_value.lower() for tag in a.identifiers)
+            ]
         return filtered[offset : offset + limit]
 
 
@@ -86,6 +97,39 @@ def test_register_animal_and_find_by_sisbov(
         context.organization_id, IdentifierType.OFFICIAL_SISBOV, "BR99881122"
     )
     assert found == animal
+
+
+def test_list_by_organization_filters_by_identifier_substring(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    repository = InMemoryAnimalRepository()
+    service = AnimalService(repository=repository, recorder=recorder)
+    alvo = service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.FEMALE,
+        initial_identifier_type=IdentifierType.OFFICIAL_SISBOV,
+        initial_identifier_value="BR99881122",
+    )
+    outro = service.register_animal(
+        context=context,
+        birth_property_id=TypedId.new("rural_property"),
+        sex=AnimalSex.MALE,
+        initial_identifier_type=IdentifierType.OFFICIAL_SISBOV,
+        initial_identifier_value="BR11223344",
+    )
+
+    parcial = repository.list_by_organization(context.organization_id, identifier="9988")
+    assert [a.animal_id for a in parcial] == [alvo.animal_id]
+
+    sem_match = repository.list_by_organization(context.organization_id, identifier="00000000")
+    assert sem_match == []
+
+    sem_filtro = repository.list_by_organization(context.organization_id, identifier=None)
+    assert {a.animal_id for a in sem_filtro} == {alvo.animal_id, outro.animal_id}
+
+    vazio = repository.list_by_organization(context.organization_id, identifier="   ")
+    assert {a.animal_id for a in vazio} == {alvo.animal_id, outro.animal_id}
 
 
 def test_registering_with_initial_tag_records_both_facts_in_order(

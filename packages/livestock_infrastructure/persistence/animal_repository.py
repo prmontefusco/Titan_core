@@ -236,6 +236,7 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
         organization_id: OrganizationId,
         limit: int = 50,
         offset: int = 0,
+        identifier: str | None = None,
         include_exited: bool = False,
     ) -> list[Animal]:
         """Por padrão devolve o **rebanho ativo**.
@@ -251,6 +252,17 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
             .limit(limit)
             .offset(offset)
         )
+        if identifier is not None and identifier.strip():
+            stmt = stmt.where(
+                exists(
+                    select(animal_identifiers_table.c.identifier_id).where(
+                        animal_identifiers_table.c.animal_id == animals_table.c.animal_id,
+                        animal_identifiers_table.c.identifier_value.ilike(
+                            f"%{identifier.strip()}%"
+                        ),
+                    )
+                )
+            )
         if not include_exited:
             stmt = stmt.where(
                 ~exists(
