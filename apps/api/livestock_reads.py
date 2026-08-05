@@ -533,7 +533,8 @@ def listar_fatos_importados(
         "histórico inteiro: incluir por padrão quem já morreu, foi abatido ou "
         "vendido enviesaria toda tela e todo relatório. Use "
         "`incluir_saidos=true` para o levantamento histórico — aí cada linha traz "
-        "o objeto `saida` preenchido para quem já deixou o rebanho."
+        "o objeto `saida` preenchido para quem já deixou o rebanho. `identifier` "
+        "filtra por trecho do valor de qualquer identificador ativo do animal."
     ),
     responses=RESPOSTAS_PADRAO,
 )
@@ -542,6 +543,7 @@ def listar_animais(
     paginacao: PaginacaoDependency,
     connection: ConnectionDependency,
     incluir_saidos: bool = False,
+    identifier: str | None = None,
 ) -> Any:
     repositorio = TransactionalAnimalRepository(connection=connection)
     encontrados = repositorio.list_by_organization(
@@ -549,6 +551,7 @@ def listar_animais(
         limit=paginacao.limite_de_sondagem,
         offset=paginacao.offset,
         include_exited=incluir_saidos,
+        identifier=identifier,
     )
     # A consulta por animal só acontece quando os saídos foram pedidos, e no
     # máximo uma vez por linha da página. Na listagem padrão não há o que buscar:

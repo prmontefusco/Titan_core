@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from 'react-oidc-context'
+import { Link, Route, Routes } from 'react-router-dom'
 import { apiBaseUrl, organizationId } from './config'
 import {
   fetchMyStatus,
@@ -9,9 +10,12 @@ import {
   type MyStatusResponse,
 } from './api/entityTypeRequests'
 import { AdminQueue } from './components/AdminQueue'
-import { Dashboard } from './components/Dashboard'
 import { EntityTypeSelectionForm } from './components/EntityTypeSelectionForm'
 import { PendingStatus } from './components/PendingStatus'
+import { LivestockHome } from './pages/LivestockHome'
+import { AnimalSearch } from './pages/AnimalSearch'
+import { AnimalDetail } from './pages/AnimalDetail'
+import { AnimalTimeline } from './pages/AnimalTimeline'
 import titanLogo from './assets/titan-bode.png'
 
 function Brand() {
@@ -34,7 +38,6 @@ function StatusConteudo({
   registrationKind: EntityKind | undefined
   onPedidoEnviado: () => void
 }) {
-  const [aba, setAba] = useState<'dashboard' | 'admin'>('dashboard')
   const options = { baseUrl: apiBaseUrl, accessToken, organizationId }
 
   if (status.has_membership) {
@@ -47,15 +50,16 @@ function StatusConteudo({
     return (
       <>
         <nav>
-          <button type="button" onClick={() => setAba('dashboard')} disabled={aba === 'dashboard'}>
-            Painel
-          </button>{' '}
-          <button type="button" onClick={() => setAba('admin')} disabled={aba === 'admin'}>
-            Fila de aprovação
-          </button>
+          <Link to="/">Início</Link> | <Link to="/animals">Animais</Link> |{' '}
+          <Link to="/admin">Fila de aprovação</Link>
         </nav>
-        {aba === 'dashboard' && <Dashboard kind={kind} />}
-        {aba === 'admin' && <AdminQueue {...options} />}
+        <Routes>
+          <Route path="/" element={<LivestockHome kind={kind} organizationId={organizationId} />} />
+          <Route path="/animals" element={<AnimalSearch {...options} />} />
+          <Route path="/animals/:animalId" element={<AnimalDetail {...options} />} />
+          <Route path="/animals/:animalId/timeline" element={<AnimalTimeline {...options} />} />
+          <Route path="/admin" element={<AdminQueue {...options} />} />
+        </Routes>
       </>
     )
   }
