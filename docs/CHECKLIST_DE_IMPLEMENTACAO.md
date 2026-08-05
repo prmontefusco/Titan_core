@@ -1,6 +1,6 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 29 de julho de 2026
+**Atualizado em:** 4 de agosto de 2026
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
 **Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
 
@@ -11,6 +11,24 @@
 > documentos revoga `DOMAIN.md`, `ARCHITECTURE.md`, `DEVELOPMENT.md` ou o
 > checklist; eles refinam a interpretação arquitetural para os próximos
 > incrementos.
+
+> **Validação operacional FUNAI concluída em 04/08/2026.** A vertical Livestock
+> agora possui leitura técnica de sobreposição territorial FUNAI por
+> propriedade (`GET /v1/livestock/properties/{property_id}/territorial-overlaps/funai`),
+> fato governável `livestock.territorial.funai`, template
+> `rule-sobreposicao-funai` publicado no catálogo e roteiro executável
+> `apps/validacao/funai.py` **rodado com 5/5 passos aprovados** contra API real,
+> Keycloak real e `Titan_geodata` real. O caso validado para o imóvel
+> `MS-5006606-3DCF573FEF1E44B9972057BD4C932A9E` respondeu `SEM_RESTRICAO`,
+> `feature_count = 0` e `gaps = []`, comprovando também o comportamento
+> esperado quando a camada `FUNAI_TI` está carregada no provider, mas não há
+> interseção materializada em `layers` para a fazenda consultada.
+>
+> **Próximo passo explícito desta frente:** deliberadamente **não** foi
+> amarrado nenhum `MarketProfile` padrão a essa regra ainda. A capacidade
+> técnica está fechada; falta apenas decisão normativa explícita sobre qual
+> mercado deve consumir `rule-sobreposicao-funai` por padrão e com qual efeito
+> comercial.
 
 > **Ponto de parada em 30/07/2026 (ADR-0052/0054/0055):** o Core avançou além
 > do estado descrito acima para a trilha de decisões explicáveis. A Fase 1 da
@@ -180,6 +198,10 @@ Os quatro itens devem ser implementados em incrementos separados, com testes foc
 > **Regra de governança desta fase:** item da Trilha B não puxa automaticamente item da Trilha A, e vice-versa. Cada novo incremento deve declarar em qual trilha entra, qual risco reduz ou qual valor agrega, e por que merece precedência sobre os demais.
 >
 > **Frentes escolhidas pelo responsável em 30/07/2026.** Ficam formalmente abertas para a fase pós-MVP as seguintes frentes, nesta ordem lógica de leitura e priorização: **Trilha A:** (1) fechar a borda de produção da ADR-0054; (2) completar ou decidir explicitamente o escopo residual da ADR-0052; (3) criar o roteiro executável do embargo IBAMA via HTTP real; **Trilha B:** (4) avaliação territorial; (5) integração externa real de qualificação de estabelecimento; (6) frontend. Nenhuma dessas frentes reabre o MVP já aceito; elas passam a compor o backlog da fase seguinte.
+
+> **Mapeamento do provider territorial consolidado em 03/08/2026.** O `Titan_geodata` local evoluiu além do contrato originalmente consumido pelo Titan. Leitura direta do código e dos testes do provider (`C:\programing\Titan_geodata\backend\app\api\v1\endpoints\sicar.py`, `C:\programing\Titan_geodata\backend\app\services\sicar_service.py`, `C:\programing\Titan_geodata\backend\tests\test_sicar.py`) confirmou dois endpoints novos relevantes para a Trilha B: `GET /api/v1/sicar/farm`, que aceita **ou** `cod_imovel` **ou** `lat`/`lng` e devolve payload consolidado com `lookup`, `property`, `layers` e `coverage`; e `GET /api/v1/sicar/farm/timeline`, que aceita o mesmo lookup e devolve série anual por camada temporal. Camadas já exercitadas nos testes do provider: `TB_PRODES`, `TB_DETER` e `IBAMA_EMBARGOS`. O timeline devolve, por ano, pelo menos `feature_count`, `source_area_hectares`, `overlap_area_hectares` e `version_ids`, além de `source`, `layer`, `year_from`, `year_to` e `property_area_hectares` no envelope.
+
+> **Direção recomendada a partir desse achado (03/08/2026).** Não estender `PropertyEnvironmentalEmbargoAssertion` para tudo. A trilha territorial deve nascer sobre dois contratos distintos do provider: (1) **snapshot territorial consolidado** via `farm`, para lookup do imóvel e sobreposições/camadas atuais; (2) **timeline territorial** via `farm/timeline`, para fenômenos cuja pergunta correta é temporal, não apenas espacial. Ordem sugerida de implementação no Titan: **B1.** adaptar o adapter geodata para entender `farm` como nova entrada principal, preservando `lookup`, `coverage`, `version_ids` e metadados necessários à auditoria; **B2.** introduzir contrato interno separado para timeline territorial; **B3.** iniciar a trilha temporal por `PRODES`, depois `DETER`, porque esses já nascem alinhados à pergunta regulatória certa; **B4.** só então modelar `FUNAI` e a evolução do `IBAMA` no novo desenho, sem reusar indevidamente o vocabulário de `environmental_embargo` para toda restrição territorial.
 >
 > **Frente ativa a partir de 30/07/2026:** iniciar pela **ADR-0054 na borda de produção**, por ser a intervenção com melhor relação entre risco reduzido e impacto estrutural imediato. Critério de saída esperado: uma chamada real de API ou vertical deixa de apenas receber `DecisionEmissionRefused` e passa a produzir/encaminhar a `DecisionProposal` de revisão humana de forma operacional, auditável e testada ponta a ponta.
 >

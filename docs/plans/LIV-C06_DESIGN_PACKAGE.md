@@ -245,6 +245,74 @@ Conclusão:
 - O menor caminho conforme continua sendo reutilizar o núcleo existente, mas somente depois de fixar explicitamente a política de autoridade/permissão para review e emissão humana.
 - Se a implementação exigir novo conceito central de governança, a execução deve parar e voltar para aprovação arquitetural.
 
+## 7.1 Proposta mínima de resolução de autoridade humana
+
+Proposta mínima para destravar a implementação sem alterar o modelo central:
+
+- introduzir uma permissão explícita e exclusiva para executar o fluxo técnico de revisão/emissão:
+  - `DECISION_REVIEW_EXECUTE`
+- essa permissão não deve ser inferida de payload do cliente;
+- o endpoint oficial de review/emissão deve continuar resolvendo autoridade a partir do `OrganizationContext` validado pelo servidor.
+
+Distinção obrigatória:
+
+- `Permission` autoriza a operação técnica do endpoint;
+- `DecisionAuthorityProfile` continua sendo a única base para competência de revisão/emissão oficial;
+- a implementação não deve sugerir que a autoridade nasce da permissão.
+
+Resolução mínima proposta para o `DecisionAuthorityProfile` humano:
+
+- `principal_reference`:
+  - derivado de `contexto.actor_id`;
+- `organization_id`:
+  - derivado de `contexto.organization_id`;
+- `purpose`:
+  - copiada da `DecisionProposal` ou da `Evaluation` correspondente;
+- `role_name`:
+  - resolvido a partir do perfil compatível com a combinação entre `Organization`, `Purpose`, `Role`, `Permission` e validade;
+  - a resolução nunca depende do “primeiro papel” do contexto;
+- `emission_method`:
+  - `HUMAN`;
+- `approvals_required`:
+  - `1` no caminho mínimo do MVP;
+- `is_active`:
+  - `true`;
+- `valid_from` e `valid_to`:
+  - opcionais, sem inventar regra temporal nova nesta etapa.
+
+Regra mínima proposta de segregação:
+
+- no caminho mínimo do MVP, o mesmo ator pode revisar e emitir;
+- essa permissão deve ser explícita e aprovada humanamente;
+- endurecimento posterior para dupla aprovação ou segregação forte pode ser feito depois, sem exigir novo conceito central.
+
+Fluxo oficial mínimo proposto:
+
+1. localizar `DecisionProposal`;
+2. registrar `DecisionReview`;
+3. se a conclusão for `APROVA`, resolver `DecisionAuthorityProfile` humano a partir do `OrganizationContext`;
+4. executar `Current Proposal Verification`;
+5. resolver a `Evaluation` corrente referenciada pela proposta;
+6. resolver a `Policy` corrente exigida pelo fluxo de emissão, sem reescrever a trilha histórica;
+7. emitir `Decision` via `emit_after_approval()`;
+8. persistir `Decision`;
+9. materializar `Dossier` com seção `governance`.
+
+Gate temporal adicional obrigatório:
+
+- `Current Proposal Verification` deve impedir emissão quando a proposta aprovada já não for a proposta corrente para aquela `Evaluation`/`purpose`;
+- se existir `Evaluation` ou `DecisionProposal` mais recente e aplicável, a emissão da proposta anterior deve falhar fechado;
+- a implementação não pode permitir reutilizar uma approval antiga sobre material superado.
+
+Invariantes adicionais desta proposta:
+
+- o cliente nunca escolhe `DecisionAuthorityProfile`;
+- o cliente nunca escolhe autoridade por papel, nome de papel ou combinação declarada no payload;
+- `REJEITA` e `DEVOLVE` não emitem `Decision`;
+- `DecisionReview` permanece append-only e não reescreve `Evaluation` nem `DecisionProposal`;
+- temporalidade precisa ser revalidada antes da emissão humana final;
+- nenhuma entidade, agregado, enum central ou migration estrutural é introduzido por esta decisão mínima.
+
 ## 8. Riscos
 
 - ampliar o escopo e acabar implementando contestação, override e UI completos de uma vez;
@@ -300,9 +368,9 @@ Este artefato não:
 Próxima ação potencial:
 
 - obter decisão humana explícita sobre:
-  - qual permissão autoriza review/emissão humana;
-  - como o `DecisionAuthorityProfile` humano é resolvido do contexto real;
-  - se o caminho mínimo permite o mesmo ator revisar e emitir, ou se exige segregação.
+  - aprovação ou rejeição da permissão `DECISION_REVIEW_EXECUTE`;
+  - aprovação ou rejeição da resolução mínima proposta do `DecisionAuthorityProfile` humano a partir do `OrganizationContext`;
+  - aprovação ou rejeição do caminho MVP em que o mesmo ator pode revisar e emitir.
 
 Condição:
 

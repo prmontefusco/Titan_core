@@ -1,6 +1,6 @@
 # LIVESTOCK_LIFETIME_COMPLIANCE_PLAN
 
-Status: DRAFT_FOR_APPROVAL
+Status: APROVADO
 Version: 1.2
 Date: 2026-08-04
 Scope: Rastreabilidade sanitária vitalícia no Titan Livestock, demonstração sobre antimicrobianos, evaluation/decision explicável, dossier verificável e contrato de fronteira com ERP
