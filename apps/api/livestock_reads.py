@@ -957,6 +957,27 @@ def _resumo_embargo_assertion(registro: Any) -> "EmbargoAmbientalAssertionResumo
     )
 
 
+def _ano_resumo_territorial(item: dict[str, Any]) -> "TimelineTerritorialAnoResumo":
+    ano = item.get("year")
+    quantidade = item.get("feature_count", 0)
+    area_sobreposta = item.get("overlap_area_hectares")
+    area_fonte = item.get("source_area_hectares")
+    versoes = item.get("version_ids", [])
+    return TimelineTerritorialAnoResumo(
+        year=(ano if isinstance(ano, int) else None),
+        feature_count=(int(quantidade) if isinstance(quantidade, int | float | str) else 0),
+        overlap_area_hectares=(
+            float(area_sobreposta) if isinstance(area_sobreposta, int | float) else None
+        ),
+        source_area_hectares=(float(area_fonte) if isinstance(area_fonte, int | float) else None),
+        version_ids=[
+            str(version_id)
+            for version_id in (versoes if isinstance(versoes, list) else [])
+            if version_id
+        ],
+    )
+
+
 def _resumo_timeline_territorial(
     assessment: PropertyTerritorialTimelineAssessment,
 ) -> "TimelineTerritorialResponse":
@@ -971,26 +992,7 @@ def _resumo_timeline_territorial(
         property_area_hectares=assessment.property_area_hectares,
         year_from=assessment.year_from,
         year_to=assessment.year_to,
-        years=[
-            TimelineTerritorialAnoResumo(
-                year=item.get("year"),
-                feature_count=int(item.get("feature_count", 0)),
-                overlap_area_hectares=(
-                    float(item["overlap_area_hectares"])
-                    if isinstance(item.get("overlap_area_hectares"), int | float)
-                    else None
-                ),
-                source_area_hectares=(
-                    float(item["source_area_hectares"])
-                    if isinstance(item.get("source_area_hectares"), int | float)
-                    else None
-                ),
-                version_ids=[
-                    str(version_id) for version_id in item.get("version_ids", []) if version_id
-                ],
-            )
-            for item in assessment.years
-        ],
+        years=[_ano_resumo_territorial(item) for item in assessment.years],
         response_digest=assessment.response_digest,
         gaps=[gap.to_dict() for gap in assessment.gaps],
     )

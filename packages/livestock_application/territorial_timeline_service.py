@@ -15,7 +15,8 @@ from typing import Protocol
 
 from packages.livestock_application.geometry_service import PropertyGeometryRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
-from packages.livestock_domain.geometry import CAMADA_PERIMETRO
+from packages.livestock_domain.geometry import CAMADA_PERIMETRO, PropertyGeometry
+from packages.livestock_domain.property import RuralProperty
 from packages.livestock_infrastructure.geodata import TerritorialTimelineAssessment
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -265,8 +266,8 @@ def _gap_result(
 
 def _map_timeline_result(
     *,
-    property_found: object,
-    geometry: object,
+    property_found: RuralProperty,
+    geometry: PropertyGeometry,
     timeline: TerritorialTimelineAssessment,
     year_from: int | None,
     year_to: int | None,

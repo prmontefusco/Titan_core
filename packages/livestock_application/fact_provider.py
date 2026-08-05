@@ -117,15 +117,6 @@ class TerritorialOverlapReaderPort(Protocol):
         property_id: TypedId,
     ) -> PropertyTerritorialOverlapAssessment: ...
 
-    def assess_deter_timeline(
-        self,
-        organization_id: OrganizationId,
-        property_id: TypedId,
-        *,
-        year_from: int | None = None,
-        year_to: int | None = None,
-    ) -> PropertyTerritorialTimelineAssessment: ...
-
 
 @dataclass(frozen=True, slots=True)
 class LivestockFactProvider(FactProviderPort):
@@ -287,14 +278,14 @@ class LivestockFactProvider(FactProviderPort):
                             )
                         )
                 if property_id is not None and self.territorial_overlap_service is not None:
-                    assessment = self.territorial_overlap_service.assess_funai_overlap(
+                    overlap_assessment = self.territorial_overlap_service.assess_funai_overlap(
                         organization_id,
                         property_id,
                     )
                     fact_list.append(
                         Fact.create(
                             fact_type=TERRITORIAL_FUNAI_FACT_TYPE,
-                            payload=_territorial_overlap_payload(assessment),
+                            payload=_territorial_overlap_payload(overlap_assessment),
                             observed_at=at_time,
                         )
                     )
@@ -630,12 +621,14 @@ def _territorial_timeline_payload(
 ) -> dict[str, Any]:
     years = list(assessment.years)
     total_feature_count = sum(
-        int(item["feature_count"]) for item in years if isinstance(item.get("feature_count"), int)
+        feature_count
+        for item in years
+        if isinstance(feature_count := item.get("feature_count"), int)
     )
     occurrence_years = [
-        int(item["year"])
+        year
         for item in years
-        if isinstance(item.get("year"), int) and item["feature_count"]
+        if isinstance(year := item.get("year"), int) and item["feature_count"]
     ]
     return {
         "property_id": assessment.property_id.value.hex,
