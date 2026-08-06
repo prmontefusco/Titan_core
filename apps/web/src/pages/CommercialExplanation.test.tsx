@@ -23,6 +23,19 @@ function renderTela(animalId = 'a1') {
   )
 }
 
+function renderTelaDeLote(lotId = 'l1') {
+  return render(
+    <MemoryRouter initialEntries={[`/lots/${lotId}/commercial-explanation`]}>
+      <Routes>
+        <Route
+          path="/lots/:lotId/commercial-explanation"
+          element={<CommercialExplanation {...options} />}
+        />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 describe('CommercialExplanation', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -95,5 +108,47 @@ describe('CommercialExplanation', () => {
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent(/revisão humana/i)
     expect(alerta).toHaveTextContent('p1')
+  })
+
+  it('funciona para lote, chamando com lot_id e linkando animais afetados', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        subject_type: 'lot',
+        subject_id: 'l1',
+        requested_markets: ['exportacao-estados-unidos'],
+        commercial_outlook: 'INCONCLUSIVO',
+        can_sell_to_any_requested_market: false,
+        executive_summary: 'Resumo do lote.',
+        narrative: 'Alguns animais do lote ainda não podem ser avaliados.',
+        recommended_next_action: null,
+        markets: [
+          {
+            market: 'exportacao-estados-unidos',
+            status: 'INDETERMINADO',
+            summary: 'Parcialmente avaliado.',
+            why: [],
+            next_action: null,
+            affected_animal_ids: ['a1', 'a2'],
+          },
+        ],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderTelaDeLote()
+    fireEvent.click(screen.getByRole('button', { name: /gerar explicação comercial/i }))
+
+    expect(await screen.findByText(/INCONCLUSIVO/)).toBeInTheDocument()
+    expect(screen.getByText('a1')).toBeInTheDocument()
+    expect(screen.getByText('a2')).toBeInTheDocument()
+
+    const chamada = fetchMock.mock.calls[0]
+    expect(JSON.parse(chamada[1].body)).toEqual({
+      animal_id: null,
+      lot_id: 'l1',
+      slaughterhouse_counterparty_id: null,
+    })
   })
 })
