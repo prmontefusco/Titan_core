@@ -131,14 +131,10 @@ export function AnimalDetail(options: Options) {
           <Link to={`/animals/${animal.animal_id}/treatments/new`}>Registrar tratamento</Link>
         </li>
         <li>
-          <button type="button" disabled title="Ainda não disponível nesta versão">
-            Executar elegibilidade
-          </button>
+          <Link to={`/animals/${animal.animal_id}/eligibility`}>Executar elegibilidade</Link>
         </li>
         <li>
-          <button type="button" disabled title="Ainda não disponível nesta versão">
-            Executar análise de mercado
-          </button>
+          <Link to={`/animals/${animal.animal_id}/market-matrix`}>Executar análise de mercado</Link>
         </li>
       </ul>
     </section>

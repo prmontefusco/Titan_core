@@ -17,6 +17,9 @@ import { AnimalSearch } from './pages/AnimalSearch'
 import { AnimalDetail } from './pages/AnimalDetail'
 import { AnimalTimeline } from './pages/AnimalTimeline'
 import { TreatmentForm } from './pages/TreatmentForm'
+import { AnimalEligibility } from './pages/AnimalEligibility'
+import { MarketMatrix } from './pages/MarketMatrix'
+import { CommercialExplanation } from './pages/CommercialExplanation'
 import titanLogo from './assets/titan-bode.png'
 
 function Brand() {
@@ -62,6 +65,15 @@ function StatusConteudo({
           <Route
             path="/animals/:animalId/treatments/new"
             element={<TreatmentForm {...options} />}
+          />
+          <Route
+            path="/animals/:animalId/eligibility"
+            element={<AnimalEligibility {...options} />}
+          />
+          <Route path="/animals/:animalId/market-matrix" element={<MarketMatrix {...options} />} />
+          <Route
+            path="/animals/:animalId/commercial-explanation"
+            element={<CommercialExplanation {...options} />}
           />
           <Route path="/admin" element={<AdminQueue {...options} />} />
         </Routes>
