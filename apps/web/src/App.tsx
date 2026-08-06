@@ -20,6 +20,8 @@ import { TreatmentForm } from './pages/TreatmentForm'
 import { AnimalEligibility } from './pages/AnimalEligibility'
 import { MarketMatrix } from './pages/MarketMatrix'
 import { CommercialExplanation } from './pages/CommercialExplanation'
+import { LotSearch } from './pages/LotSearch'
+import { LotDetail } from './pages/LotDetail'
 import titanLogo from './assets/titan-bode.png'
 
 function Brand() {
@@ -55,7 +57,7 @@ function StatusConteudo({
       <>
         <nav>
           <Link to="/">Início</Link> | <Link to="/animals">Animais</Link> |{' '}
-          <Link to="/admin">Fila de aprovação</Link>
+          <Link to="/lots">Lotes</Link> | <Link to="/admin">Fila de aprovação</Link>
         </nav>
         <Routes>
           <Route path="/" element={<LivestockHome kind={kind} organizationId={organizationId} />} />
@@ -73,6 +75,12 @@ function StatusConteudo({
           <Route path="/animals/:animalId/market-matrix" element={<MarketMatrix {...options} />} />
           <Route
             path="/animals/:animalId/commercial-explanation"
+            element={<CommercialExplanation {...options} />}
+          />
+          <Route path="/lots" element={<LotSearch {...options} />} />
+          <Route path="/lots/:lotId" element={<LotDetail {...options} />} />
+          <Route
+            path="/lots/:lotId/commercial-explanation"
             element={<CommercialExplanation {...options} />}
           />
           <Route path="/admin" element={<AdminQueue {...options} />} />

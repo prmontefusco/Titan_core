@@ -34,6 +34,10 @@ export function LivestockHome({ kind, organizationId }: Props) {
           na busca.
         </li>
         <li>
+          <Link to="/lots">Buscar lote</Link> — analisar a posição comercial de um grupo de
+          animais.
+        </li>
+        <li>
           <Link to="/admin">Fila de aprovação</Link> — decidir pedidos de tipo de entidade
           pendentes.
         </li>
@@ -41,7 +45,6 @@ export function LivestockHome({ kind, organizationId }: Props) {
 
       <h3>Ainda não disponível nesta versão</h3>
       <ul>
-        <li>Visão comercial do lote</li>
         <li>Revisão humana de decisões</li>
       </ul>
     </section>

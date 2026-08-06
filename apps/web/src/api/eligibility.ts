@@ -137,6 +137,45 @@ export interface ExplicacaoComercialResponse {
   markets: ExplicacaoMercadoResponse[]
 }
 
+export interface LotMarketAnimalEntry {
+  animal_id: string
+  market: string
+  status: string
+  summary?: string
+  [chave: string]: unknown
+}
+
+export interface LotMarketEntry {
+  market: string
+  status: string
+  summary?: string
+  dependency: MarketDependencySummary | null
+  eligible_animal_ids: string[]
+  blocked_animal_ids: string[]
+  conditioned_animal_ids: string[]
+  indeterminate_animal_ids: string[]
+  missing_animal_ids: string[]
+  animals: LotMarketAnimalEntry[]
+  [chave: string]: unknown
+}
+
+export interface AvaliacaoMercadosLoteResponse {
+  lot_id: string
+  member_count: number
+  requested_markets: string[]
+  commercial_outlook: string
+  can_sell_to_any_requested_market: boolean
+  executive_summary: string
+  eligible_markets: string[]
+  blocked_markets: string[]
+  conditioned_markets: string[]
+  indeterminate_markets: string[]
+  missing_markets: string[]
+  required_subjects: Record<string, string>[]
+  market_gaps: MarketGap[]
+  markets: LotMarketEntry[]
+}
+
 export interface ContraparteExternaResumo {
   counterparty_id: string
   name: string
@@ -175,9 +214,13 @@ export function runMarketEvaluation(
   })
 }
 
+type SujeitoComercial =
+  | { animalId: string; lotId?: undefined; slaughterhouseCounterpartyId?: string }
+  | { lotId: string; animalId?: undefined; slaughterhouseCounterpartyId?: string }
+
 export function runCommercialExplanation(
   options: RequestOptions,
-  params: { animalId: string; slaughterhouseCounterpartyId?: string },
+  params: SujeitoComercial,
 ): Promise<ExplicacaoComercialResponse> {
   return chamar<ExplicacaoComercialResponse>(
     '/v1/livestock/market-eligibility/commercial-explanations',
@@ -185,7 +228,25 @@ export function runCommercialExplanation(
     {
       method: 'POST',
       body: JSON.stringify({
-        animal_id: params.animalId,
+        animal_id: params.animalId ?? null,
+        lot_id: params.lotId ?? null,
+        slaughterhouse_counterparty_id: params.slaughterhouseCounterpartyId ?? null,
+      }),
+    },
+  )
+}
+
+export function runLotMarketEvaluation(
+  options: RequestOptions,
+  params: { lotId: string; slaughterhouseCounterpartyId?: string },
+): Promise<AvaliacaoMercadosLoteResponse> {
+  return chamar<AvaliacaoMercadosLoteResponse>(
+    '/v1/livestock/market-eligibility/lots/evaluations',
+    options,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        lot_id: params.lotId,
         slaughterhouse_counterparty_id: params.slaughterhouseCounterpartyId ?? null,
       }),
     },

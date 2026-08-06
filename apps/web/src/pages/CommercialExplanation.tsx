@@ -12,27 +12,33 @@ interface Options {
   organizationId: string
 }
 
-// Tela S8 (Onda 3): "para onde posso vender, por que não posso, e qual é a
-// próxima ação?" -- narrativa comercial, não um lugar para resolver
-// dependência de sujeito (isso é a Matriz de Mercado, S7:
-// ExplicacaoMercadoResponse não expõe o campo `dependency` estruturado, só
-// `next_action` em texto -- se um mercado depender de frigorífico ainda não
-// escolhido, o próprio texto do backend orienta a voltar para a matriz).
+// Tela S8 (Onda 3), generalizada na Onda 4 para aceitar lote além de animal
+// -- POST /market-eligibility/commercial-explanations já aceita lot_id como
+// alternativa a animal_id (XOR) e devolve o mesmo ExplicacaoComercialResponse
+// com subject_type diferente, então é o mesmo componente, não uma tela nova.
+//
+// "para onde posso vender, por que não posso, e qual é a próxima ação?" --
+// narrativa comercial, não um lugar para resolver dependência de sujeito
+// (isso é a Matriz de Mercado/Detalhe do Lote: ExplicacaoMercadoResponse não
+// expõe o campo `dependency` estruturado, só `next_action` em texto).
 export function CommercialExplanation(options: Options) {
-  const { animalId } = useParams<{ animalId: string }>()
+  const { animalId, lotId } = useParams<{ animalId?: string; lotId?: string }>()
   const [resultado, setResultado] = useState<ExplicacaoComercialResponse | null>(null)
   const [proposalId, setProposalId] = useState<string | null>(null)
   const [executando, setExecutando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
 
-  if (!animalId) return null
+  if (!animalId && !lotId) return null
 
   const executar = async () => {
     setExecutando(true)
     setErro(null)
     setProposalId(null)
     try {
-      const resposta = await runCommercialExplanation(options, { animalId })
+      const resposta = await runCommercialExplanation(
+        options,
+        animalId ? { animalId } : { lotId: lotId! },
+      )
       setResultado(resposta)
     } catch (error) {
       if (error instanceof EligibilityApiError && error.requiresHumanReview) {
@@ -45,10 +51,14 @@ export function CommercialExplanation(options: Options) {
     }
   }
 
+  const linkDeVolta = animalId
+    ? { to: `/animals/${animalId}/market-matrix`, texto: 'Voltar para a matriz de mercado' }
+    : { to: `/lots/${lotId}`, texto: 'Voltar para o lote' }
+
   return (
     <section>
       <p>
-        <Link to={`/animals/${animalId}/market-matrix`}>&larr; Voltar para a matriz de mercado</Link>
+        <Link to={linkDeVolta.to}>&larr; {linkDeVolta.texto}</Link>
       </p>
       <h2>Explicação comercial</h2>
 
@@ -91,6 +101,17 @@ export function CommercialExplanation(options: Options) {
                 {mercado.next_action && (
                   <p>
                     <em>Próxima ação: {mercado.next_action}</em>
+                  </p>
+                )}
+                {mercado.affected_animal_ids.length > 0 && (
+                  <p>
+                    Animais afetados:{' '}
+                    {mercado.affected_animal_ids.map((id, indice) => (
+                      <span key={id}>
+                        {indice > 0 && ', '}
+                        <Link to={`/animals/${id}`}>{id}</Link>
+                      </span>
+                    ))}
                   </p>
                 )}
               </li>

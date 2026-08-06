@@ -4,6 +4,7 @@ import {
   fetchExternalCounterparties,
   runAnimalEligibility,
   runCommercialExplanation,
+  runLotMarketEvaluation,
   runMarketEvaluation,
 } from './eligibility'
 
@@ -89,6 +90,42 @@ describe('eligibility', () => {
       'http://127.0.0.1:8000/v1/livestock/market-eligibility/commercial-explanations',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+
+  it('runCommercialExplanation aceita lotId em vez de animalId', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ subject_id: 'l1', subject_type: 'lot', markets: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runCommercialExplanation(options, { lotId: 'l1' })
+
+    const chamada = fetchMock.mock.calls[0]
+    expect(JSON.parse(chamada[1].body)).toEqual({
+      animal_id: null,
+      lot_id: 'l1',
+      slaughterhouse_counterparty_id: null,
+    })
+  })
+
+  it('runLotMarketEvaluation envia lot_id e slaughterhouse_counterparty_id', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ lot_id: 'l1', member_count: 2, markets: [] }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runLotMarketEvaluation(options, { lotId: 'l1', slaughterhouseCounterpartyId: 'c1' })
+
+    const chamada = fetchMock.mock.calls[0]
+    expect(chamada[0]).toBe('http://127.0.0.1:8000/v1/livestock/market-eligibility/lots/evaluations')
+    expect(JSON.parse(chamada[1].body)).toEqual({
+      lot_id: 'l1',
+      slaughterhouse_counterparty_id: 'c1',
+    })
   })
 
   it('fetchExternalCounterparties busca a lista de contrapartes', async () => {
