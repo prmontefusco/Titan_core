@@ -22,6 +22,7 @@ import { MarketMatrix } from './pages/MarketMatrix'
 import { CommercialExplanation } from './pages/CommercialExplanation'
 import { LotSearch } from './pages/LotSearch'
 import { LotDetail } from './pages/LotDetail'
+import { DecisionReview } from './pages/DecisionReview'
 import titanLogo from './assets/titan-bode.png'
 
 function Brand() {
@@ -83,6 +84,7 @@ function StatusConteudo({
             path="/lots/:lotId/commercial-explanation"
             element={<CommercialExplanation {...options} />}
           />
+          <Route path="/review/:proposalId" element={<DecisionReview {...options} />} />
           <Route path="/admin" element={<AdminQueue {...options} />} />
         </Routes>
       </>

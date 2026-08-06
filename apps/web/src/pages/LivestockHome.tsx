@@ -41,11 +41,10 @@ export function LivestockHome({ kind, organizationId }: Props) {
           <Link to="/admin">Fila de aprovação</Link> — decidir pedidos de tipo de entidade
           pendentes.
         </li>
-      </ul>
-
-      <h3>Ainda não disponível nesta versão</h3>
-      <ul>
-        <li>Revisão humana de decisões</li>
+        <li>
+          Revisão humana de decisões — a partir do aviso de revisão necessária em qualquer
+          execução de elegibilidade, mercado ou explicação comercial.
+        </li>
       </ul>
     </section>
   )
