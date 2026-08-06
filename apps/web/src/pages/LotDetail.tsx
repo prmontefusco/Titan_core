@@ -178,8 +178,8 @@ export function LotDetail(options: Options) {
 
       {proposalId && (
         <p role="alert">
-          Revisão humana necessária antes de emitir a decisão. Proposta: <code>{proposalId}</code>.
-          O fluxo de revisão ainda não está disponível nesta versão do produto.
+          Revisão humana necessária antes de emitir a decisão. Proposta: <code>{proposalId}</code>.{' '}
+          <Link to={`/review/${proposalId}`}>Abrir revisão humana</Link>
         </p>
       )}
       {erroExecucao && <p role="alert">{erroExecucao}</p>}
