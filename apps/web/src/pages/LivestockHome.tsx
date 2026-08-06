@@ -30,6 +30,10 @@ export function LivestockHome({ kind, organizationId }: Props) {
           Registrar tratamento — a partir do detalhe de um animal encontrado na busca.
         </li>
         <li>
+          Elegibilidade e análise de mercado — a partir do detalhe de um animal encontrado
+          na busca.
+        </li>
+        <li>
           <Link to="/admin">Fila de aprovação</Link> — decidir pedidos de tipo de entidade
           pendentes.
         </li>
@@ -37,7 +41,6 @@ export function LivestockHome({ kind, organizationId }: Props) {
 
       <h3>Ainda não disponível nesta versão</h3>
       <ul>
-        <li>Elegibilidade e matriz de mercado</li>
         <li>Visão comercial do lote</li>
         <li>Revisão humana de decisões</li>
       </ul>
