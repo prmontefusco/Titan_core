@@ -1,10 +1,10 @@
 # Checklist de Implementação — Titan
 
 **Atualizado em:** 6 de agosto de 2026
-**Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
+**Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
 
-> **Aviso de 6 de agosto de 2026 — este documento estava desatualizado além do Passo 17.2.** Duas frentes inteiras de trabalho aconteceram depois sem entrar aqui: a conformidade sanitária vitalícia (`LIV-C01` a `LIV-C09`, `POST-LIV-01`, `POST-LIV-02A` — todas `CONCLUIDA`) e o primeiro produto de frontend do Livestock (`LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md`, Ondas 0–5, mergeado em `main`). Ver a seção **"Bifurcação documental do registro de progresso"**, logo antes de "Notas de rumo", para o que isso significa e o que continua sem decisão.
+> **Consolidação documental em 6 de agosto de 2026.** Este checklist parava no Passo 17.2 e escondia duas frentes inteiras de trabalho já concluídas: a conformidade sanitária vitalícia (`LIV-C01` a `LIV-C09`, `POST-LIV-01`, `POST-LIV-02A` — Marco 18) e o primeiro produto de frontend do Livestock (`LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md`, Ondas 0–5 — Marco 19). Ambos foram incorporados como entradas de primeira classe (ver Marcos 18 e 19, antes de "Notas de rumo"). `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi removido: sua divisão de papéis com este checklist ("plano define passos, checklist registra status") havia colapsado na prática, e é exatamente esse tipo de fronteira teórica entre documentos que causou a bifurcação. Os critérios de conclusão, riscos/controles e regra de interrupção que ainda valiam migraram para a seção "Protocolo e critérios de conclusão" abaixo.
 
 > **Atualização documental em 30/07/2026:** as ADRs `0050` a `0055` devem ser
 > tratadas como **ACEITAS**, e o documento
@@ -46,6 +46,69 @@
 > **limitação temporal declarada**. Isso fortalece a honestidade da ADR-0052,
 > mas **não** fecha ainda a modelagem completa de `known_at` contextual,
 > `accepted_at` e demais tempos do eixo de conhecimento.
+
+## Protocolo e critérios de conclusão
+
+**Migrado de `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` em 6 de agosto de 2026**, antes de sua remoção — o protocolo por passo (reler documentos de autoridade, escopo único, diff revisável, rodar testes/Ruff/Mypy relacionados) já está coberto por `AGENTS.md`/`DEVELOPMENT.md` e não foi duplicado aqui; só o que era específico deste checklist migrou.
+
+### Critérios de conclusão por marco (Marcos 0–10)
+
+| Marco | Evidência de conclusão |
+|---|---|
+| 0 | Documentos de autoridade coerentes e decisões aprovadas |
+| 1 | Ambiente reproduzível, health check e CI verde |
+| 2 | Contratos universais determinísticos, sem termos pecuários |
+| 3 | Autenticação, papéis e isolamento comprovados com duas Organizations |
+| 4 | Histórico append-only, adulteração detectável, checkpoints, prova temporal, idempotência e concorrência testadas |
+| 5 | Evidências imutáveis, assinaturas por perfil, rotação de chaves e proveniência reconstruível |
+| 6 | Decisão reproduzível e explicável a partir de política versionada |
+| 7 | Genealogia, não conformidade, recall, dossiê, verificação externa e sincronização comprovados sem vertical |
+| 8 | Identidade, movimentação e lotes pecuários com histórico temporal |
+| 9 | Fluxo farmacológico bloqueia, corrige e reavalia sem apagar o passado |
+| 10 | Vertical usa o Core sem contaminá-lo; API e dossiê são verificáveis |
+
+Marcos 11 em diante (expansões pós-MVP) não têm critério tabelado — cada um é decomposto e validado no seu próprio registro abaixo.
+
+### Riscos e controles
+
+| Risco | Controle no plano |
+|---|---|
+| Escopo grande demais | Um incremento vertical coeso; dividir quando responsabilidades ou riscos forem independentes |
+| Core contaminado pela vertical | Contrato de provider e teste arquitetural |
+| Dado de uma Organization exposto a outra | Testes negativos desde Identity & Access e em todo endpoint |
+| "Imutabilidade" apenas convencional | Append-only, correções vinculadas e verificador de integridade |
+| Relógio local apresentado como prova temporal | Instante observado separado de timestamp externo validado |
+| TSA indisponível causar carimbo fabricado ou perda | Checkpoint pendente, retry e provider equivalente sem retroatividade |
+| Chave privada armazenada junto aos dados | KeyProvider e armazenamento protegido externo ao banco e ao código |
+| Rotação ou comprometimento apagar validade histórica | `key_id`, certificados públicos preservados, revogação e análise de impacto |
+| Certificado self-signed apresentado como qualificado | Profiles explícitos e trust anchor declarado em cada verificação |
+| Integridade ou assinatura confundida com verdade | Resultado explica escopo criptográfico e nunca certifica conteúdo material |
+| ICP-Brasil apresentada como qualificação automática na UE | Perfil por jurisdição, Trusted Lists aplicáveis e revisão jurídica |
+| Decisão impossível de reproduzir | Snapshots, serialização canônica, versões e hashes |
+| Regra regulatória incorreta | Fonte normativa, aprovação humana, vigência e testes de borda |
+| Dependência prematura de integração/hardware | Entrada manual e adaptadores somente quando necessários |
+| Complexidade excessiva | Diff revisável; contratos genéricos só entram quando exigidos pelo incremento atual |
+| "Gratuito" confundido com custo zero | Inventário de licenças e registro dos custos inevitáveis de infraestrutura e operação |
+| Gratuidade incompatível com confiança acreditada | Core gratuito com providers substituíveis; serviços qualificados são opcionais e têm custo registrado |
+| Core abstrato sem prova | Providers falsos, provas de contrato e cenário genérico completo antes da vertical |
+| Divergência documental | Marco 0 obrigatório e releitura antes de cada passo |
+| Validação manual subjetiva | Roteiro observável com resultados esperados em cada entrega |
+
+### Regra de interrupção
+
+O trabalho deve parar imediatamente quando:
+
+- houver conflito entre documento de autoridade e código;
+- uma regra necessária não existir em `DOMAIN.md`;
+- critérios de aceitação estiverem ambíguos;
+- o incremento misturar funcionalidades ou responsabilidades independentes;
+- surgir alteração de API pública não aprovada;
+- uma dependência nova não tiver justificativa;
+- um teste relacionado falhar;
+- Ruff ou Mypy falhar;
+- a validação manual for reprovada.
+
+Após a interrupção, deve-se apresentar evidências e solicitar uma decisão; nunca escolher silenciosamente.
 
 ## Adequações obrigatórias da ADR-0048
 
@@ -3266,37 +3329,109 @@ Os passos 8.0 a 8.5 só rodam com o provider configurado; sem ele são omitidos 
 
 **Chave recusada agora diz qual chave foi usada** (prefixo, sufixo e comprimento — nunca a chave). Sem isso não se distingue variável vazia, truncada, com o placeholder literal, ou errada. É o mesmo problema do 500 sanitizado do Passo 10.4.
 
-## Bifurcação documental do registro de progresso (constatada em 6 de agosto de 2026)
+## Marco 18 — Conformidade sanitária vitalícia (LIV-C01 a LIV-C09, POST-LIV-01, POST-LIV-02A)
 
-**Este checklist parava no Passo 17.2 e ficava, por isso, enganoso sobre o estado real do código.** Duas frentes de trabalho aconteceram depois, em paralelo, e nenhuma delas foi registrada aqui. Este bloco existe para o documento parar de mentir por omissão — não é um novo Passo numerado do PLANO, e não substitui a apuração linha a linha que só o histórico de commits e os documentos abaixo têm.
+**Consolidado neste checklist em 6 de agosto de 2026.** Entre 25 de julho e 4 de agosto, este trabalho foi conduzido e registrado numa trilha própria — `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_PLAN.md` (o plano, com pergunta arquitetural e objetivo por etapa) e `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_STATUS.md` (log **append-only**, citado abaixo por número de entrada) — sem nunca entrar aqui, apesar de o próprio log ter registrado a divergência em todas as suas 29 entradas (`DOCUMENTARY_PATH_DIVERGENCE_RECORDED`) sem jamais reconciliá-la. As entradas abaixo trazem o resumo necessário para não duplicar `STATUS.md`; a evidência linha a linha (comandos exatos, `scope_notes`, `residual_risks`) continua só lá.
 
-### Frente 1 — `LIVESTOCK_LIFETIME_COMPLIANCE_PLAN.md` (LIV-C01 a LIV-C09, POST-LIV-01, POST-LIV-02A)
+### LIV-C01 — Baseline documental e normativo
 
-A partir de 4 de agosto de 2026, o acompanhamento de progresso passou a ser feito em um **par de documentos próprio e apartado deste checklist**: `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_PLAN.md` (o plano, com pergunta arquitetural e objetivo por etapa) e `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_STATUS.md` (log **append-only**, uma entrada por evento, com evidência de implementação, testes visados e portão de qualidade). **Todas as etapas abaixo estão `CONCLUIDA`** segundo a última entrada desse log (Entry 0029, 4 de agosto de 2026):
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0004).
 
-- **LIV-C01** — congelar o baseline documental e normativo do planejamento de conformidade sanitária vitalícia.
-- **LIV-C02** — modelo mínimo de cobertura sanitária vitalícia, com lacunas explícitas ao longo de todo o histórico.
-- **LIV-C03** — comportamento mínimo de aquisição e continuidade documental (contraparte externa, transferência de custódia).
-- **LIV-C04** — fatos sanitários importados participando de snapshot/evaluation com proveniência e confiança preservadas.
-- **LIV-C05** — carência governada por mercado modelada e avaliada sem hardcode em `Animal`.
-- **LIV-C06** — decisões sanitárias vitalícias levadas ao fluxo autorizado de `Decision` das ADRs 0048–0054 (proposta, autoridade, revisão humana — é o backend que a Onda 5 do `LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` acabou de expor em `/review/:proposalId`).
-- **LIV-C07** — conteúdo sanitário de `Dossier`/`VerificationBundle` expandido ao escopo de conformidade vitalícia, PDF como `Presentation` derivada.
-- **LIV-C08** — fronteira do contrato de integração com ERP, sem autoridade de domínio acoplada a um fornecedor.
-- **LIV-C09** — validação operacional do fluxo `fato sanitário → outbox → publicação → consumer/worker → acknowledgement técnico → reconciliação`, idempotente e isolado por Organization.
-- **POST-LIV-01** — camada mínima de suporte operacional derivado (projeção de diagnóstico; nenhum endpoint mutável novo).
-- **POST-LIV-02A** — contrato outbound neutro de intenção operacional (substituiu o payload específico de tratamento por um contrato versionado, com simulador local para `EXTERNAL_APPLIED`/`EXTERNAL_REJECTED`/duplicata/`EXTERNAL_OUTCOME_UNKNOWN`).
+Congela o baseline documental e normativo do planejamento de conformidade sanitária vitalícia, consolidado em `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_C01_BASELINE.md`. Nenhuma mudança de código, migration, ADR, `DOMAIN.md` ou `ARCHITECTURE.md`.
 
-**POST-LIV-02B (adaptador Odoo) tem só desenho** — `docs/plans/POST_LIV_02B_ODOO_COMMUNITY_ADAPTER_DESIGN_PACKAGE.md` e `POST_LIV_02B_ODOO_TARGET_DECISION.md`, commit `452609b` de 4 de agosto — **sem código correspondente** (nenhum arquivo cita Odoo em `packages/`/`apps/`) e sem entrada de conclusão no log. O próprio Entry 0029 é explícito: essa etapa segue "aguardando direção humana explícita", não autorizada por conclusões anteriores.
+### LIV-C02 — Cobertura sanitária vitalícia e lacunas explícitas
 
-**A divergência já era conhecida e nunca foi corrigida.** Toda entrada do log, da 0001 à 0029, registra `checklist_location: found_at: docs/CHECKLIST_DE_IMPLEMENTACAO.md, root_path_present: false, blocking_result: NO_ABSENCE_BLOCK; DOCUMENTARY_PATH_DIVERGENCE_RECORDED` — ou seja, o processo que rodou essas etapas sabia, a cada passo, que este checklist não refletia o trabalho, decidiu não bloquear por isso, e seguiu sem nunca reconciliar os dois documentos.
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0009, desenho na Entry 0008).
 
-### Frente 2 — `docs/plans/LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` (LIV-PROD-01, Ondas 0–5, Telas S1–S10)
+Sem introduzir `Aggregate` novo: cobertura passa a viajar como fato derivado `livestock.history_coverage` quando existe artefato de transferência recebido; o dossiê declara a cobertura honestamente como `NAO_DECLARADA`, `DECLARED` ou `PARTIAL_DECLARED`, com lacunas explícitas quando existirem.
 
-Terceiro documento de plano, também fora deste checklist: o primeiro produto de frontend do Livestock, cobrindo leitura do animal, registro de tratamento, elegibilidade e matriz de mercado do animal, operação comercial do lote e o workspace de revisão humana (S10, consumindo exatamente o LIV-C06 acima). **Concluído e mergeado em `main`** em 6 de agosto de 2026 — PRs #7 a #12, cada onda com portão de verificação próprio (build/lint/test do frontend) e validação manual ponta a ponta contra API e PostgreSQL reais.
+**Evidência:** `packages/livestock_application/fact_provider.py`, `packages/livestock_application/dossier_template.py`. **Testes:** `tests/livestock_application/test_fact_provider_sanitary.py`, `tests/livestock_application/test_dossier_template.py`, `tests/integration/test_transfer_artifact_postgresql.py`, `tests/integration/test_livestock_api_saida.py -k cobertura_recebida`. **Portão:** `ruff check` limpo.
 
-### O que este bloco não faz
+### LIV-C03 — Aquisição e continuidade documental
 
-Não reescreve LIV-C01–C09/POST-LIV-01/02A no formato prosa-por-Passo deste checklist — a evidência de implementação, testes visados e portão de qualidade de cada etapa já está em `LIVESTOCK_LIFETIME_COMPLIANCE_STATUS.md`, entrada por entrada, e duplicar isso aqui arriscaria as duas cópias divergirem de novo. Fica registrada apenas a existência da bifurcação e o estado atual, para que quem ler só este arquivo não conclua, erradamente, que nada aconteceu depois do Passo 17.2. Se este checklist deve voltar a ser o único lugar de registro (fundindo os três documentos) ou se os três devem continuar paralelos é decisão de quem responde pelo repositório — **não resolvida aqui**.
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0012).
+
+Orquestração de Application sobre conceitos existentes, sem `Aggregate` novo: um caso de uso explícito registra `ReceivedTransferArtifact` e qualquer fato importado junto. Preserva os invariantes da ADR-0042 — fato importado mantém proveniência externa; ausência de histórico prévio é lacuna de cobertura explícita, nunca histórico vazio.
+
+**Evidência:** `packages/livestock_application/acquisition_continuity_service.py`, `apps/api/livestock_writes.py`. **Testes:** `tests/livestock_application/test_acquisition_continuity_service.py`, `test_transfer_artifact_service.py`, `test_imported_fact_service.py`, `tests/integration/test_livestock_api_saida.py -k documental`. **Portão:** `ruff check` limpo. Nenhuma migration.
+
+### LIV-C04 — Fato sanitário importado no snapshot/evaluation
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0013).
+
+Fato sanitário importado passa a entrar no `FactSnapshot` com `origin`, `asserted_by`, `confidence_tier`, `source_artifact_id` e `source_reference` explícitos, sem virar observação local — proveniência e confiança preservadas como dimensões separadas. Comportamento de elegibilidade farmacológica pré-existente (que já consumia contribuições de carência importadas) preservado.
+
+**Evidência:** `packages/livestock_application/fact_provider.py` (extensão do caminho de snapshot existente, sem novo aggregate/entity/schema). **Testes:** `tests/livestock_application/test_fact_provider_sanitary.py -k "importado or cobertura"`, `test_eligibility_service.py -k imported_treatment_fact_blocks_eligibility_with_provenance`. **Portão:** `ruff check`/`format --check` limpos. Nenhuma migration.
+
+### LIV-C05 — Carência governada por mercado
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0014, estendida na Entry 0016).
+
+Base de carência de mercado explícita na configuração da vertical, usada para recalcular `livestock.withdrawal` na avaliação por mercado — sem tabela ou conceito persistente novo, combinando contribuições de carência existentes com configuração governada. Perfis de mercado estrangeiro deixaram de reutilizar silenciosamente o prazo técnico do medicamento local; sem base de carência governada, a avaliação de mercado agora falha fechado com o gap explícito `CARENCIA_POR_MERCADO_AUSENTE`. `MarketProfile` passou a expor a base de carência declarada para auditabilidade.
+
+> **Nota de numeração:** a extensão registrada na Entry 0016 foi pedida sob o rótulo "LIV-C06", mas implementa a mesma semântica de carência-por-política do LIV-C05 do plano v1.2 — divergência já reconhecida na própria Entry 0015 do log (`STATUS.md`). O LIV-C06 real (abaixo) é outra coisa: emissão oficial de `Decision`.
+
+**Evidência:** `packages/livestock_application/market_eligibility.py`, `apps/api/livestock_queries.py`. **Testes:** `tests/livestock_application/test_market_eligibility.py`, `tests/integration/test_livestock_api_leitura.py -k perfis_de_mercado`. **Portão:** `ruff check`/`format --check` limpos. Nenhuma migration — `Medication`, `Rule`, `NormativeBasis` e configuração permanecem conceitos distintos.
+
+### LIV-C06 — Emissão oficial de `Decision` por revisão humana
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0018, desenho na Entry 0017).
+
+Leva decisões sanitárias vitalícias ao fluxo autorizado das ADRs 0048–0054: proposta imutável, autoridade resolvida do `OrganizationContext`, revisão humana oficial. **É exatamente o backend que a Onda 5 do `LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` expôs em `/review/:proposalId`** (ver Marco 19 abaixo). Dossiê passou a preservar proposta e revisão quando a decisão é emitida por via humana.
+
+**Evidência:** `GET /v1/livestock/decision-proposals/{proposal_id}`, `POST /v1/livestock/decision-proposals/{proposal_id}/reviews` (`apps/api/livestock_queries.py`). **Script de validação:** `apps/validacao/revisao_humana_decisao.py`. **Testes:** `tests/integration/test_livestock_api_leitura.py -k "revisao_humana or proposta_nao_corrente or abre_proposta"`. **Risco residual registrado no log:** execução completa da suíte de API ficava bloqueada localmente por uma falha de import pré-existente e não relacionada (`TERRITORIAL_DETER_RULE_CODE` ausente em `market_eligibility.py`) — o próprio log já instrui tratar isso como problema separado, não do LIV-C06.
+
+### LIV-C07 — `Dossier`/`VerificationBundle` no escopo de conformidade vitalícia
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0020).
+
+Seção vertical do `Dossier` canônico passa a declarar explicitamente o escopo de cobertura vitalícia, o escopo de material importado e as limitações documentais — em vez de deixá-los implícitos. `VerificationBundleService` deriva os escopos sanitários declarados e as lacunas declaradas diretamente do dossiê canônico, preservando `Dossier` como fonte primária e `VerificationBundle` como pacote de verificação derivado. PDF continua só `Presentation` derivada, nunca fonte normativa.
+
+**Evidência:** `packages/livestock_application/dossier_template.py`, `packages/core_application/verification_service.py`. **Testes:** `tests/livestock_application/test_dossier_template.py`, `tests/application/test_verification_bundle.py`. **Portão:** `ruff check` limpo. Nenhuma migration, API nova ou tipo de `Dossier`/`BundleManifest` novo.
+
+### LIV-C08 — Fronteira do contrato de integração com ERP
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0022).
+
+Contrato outbound mínimo, sem autoridade de domínio acoplada a fornecedor: registro de tratamento passa a emitir um `COMMAND` versionado no outbox transacional existente, como reflexo administrativo técnico do evento sanitário autoritativo do Titan. Reaproveita a infraestrutura de publicação/reconciliação do Outbox já aceita; acknowledgement técnico continua separado de prova sanitária, `Evaluation` e `Decision`. Sem integração real com Odoo, sem API nova, sem alterar a fonte de verdade sanitária.
+
+**Evidência:** `packages/livestock_application/erp_outbox.py`, `packages/livestock_application/treatment_service.py`, `packages/core_infrastructure/persistence/outbox.py`, `apps/api/livestock_treatments.py`. **Testes:** `tests/livestock_application/test_treatment_service.py`, `tests/integration/test_treatment_postgresql.py`. **Portão:** `ruff check`/`format --check` limpos. Nenhuma migration — o contrato `core_audit.outbox_messages` já existente bastou.
+
+### LIV-C09 — Validação operacional do limite outbound
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0027, progresso na Entry 0026, desenho pós-plano nas Entries 0023–0024).
+
+Prova o limite assíncrono `fato sanitário → outbox → publicação → consumer/worker → acknowledgement técnico → reconciliação` de forma idempotente, auditável, isolada por Organization e sem transferir autoridade sanitária ao ERP. Handler de worker explícito para `livestock.erp.treatment_application.command`; máquina de estados do inbox mapeia falhas transitórias/permanentes para retry/quarentena; replay de quarentena bloqueado entre Organizations.
+
+**Evidência:** `packages/livestock_application/erp_inbox.py`, `apps/worker/livestock_handlers.py`, `apps/worker/main.py`, `packages/core_infrastructure/persistence/inbox.py`. **Script de validação:** `apps/validacao/liv_c09_integracao_operacional.py`. **Testes:** `tests/livestock_application/test_erp_inbox.py`, `tests/integration/test_inbox_postgresql.py`, `test_inbox_quarantine_postgresql.py`, `test_outbox_postgresql.py`, `test_outbox_reconciliation_postgresql.py`, `test_worker_e2e.py` — provam recuperação de duplicata, retry transitório, quarentena permanente, retry de resultado desconhecido do outbox, reconciliação de claim expirado, fronteiras de autorização de replay e isolamento por Organization. **Portão:** `ruff check` limpo.
+
+### POST-LIV-01 — Suporte operacional derivado mínimo
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0028).
+
+Camada mínima de suporte operacional: projeção de diagnóstico derivada apenas, sem substituir os registros nativos de outbox/inbox e sem introduzir nenhum endpoint mutável.
+
+**Evidência:** `packages/core_application/operational_support.py`, `packages/core_infrastructure/persistence/operational_support.py`. **Script de validação:** `apps/validacao/post_liv_01_operational_summary.py`. **Testes:** `tests/application/test_operational_support.py`, `tests/integration/test_operational_support_postgresql.py`.
+
+### POST-LIV-02A — Contrato outbound neutro e simulador
+
+**Data:** 4 de agosto de 2026 · **Estado:** CONCLUÍDA (`STATUS.md` Entry 0029).
+
+Substitui o payload outbound específico de tratamento por um contrato de intenção operacional neutro e versionado, separando intenção outbound, identidade externa estável da operação e classes explícitas de acknowledgement. Simulador local preserva desfechos distintos para `EXTERNAL_APPLIED`, `EXTERNAL_REJECTED`, recuperação de duplicata, duplicata não resolvida e `EXTERNAL_OUTCOME_UNKNOWN` — sem converter incerteza em sucesso silenciosamente.
+
+**Evidência:** `packages/livestock_application/erp_contract.py`, `erp_outbox.py`, `erp_inbox.py`, `apps/worker/livestock_handlers.py`. **Script de validação:** `apps/validacao/post_liv_02a_neutral_contract.py`. **Testes:** `tests/livestock_application/test_erp_contract.py`, `test_erp_inbox.py`, `test_treatment_service.py`, `tests/integration/test_treatment_postgresql.py`, `test_worker_e2e.py`, `test_operational_support_postgresql.py`.
+
+### POST-LIV-02B — Adaptador Odoo: só desenho, não implementado
+
+**Data do desenho:** 4 de agosto de 2026 (commit `452609b`) · **Estado:** DESENHADA, NÃO IMPLEMENTADA.
+
+`docs/plans/POST_LIV_02B_ODOO_COMMUNITY_ADAPTER_DESIGN_PACKAGE.md` e `POST_LIV_02B_ODOO_TARGET_DECISION.md` definem o alvo técnico ("Titan Connector API v1 → Titan Connector for Odoo Community → Odoo Community 18.x"), mas **não existe código correspondente** — nenhum arquivo em `packages/`/`apps/` cita Odoo — e não há entrada de conclusão em `STATUS.md`. A própria Entry 0029 é explícita: aguarda direção humana explícita antes de qualquer implementação.
+
+## Marco 19 — Primeiro produto de frontend do Livestock (LIV-PROD-01)
+
+**Data:** 6 de agosto de 2026 · **Estado:** CONCLUÍDA. Fonte: `docs/plans/LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` (Ondas 0–5, Telas S1–S10).
+
+Primeiro produto de frontend do Livestock: leitura do animal, registro de tratamento, elegibilidade e matriz de mercado do animal, operação comercial do lote e o workspace de revisão humana (S10, consumindo diretamente o LIV-C06 acima em `/review/:proposalId`). Mergeado em `main` via PRs #7 a #12, cada onda com portão de verificação próprio (`npm run build`/`lint`/`test` do frontend) e validação manual ponta a ponta contra API e PostgreSQL reais.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 

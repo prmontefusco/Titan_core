@@ -1,0 +1,26 @@
+#!/bin/sh
+# Aviso local, não bloqueante, para docs/CHECKLIST_DE_IMPLEMENTACAO.md.
+#
+# Instalar uma vez por clone local:
+#   git config core.hooksPath scripts/hooks
+#
+# Não é ativado automaticamente por clonar o repositório -- core.hooksPath
+# é configuração local de cada checkout, não versionada pelo git em si.
+
+checklist="docs/CHECKLIST_DE_IMPLEMENTACAO.md"
+staged=$(git diff --cached --name-only)
+
+if echo "$staged" | grep -qx "$checklist"; then
+  exit 0
+fi
+
+if echo "$staged" | grep -qE '^(packages/|apps/api/|apps/web/src/|docs/plans/)'; then
+  echo "" >&2
+  echo "Aviso: este commit altera packages/, apps/api/, apps/web/src/ ou docs/plans/" >&2
+  echo "mas nao toca $checklist." >&2
+  echo "Se este incremento introduz ou conclui um Marco/Passo/etapa observavel," >&2
+  echo "atualize o checklist no mesmo commit (ver AGENTS.md / DEVELOPMENT.md)." >&2
+  echo "" >&2
+fi
+
+exit 0

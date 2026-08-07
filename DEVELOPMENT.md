@@ -136,6 +136,8 @@ Revisar Diff.
 
 Falhas relacionadas ao incremento devem ser corrigidas e verificadas novamente de forma autônoma. Falhas preexistentes ou fora do escopo são registradas sem refatoração oportunista.
 
+**`docs/CHECKLIST_DE_IMPLEMENTACAO.md` é o único lugar de registro de progresso.** Se o incremento introduz ou conclui um Marco/Passo/etapa observável, atualizá-lo no mesmo commit — data, estado, evidência, portão. Não criar um documento de plano/status paralelo para o mesmo fim: essa prática já deixou dois meses de trabalho real invisíveis neste checklist até serem consolidados em agosto de 2026.
+
 ---
 
 # Comandos oficiais
@@ -399,6 +401,14 @@ Regras vigentes:
 - concorrência mais antiga da mesma referência pode ser cancelada.
 
 Antes de aprovar o Passo 1.6, acompanhar no GitHub uma execução verde e uma falha intencional em branch de teste. A falha controlada não deve ser incorporada à branch principal.
+
+### Hook local de lembrete do checklist
+
+`scripts/hooks/pre-commit` avisa (sem bloquear) quando um commit altera `packages/`, `apps/api/`, `apps/web/src/` ou `docs/plans/` sem tocar `docs/CHECKLIST_DE_IMPLEMENTACAO.md` — o mesmo tipo de esquecimento que deixou dois meses de trabalho fora do checklist até agosto de 2026. Não é ativado por clonar o repositório; configure uma vez por clone local:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
 
 Serviços serão adicionados e validados individualmente. `down` não deve usar `--volumes` durante a verificação ordinária de persistência.
 

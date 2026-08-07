@@ -129,6 +129,10 @@ Executar a suíte completa de verificações e testes:
 
 Após os testes manuais e a aprovação da funcionalidade, realizar obrigatoriamente o commit no Git das alterações finalizadas.
 
+## O checklist é o único lugar de registro de progresso
+
+Se a mudança introduz ou conclui um Marco/Passo/etapa observável (novo endpoint, nova tela, nova regra, nova integração), atualizar `docs/CHECKLIST_DE_IMPLEMENTACAO.md` **no mesmo commit** — data, estado, evidência de implementação e portão de verificação, no mesmo padrão narrativo já usado nele. Não abrir um arquivo de plano ou status paralelo para registrar esse progresso: foi exatamente essa prática, sem nunca reconciliar de volta com o checklist, que deixou dois meses de trabalho real (a conformidade sanitária vitalícia e o primeiro produto de frontend do Livestock) invisíveis neste documento até agosto de 2026. Se o passo ainda não existe no checklist, criar a entrada — mesmo que provisória — em vez de deixá-la para depois.
+
 ## O roteiro de validação manual é executável
 
 **Todo passo que acrescenta comportamento observável pela API entrega também o seu roteiro em `apps/validacao`.** Ditar passos numa conversa não vale: some quando a conversa acaba, e o responsável passa a copiar identificadores de uma janela para outra — foi assim que a validação do Passo 13.1 se perdeu duas vezes, com um engano de cópia produzindo erro que parecia defeito da aplicação.

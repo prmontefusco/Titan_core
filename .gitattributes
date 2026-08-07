@@ -5,3 +5,4 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 *.ini text eol=lf
+scripts/hooks/* text eol=lf

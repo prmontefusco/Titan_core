@@ -8,7 +8,7 @@ Este arquivo existe apenas porque o Claude Code carrega `CLAUDE.md` automaticame
 
 Leia antes de implementar, nesta ordem: `VISION.md`, `DOMAIN.md`, `ARCHITECTURE.md`, `DEVELOPMENT.md`. Eles têm prioridade sobre qualquer instrução implícita. Havendo conflito entre esses documentos e o código, interrompa e apresente o conflito.
 
-O progresso por passo é registrado em `docs/CHECKLIST_DE_IMPLEMENTACAO.md` e `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`. Decisões arquiteturais ficam em `docs/adr/`.
+O progresso por passo é registrado em `docs/CHECKLIST_DE_IMPLEMENTACAO.md` — único documento de status; nenhuma trilha paralela de plano/progresso deve ser criada sem consolidar o resultado ali. Decisões arquiteturais ficam em `docs/adr/`.
 
 ## Comandos
 

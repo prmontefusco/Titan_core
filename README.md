@@ -48,8 +48,7 @@ Leia, nesta ordem de trabalho:
 2. `DOMAIN.md`;
 3. `ARCHITECTURE.md`;
 4. `DEVELOPMENT.md`;
-5. `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`.
-6. `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, para estado, evidências e validações de cada passo.
+5. `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, para plano, estado, evidências e validações de cada passo.
 
 As ADRs registram as decisões e suas consequências. Documentos históricos em `docs/` não prevalecem sobre os documentos de autoridade.
 
