@@ -1,8 +1,10 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 4 de agosto de 2026
+**Atualizado em:** 6 de agosto de 2026
 **Fonte dos passos:** `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md`  
 **Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
+
+> **Aviso de 6 de agosto de 2026 — este documento estava desatualizado além do Passo 17.2.** Duas frentes inteiras de trabalho aconteceram depois sem entrar aqui: a conformidade sanitária vitalícia (`LIV-C01` a `LIV-C09`, `POST-LIV-01`, `POST-LIV-02A` — todas `CONCLUIDA`) e o primeiro produto de frontend do Livestock (`LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md`, Ondas 0–5, mergeado em `main`). Ver a seção **"Bifurcação documental do registro de progresso"**, logo antes de "Notas de rumo", para o que isso significa e o que continua sem decisão.
 
 > **Atualização documental em 30/07/2026:** as ADRs `0050` a `0055` devem ser
 > tratadas como **ACEITAS**, e o documento
@@ -3263,6 +3265,38 @@ Os passos 8.0 a 8.5 só rodam com o provider configurado; sem ele são omitidos 
 **Uma asserção envelheceu junto com o formato.** O passo 8.3 conferia `source` no topo da resposta da importação, escrito quando ela devolvia uma geometria só; com as camadas, o topo virou `{gravadas, recusadas}`. Passou a conferir o que agora importa: veio um perímetro, todas as gravadas têm fonte `SICAR_CAR`, e nenhuma recusa vem sem motivo — esta última é a que protege a descoberta de campo, porque recusa sem motivo é indistinguível de camada que o SICAR não tem.
 
 **Chave recusada agora diz qual chave foi usada** (prefixo, sufixo e comprimento — nunca a chave). Sem isso não se distingue variável vazia, truncada, com o placeholder literal, ou errada. É o mesmo problema do 500 sanitizado do Passo 10.4.
+
+## Bifurcação documental do registro de progresso (constatada em 6 de agosto de 2026)
+
+**Este checklist parava no Passo 17.2 e ficava, por isso, enganoso sobre o estado real do código.** Duas frentes de trabalho aconteceram depois, em paralelo, e nenhuma delas foi registrada aqui. Este bloco existe para o documento parar de mentir por omissão — não é um novo Passo numerado do PLANO, e não substitui a apuração linha a linha que só o histórico de commits e os documentos abaixo têm.
+
+### Frente 1 — `LIVESTOCK_LIFETIME_COMPLIANCE_PLAN.md` (LIV-C01 a LIV-C09, POST-LIV-01, POST-LIV-02A)
+
+A partir de 4 de agosto de 2026, o acompanhamento de progresso passou a ser feito em um **par de documentos próprio e apartado deste checklist**: `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_PLAN.md` (o plano, com pergunta arquitetural e objetivo por etapa) e `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_STATUS.md` (log **append-only**, uma entrada por evento, com evidência de implementação, testes visados e portão de qualidade). **Todas as etapas abaixo estão `CONCLUIDA`** segundo a última entrada desse log (Entry 0029, 4 de agosto de 2026):
+
+- **LIV-C01** — congelar o baseline documental e normativo do planejamento de conformidade sanitária vitalícia.
+- **LIV-C02** — modelo mínimo de cobertura sanitária vitalícia, com lacunas explícitas ao longo de todo o histórico.
+- **LIV-C03** — comportamento mínimo de aquisição e continuidade documental (contraparte externa, transferência de custódia).
+- **LIV-C04** — fatos sanitários importados participando de snapshot/evaluation com proveniência e confiança preservadas.
+- **LIV-C05** — carência governada por mercado modelada e avaliada sem hardcode em `Animal`.
+- **LIV-C06** — decisões sanitárias vitalícias levadas ao fluxo autorizado de `Decision` das ADRs 0048–0054 (proposta, autoridade, revisão humana — é o backend que a Onda 5 do `LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` acabou de expor em `/review/:proposalId`).
+- **LIV-C07** — conteúdo sanitário de `Dossier`/`VerificationBundle` expandido ao escopo de conformidade vitalícia, PDF como `Presentation` derivada.
+- **LIV-C08** — fronteira do contrato de integração com ERP, sem autoridade de domínio acoplada a um fornecedor.
+- **LIV-C09** — validação operacional do fluxo `fato sanitário → outbox → publicação → consumer/worker → acknowledgement técnico → reconciliação`, idempotente e isolado por Organization.
+- **POST-LIV-01** — camada mínima de suporte operacional derivado (projeção de diagnóstico; nenhum endpoint mutável novo).
+- **POST-LIV-02A** — contrato outbound neutro de intenção operacional (substituiu o payload específico de tratamento por um contrato versionado, com simulador local para `EXTERNAL_APPLIED`/`EXTERNAL_REJECTED`/duplicata/`EXTERNAL_OUTCOME_UNKNOWN`).
+
+**POST-LIV-02B (adaptador Odoo) tem só desenho** — `docs/plans/POST_LIV_02B_ODOO_COMMUNITY_ADAPTER_DESIGN_PACKAGE.md` e `POST_LIV_02B_ODOO_TARGET_DECISION.md`, commit `452609b` de 4 de agosto — **sem código correspondente** (nenhum arquivo cita Odoo em `packages/`/`apps/`) e sem entrada de conclusão no log. O próprio Entry 0029 é explícito: essa etapa segue "aguardando direção humana explícita", não autorizada por conclusões anteriores.
+
+**A divergência já era conhecida e nunca foi corrigida.** Toda entrada do log, da 0001 à 0029, registra `checklist_location: found_at: docs/CHECKLIST_DE_IMPLEMENTACAO.md, root_path_present: false, blocking_result: NO_ABSENCE_BLOCK; DOCUMENTARY_PATH_DIVERGENCE_RECORDED` — ou seja, o processo que rodou essas etapas sabia, a cada passo, que este checklist não refletia o trabalho, decidiu não bloquear por isso, e seguiu sem nunca reconciliar os dois documentos.
+
+### Frente 2 — `docs/plans/LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` (LIV-PROD-01, Ondas 0–5, Telas S1–S10)
+
+Terceiro documento de plano, também fora deste checklist: o primeiro produto de frontend do Livestock, cobrindo leitura do animal, registro de tratamento, elegibilidade e matriz de mercado do animal, operação comercial do lote e o workspace de revisão humana (S10, consumindo exatamente o LIV-C06 acima). **Concluído e mergeado em `main`** em 6 de agosto de 2026 — PRs #7 a #12, cada onda com portão de verificação próprio (build/lint/test do frontend) e validação manual ponta a ponta contra API e PostgreSQL reais.
+
+### O que este bloco não faz
+
+Não reescreve LIV-C01–C09/POST-LIV-01/02A no formato prosa-por-Passo deste checklist — a evidência de implementação, testes visados e portão de qualidade de cada etapa já está em `LIVESTOCK_LIFETIME_COMPLIANCE_STATUS.md`, entrada por entrada, e duplicar isso aqui arriscaria as duas cópias divergirem de novo. Fica registrada apenas a existência da bifurcação e o estado atual, para que quem ler só este arquivo não conclua, erradamente, que nada aconteceu depois do Passo 17.2. Se este checklist deve voltar a ser o único lugar de registro (fundindo os três documentos) ou se os três devem continuar paralelos é decisão de quem responde pelo repositório — **não resolvida aqui**.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
