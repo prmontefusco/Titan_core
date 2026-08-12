@@ -3491,6 +3491,10 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **Leitura controlada concluída em 12 de agosto de 2026.** `MarketChangeImpactReader` lê Decisions/Evaluations já existentes para uma população explícita de Animals e entrega o assessment transitório sem expor endpoint, persistir plano ou disparar reavaliação. A seleção de Policies permanece contexto de Application controlado pelo servidor; ausência de Evaluation não cria conclusão. Teste cobre a leitura do par histórico existente e confirma que ela só produz a projeção de impacto. **Limite preservado:** API pública, fila, worker e persistência de plano continuam dependentes de decisão arquitetural e caso operacional concreto.
 
+### ADR-0057 — Plano de reavaliação normativa controlado
+
+**Proposta registrada em 12 de agosto de 2026 · Estado: AGUARDANDO REVISÃO HUMANA.** `docs/adr/0057-plano-de-reavaliacao-normativa-controlado.md` prepara o contrato futuro de `NormativeReevaluationPlan` e itens idempotentes, sem implementá-los. A proposta separa impacto, aprovação humana, plano persistido, transporte assíncrono e novas conclusões; preserva imutabilidade histórica, isolamento por Organization, contexto/digests verificáveis, cancelamento, falhas parciais e boundary de reconhecimento. Não cria migration, API, outbox, worker, mercado real ou integração. A aceitação permanece condicionada ao primeiro caso operacional que defina população, autoridade, limites e retenção.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
