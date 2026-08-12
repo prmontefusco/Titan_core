@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import pytest
 
 from packages.core_application.dossier_service import DossierService
+from packages.core_application.verification_service import VerificationBundleService
 from packages.core_domain.decision import (
     Decision,
     DecisionReason,
@@ -30,6 +31,13 @@ from packages.core_domain.normative import (
 )
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import SeverityLevel
+from packages.core_domain.verification import (
+    BundleVerifier,
+    SignatureMaterial,
+    SignaturePurpose,
+    SignatureTarget,
+    VerificationStatus,
+)
 from packages.livestock_application.dossier_template import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MARKET_TEST_A_CODE,
@@ -358,3 +366,55 @@ def test_second_cut_refuses_another_market_profile() -> None:
             ),
             dossier_service=DossierService(repository=_DossierRepository()),
         )
+
+
+def test_market_test_a_dossier_is_verifiable_in_the_existing_bundle() -> None:
+    decision, evaluation, policy = _artifacts(market_code=MARKET_TEST_A_CODE)
+    dossier = MarketEligibilityDossierTemplate(
+        section_builder=MarketEligibilityDossierSectionBuilder(
+            market_code=MARKET_TEST_A_CODE,
+            purpose=PURPOSE,
+        ),
+        dossier_service=DossierService(repository=_DossierRepository()),
+    ).build_and_store(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        generated_at=NOW,
+    )
+    bundle_service = VerificationBundleService()
+    bundle = bundle_service.build_from_dossier(
+        dossier=dossier,
+        audience="auditoria-interna",
+        created_at=NOW,
+        signature=SignatureMaterial(
+            key_id="market-test-key",
+            algorithm="sha256",
+            profile="INTERNAL_TEST_SIGNATURE",
+            signature_target=SignatureTarget(
+                target_type="bundle_manifest",
+                target_identifier="pending",
+                domain="titan.verification_bundle",
+                contract_version=1,
+                purpose=SignaturePurpose.EMISSAO,
+            ),
+            signature_value="market-test-signature",
+            signed_at=NOW,
+            certificate_chain=("market-test-certificate",),
+            revocation_material=("market-test-crl",),
+        ),
+        verification_policy={"profile": "INTERNAL_TEST_SIGNATURE"},
+        profiles=("INTERNAL_TEST_SIGNATURE",),
+    )
+
+    received = VerificationBundleService.load(bundle_service.export(bundle))
+    report = BundleVerifier().verify(
+        received,
+        verified_at=NOW,
+        trust_anchors={"market-test-key": "market-test-signature"},
+    )
+
+    assert report.status is VerificationStatus.VALIDA
+    assert received.manifest.purpose == PURPOSE
+    assert b"MARKET_TEST_A" in received.payloads["dossier.json"]
+    assert b"MARKET_TEST_B" not in received.payloads["dossier.json"]
