@@ -5,6 +5,11 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 
 from packages.core_domain.facts import Fact
+from packages.livestock_application.dimensional_coverage import (
+    CoverageContribution,
+    DimensionalCoverageService,
+    DimensionalCoverageStatus,
+)
 from packages.shared_kernel.temporal import require_utc
 
 SANITARY_TEST_A_POLICY_CODE = "SANITARY_TEST_A_v1"
@@ -110,6 +115,53 @@ class SanitaryTestACoverageService:
                 for item in treatments
             )
 
+        return Fact.create(
+            fact_type=TREATMENT_HISTORY_COVERAGE_FACT_TYPE,
+            payload=payload,
+            observed_at=reference_time,
+        )
+
+    def build_fact_from_contributions(
+        self,
+        *,
+        reference_time: datetime,
+        contributions: tuple[CoverageContribution, ...],
+        treatments: tuple[AntimicrobialTreatmentRecord, ...] = (),
+    ) -> Fact:
+        require_utc(reference_time, field_name="reference_time")
+        required_from = reference_time - timedelta(days=TREATMENT_HISTORY_WINDOW_DAYS)
+        assessment = DimensionalCoverageService().assess(
+            dimension="treatment_history",
+            required_from=required_from,
+            required_until=reference_time,
+            contributions=contributions,
+        )
+        payload: dict[str, object] = {
+            "policy_code": SANITARY_TEST_A_POLICY_CODE,
+            "dimension": assessment.dimension,
+            "required_from": required_from.isoformat(),
+            "required_until": reference_time.isoformat(),
+            "coverage_status": assessment.status.value,
+            "admissibility": (
+                TreatmentMaterialAdmissibility.ADMISSIBLE.value
+                if assessment.status is DimensionalCoverageStatus.COMPLETE
+                else TreatmentMaterialAdmissibility.INSUFFICIENT.value
+            ),
+            "source_references": [
+                reference.target_id.value.hex for reference in assessment.source_references
+            ],
+            "accepted_intervals": [
+                {"from": start.isoformat(), "until": end.isoformat()}
+                for start, end in assessment.accepted_intervals
+            ],
+            "limitations": list(assessment.limitations),
+        }
+        if assessment.status is DimensionalCoverageStatus.COMPLETE:
+            payload["has_antimicrobial_treatment"] = any(
+                required_from <= item.occurred_at <= reference_time
+                and self._record_is_admissible(item)
+                for item in treatments
+            )
         return Fact.create(
             fact_type=TREATMENT_HISTORY_COVERAGE_FACT_TYPE,
             payload=payload,

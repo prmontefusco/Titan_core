@@ -1,6 +1,6 @@
 # NEXT-01 — Coverage e admissibilidade sanitária explícitas
 
-Status: APROVADO — PRIMEIRO CORTE IMPLEMENTADO
+Status: APROVADO — SEGUNDO CORTE IMPLEMENTADO
 Artifact ID: `NEXT-01-DP-v1`
 Date: `2026-08-12`
 Natureza: design package; nenhuma implementação autorizada
@@ -160,6 +160,27 @@ O `NEXT-01` referencia os tempos, mas não implementa a seleção normativa comp
 
 Persistência adicional só após mapear os repositórios Core. Novo conceito, mudança de ownership ou API incompatível exige interrupção e aprovação.
 
+### 10.1 Decisão do segundo corte — contrato source-neutral
+
+Dimensional coverage não pertence a `ReceivedTransferArtifact`. O artefato é uma possível fonte capaz de sustentar fatos, Provenance e contribuições temporais no fluxo de importação/admissibilidade; ele não é a única porta de entrada nem o dono da semântica dimensional.
+
+```text
+Source Artifact -> origem do material
+Import/Assessment Contract -> entrada, limites, validation e admissibility
+Coverage Contribution -> dimensão e intervalo para os quais contribui
+```
+
+O contrato inicial é de Application, neutro quanto à fonte e sem aggregate persistente novo. `ReceivedTransferArtifact` será o primeiro adapter concreto, sem impedir documentos, APIs, sistemas legados ou outras fontes aprovadas em incrementos futuros.
+
+Invariantes adicionais:
+
+1. Uma contribuição pode referenciar `ReceivedTransferArtifact`, mas não depende dele.
+2. A existência de `ReceivedTransferArtifact` não implica coverage completa para dimensão alguma.
+3. O adapter só produz contribuição dimensional quando recebe declaração explícita; não infere dimensão do intervalo genérico do artefato.
+4. Coverage final pode resultar da união contínua de várias contribuições admissíveis.
+5. Sobreposição não duplica coverage e lacunas temporais permanecem explícitas.
+6. Nenhuma persistência nova é autorizada por esta decisão.
+
 ## 11. Arquivos candidatos — não autorizados neste pacote
 
 - `packages/livestock_domain/transfer_artifact.py`
@@ -254,4 +275,6 @@ A liberação é limitada à Policy fictícia da seção 14, dados fictícios, a
 
 O primeiro corte interno foi implementado em `packages/livestock_application/sanitary_test_coverage.py`, sem persistência ou API. A suíte de referência em `tests/livestock_application/test_sanitary_test_coverage.py` prova os três resultados centrais e as lacunas controladas.
 
-A ampliação para entrada operacional real de coverage dimensional exige novo corte aprovado: o artefato de transferência atual declara intervalo genérico e não pode ser presumido como coverage de tratamentos. `NEXT-02`, `NEXT-03` e `NEXT-05` permanecem fora do escopo.
+O segundo corte implementa `packages/livestock_application/dimensional_coverage.py`: contrato source-neutral, composição determinística de intervalos e adapter explícito de `ReceivedTransferArtifact`. `tests/livestock_application/test_dimensional_coverage.py` prova fonte sem artefato, artefato sem inferência, união contínua, lacuna preservada e consumo pela Policy fictícia.
+
+A ampliação para persistência/API de coverage dimensional exige novo corte aprovado. O artefato de transferência atual continua com intervalo genérico e não é presumido como coverage de tratamentos. `NEXT-02`, `NEXT-03` e `NEXT-05` permanecem fora do escopo.
