@@ -22,6 +22,7 @@ from packages.core_domain.policy import Policy, PolicyStatus
 from packages.livestock_application.market_change_impact import (
     MarketChangeImpactContext,
     MarketChangeImpactInput,
+    MarketChangeImpactReader,
     MarketChangeImpactService,
     MarketChangeImpactStatus,
 )
@@ -234,3 +235,39 @@ def test_impact_order_is_stable_and_temporal_or_boundary_mismatch_is_limited() -
         context=context, inputs=(MarketChangeImpactInput(temporal_decision, temporal_eval),)
     )
     assert limited.entries[0].status is MarketChangeImpactStatus.LIMITED
+
+
+class _DecisionReader:
+    def __init__(self, decisions: list[Decision]) -> None:
+        self.decisions = decisions
+
+    def list_by_subject(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[Decision]:
+        return [
+            item
+            for item in self.decisions
+            if item.organization_id == organization_id and item.subject_id == subject_id
+        ]
+
+
+class _EvaluationReader:
+    def __init__(self, evaluations: list[Evaluation]) -> None:
+        self.evaluations = evaluations
+
+    def get_by_id(self, evaluation_id: TypedId) -> Evaluation | None:
+        return next(
+            (item for item in self.evaluations if item.evaluation_id == evaluation_id), None
+        )
+
+
+def test_controlled_reader_reads_existing_pairs_without_creating_reassessment() -> None:
+    decision, evaluation, policy = _artifact()
+    reader = MarketChangeImpactReader(
+        _DecisionReader([decision]), _EvaluationReader([evaluation]), MarketChangeImpactService()
+    )
+    assessment = reader.assess_for_animals(
+        context=_context(policy), animal_ids=(decision.subject_id,)
+    )
+    assert assessment.entries[0].decision_id == decision.decision_id
+    assert assessment.entries[0].status is MarketChangeImpactStatus.AFFECTED

@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 from packages.core_domain.decision import Decision
 from packages.core_domain.evaluation import Evaluation
@@ -148,3 +149,40 @@ class MarketChangeImpactService:
             status=status,
             limitation=limitation,
         )
+
+
+class MarketChangeDecisionReaderPort(Protocol):
+    def list_by_subject(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[Decision]: ...
+
+
+class MarketChangeEvaluationReaderPort(Protocol):
+    def get_by_id(self, evaluation_id: TypedId) -> Evaluation | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class MarketChangeImpactReader:
+    """Lê pares históricos escolhidos pelo servidor; não cria plano nem reavalia."""
+
+    decision_reader: MarketChangeDecisionReaderPort
+    evaluation_reader: MarketChangeEvaluationReaderPort
+    impact_service: MarketChangeImpactService
+
+    def assess_for_animals(
+        self,
+        *,
+        context: MarketChangeImpactContext,
+        animal_ids: tuple[TypedId, ...],
+    ) -> MarketChangeImpactAssessment:
+        inputs: list[MarketChangeImpactInput] = []
+        for animal_id in animal_ids:
+            if animal_id.entity_type != "animal":
+                raise ValueError("A consulta de impacto aceita somente Animals.")
+            for decision in self.decision_reader.list_by_subject(
+                context.organization_id, animal_id
+            ):
+                evaluation = self.evaluation_reader.get_by_id(decision.evaluation_id)
+                if evaluation is not None:
+                    inputs.append(MarketChangeImpactInput(decision, evaluation))
+        return self.impact_service.assess(context=context, inputs=tuple(inputs))
