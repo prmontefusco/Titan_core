@@ -36,6 +36,8 @@ Não criar nesta etapa:
 
 O núcleo deve consumir a mesma semântica já preservada por `Decision`, `Evaluation`, `FactSnapshot`, `NormativeBasisSnapshot`, coverage dimensional e `DecisionReason`. A projeção apenas as organiza para uso operacional.
 
+**Invariante do Corte 1:** o NEXT-06 nunca reexecuta Rules nem reconsidera a correção semântica de uma `Decision` existente. Ele verifica somente identidade, contexto, anchors preservados e utilidade daquela conclusão para a projeção solicitada.
+
 ```text
 Decisions imutáveis por Animal
           + contexto explícito
@@ -80,7 +82,7 @@ O read model separa resultado histórico, atualidade e utilidade operacional:
 | `REASSESSMENT_REQUIRED` | conclusão histórica existe, mas não corresponde à Policy/contexto atualmente solicitado | Não |
 | `NOT_EVALUATED` | não há Decision correspondente para o Animal | Não |
 
-`READY` significa somente que a conclusão Titan individual satisfaz a Policy sintética no contexto pedido. Nunca equivale a `EXPORT_ALLOWED`, habilitação de estabelecimento, reconhecimento externo, reserva comercial ou autorização de operação.
+`READY` significa *ready for candidate selection under this Titan assessment context only*: a conclusão Titan individual satisfaz a Policy sintética no contexto pedido. Nunca equivale a `EXPORT_ALLOWED`, habilitação de estabelecimento, reconhecimento externo, reserva comercial ou autorização de operação.
 
 Os motivos devem manter links ou identificadores para a `Decision`/`Evaluation` que os originaram; os gaps não são duplicados como entidades. A agregação por código só produz uma contagem e exemplos de referência, sem apagar a explicação individual.
 
@@ -116,6 +118,7 @@ A seleção inicial recebe um `MarketReadinessReport` homogêneo e uma quantidad
 
 - inclui apenas entradas `READY`;
 - ordena de modo determinístico por identificador estável do Animal, salvo ordenação de negócio aprovada em incremento próprio;
+- declara `selection_basis = STABLE_SUBJECT_ID`, versão `1`, para que mudança futura de algoritmo não altere silenciosamente o significado da lista;
 - devolve até a quantidade solicitada, a quantidade disponível, a insuficiência quando houver e a mesma referência de contexto;
 - explica por que cada incluído pode ser usado como candidato e por que os demais não entraram;
 - não cria `LivestockLot`, não grava seleção, não reserva Animal e não realiza venda, transferência ou despacho.
@@ -179,6 +182,7 @@ O repositório contém a matriz e endpoints comerciais anteriores da ADR-0044 (`
 7. gaps são agregados por código, mas cada entrada mantém referências à causa original;
 8. selecionar N candidatos retorna apenas `READY`, ordenação estável e shortage explícito;
 9. seleção não cria/fecha `LotMembership`, Dossier, Evaluation ou Decision.
+10. a mesma população em ordem de entrada distinta produz os mesmos candidatos na mesma ordem.
 
 ## 10. Fora do escopo e riscos preservados
 
@@ -204,7 +208,13 @@ Antes de código, confirmar:
 
 Com essas confirmações, o próximo passo será implementar exclusivamente o Corte 1 e revisar seu resultado antes de conectar qualquer consulta persistida.
 
-## 12. Contratos respeitados
+## 12. Aprovação e registro de execução
+
+**Design aprovado em 12 de agosto de 2026. Autorização: somente Corte 1.** A revisão formalizou que readiness verifica correspondência contextual e anchors, mas não reexecuta Rules nem reinterpreta coverage; também tornou a estratégia de seleção explícita e versionável (`STABLE_SUBJECT_ID`/v1).
+
+**CORTE 1 CONCLUÍDO EM 12 DE AGOSTO DE 2026.** `packages/livestock_application/market_readiness.py` introduz contratos transitórios de Application para contexto, entrada, relatório, resumo limitado de gaps e seleção sem escrita. `MarketReadinessService` classifica somente a utilidade da Decision existente em `READY`, `NOT_READY`, `CONDITIONED`, `INDETERMINATE`, `REASSESSMENT_REQUIRED` ou `NOT_EVALUATED`; Policy/finalidade/tempos incompatíveis exigem reavaliação, e snapshot normativo ou boundary não preservados permanecem indeterminados. A seleção inclui apenas `READY`, ordena por ID estável e declara `STABLE_SUBJECT_ID`/v1. Nenhum Rule, coverage, Decision ou lote é recalculado, emitido ou alterado.
+
+## 13. Contratos respeitados
 
 - **ADR-0041:** mercado é finalidade contextual, Decision histórica é imutável e composição de sujeitos exige desenho próprio.
 - **ADR-0044:** matriz é derivação, e seus estados de projeção não se confundem com `DecisionResult`.
