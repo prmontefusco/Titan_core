@@ -2,7 +2,7 @@
 
 **Artifact ID:** `NEXT-02-DP-v1`
 **Data:** 12 de agosto de 2026
-**Estado:** PROPOSTO PARA REVISÃO HUMANA
+**Estado:** CORTE 1 IMPLEMENTADO; CORTE 2 AGUARDA REVISÃO
 **Escopo:** desenho; nenhuma implementação autorizada por este documento
 
 ## 1. Objetivo
@@ -399,6 +399,8 @@ Para liberar somente o Corte 1, confirmar:
 
 ## 19. Portão
 
-**AGUARDANDO REVISÃO HUMANA.**
+**CORTE 1 CONCLUÍDO EM 12 DE AGOSTO DE 2026.**
 
-Este documento não autoriza implementação. Após aprovação, apenas o Corte 1 estará liberado. Corte 2 e Corte 3 dependerão de revisão dos resultados do corte anterior.
+`packages/core_application/policy_temporal_selection.py` implementa `PolicyTemporalCandidate`, request/result tipados e resolvedor puro. `tests/application/test_policy_temporal_selection.py` prova as oito condições do primeiro corte. Não houve migration, API, alteração de `Policy`, mudança em `get_active_at()` ou persistência paralela.
+
+O Corte 2 — `NormativeBasisSnapshot` tipado e inclusão de seu digest no `context_hash`, ainda sem persistência nova — permanece bloqueado até revisão humana dos resultados do Corte 1. O Corte 3 continua não autorizado.
