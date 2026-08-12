@@ -3433,6 +3433,10 @@ Substitui o payload outbound específico de tratamento por um contrato de inten�
 
 Primeiro produto de frontend do Livestock: leitura do animal, registro de tratamento, elegibilidade e matriz de mercado do animal, operação comercial do lote e o workspace de revisão humana (S10, consumindo diretamente o LIV-C06 acima em `/review/:proposalId`). Mergeado em `main` via PRs #7 a #12, cada onda com portão de verificação próprio (`npm run build`/`lint`/`test` do frontend) e validação manual ponta a ponta contra API e PostgreSQL reais.
 
+### NEXT-01 — Coverage e admissibilidade sanitária explícitas
+
+**Data:** 12 de agosto de 2026 · **Estado:** PRIMEIRO CORTE INTERNO CONCLUÍDO. **Evidência:** `docs/plans/NEXT-01_COVERAGE_ADMISSIBILITY_DESIGN_PACKAGE.md` fixa `SANITARY_TEST_A_v1`; `packages/livestock_application/sanitary_test_coverage.py` deriva coverage/admissibilidade de `treatment_history` em 90 dias sem percentual ou persistência; `tests/livestock_application/test_sanitary_test_coverage.py` prova coverage completa com tratamento → `NAO_ATENDIDA`, completa sem tratamento → `ATENDIDA`, e parcial/ausente/inacessível/conflitante/não admissível → `INDETERMINADA`. **Portão verificado:** 1212 testes PostgreSQL incluídos passaram; Ruff, format check, Mypy e Alembic check verdes. **Limite preservado:** o artefato de transferência atual possui intervalo genérico; não foi promovido silenciosamente a coverage de tratamentos. Entrada operacional dimensional, API, persistência, mercado real e NEXT-02/03/05 exigem cortes próprios.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
