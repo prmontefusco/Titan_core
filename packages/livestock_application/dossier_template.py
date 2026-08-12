@@ -62,6 +62,7 @@ LIVESTOCK_NAMESPACE = "livestock"
 SECTION_VERSION = 2
 ANIMAL_FACT_TYPE = "livestock.animal"
 MARKET_ELIGIBILITY_RESULT_BOUNDARY = "MARKET_ELIGIBILITY_ASSESSMENT_NOT_EXPORT_AUTHORIZATION"
+MARKET_TEST_A_CODE = "MARKET_TEST_A"
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +172,42 @@ class MarketEligibilityDossierSectionBuilder:
             raise ValueError("Policy deve possuir o mesmo código do perfil de mercado.")
         if decision.organization_id != policy.organization_id:
             raise ValueError("Decision e Policy devem pertencer à mesma Organization.")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketEligibilityDossierTemplate:
+    """Persiste o Dossier existente para o único perfil sintético do Corte 2."""
+
+    section_builder: MarketEligibilityDossierSectionBuilder
+    dossier_service: DossierService
+
+    def __post_init__(self) -> None:
+        if self.section_builder.market_code != MARKET_TEST_A_CODE:
+            raise ValueError("O Corte 2 aceita somente o perfil sintético MARKET_TEST_A.")
+        if not self.section_builder.synthetic:
+            raise ValueError("O Corte 2 exige perfil sintético.")
+
+    def build_and_store(
+        self,
+        *,
+        decision: Decision,
+        evaluation: Evaluation,
+        policy: Policy,
+        rules: Sequence[Rule] = (),
+        generated_at: datetime | None = None,
+    ) -> Dossier:
+        return self.dossier_service.build_and_store(
+            decision=decision,
+            evaluation=evaluation,
+            policy=policy,
+            rules=rules,
+            generated_at=generated_at,
+            vertical_section=self.section_builder.build(
+                decision=decision,
+                evaluation=evaluation,
+                policy=policy,
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)

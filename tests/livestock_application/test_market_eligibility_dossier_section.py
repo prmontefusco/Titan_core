@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from packages.core_application.dossier_service import DossierService
 from packages.core_domain.decision import (
     Decision,
     DecisionReason,
@@ -12,6 +13,7 @@ from packages.core_domain.decision import (
     compute_decision_hash,
 )
 from packages.core_domain.decision_authority import DecisionEmissionMethod
+from packages.core_domain.dossier import Dossier
 from packages.core_domain.evaluation import (
     Evaluation,
     EvaluationOutcome,
@@ -30,13 +32,36 @@ from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import SeverityLevel
 from packages.livestock_application.dossier_template import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
+    MARKET_TEST_A_CODE,
     MarketEligibilityDossierSectionBuilder,
+    MarketEligibilityDossierTemplate,
 )
 from packages.livestock_application.requirement_authority import RecognitionBoundary
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 NOW = datetime(2026, 8, 12, tzinfo=UTC)
 PURPOSE = "market-test-a"
+
+
+class _DossierRepository:
+    def __init__(self) -> None:
+        self.saved: list[Dossier] = []
+
+    def save(self, dossier: Dossier) -> None:
+        self.saved.append(dossier)
+
+    def get_by_id(self, dossier_id: TypedId) -> Dossier | None:
+        return next((item for item in self.saved if item.dossier_id == dossier_id), None)
+
+    def list_by_subject(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[Dossier]:
+        return [
+            item
+            for item in self.saved
+            if item.organization_id == organization_id
+            and item.subject_reference.target_id == subject_id
+        ]
 
 
 def _artifacts(
@@ -295,4 +320,41 @@ def test_external_recognition_boundary_is_not_supported_in_the_first_cut() -> No
             market_code="MARKET_TEST_A",
             purpose=PURPOSE,
             recognition_boundary=RecognitionBoundary.EXTERNAL_RECOGNITION_NOT_DEMONSTRATED,
+        )
+
+
+def test_market_test_a_dossier_uses_existing_persistence_path() -> None:
+    decision, evaluation, policy = _artifacts(market_code=MARKET_TEST_A_CODE)
+    repository = _DossierRepository()
+    template = MarketEligibilityDossierTemplate(
+        section_builder=MarketEligibilityDossierSectionBuilder(
+            market_code=MARKET_TEST_A_CODE,
+            purpose=PURPOSE,
+        ),
+        dossier_service=DossierService(repository=repository),
+    )
+
+    dossier = template.build_and_store(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        generated_at=NOW,
+    )
+
+    assert repository.saved == [dossier]
+    assert dossier.verify()
+    assert (
+        dossier.document["vertical"]["content"]["market_eligibility"]["market_profile"]["code"]
+        == MARKET_TEST_A_CODE
+    )
+
+
+def test_second_cut_refuses_another_market_profile() -> None:
+    with pytest.raises(ValueError, match="somente o perfil sintético MARKET_TEST_A"):
+        MarketEligibilityDossierTemplate(
+            section_builder=MarketEligibilityDossierSectionBuilder(
+                market_code="MARKET_TEST_B",
+                purpose="market-test-b",
+            ),
+            dossier_service=DossierService(repository=_DossierRepository()),
         )
