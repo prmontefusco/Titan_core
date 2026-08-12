@@ -4,13 +4,17 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 
-from packages.shared_kernel import UniversalReference
+from packages.core_domain.facts import Fact
+from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
 
 AUTHORITY_TEST_A_POLICY_CODE = "AUTHORITY_TEST_A_v1"
 AUTHORITY_TEST_A_PURPOSE = "MARKET_ELIGIBILITY_TEST"
 AUTHORITY_TEST_A_REQUIREMENT = "sanitary_attestation"
 AUTHORITY_TEST_A_CAPABILITY = "VETERINARY_ATTESTATION"
+AUTHORITY_TEST_A_FACT_TYPE = "livestock.requirement_authority.sanitary_attestation"
+AUTHORITY_TEST_A_RULE_CODE = "authority-test-a-sanitary-attestation"
 
 
 class RequirementAuthorityOutcome(StrEnum):
@@ -271,4 +275,87 @@ class RequirementAuthorityAssessmentService:
             candidate.recognition_boundary,
             outcome,
             limitations,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorityTestARequirementService:
+    """Traduz o assessment controlado em Fact consumível pela Policy sintética."""
+
+    def build_fact(self, assessment: RequirementAuthorityAssessment) -> Fact:
+        if assessment.policy_code != AUTHORITY_TEST_A_POLICY_CODE:
+            raise ValueError("O Fact controlado exige assessment de AUTHORITY_TEST_A_v1.")
+        if assessment.requirement_code != AUTHORITY_TEST_A_REQUIREMENT:
+            raise ValueError("O Fact controlado exige o requisito sanitary_attestation.")
+        if assessment.purpose != AUTHORITY_TEST_A_PURPOSE:
+            raise ValueError("O Fact controlado exige a finalidade MARKET_ELIGIBILITY_TEST.")
+        if assessment.required_capability != AUTHORITY_TEST_A_CAPABILITY:
+            raise ValueError("O Fact controlado exige capacidade VETERINARY_ATTESTATION.")
+
+        payload: dict[str, object] = {
+            "policy_code": assessment.policy_code,
+            "requirement_code": assessment.requirement_code,
+            "required_capability": assessment.required_capability,
+            "authority_outcome": assessment.outcome.value,
+            "recognition_boundary": assessment.recognition_boundary.value,
+            "limitations": list(assessment.limitations),
+            "authority_basis_references": [
+                str(item.target_id) for item in assessment.authority_basis_references
+            ],
+            "evidence_references": [str(item.target_id) for item in assessment.evidence_references],
+        }
+        if assessment.outcome is RequirementAuthorityOutcome.SATISFIED:
+            payload["source_authority_sufficient"] = True
+        elif assessment.outcome is RequirementAuthorityOutcome.NOT_SATISFIED:
+            payload["source_authority_sufficient"] = False
+        return Fact.create(
+            fact_type=AUTHORITY_TEST_A_FACT_TYPE,
+            payload=payload,
+            observed_at=assessment.reference_time,
+            source_reference=assessment.source_reference,
+            known_at=assessment.knowledge_cutoff,
+        )
+
+    @staticmethod
+    def normative_snapshot_limitations(
+        assessment: RequirementAuthorityAssessment,
+    ) -> tuple[str, ...]:
+        """Material a ser preservado em ``NormativeBasisSnapshot.limitations``.
+
+        O snapshot tipado já possui coleção canônica de limitações; criar um campo
+        paralelo para a boundary neste corte seria ampliar o contrato do Core sem
+        necessidade demonstrada.
+        """
+        return tuple(
+            dict.fromkeys(
+                (
+                    f"RECOGNITION_BOUNDARY:{assessment.recognition_boundary.value}",
+                    *assessment.limitations,
+                )
+            )
+        )
+
+    @staticmethod
+    def build_rule(policy_id: TypedId, organization_id: OrganizationId) -> Rule:
+        return Rule.create(
+            policy_id=policy_id,
+            organization_id=organization_id,
+            code=AUTHORITY_TEST_A_RULE_CODE,
+            name="Suficiência de autoridade da fonte para atestado sanitário",
+            description=(
+                "Exige competência de Source validada e admissível para o requisito "
+                "sanitary_attestation da Policy sintética AUTHORITY_TEST_A_v1."
+            ),
+            severity=SeverityLevel.BLOCKING,
+            normative_source="titan-authority-test-a-v1",
+            required_evidence_types=(AUTHORITY_TEST_A_FACT_TYPE,),
+            conditions=(
+                RuleCondition(
+                    fact_type=AUTHORITY_TEST_A_FACT_TYPE,
+                    payload_key="source_authority_sufficient",
+                    operator=ComparisonOperator.EQUALS,
+                    expected_value=True,
+                    description="A Source deve possuir competência suficiente para o requisito.",
+                ),
+            ),
         )

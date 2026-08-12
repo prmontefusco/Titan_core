@@ -2,7 +2,7 @@
 
 **Artifact ID:** `NEXT-03-DP-v1`
 **Data:** 12 de agosto de 2026
-**Estado:** CORTE 1 IMPLEMENTADO; CORTES 2 E 3 AGUARDAM REVISÃO
+**Estado:** CORTES 1 E 2 IMPLEMENTADOS; CORTE 3 AGUARDA REVISÃO
 **Escopo:** desenho do primeiro incremento controlado de autoridade de evidência; não cria reconhecimento regulatório externo.
 
 ## 1. Objetivo
@@ -204,3 +204,7 @@ Com essas confirmações, o próximo passo é implementar somente o Corte 1 e re
 O resolvedor aplica competência por requisito/capacidade/finalidade, intervalo semiaberto de vigência e `knowledge_cutoff`; exige base de competência, Evidence, validação e admissibilidade para retornar `SATISFIED`. Fonte ausente, conhecimento posterior, competência `UNKNOWN`, ambiguidade entre Sources, Evidence não admissível e alegação externa sem reconhecimento demonstrado retornam `INDETERMINATE`. `NOT_SATISFIED` é reservado para afirmação explícita e não ambígua de incompetência. O único reconhecimento positivo é `INTERNAL_ONLY`.
 
 Nove testes sintéticos provam os casos do pacote, temporalidade, intervalo de vigência, admissibilidade e conflito de Sources. O Corte 2 permanece bloqueado até revisão humana: ele é o primeiro ponto que poderá conectar este assessment a uma Policy/Evaluation controlada.
+
+**CORTE 2 CONCLUÍDO EM 12 DE AGOSTO DE 2026.** `AuthorityTestARequirementService` traduz somente o assessment de `AUTHORITY_TEST_A/v1` em Fact de requisito. A chave `source_authority_sufficient` é publicada como `true` apenas para `SATISFIED`, como `false` apenas para incompetência explícita e não ambígua, e permanece ausente para `INDETERMINATE`; a Rule declarativa controlada preserva a lacuna como `INDETERMINADA`. Não há associação a mercado real, Decision externa ou mudança de `DecisionAuthorityProfile`.
+
+A boundary de reconhecimento é preservável sem ampliar o schema de `NormativeBasisSnapshot`: entra na coleção canônica `limitations` como `RECOGNITION_BOUNDARY:<valor>` e altera seu digest. Quatro testes adicionais provam os três resultados da Rule e a alteração de identidade do snapshot. O Corte 3 permanece bloqueado: persistência própria só será considerada se este assessment demonstrar identidade e ciclo de vida independentes.
