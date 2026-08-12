@@ -27,6 +27,7 @@ from packages.livestock_application.market_readiness import (
     SELECTION_STRATEGY_VERSION,
     MarketReadinessContext,
     MarketReadinessInput,
+    MarketReadinessPopulationReader,
     MarketReadinessService,
     MarketReadinessStatus,
 )
@@ -326,3 +327,66 @@ def test_duplicate_population_and_invalid_selection_size_are_rejected() -> None:
     report = service.build_report(context=_context(policy), inputs=(entry,))
     with pytest.raises(ValueError, match="requested_count"):
         service.select_candidates(report=report, requested_count=0)
+
+
+class _DecisionRepository:
+    def __init__(self, decisions: list[Decision]) -> None:
+        self.decisions = decisions
+
+    def list_by_subject(
+        self,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+    ) -> list[Decision]:
+        return [
+            item
+            for item in self.decisions
+            if item.organization_id == organization_id and item.subject_id == subject_id
+        ]
+
+
+class _EvaluationRepository:
+    def __init__(self, evaluations: list[Evaluation]) -> None:
+        self.evaluations = evaluations
+
+    def get_by_id(self, evaluation_id: TypedId) -> Evaluation | None:
+        return next(
+            (item for item in self.evaluations if item.evaluation_id == evaluation_id),
+            None,
+        )
+
+
+def test_population_reader_uses_existing_decisions_without_emitting_or_evaluating() -> None:
+    decision, evaluation, policy = _artifacts()
+    unevaluated = TypedId.new("animal")
+    reader = MarketReadinessPopulationReader(
+        decision_repository=_DecisionRepository([decision]),
+        evaluation_repository=_EvaluationRepository([evaluation]),
+        readiness_service=MarketReadinessService(),
+    )
+
+    report = reader.build_for_animals(
+        context=_context(policy),
+        animal_ids=(unevaluated, decision.subject_id),
+    )
+
+    statuses = {entry.subject_id: entry.status for entry in report.entries}
+    assert statuses[unevaluated] is MarketReadinessStatus.NOT_EVALUATED
+    assert statuses[decision.subject_id] is MarketReadinessStatus.READY
+    assert decision.decision_id in [entry.decision_id for entry in report.entries]
+
+
+def test_population_reader_refuses_ambiguous_exact_context() -> None:
+    decision, evaluation, policy = _artifacts()
+    duplicate = replace(decision, decision_id=TypedId.new("decision"))
+    reader = MarketReadinessPopulationReader(
+        decision_repository=_DecisionRepository([decision, duplicate]),
+        evaluation_repository=_EvaluationRepository([evaluation]),
+        readiness_service=MarketReadinessService(),
+    )
+
+    with pytest.raises(ValueError, match="Mais de uma Decision"):
+        reader.build_for_animals(
+            context=_context(policy),
+            animal_ids=(decision.subject_id,),
+        )

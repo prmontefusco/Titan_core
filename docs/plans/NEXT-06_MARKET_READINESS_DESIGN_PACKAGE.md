@@ -214,6 +214,8 @@ Com essas confirmações, o próximo passo será implementar exclusivamente o Co
 
 **CORTE 1 CONCLUÍDO EM 12 DE AGOSTO DE 2026.** `packages/livestock_application/market_readiness.py` introduz contratos transitórios de Application para contexto, entrada, relatório, resumo limitado de gaps e seleção sem escrita. `MarketReadinessService` classifica somente a utilidade da Decision existente em `READY`, `NOT_READY`, `CONDITIONED`, `INDETERMINATE`, `REASSESSMENT_REQUIRED` ou `NOT_EVALUATED`; Policy/finalidade/tempos incompatíveis exigem reavaliação, e snapshot normativo ou boundary não preservados permanecem indeterminados. A seleção inclui apenas `READY`, ordena por ID estável e declara `STABLE_SUBJECT_ID`/v1. Nenhum Rule, coverage, Decision ou lote é recalculado, emitido ou alterado.
 
+**CORTE 2 CONCLUÍDO EM 12 DE AGOSTO DE 2026.** `MarketReadinessPopulationReader` adapta os leitores já existentes de Decision/Evaluation a uma população explícita de Animals ou aos membros vigentes de um `LivestockLot` no `reference_time`. Ele não resolve Policy, executa Rules, persiste readiness nem altera membership: fornece à projeção somente a única Decision/Evaluation que corresponde exatamente ao contexto. Ausência de Decision continua `NOT_EVALUATED`; Decision histórica não correspondente segue para `REASSESSMENT_REQUIRED`; mais de uma Decision exatamente correspondente é erro explícito e fail-closed, nunca escolha por “mais recente”. Nenhuma API, migration, Dossier agregado, lote comercial, reserva, mercado real ou integração externa foi criada.
+
 ## 13. Contratos respeitados
 
 - **ADR-0041:** mercado é finalidade contextual, Decision histórica é imutável e composição de sujeitos exige desenho próprio.

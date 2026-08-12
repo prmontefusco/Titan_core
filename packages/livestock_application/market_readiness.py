@@ -4,9 +4,14 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Protocol
 
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation
+from packages.livestock_application.lot_service import (
+    LivestockLotRepositoryPort,
+    LotMembershipRepositoryPort,
+)
 from packages.livestock_application.requirement_authority import RecognitionBoundary
 from packages.shared_kernel import OrganizationId, TypedId
 from packages.shared_kernel.temporal import require_utc
@@ -26,6 +31,18 @@ class MarketReadinessStatus(StrEnum):
     INDETERMINATE = "INDETERMINATE"
     REASSESSMENT_REQUIRED = "REASSESSMENT_REQUIRED"
     NOT_EVALUATED = "NOT_EVALUATED"
+
+
+class MarketReadinessDecisionReaderPort(Protocol):
+    def list_by_subject(
+        self,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+    ) -> list[Decision]: ...
+
+
+class MarketReadinessEvaluationReaderPort(Protocol):
+    def get_by_id(self, evaluation_id: TypedId) -> Evaluation | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -318,4 +335,96 @@ def _gap_summary(
             example_subject_ids=tuple(sorted(subjects, key=lambda item: str(item.value))[:3]),
         )
         for code, subjects in sorted(subjects_by_code.items())
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class MarketReadinessPopulationReader:
+    """Lê população e conclusões existentes; não avalia, não grava e não reserva."""
+
+    decision_repository: MarketReadinessDecisionReaderPort
+    evaluation_repository: MarketReadinessEvaluationReaderPort
+    readiness_service: MarketReadinessService
+    lot_repository: LivestockLotRepositoryPort | None = None
+    membership_repository: LotMembershipRepositoryPort | None = None
+
+    def build_for_animals(
+        self,
+        *,
+        context: MarketReadinessContext,
+        animal_ids: tuple[TypedId, ...],
+    ) -> MarketReadinessReport:
+        return self.readiness_service.build_report(
+            context=context,
+            inputs=tuple(
+                self._input_for(context=context, animal_id=animal_id) for animal_id in animal_ids
+            ),
+        )
+
+    def build_for_lot(
+        self,
+        *,
+        context: MarketReadinessContext,
+        lot_id: TypedId,
+    ) -> MarketReadinessReport:
+        if self.lot_repository is None or self.membership_repository is None:
+            raise ValueError("Leitura por lote exige os repositórios de lote e membership.")
+        lot = self.lot_repository.get_by_id(lot_id)
+        if lot is None or lot.organization_id != context.organization_id:
+            raise KeyError("Lote não encontrado na Organization do contexto.")
+        memberships = self.membership_repository.get_memberships_for_lot(
+            lot_id,
+            at_time=context.reference_time,
+        )
+        return self.build_for_animals(
+            context=context,
+            animal_ids=tuple(membership.animal_id for membership in memberships),
+        )
+
+    def _input_for(
+        self,
+        *,
+        context: MarketReadinessContext,
+        animal_id: TypedId,
+    ) -> MarketReadinessInput:
+        if animal_id.entity_type != "animal":
+            raise ValueError("A população do Corte 2 aceita somente Animals.")
+        candidates: list[tuple[Decision, Evaluation]] = []
+        decisions = self.decision_repository.list_by_subject(context.organization_id, animal_id)
+        for decision in decisions:
+            evaluation = self.evaluation_repository.get_by_id(decision.evaluation_id)
+            if evaluation is None:
+                continue
+            if _matches_exact_context(context=context, decision=decision, evaluation=evaluation):
+                candidates.append((decision, evaluation))
+        if len(candidates) > 1:
+            raise ValueError(
+                "Mais de uma Decision corresponde exatamente ao contexto de readiness."
+            )
+        if candidates:
+            decision, evaluation = candidates[0]
+            return MarketReadinessInput(animal_id, decision, evaluation)
+
+        if not decisions:
+            return MarketReadinessInput(animal_id)
+        decision = decisions[0]
+        evaluation = self.evaluation_repository.get_by_id(decision.evaluation_id)
+        if evaluation is None:
+            return MarketReadinessInput(animal_id)
+        return MarketReadinessInput(animal_id, decision, evaluation)
+
+
+def _matches_exact_context(
+    *,
+    context: MarketReadinessContext,
+    decision: Decision,
+    evaluation: Evaluation,
+) -> bool:
+    normative = evaluation.normative_basis_snapshot
+    return (
+        _matches_identity_context(context=context, decision=decision, evaluation=evaluation)
+        and normative is not None
+        and normative.reference_time == context.reference_time
+        and normative.knowledge_cutoff == context.knowledge_cutoff
+        and _recognition_boundary(evaluation) is context.recognition_boundary
     )
