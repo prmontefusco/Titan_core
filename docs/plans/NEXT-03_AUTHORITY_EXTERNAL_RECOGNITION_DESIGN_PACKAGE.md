@@ -2,7 +2,7 @@
 
 **Artifact ID:** `NEXT-03-DP-v1`
 **Data:** 12 de agosto de 2026
-**Estado:** AGUARDANDO REVISÃO HUMANA — nenhum código autorizado por este documento
+**Estado:** CORTE 1 IMPLEMENTADO; CORTES 2 E 3 AGUARDAM REVISÃO
 **Escopo:** desenho do primeiro incremento controlado de autoridade de evidência; não cria reconhecimento regulatório externo.
 
 ## 1. Objetivo
@@ -194,3 +194,13 @@ Antes de código, confirmar:
 6. nenhuma API, migration, alteração em `DecisionAuthorityProfile` ou mudança no Odoo será incluída no Corte 1.
 
 Com essas confirmações, o próximo passo é implementar somente o Corte 1 e revisar seus resultados antes de integrar qualquer Policy ou persistência.
+
+## 13. Registro de execução
+
+**CORTE 1 CONCLUÍDO EM 12 DE AGOSTO DE 2026.**
+
+`packages/livestock_application/requirement_authority.py` introduz somente contratos transitórios de Application: `SourceCompetenceAssertion`, `RequirementAuthorityAssessment` e o serviço puro de assessment. Não há entidade, aggregate, persistência, API, integração externa ou alteração de `DecisionAuthorityProfile`.
+
+O resolvedor aplica competência por requisito/capacidade/finalidade, intervalo semiaberto de vigência e `knowledge_cutoff`; exige base de competência, Evidence, validação e admissibilidade para retornar `SATISFIED`. Fonte ausente, conhecimento posterior, competência `UNKNOWN`, ambiguidade entre Sources, Evidence não admissível e alegação externa sem reconhecimento demonstrado retornam `INDETERMINATE`. `NOT_SATISFIED` é reservado para afirmação explícita e não ambígua de incompetência. O único reconhecimento positivo é `INTERNAL_ONLY`.
+
+Nove testes sintéticos provam os casos do pacote, temporalidade, intervalo de vigência, admissibilidade e conflito de Sources. O Corte 2 permanece bloqueado até revisão humana: ele é o primeiro ponto que poderá conectar este assessment a uma Policy/Evaluation controlada.
