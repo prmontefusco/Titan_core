@@ -3445,6 +3445,10 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **Estado consolidado do NEXT-01 em 12 de agosto de 2026: CONCLUÍDO para o caso normativo controlado `SANITARY_TEST_A_v1`.** Os quatro cortes provam coverage dimensional, composição por múltiplas fontes, entrada operacional source-neutral e suficiência independente da classificação sanitária. O próximo desenvolvimento semântico é o Design Package do NEXT-02 — seleção temporal de duas versões fictícias de Policy e persistência de `NormativeBasisSnapshot`; nenhuma implementação do NEXT-02 está autorizada por este registro.
 
+### NEXT-02 — Policy temporal e NormativeBasisSnapshot
+
+**Design Package elaborado em 12 de agosto de 2026 · Estado: AGUARDANDO REVISÃO HUMANA.** `docs/plans/NEXT-02_POLICY_TEMPORAL_NORMATIVE_SNAPSHOT_DESIGN_PACKAGE.md` inventaria o suporte existente e fixa o caso `MARKET_TEST_A` com duas versões fictícias. Achados materiais: `get_active_at()` ainda mistura os eixos temporais, trata `valid_to` como inclusivo e esconde sobreposição com `ORDER BY version DESC LIMIT 1`; `Evaluation`/`context_hash` ainda não preservam `NormativeBasisSnapshot`. O pacote recomenda três cortes sequenciais, liberando primeiro apenas um resolvedor puro de Application com `reference_time`, `knowledge_cutoff`, intervalo semiaberto, lacuna e ambiguidade explícitas. Nenhum código, migration ou API do NEXT-02 foi autorizado ou implementado.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
