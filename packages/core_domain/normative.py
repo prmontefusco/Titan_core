@@ -4,6 +4,7 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from typing import Any, Self
 
 from packages.core_domain.events import CanonicalPayload
 from packages.shared_kernel import TypedId
@@ -17,6 +18,12 @@ class NormativeSourceClassification(Enum):
     INTERNAL_TEST = "internal_test"
     OFFICIAL = "official"
     PRIVATE = "private"
+
+
+class NormativeSnapshotLimitation(Enum):
+    """Limitação explícita para registros anteriores ao contrato do snapshot."""
+
+    LEGACY_ABSENT = "NORMATIVE_BASIS_SNAPSHOT_LEGACY_ABSENT"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +61,17 @@ class NormativeReferenceSnapshot:
             "digest_algorithm": self.digest_algorithm,
             "source_classification": self.source_classification.value,
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        return cls(
+            instrument_code=data["instrument_code"],
+            instrument_version=data["instrument_version"],
+            provision=data.get("provision"),
+            content_digest=data["content_digest"],
+            digest_algorithm=data["digest_algorithm"],
+            source_classification=NormativeSourceClassification(data["source_classification"]),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,3 +205,62 @@ class NormativeBasisSnapshot:
             value=self.canonical_value(),
         )
         return hashlib.sha256(payload.canonical_bytes).hexdigest()
+
+    def to_dict(self) -> dict[str, Any]:
+        """Representação persistível, com digest já verificado pelo tipo."""
+        return {
+            "schema_version": self.schema_version,
+            "normative_basis_id": str(self.normative_basis_id.value),
+            "normative_basis_code": self.normative_basis_code,
+            "normative_basis_version": self.normative_basis_version,
+            "policy_id": str(self.policy_id.value),
+            "policy_code": self.policy_code,
+            "policy_version": self.policy_version,
+            "rule_versions": [list(item) for item in self.rule_versions],
+            "purpose": self.purpose,
+            "jurisdiction": self.jurisdiction,
+            "intended_use": self.intended_use,
+            "reference_time": self.reference_time.isoformat(),
+            "knowledge_cutoff": self.knowledge_cutoff.isoformat(),
+            "approved_by": self.approved_by,
+            "approval_authority": self.approval_authority,
+            "approved_at": self.approved_at.isoformat(),
+            "references": [item.canonical_value() for item in self.references],
+            "applicability_conditions": list(self.applicability_conditions),
+            "exceptions": list(self.exceptions),
+            "conflicts": list(self.conflicts),
+            "gaps": list(self.gaps),
+            "limitations": list(self.limitations),
+            "snapshot_digest": self.snapshot_digest,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Self:
+        """Reconstrói e reconfere o digest; payload adulterado é recusado."""
+        return cls(
+            schema_version=data["schema_version"],
+            normative_basis_id=TypedId.parse("normative_basis", data["normative_basis_id"]),
+            normative_basis_code=data["normative_basis_code"],
+            normative_basis_version=data["normative_basis_version"],
+            policy_id=TypedId.parse("policy", data["policy_id"]),
+            policy_code=data["policy_code"],
+            policy_version=data["policy_version"],
+            rule_versions=tuple((item[0], item[1]) for item in data["rule_versions"]),
+            purpose=data["purpose"],
+            jurisdiction=data["jurisdiction"],
+            intended_use=data["intended_use"],
+            reference_time=datetime.fromisoformat(data["reference_time"]),
+            knowledge_cutoff=datetime.fromisoformat(data["knowledge_cutoff"]),
+            approved_by=data["approved_by"],
+            approval_authority=data["approval_authority"],
+            approved_at=datetime.fromisoformat(data["approved_at"]),
+            references=tuple(
+                NormativeReferenceSnapshot.from_dict(item) for item in data["references"]
+            ),
+            applicability_conditions=tuple(data.get("applicability_conditions", ())),
+            exceptions=tuple(data.get("exceptions", ())),
+            conflicts=tuple(data.get("conflicts", ())),
+            gaps=tuple(data.get("gaps", ())),
+            limitations=tuple(data.get("limitations", ())),
+            snapshot_digest=data["snapshot_digest"],
+        )

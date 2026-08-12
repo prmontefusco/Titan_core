@@ -2,8 +2,8 @@
 
 **Artifact ID:** `NEXT-02-DP-v1`
 **Data:** 12 de agosto de 2026
-**Estado:** CORTES 1 E 2 IMPLEMENTADOS; CORTE 3 AGUARDA REVISÃO
-**Escopo:** desenho e registro dos cortes aprovados; Corte 3 ainda não autorizado
+**Estado:** CONCLUÍDO — CORTES 1, 2 E 3 IMPLEMENTADOS
+**Escopo:** desenho e registro dos três cortes aprovados
 
 ## 1. Objetivo
 
@@ -415,6 +415,23 @@ contrato das Evaluations legadas, sem fingir que elas possuíam uma fotografia i
 Seis testes provam invariantes, canonicalização, adulteração, reprodução e mudança do
 `context_hash` quando uma referência normativa muda.
 
-O Corte 3 — persistência operacional, compatibilidade legada em banco e eventual API/roteiro
-— permanece não autorizado até revisão humana. Nenhuma migration, tabela, coluna ou rota foi
-introduzida pelos Cortes 1 e 2.
+**CORTE 3 CONCLUÍDO EM 12 DE AGOSTO DE 2026.**
+
+A migration aditiva `20260812_0066` acrescenta a coluna JSONB nullable
+`normative_basis_snapshot` à `core_audit.evaluations`. Nullable é semântico: linhas anteriores
+continuam sem fotografia e não recebem backfill inferido. `Evaluation`,
+`PolicyEvaluationService`, `HistoricalReproductionService` e o repositório PostgreSQL
+preservam a fotografia, incluem seu digest na reprodução e recusam divergência entre
+Policy/Rules/finalidade executadas e o material normativo. A desserialização reconfere o
+digest antes de aceitar o snapshot persistido. A ausência histórica é exposta como
+`NORMATIVE_BASIS_SNAPSHOT_LEGACY_ABSENT`, inclusive no relatório de reprodução.
+
+Não foi criada uma tabela autoritativa separada de `normative_bases`: este incremento já
+preserva integralmente a base usada por cada Evaluation, e ainda não existe caso de uso de
+autoria, seleção ou consulta de catálogo que justifique outra fonte persistida. Essa tabela
+permanece condicionada a um fluxo operacional concreto. Também não houve API nova; portanto,
+não há roteiro adicional em `apps/validacao` neste corte.
+
+O downgrade e o upgrade da migration foram executados com sucesso. O teste PostgreSQL prova
+round-trip do snapshot, ausência legada explícita e isolamento por Organization. Portão final:
+1.247 testes, Ruff, format check, Mypy e Alembic check aprovados.

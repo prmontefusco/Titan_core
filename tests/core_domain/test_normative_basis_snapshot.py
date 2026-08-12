@@ -154,3 +154,15 @@ def test_legacy_context_without_normative_snapshot_remains_supported() -> None:
 def test_snapshot_rejects_digest_that_does_not_match_content() -> None:
     with pytest.raises(ValueError, match="não corresponde"):
         _snapshot(snapshot_digest="digest-adulterado")
+
+
+def test_snapshot_round_trip_rechecks_the_persisted_digest() -> None:
+    original = _snapshot()
+
+    restored = NormativeBasisSnapshot.from_dict(original.to_dict())
+
+    assert restored == original
+    adulterated = original.to_dict()
+    adulterated["policy_code"] = "OUTRA_POLICY"
+    with pytest.raises(ValueError, match="não corresponde"):
+        NormativeBasisSnapshot.from_dict(adulterated)

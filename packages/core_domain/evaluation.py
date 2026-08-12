@@ -11,6 +11,7 @@ from uuid import UUID
 
 from packages.core_domain.events import CanonicalPayload
 from packages.core_domain.facts import FactSnapshot
+from packages.core_domain.normative import NormativeBasisSnapshot, NormativeSnapshotLimitation
 from packages.core_domain.rule import RuleCondition, SeverityLevel
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
@@ -307,6 +308,7 @@ class Evaluation:
     # finalidade, separada de snapshot_hash (o que foi avaliado). Sem default:
     # toda Evaluation nova declara as duas identidades complementares.
     context_hash: str
+    normative_basis_snapshot: NormativeBasisSnapshot | None = None
     executor_reference: UniversalReference | None = None
     rule_versions: tuple[tuple[str, int], ...] = field(default_factory=tuple)
 
@@ -331,6 +333,19 @@ class Evaluation:
             raise ValueError("evaluation_hash deve ser uma string não vazia.")
         if not isinstance(self.context_hash, str) or not self.context_hash.strip():
             raise ValueError("context_hash deve ser uma string não vazia.")
+        if self.normative_basis_snapshot is not None:
+            normative = self.normative_basis_snapshot
+            if not isinstance(normative, NormativeBasisSnapshot):
+                raise TypeError("normative_basis_snapshot deve ser NormativeBasisSnapshot.")
+            if (
+                normative.policy_id != self.policy_id
+                or normative.policy_version != self.policy_version
+            ):
+                raise ValueError("A fotografia normativa deve identificar a Policy da Evaluation.")
+            if normative.purpose != self.purpose:
+                raise ValueError("A fotografia normativa deve possuir a finalidade da Evaluation.")
+            if sorted(normative.rule_versions) != sorted(self.rule_versions):
+                raise ValueError("A fotografia normativa deve identificar as Rules da Evaluation.")
         if self.fact_snapshot.organization_id != self.organization_id:
             raise ValueError("O snapshot deve pertencer à Organization da Evaluation.")
         if self.fact_snapshot.target_id != self.subject_id:
@@ -338,6 +353,12 @@ class Evaluation:
 
     def results_by_status(self, status: RuleResultStatus) -> tuple[RuleResult, ...]:
         return tuple(r for r in self.rule_results if r.status is status)
+
+    @property
+    def normative_limitations(self) -> tuple[str, ...]:
+        if self.normative_basis_snapshot is None:
+            return (NormativeSnapshotLimitation.LEGACY_ABSENT.value,)
+        return ()
 
     def recompute_context_hash(self) -> str:
         """Recalcula a identidade de semântica a partir do conteúdo preservado."""
@@ -347,6 +368,11 @@ class Evaluation:
             purpose=self.purpose,
             engine_version=self.engine_version,
             rule_versions=self.rule_versions,
+            normative_basis_snapshot_digest=(
+                self.normative_basis_snapshot.snapshot_digest
+                if self.normative_basis_snapshot is not None
+                else None
+            ),
         )
 
     def recompute_hash(self) -> str:

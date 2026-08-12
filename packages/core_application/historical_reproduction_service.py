@@ -58,6 +58,11 @@ class HistoricalReproductionService:
             purpose=evaluation.purpose,
             engine_version=self.engine.engine_version,
             rule_versions=tuple((rule.code, rule.version) for rule in ordered_rules),
+            normative_basis_snapshot_digest=(
+                evaluation.normative_basis_snapshot.snapshot_digest
+                if evaluation.normative_basis_snapshot is not None
+                else None
+            ),
         )
         evaluation_hash = compute_evaluation_hash(
             context_hash=context_hash,
@@ -97,5 +102,8 @@ class HistoricalReproductionService:
             original_outcome=evaluation.outcome,
             reproduced_outcome=reproduced_outcome,
             divergences=tuple(divergences),
-            limitations=evaluation.fact_snapshot.knowledge_limitations,
+            limitations=(
+                *evaluation.fact_snapshot.knowledge_limitations,
+                *evaluation.normative_limitations,
+            ),
         )

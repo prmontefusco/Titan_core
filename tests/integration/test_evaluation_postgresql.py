@@ -16,6 +16,11 @@ from packages.core_application.policy_service import PolicyService
 from packages.core_application.rule_service import RuleService
 from packages.core_domain.evaluation import EvaluationOutcome
 from packages.core_domain.facts import Fact, FactSnapshot
+from packages.core_domain.normative import (
+    NormativeBasisSnapshot,
+    NormativeReferenceSnapshot,
+    NormativeSourceClassification,
+)
 from packages.core_domain.rule import ComparisonOperator, RuleCondition, SeverityLevel
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
@@ -97,11 +102,41 @@ def test_evaluation_is_preserved_and_isolated_by_organization(db_connection: Con
     )
 
     service = PolicyEvaluationService(engine=RuleEvaluationEngine())
+    normative_snapshot = NormativeBasisSnapshot(
+        schema_version=1,
+        normative_basis_id=TypedId.new("normative_basis"),
+        normative_basis_code="TEST-BASIS-A",
+        normative_basis_version=1,
+        policy_id=policy.policy_id,
+        policy_code=policy.code,
+        policy_version=policy.version,
+        rule_versions=((rule.code, rule.version),),
+        purpose="CONFORMIDADE_SANITARIA",
+        jurisdiction="TEST-JURISDICTION",
+        intended_use="INTERNAL_TEST_ONLY",
+        reference_time=t0,
+        knowledge_cutoff=t0,
+        approved_by="actor:test-reviewer",
+        approval_authority="INTERNAL_TEST_AUTHORITY",
+        approved_at=t0,
+        references=(
+            NormativeReferenceSnapshot(
+                instrument_code="TEST-INSTRUMENT-A",
+                instrument_version="1",
+                provision="section-1",
+                content_digest="a" * 64,
+                digest_algorithm="sha256",
+                source_classification=NormativeSourceClassification.INTERNAL_TEST,
+            ),
+        ),
+        limitations=("not-an-official-market-decision",),
+    )
     evaluation = service.evaluate_policy(
         policy=policy,
         rules=[rule],
         snapshot=snapshot,
         purpose="CONFORMIDADE_SANITARIA",
+        normative_basis_snapshot=normative_snapshot,
     )
     assert evaluation.outcome == EvaluationOutcome.CONDICOES_SATISFEITAS
     evaluation_repo.save(evaluation)
@@ -116,6 +151,8 @@ def test_evaluation_is_preserved_and_isolated_by_organization(db_connection: Con
     assert reloaded.fact_snapshot.facts[0].payload["emitido_por"] == "vet-42"
     assert reloaded.rule_results[0].reason == evaluation.rule_results[0].reason
     assert reloaded.rule_versions == (("rule-atestado", 1),)
+    assert reloaded.normative_basis_snapshot == normative_snapshot
+    assert reloaded.recompute_context_hash() == evaluation.context_hash
 
     # Uma avaliação posterior sobre fatos piores não altera a avaliação histórica.
     t1 = t0 + timedelta(days=30)
@@ -131,14 +168,17 @@ def test_evaluation_is_preserved_and_isolated_by_organization(db_connection: Con
             )
         ],
     )
-    evaluation_repo.save(
-        service.evaluate_policy(
-            policy=policy,
-            rules=[rule],
-            snapshot=snapshot_t1,
-            purpose="CONFORMIDADE_SANITARIA",
-        )
+    legacy_evaluation = service.evaluate_policy(
+        policy=policy,
+        rules=[rule],
+        snapshot=snapshot_t1,
+        purpose="CONFORMIDADE_SANITARIA",
     )
+    evaluation_repo.save(legacy_evaluation)
+    legacy_reloaded = evaluation_repo.get_by_id(legacy_evaluation.evaluation_id)
+    assert legacy_reloaded is not None
+    assert legacy_reloaded.normative_basis_snapshot is None
+    assert legacy_reloaded.normative_limitations == ("NORMATIVE_BASIS_SNAPSHOT_LEGACY_ABSENT",)
 
     historico = evaluation_repo.list_by_subject(org_id_1, subject_id)
     assert len(historico) == 2

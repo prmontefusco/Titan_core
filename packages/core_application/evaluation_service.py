@@ -17,6 +17,7 @@ from packages.core_domain.evaluation import (
     compute_rule_inputs_hash,
 )
 from packages.core_domain.facts import FactSnapshot
+from packages.core_domain.normative import NormativeBasisSnapshot
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ConditionOutcome, Rule, RuleCondition
 from packages.core_domain.rule_execution import (
@@ -329,6 +330,7 @@ class PolicyEvaluationService:
         purpose: str,
         executor_reference: UniversalReference | None = None,
         evaluated_at: datetime | None = None,
+        normative_basis_snapshot: NormativeBasisSnapshot | None = None,
     ) -> Evaluation:
         if policy.status not in _EVALUABLE_POLICY_STATUSES:
             raise ValueError(
@@ -356,12 +358,30 @@ class PolicyEvaluationService:
             outcome = EvaluationOutcome.EVIDENCIA_CONFLITANTE
 
         rule_versions = tuple((r.code, r.version) for r in ordered_rules)
+        if normative_basis_snapshot is not None:
+            if normative_basis_snapshot.policy_id != policy.policy_id:
+                raise ValueError("A fotografia normativa deve identificar a Policy avaliada.")
+            if normative_basis_snapshot.policy_version != policy.version:
+                raise ValueError(
+                    "A fotografia normativa deve identificar a versão da Policy avaliada."
+                )
+            if normative_basis_snapshot.purpose != purpose.strip():
+                raise ValueError("A fotografia normativa deve possuir a finalidade avaliada.")
+            if sorted(normative_basis_snapshot.rule_versions) != sorted(rule_versions):
+                raise ValueError(
+                    "A fotografia normativa deve preservar exatamente as Rules avaliadas."
+                )
         context_hash = compute_context_hash(
             policy_id=policy.policy_id,
             policy_version=policy.version,
             purpose=purpose.strip(),
             engine_version=self.engine.engine_version,
             rule_versions=rule_versions,
+            normative_basis_snapshot_digest=(
+                normative_basis_snapshot.snapshot_digest
+                if normative_basis_snapshot is not None
+                else None
+            ),
         )
         evaluation_hash = compute_evaluation_hash(
             context_hash=context_hash,
@@ -385,6 +405,7 @@ class PolicyEvaluationService:
             engine_version=self.engine.engine_version,
             evaluation_hash=evaluation_hash,
             context_hash=context_hash,
+            normative_basis_snapshot=normative_basis_snapshot,
             executor_reference=executor_reference,
             rule_versions=rule_versions,
         )

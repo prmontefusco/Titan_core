@@ -70,6 +70,7 @@ from packages.core_domain.nonconformity import (
 from packages.core_domain.normative import (
     NormativeBasisSnapshot,
     NormativeReferenceSnapshot,
+    NormativeSnapshotLimitation,
     NormativeSourceClassification,
 )
 from packages.core_domain.organization_context import (
@@ -216,6 +217,7 @@ __all__ = [
     "NonConformityTransition",
     "NormativeBasisSnapshot",
     "NormativeReferenceSnapshot",
+    "NormativeSnapshotLimitation",
     "NormativeSourceClassification",
     "RecallDirection",
     "RecallGap",

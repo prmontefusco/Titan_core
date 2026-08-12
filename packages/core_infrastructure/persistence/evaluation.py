@@ -20,6 +20,7 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from packages.core_domain.evaluation import Evaluation, EvaluationOutcome, RuleResult
 from packages.core_domain.facts import FactSnapshot, reference_from_dict, reference_to_dict
+from packages.core_domain.normative import NormativeBasisSnapshot
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.core_infrastructure.persistence.organizations import organization_metadata
 from packages.shared_kernel import OrganizationId, TypedId
@@ -40,6 +41,7 @@ evaluations_table = Table(
     Column("snapshot_hash", String(64), nullable=False),
     Column("evaluation_hash", String(64), nullable=False),
     Column("context_hash", String(64), nullable=False),
+    Column("normative_basis_snapshot", JSONB, nullable=True),
     Column("fact_snapshot", JSONB, nullable=False),
     Column("rule_results", JSONB, nullable=False),
     Column("rule_versions", JSONB, nullable=False, server_default="[]"),
@@ -88,6 +90,7 @@ class TransactionalEvaluationRepository:
                     snapshot_hash,
                     evaluation_hash,
                     context_hash,
+                    normative_basis_snapshot,
                     fact_snapshot,
                     rule_results,
                     rule_versions,
@@ -106,6 +109,7 @@ class TransactionalEvaluationRepository:
                     :snapshot_hash,
                     :evaluation_hash,
                     :context_hash,
+                    :normative_basis_snapshot,
                     :fact_snapshot,
                     :rule_results,
                     :rule_versions,
@@ -127,6 +131,11 @@ class TransactionalEvaluationRepository:
                 "snapshot_hash": evaluation.fact_snapshot.snapshot_hash,
                 "evaluation_hash": evaluation.evaluation_hash,
                 "context_hash": evaluation.context_hash,
+                "normative_basis_snapshot": (
+                    json.dumps(evaluation.normative_basis_snapshot.to_dict())
+                    if evaluation.normative_basis_snapshot is not None
+                    else None
+                ),
                 "fact_snapshot": json.dumps(evaluation.fact_snapshot.to_dict()),
                 "rule_results": json.dumps([r.to_dict() for r in evaluation.rule_results]),
                 "rule_versions": json.dumps(
@@ -156,6 +165,7 @@ class TransactionalEvaluationRepository:
                     evaluated_at,
                     evaluation_hash,
                     context_hash,
+                    normative_basis_snapshot,
                     fact_snapshot,
                     rule_results,
                     rule_versions,
@@ -192,6 +202,7 @@ class TransactionalEvaluationRepository:
                     evaluated_at,
                     evaluation_hash,
                     context_hash,
+                    normative_basis_snapshot,
                     fact_snapshot,
                     rule_results,
                     rule_versions,
@@ -217,6 +228,10 @@ class TransactionalEvaluationRepository:
         raw_snapshot = row.fact_snapshot  # type: ignore[attr-defined]
         if isinstance(raw_snapshot, str):
             raw_snapshot = json.loads(raw_snapshot)
+
+        raw_normative_snapshot = row.normative_basis_snapshot  # type: ignore[attr-defined]
+        if isinstance(raw_normative_snapshot, str):
+            raw_normative_snapshot = json.loads(raw_normative_snapshot)
 
         raw_results = row.rule_results  # type: ignore[attr-defined]
         if isinstance(raw_results, str):
@@ -247,6 +262,11 @@ class TransactionalEvaluationRepository:
             engine_version=row.engine_version,  # type: ignore[attr-defined]
             evaluation_hash=row.evaluation_hash,  # type: ignore[attr-defined]
             context_hash=row.context_hash,  # type: ignore[attr-defined]
+            normative_basis_snapshot=(
+                NormativeBasisSnapshot.from_dict(raw_normative_snapshot)
+                if raw_normative_snapshot is not None
+                else None
+            ),
             executor_reference=reference_from_dict(raw_executor),
             rule_versions=tuple((item["code"], item["version"]) for item in raw_versions),
         )
