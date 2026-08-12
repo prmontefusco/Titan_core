@@ -114,3 +114,9 @@ Uma entrada é potencialmente afetada quando a Decision/Evaluation histórica co
 - **NEXT-02:** Policy e base normativa são temporais e preservadas na Evaluation.
 - **NEXT-03/05/06:** boundary, Dossier individual e readiness continuam derivados e limitados ao contexto Titan.
 - **ADR-0006/0038:** outbox e worker podem transportar execução futura, mas não criam autoridade, impacto ou efeito externo por si.
+
+## Aprovação e registro de execução
+
+**Design aprovado em 12 de agosto de 2026. Autorização: somente Corte 1.**
+
+**CORTE 1 CONCLUÍDO EM 12 DE AGOSTO DE 2026.** `MarketChangeImpactService` introduz assessment transitório e puro entre uma Policy anterior e sua substituta sintéticas. Ele classifica pares históricos como `AFFECTED`, `UNRELATED` ou `LIMITED`; `AFFECTED` significa apenas que a reavaliação pode ser necessária. Nenhuma Rule é reexecutada, nenhum resultado futuro é inferido e nenhum registro histórico é alterado. Snapshot legado, contexto temporal ou boundary não preservados ficam `LIMITED`; entrada de outra finalidade ou Organization fica `UNRELATED`. Não há persistência, API, outbox, worker ou reavaliação em massa.
