@@ -67,6 +67,11 @@ from packages.core_domain.nonconformity import (
     NonConformityStatus,
     NonConformityTransition,
 )
+from packages.core_domain.normative import (
+    NormativeBasisSnapshot,
+    NormativeReferenceSnapshot,
+    NormativeSourceClassification,
+)
 from packages.core_domain.organization_context import (
     ExternalIdentity,
     ExternalIdentityStatus,
@@ -209,6 +214,9 @@ __all__ = [
     "NonConformityOrigin",
     "NonConformityStatus",
     "NonConformityTransition",
+    "NormativeBasisSnapshot",
+    "NormativeReferenceSnapshot",
+    "NormativeSourceClassification",
     "RecallDirection",
     "RecallGap",
     "RecallLimitReason",

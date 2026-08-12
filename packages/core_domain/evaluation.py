@@ -214,6 +214,7 @@ def compute_context_hash(
     purpose: str,
     engine_version: int,
     rule_versions: Sequence[tuple[str, int]],
+    normative_basis_snapshot_digest: str | None = None,
 ) -> str:
     """Hash SHA-256 canônico da semântica de avaliação (ADR-0051 §3/§6).
 
@@ -232,6 +233,13 @@ def compute_context_hash(
             key=lambda item: (item[0], item[1]),
         ),
     }
+    if normative_basis_snapshot_digest is not None:
+        if (
+            not isinstance(normative_basis_snapshot_digest, str)
+            or not normative_basis_snapshot_digest.strip()
+        ):
+            raise ValueError("normative_basis_snapshot_digest deve ser uma string não vazia.")
+        value["normative_basis_snapshot_digest"] = normative_basis_snapshot_digest
     canonical_payload = CanonicalPayload(schema="titan.evaluation_context", version=1, value=value)
     return hashlib.sha256(canonical_payload.canonical_bytes).hexdigest()
 

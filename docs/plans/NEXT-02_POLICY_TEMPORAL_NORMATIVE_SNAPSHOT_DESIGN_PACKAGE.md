@@ -2,8 +2,8 @@
 
 **Artifact ID:** `NEXT-02-DP-v1`
 **Data:** 12 de agosto de 2026
-**Estado:** CORTE 1 IMPLEMENTADO; CORTE 2 AGUARDA REVISÃO
-**Escopo:** desenho; nenhuma implementação autorizada por este documento
+**Estado:** CORTES 1 E 2 IMPLEMENTADOS; CORTE 3 AGUARDA REVISÃO
+**Escopo:** desenho e registro dos cortes aprovados; Corte 3 ainda não autorizado
 
 ## 1. Objetivo
 
@@ -403,4 +403,18 @@ Para liberar somente o Corte 1, confirmar:
 
 `packages/core_application/policy_temporal_selection.py` implementa `PolicyTemporalCandidate`, request/result tipados e resolvedor puro. `tests/application/test_policy_temporal_selection.py` prova as oito condições do primeiro corte. Não houve migration, API, alteração de `Policy`, mudança em `get_active_at()` ou persistência paralela.
 
-O Corte 2 — `NormativeBasisSnapshot` tipado e inclusão de seu digest no `context_hash`, ainda sem persistência nova — permanece bloqueado até revisão humana dos resultados do Corte 1. O Corte 3 continua não autorizado.
+**CORTE 2 CONCLUÍDO EM 12 DE AGOSTO DE 2026.**
+
+`packages/core_domain/normative.py` materializa `NormativeReferenceSnapshot` e
+`NormativeBasisSnapshot` como contratos imutáveis e versionados. A fotografia preserva
+identidade da base, Policy e Rules, finalidade, jurisdição, uso pretendido, os dois eixos
+temporais, aprovação, referências e lacunas/condições materiais. Seu digest usa o envelope
+canônico do Titan e normaliza a ordem física de coleções semanticamente não ordenadas.
+`compute_context_hash()` aceita o digest normativo explicitamente; omiti-lo preserva o
+contrato das Evaluations legadas, sem fingir que elas possuíam uma fotografia inexistente.
+Seis testes provam invariantes, canonicalização, adulteração, reprodução e mudança do
+`context_hash` quando uma referência normativa muda.
+
+O Corte 3 — persistência operacional, compatibilidade legada em banco e eventual API/roteiro
+— permanece não autorizado até revisão humana. Nenhuma migration, tabela, coluna ou rota foi
+introduzida pelos Cortes 1 e 2.
