@@ -3427,6 +3427,10 @@ Substitui o payload outbound específico de tratamento por um contrato de inten�
 
 `docs/plans/POST_LIV_02B_ODOO_COMMUNITY_ADAPTER_DESIGN_PACKAGE.md` e `POST_LIV_02B_ODOO_TARGET_DECISION.md` definem o alvo técnico ("Titan Connector API v1 → Titan Connector for Odoo Community → Odoo Community 18.x"), mas **não existe código correspondente** — nenhum arquivo em `packages/`/`apps/` cita Odoo — e não há entrada de conclusão em `STATUS.md`. A própria Entry 0029 é explícita: aguarda direção humana explícita antes de qualquer implementação.
 
+### POST-LIV-03 — Ingestão controlada do simulador SISBOV
+
+**Design Package elaborado em 12 de agosto de 2026 · Estado: AGUARDANDO REVISÃO HUMANA.** `docs/plans/POST_LIV_03_SISBOV_SIMULATOR_INGESTION_DESIGN_PACKAGE.md` inventaria o simulador local vizinho e propõe um adapter de leitura marcado permanentemente como `SIMULATED`, restrito inicialmente a Animal, GTA e Movimentação. O pacote reaproveita `OFFICIAL_SISBOV`, `CoverageContribution` source-neutral e os limites da ADR-0042; ele identifica que `ImportedLivestockFact` ainda exige `ReceivedTransferArtifact`, portanto proíbe falsear captura de API como transferência de custódia. O Corte 1 propõe somente contratos transitórios e parsing com transporte falso, sem HTTP, credenciais, persistência, API, Facts, Evidence, coverage, Policy ou Decision. Antes do Corte 2 será necessária ADR sobre artefato de captura externo source-neutral. Integração oficial, autoridade MAPA, cobertura implícita, fusão de animais, emissão de GTA e reconhecimento externo permanecem fora do escopo.
+
 ## Marco 19 — Primeiro produto de frontend do Livestock (LIV-PROD-01)
 
 **Data:** 6 de agosto de 2026 · **Estado:** CONCLUÍDA. Fonte: `docs/plans/LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` (Ondas 0–5, Telas S1–S10).
