@@ -277,4 +277,6 @@ O primeiro corte interno foi implementado em `packages/livestock_application/san
 
 O segundo corte implementa `packages/livestock_application/dimensional_coverage.py`: contrato source-neutral, composição determinística de intervalos e adapter explícito de `ReceivedTransferArtifact`. `tests/livestock_application/test_dimensional_coverage.py` prova fonte sem artefato, artefato sem inferência, união contínua, lacuna preservada e consumo pela Policy fictícia.
 
-A ampliação para persistência/API de coverage dimensional exige novo corte aprovado. O artefato de transferência atual continua com intervalo genérico e não é presumido como coverage de tratamentos. `NEXT-02`, `NEXT-03` e `NEXT-05` permanecem fora do escopo.
+O terceiro corte implementa a entrada operacional source-neutral: contribuições dimensionais são persistidas com tenant/RLS, registradas e consultadas por API e exercitadas pelo roteiro `apps/validacao/coverage_dimensional.py`. `ReceivedTransferArtifact` permanece apenas uma referência opcional de fonte; sua existência não implica coverage de dimensão alguma.
+
+A integração automática com `SANITARY_TEST_A_v1` permanece bloqueada até existir classificação aprovada que identifique quais registros de tratamento são antimicrobianos. Classificar todo tratamento como antimicrobiano ou ignorar tratamentos sem classificação violaria a semântica aprovada. `NEXT-02`, `NEXT-03` e `NEXT-05` permanecem fora do escopo.

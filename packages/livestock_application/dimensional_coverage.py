@@ -1,11 +1,11 @@
 """Contrato source-neutral e composição de coverage dimensional do NEXT-01."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from packages.livestock_domain.transfer_artifact import ReceivedTransferArtifact
-from packages.shared_kernel import UniversalReference
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
 
 
@@ -46,6 +46,41 @@ class CoverageContribution:
             raise ValueError("dimension nao pode ser vazia.")
         if self.covered_from > self.covered_until:
             raise ValueError("covered_from nao pode ser posterior a covered_until.")
+
+
+@dataclass(frozen=True, slots=True)
+class StoredCoverageContribution:
+    contribution_id: TypedId
+    organization_id: OrganizationId
+    subject_id: TypedId
+    contribution: CoverageContribution
+    recorded_by: TypedId
+    recorded_at: datetime
+
+    def __post_init__(self) -> None:
+        require_utc(self.recorded_at, field_name="recorded_at")
+        if self.contribution_id.entity_type != "coverage_contribution":
+            raise ValueError("contribution_id deve ser coverage_contribution.")
+        if self.subject_id.entity_type != "animal":
+            raise ValueError("subject_id deve ser animal neste incremento.")
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+        contribution: CoverageContribution,
+        recorded_by: TypedId,
+    ) -> "StoredCoverageContribution":
+        return cls(
+            contribution_id=TypedId.new("coverage_contribution"),
+            organization_id=organization_id,
+            subject_id=subject_id,
+            contribution=contribution,
+            recorded_by=recorded_by,
+            recorded_at=datetime.now(UTC),
+        )
 
 
 @dataclass(frozen=True, slots=True)

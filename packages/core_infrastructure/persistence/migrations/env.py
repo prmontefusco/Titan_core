@@ -66,6 +66,7 @@ from packages.livestock_infrastructure.persistence import (
     animal_movement_items_table,
     animal_movements_table,
     animals_table,
+    coverage_contributions_table,
     establishment_qualifications_table,
     livestock_lots_table,
     lot_memberships_table,
@@ -133,6 +134,7 @@ assert synchronization_batches_table.metadata is target_metadata
 # registrá-las; o schema core_audit é declarado tabela a tabela.
 assert rural_properties_table.metadata is target_metadata
 assert animals_table.metadata is target_metadata
+assert coverage_contributions_table.metadata is target_metadata
 assert animal_identifiers_table.metadata is target_metadata
 assert animal_movements_table.metadata is target_metadata
 assert animal_movement_items_table.metadata is target_metadata

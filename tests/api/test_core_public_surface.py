@@ -18,6 +18,8 @@ from apps.api.main import app
 client = TestClient(app)
 
 SUPERFICIE_ESPERADA = {
+    ("/v1/livestock/animals/{animal_id}/coverage-contributions", "get"),
+    ("/v1/livestock/animals/{animal_id}/coverage-contributions", "post"),
     # Técnico e verificação externa.
     ("/health", "get"),
     ("/technical/authentication", "get"),

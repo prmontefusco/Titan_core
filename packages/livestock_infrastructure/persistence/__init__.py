@@ -5,6 +5,10 @@ from packages.livestock_infrastructure.persistence.animal_repository import (
     animal_identifiers_table,
     animals_table,
 )
+from packages.livestock_infrastructure.persistence.coverage_contribution_repository import (
+    TransactionalCoverageContributionRepository,
+    coverage_contributions_table,
+)
 from packages.livestock_infrastructure.persistence.establishment_qualification_repository import (
     TransactionalEstablishmentQualificationRepository,
     establishment_qualifications_table,
@@ -97,6 +101,7 @@ from .environmental_embargo_assertion_repository import (
 
 __all__ = [
     "TransactionalEntityTypeRequestRepository",
+    "TransactionalCoverageContributionRepository",
     "TransactionalMembershipGrant",
     "TransactionalAnimalMovementRepository",
     "TransactionalAnimalRepository",
@@ -133,6 +138,7 @@ __all__ = [
     "transformation_events_table",
     "TransactionalVeterinarianRepository",
     "animal_identifiers_table",
+    "coverage_contributions_table",
     "animal_movement_items_table",
     "animal_movements_table",
     "animals_table",

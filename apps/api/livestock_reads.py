@@ -75,6 +75,9 @@ from packages.livestock_infrastructure.persistence import (
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
+from packages.livestock_infrastructure.persistence.coverage_contribution_repository import (
+    TransactionalCoverageContributionRepository,
+)
 from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
     TransactionalExternalCounterpartyRepository,
 )
@@ -519,6 +522,59 @@ def listar_fatos_importados(
     encontrados = repositorio.list_by_animal(contexto.organization_id, alvo)
     janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
     return montar_pagina([_fato_importado(item) for item in janela], paginacao)
+
+
+class ContribuicaoCoverageResumo(BaseModel):
+    contribution_id: str
+    dimension: str
+    covered_from: datetime
+    covered_until: datetime
+    validation: str
+    admissibility: str
+    source_entity_type: str | None
+    source_id: str | None
+    accessible: bool
+    conflicting: bool
+
+
+@router.get(
+    "/animals/{animal_id}/coverage-contributions",
+    response_model=Pagina[ContribuicaoCoverageResumo],
+    summary="Listar contribuições dimensionais de coverage",
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_contribuicoes_coverage(
+    animal_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TREATMENT_LER))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
+) -> Any:
+    alvo = typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id")
+    animal = TransactionalAnimalRepository(connection).get_by_id(alvo)
+    if animal is None or animal.organization_id != contexto.organization_id:
+        raise _nao_encontrado("Animal")
+    items = TransactionalCoverageContributionRepository(connection).list_by_subject(
+        contexto.organization_id, alvo
+    )
+    janela = items[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
+    response = []
+    for item in janela:
+        source = item.contribution.source_reference
+        response.append(
+            ContribuicaoCoverageResumo(
+                contribution_id=str(item.contribution_id.value),
+                dimension=item.contribution.dimension,
+                covered_from=item.contribution.covered_from,
+                covered_until=item.contribution.covered_until,
+                validation=item.contribution.validation.value,
+                admissibility=item.contribution.admissibility.value,
+                source_entity_type=None if source is None else source.target_id.entity_type,
+                source_id=None if source is None else str(source.target_id.value),
+                accessible=item.contribution.accessible,
+                conflicting=item.contribution.conflicting,
+            )
+        )
+    return montar_pagina(response, paginacao)
 
 
 # -- Animais -----------------------------------------------------------------

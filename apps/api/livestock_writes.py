@@ -44,7 +44,14 @@ from packages.livestock_application.authorization import (
     PROPERTY_CRIAR,
     PROPERTY_REGISTRAR_GEOMETRIA,
     REPRODUCTION_REGISTRAR,
+    TREATMENT_REGISTRAR,
     VETERINARIAN_CRIAR,
+)
+from packages.livestock_application.coverage_contribution_service import CoverageContributionService
+from packages.livestock_application.dimensional_coverage import (
+    CoverageContribution,
+    CoverageContributionAdmissibility,
+    CoverageContributionValidation,
 )
 from packages.livestock_application.environmental_embargo_assertion_service import (
     EnvironmentalEmbargoAssertionService,
@@ -102,6 +109,9 @@ from packages.livestock_infrastructure.persistence import (
 )
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
+)
+from packages.livestock_infrastructure.persistence.coverage_contribution_repository import (
+    TransactionalCoverageContributionRepository,
 )
 from packages.livestock_infrastructure.persistence.establishment_qualification_repository import (
     TransactionalEstablishmentQualificationRepository,
@@ -770,6 +780,51 @@ class RegistrarFatoImportadoRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class RegistrarContribuicaoCoverageRequest(BaseModel):
+    dimension: str = Field(min_length=1, max_length=120)
+    covered_from: datetime
+    covered_until: datetime
+    validation: CoverageContributionValidation
+    admissibility: CoverageContributionAdmissibility
+    source_entity_type: str | None = Field(default=None, max_length=80)
+    source_id: str | None = None
+    accessible: bool = True
+    conflicting: bool = False
+
+
+class ContribuicaoCoverageResponse(BaseModel):
+    contribution_id: str
+    subject_id: str
+    dimension: str
+    covered_from: datetime
+    covered_until: datetime
+    validation: str
+    admissibility: str
+    source_entity_type: str | None
+    source_id: str | None
+    accessible: bool
+    conflicting: bool
+    recorded_at: datetime
+
+
+def _coverage_contribution_response(item: Any) -> ContribuicaoCoverageResponse:
+    source = item.contribution.source_reference
+    return ContribuicaoCoverageResponse(
+        contribution_id=str(item.contribution_id.value),
+        subject_id=str(item.subject_id.value),
+        dimension=item.contribution.dimension,
+        covered_from=item.contribution.covered_from,
+        covered_until=item.contribution.covered_until,
+        validation=item.contribution.validation.value,
+        admissibility=item.contribution.admissibility.value,
+        source_entity_type=None if source is None else source.target_id.entity_type,
+        source_id=None if source is None else str(source.target_id.value),
+        accessible=item.contribution.accessible,
+        conflicting=item.contribution.conflicting,
+        recorded_at=item.recorded_at,
+    )
+
+
 class FatoImportadoResponse(BaseModel):
     imported_fact_id: str
     animal_id: str
@@ -1075,6 +1130,56 @@ def registrar_fato_importado(
         raise _conflito(error) from error
 
     return _fato_importado_response(fato)
+
+
+@router.post(
+    "/animals/{animal_id}/coverage-contributions",
+    response_model=ContribuicaoCoverageResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Importar contribuição dimensional de coverage",
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_contribuicao_coverage(
+    animal_id: str,
+    corpo: RegistrarContribuicaoCoverageRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TREATMENT_REGISTRAR))],
+    connection: ConnectionDependency,
+) -> ContribuicaoCoverageResponse:
+    if (corpo.source_entity_type is None) != (corpo.source_id is None):
+        raise _conflito(ValueError("source_entity_type e source_id devem ser informados juntos."))
+    source = None
+    if corpo.source_id is not None and corpo.source_entity_type is not None:
+        source = UniversalReference(
+            target_id=typed_id_or_problem(
+                corpo.source_id, entity_type=corpo.source_entity_type, campo="source_id"
+            ),
+            organization_id=contexto.organization_id,
+            contract_version=1,
+        )
+    service = CoverageContributionService(
+        repository=TransactionalCoverageContributionRepository(connection),
+        animal_repository=TransactionalAnimalRepository(connection),
+    )
+    try:
+        item = service.record(
+            context=operation_context(contexto),
+            subject_id=typed_id_or_problem(animal_id, entity_type="animal", campo="animal_id"),
+            contribution=CoverageContribution(
+                dimension=corpo.dimension,
+                covered_from=corpo.covered_from,
+                covered_until=corpo.covered_until,
+                validation=corpo.validation,
+                admissibility=corpo.admissibility,
+                source_reference=source,
+                accessible=corpo.accessible,
+                conflicting=corpo.conflicting,
+            ),
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Animal") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+    return _coverage_contribution_response(item)
 
 
 # -- Genealogia --------------------------------------------------------------
