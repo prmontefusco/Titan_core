@@ -6,18 +6,31 @@ import pytest
 
 from packages.core_application.evaluation_service import RuleEvaluationEngine
 from packages.core_domain.evaluation import RuleResultStatus
+from packages.core_domain.evidence import ConfidenceTier
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition
+from packages.livestock_application.dimensional_coverage import (
+    CoverageContribution,
+    CoverageContributionAdmissibility,
+    CoverageContributionValidation,
+)
 from packages.livestock_application.sanitary_test_coverage import (
     SANITARY_TEST_A_POLICY_CODE,
     TREATMENT_HISTORY_COVERAGE_FACT_TYPE,
     AntimicrobialTreatmentRecord,
+    MedicationTreatmentRecord,
     SanitaryTestACoverageService,
     TreatmentCoverageDeclaration,
     TreatmentCoverageStatus,
     TreatmentMaterialSource,
 )
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.livestock_domain.medication_classification import (
+    MedicationClassificationStatus,
+    MedicationClassificationValidation,
+    MedicationSanitaryCategory,
+    MedicationSanitaryClassificationAssertion,
+)
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
 @pytest.fixture
@@ -162,3 +175,75 @@ def test_imported_treatment_requires_source_artifact(reference_time: datetime) -
             occurred_at=reference_time,
             source=TreatmentMaterialSource.IMPORTED_DOCUMENTED,
         )
+
+
+def test_classification_is_independent_and_missing_assertion_is_indeterminate(
+    reference_time: datetime,
+) -> None:
+    medication_id = TypedId.new("medication")
+    fact = SanitaryTestACoverageService().build_fact_from_classified_material(
+        reference_time=reference_time,
+        knowledge_cutoff=reference_time,
+        contributions=(
+            CoverageContribution(
+                "treatment_history",
+                reference_time - timedelta(days=90),
+                reference_time,
+                CoverageContributionValidation.VALIDATED,
+                CoverageContributionAdmissibility.ADMISSIBLE,
+            ),
+        ),
+        treatments=(
+            MedicationTreatmentRecord(
+                medication_id,
+                reference_time - timedelta(days=1),
+                TreatmentMaterialSource.LOCAL_TREATMENT_APPLICATION,
+            ),
+        ),
+        classifications=(),
+    )
+    assert fact.payload["coverage_status"] == "COMPLETE"
+    assert fact.payload["medication_classification_coverage_status"] == "INCOMPLETE"
+    assert "has_antimicrobial_treatment" not in fact.payload
+    assert _evaluate(fact, reference_time) is RuleResultStatus.INDETERMINADA
+
+
+def test_known_antimicrobial_is_not_satisfied(reference_time: datetime) -> None:
+    organization_id = OrganizationId.new()
+    medication_id = TypedId.new("medication")
+    assertion = MedicationSanitaryClassificationAssertion(
+        TypedId.new("medication_classification_assertion"),
+        organization_id,
+        medication_id,
+        MedicationSanitaryCategory.ANTIMICROBIAL,
+        MedicationClassificationStatus.APPLIES,
+        None,
+        None,
+        reference_time - timedelta(days=2),
+        UniversalReference(TypedId.new("manual_source"), organization_id, 1),
+        MedicationClassificationValidation.STRUCTURALLY_VALIDATED,
+        ConfidenceTier.DOCUMENTED,
+    )
+    fact = SanitaryTestACoverageService().build_fact_from_classified_material(
+        reference_time=reference_time,
+        knowledge_cutoff=reference_time,
+        contributions=(
+            CoverageContribution(
+                "treatment_history",
+                reference_time - timedelta(days=90),
+                reference_time,
+                CoverageContributionValidation.VALIDATED,
+                CoverageContributionAdmissibility.ADMISSIBLE,
+            ),
+        ),
+        treatments=(
+            MedicationTreatmentRecord(
+                medication_id,
+                reference_time - timedelta(days=1),
+                TreatmentMaterialSource.LOCAL_TREATMENT_APPLICATION,
+            ),
+        ),
+        classifications=(assertion,),
+    )
+    assert fact.payload["medication_classification_coverage_status"] == "COMPLETE"
+    assert _evaluate(fact, reference_time) is RuleResultStatus.NAO_ATENDIDA

@@ -24,12 +24,19 @@ from packages.core_domain import OrganizationContext
 from packages.core_infrastructure.persistence.events import DomainEventRepository
 from packages.livestock_application.authorization import MEDICATION_CRIAR, MEDICATION_LER
 from packages.livestock_application.event_recorder import LivestockEventRecorder
+from packages.livestock_application.medication_classification_service import (
+    MedicationClassificationService,
+)
 from packages.livestock_application.medication_service import (
     MedicationBatchService,
     MedicationService,
 )
 from packages.livestock_domain.medication import MedicationProductClass
+from packages.livestock_domain.medication_classification import MedicationClassificationStatus
 from packages.livestock_domain.prescription import Prescription, PrescriptionTargetType
+from packages.livestock_infrastructure.persistence.medication_classification_repository import (
+    TransactionalMedicationClassificationRepository,
+)
 from packages.livestock_infrastructure.persistence.medication_repository import (
     TransactionalMedicationBatchRepository,
     TransactionalMedicationRepository,
@@ -70,6 +77,47 @@ class MedicamentoResponse(BaseModel):
     active_ingredient: str
     withdrawal_period_days: int
     product_class: MedicationProductClass
+
+
+class RegistrarClassificacaoSanitariaRequest(BaseModel):
+    status: MedicationClassificationStatus
+    valid_from: datetime | None = None
+    valid_to: datetime | None = None
+    observed_at: datetime
+    limitations: list[str] = Field(default_factory=list)
+
+
+class ClassificacaoSanitariaResponse(BaseModel):
+    assertion_id: str
+    medication_id: str
+    category: str
+    status: str
+    valid_from: datetime | None
+    valid_to: datetime | None
+    observed_at: datetime
+    confidence_tier: str
+    validation_status: str
+    limitations: list[str]
+
+
+def _classificacao(item: object) -> ClassificacaoSanitariaResponse:
+    from packages.livestock_domain.medication_classification import (
+        MedicationSanitaryClassificationAssertion,
+    )
+
+    assert isinstance(item, MedicationSanitaryClassificationAssertion)
+    return ClassificacaoSanitariaResponse(
+        assertion_id=str(item.assertion_id.value),
+        medication_id=str(item.medication_id.value),
+        category=item.category.value,
+        status=item.status.value,
+        valid_from=item.valid_from,
+        valid_to=item.valid_to,
+        observed_at=item.observed_at,
+        confidence_tier=item.confidence_tier.value,
+        validation_status=item.validation_status.value,
+        limitations=list(item.limitations),
+    )
 
 
 class RegistrarLoteRequest(BaseModel):
@@ -310,3 +358,75 @@ def detalhar_prescricao(
             detail="Prescricao nao encontrada nesta organizacao.",
         )
     return _prescricao(prescription)
+
+
+@router.post(
+    "/medications/{medication_id}/sanitary-classifications",
+    response_model=ClassificacaoSanitariaResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_classificacao_sanitaria(
+    medication_id: str,
+    corpo: RegistrarClassificacaoSanitariaRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_CRIAR))],
+    connection: ConnectionDependency,
+) -> ClassificacaoSanitariaResponse:
+    service = MedicationClassificationService(
+        TransactionalMedicationClassificationRepository(connection),
+        TransactionalMedicationRepository(connection),
+    )
+    try:
+        item = service.record(
+            context=operation_context(contexto),
+            medication_id=typed_id_or_problem(
+                medication_id, entity_type="medication", campo="medication_id"
+            ),
+            status=corpo.status,
+            valid_from=corpo.valid_from,
+            valid_to=corpo.valid_to,
+            observed_at=corpo.observed_at,
+            limitations=tuple(corpo.limitations),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=404,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operação recusada",
+            detail=str(error),
+        ) from error
+    return _classificacao(item)
+
+
+@router.get(
+    "/medications/{medication_id}/sanitary-classifications",
+    response_model=list[ClassificacaoSanitariaResponse],
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_classificacoes_sanitarias(
+    medication_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(MEDICATION_LER))],
+    connection: ConnectionDependency,
+) -> list[ClassificacaoSanitariaResponse]:
+    target = typed_id_or_problem(medication_id, entity_type="medication", campo="medication_id")
+    medication = TransactionalMedicationRepository(connection).get_by_id(target)
+    if medication is None or medication.organization_id != contexto.organization_id:
+        raise DomainProblem(
+            status_code=404,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
+            detail="Medicamento não encontrado nesta organização.",
+        )
+    return [
+        _classificacao(item)
+        for item in TransactionalMedicationClassificationRepository(connection).list_by_medication(
+            contexto.organization_id, target
+        )
+    ]

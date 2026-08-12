@@ -10,6 +10,12 @@ from packages.livestock_application.dimensional_coverage import (
     DimensionalCoverageService,
     DimensionalCoverageStatus,
 )
+from packages.livestock_domain.medication_classification import (
+    MedicationClassificationStatus,
+    MedicationClassificationValidation,
+    MedicationSanitaryClassificationAssertion,
+)
+from packages.shared_kernel import TypedId
 from packages.shared_kernel.temporal import require_utc
 
 SANITARY_TEST_A_POLICY_CODE = "SANITARY_TEST_A_v1"
@@ -36,6 +42,24 @@ class TreatmentMaterialSource(StrEnum):
 class TreatmentMaterialAdmissibility(StrEnum):
     ADMISSIBLE = "ADMISSIBLE"
     INSUFFICIENT = "INSUFFICIENT"
+
+
+class MedicationClassificationCoverageStatus(StrEnum):
+    COMPLETE = "COMPLETE"
+    INCOMPLETE = "INCOMPLETE"
+    NOT_APPLICABLE = "NOT_APPLICABLE"
+
+
+@dataclass(frozen=True, slots=True)
+class MedicationTreatmentRecord:
+    medication_id: TypedId
+    occurred_at: datetime
+    source: TreatmentMaterialSource
+
+    def __post_init__(self) -> None:
+        require_utc(self.occurred_at, field_name="occurred_at")
+        if self.medication_id.entity_type != "medication":
+            raise ValueError("medication_id deve ser medication.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +186,64 @@ class SanitaryTestACoverageService:
                 and self._record_is_admissible(item)
                 for item in treatments
             )
+        return Fact.create(
+            fact_type=TREATMENT_HISTORY_COVERAGE_FACT_TYPE,
+            payload=payload,
+            observed_at=reference_time,
+        )
+
+    def build_fact_from_classified_material(
+        self,
+        *,
+        reference_time: datetime,
+        contributions: tuple[CoverageContribution, ...],
+        treatments: tuple[MedicationTreatmentRecord, ...],
+        classifications: tuple[MedicationSanitaryClassificationAssertion, ...],
+        knowledge_cutoff: datetime,
+    ) -> Fact:
+        """Compõe coverage de tratamentos e classificação sem colapsá-las."""
+        require_utc(knowledge_cutoff, field_name="knowledge_cutoff")
+        required_from = reference_time - timedelta(days=TREATMENT_HISTORY_WINDOW_DAYS)
+        material = tuple(
+            item for item in treatments if required_from <= item.occurred_at <= reference_time
+        )
+        antimicrobial: list[AntimicrobialTreatmentRecord] = []
+        gaps: list[str] = []
+        for treatment in material:
+            eligible = tuple(
+                item
+                for item in classifications
+                if item.medication_id == treatment.medication_id
+                and item.known_as_of(knowledge_cutoff)
+                and item.valid_at(treatment.occurred_at)
+                and item.validation_status
+                is MedicationClassificationValidation.STRUCTURALLY_VALIDATED
+            )
+            statuses = {item.status for item in eligible}
+            if len(statuses) != 1 or MedicationClassificationStatus.UNKNOWN in statuses:
+                gaps.append(f"MEDICATION_CLASSIFICATION_GAP:{treatment.medication_id.value}")
+            elif MedicationClassificationStatus.APPLIES in statuses:
+                antimicrobial.append(
+                    AntimicrobialTreatmentRecord(
+                        occurred_at=treatment.occurred_at, source=treatment.source
+                    )
+                )
+        fact = self.build_fact_from_contributions(
+            reference_time=reference_time,
+            contributions=contributions,
+            treatments=tuple(antimicrobial),
+        )
+        payload = dict(fact.payload)
+        payload["medication_classification_coverage_status"] = (
+            MedicationClassificationCoverageStatus.NOT_APPLICABLE.value
+            if not material
+            else MedicationClassificationCoverageStatus.INCOMPLETE.value
+            if gaps
+            else MedicationClassificationCoverageStatus.COMPLETE.value
+        )
+        payload["medication_classification_limitations"] = gaps
+        if gaps:
+            payload.pop("has_antimicrobial_treatment", None)
         return Fact.create(
             fact_type=TREATMENT_HISTORY_COVERAGE_FACT_TYPE,
             payload=payload,

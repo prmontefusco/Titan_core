@@ -43,6 +43,8 @@ O Titan Core não conhece conceitos específicos de pecuária, indústria flores
 
 Conceitos como `Animal`, `Veterinarian`, `Medication`, `GTA`, `SISBOV`, `Tree`, `Part` ou `Feed` pertencem exclusivamente às respectivas verticais.
 
+Na vertical Livestock, classificação sanitária de `Medication` é representação factual versionada e não atributo intrínseco do produto. `MedicationSanitaryClassificationAssertion` preserva medicamento, categoria, estado afirmado, validade, conhecimento, fonte, validação, confiança e limitações. Inicialmente, somente `ANTIMICROBIAL` é necessária. Ausência de Assertion, Assertion `UNKNOWN` e negação explícita `DOES_NOT_APPLY` são estados distintos. A Policy decide admissibilidade e efeito; coverage de `treatment_history` e suficiência de `medication_classification` permanecem dimensões independentes. O padrão não é promovido ao Core sem segundo domínio concreto.
+
 ---
 
 # 2. Princípios fundamentais
