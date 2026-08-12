@@ -46,6 +46,7 @@ from packages.livestock_application.fact_provider import (
     HISTORY_COVERAGE_FACT_TYPE,
     WITHDRAWAL_FACT_TYPE,
 )
+from packages.livestock_application.requirement_authority import RecognitionBoundary
 from packages.livestock_application.timeline_service import (
     LivestockTimelineService,
     TimelineCutoff,
@@ -60,6 +61,116 @@ from packages.shared_kernel import OrganizationId, TypedId
 LIVESTOCK_NAMESPACE = "livestock"
 SECTION_VERSION = 2
 ANIMAL_FACT_TYPE = "livestock.animal"
+MARKET_ELIGIBILITY_RESULT_BOUNDARY = "MARKET_ELIGIBILITY_ASSESSMENT_NOT_EXPORT_AUTHORIZATION"
+
+
+@dataclass(frozen=True, slots=True)
+class MarketEligibilityDossierSectionBuilder:
+    """Monta a seção setorial de uma única conclusão de mercado.
+
+    A matriz comercial é uma projeção de leitura. Esta seção só aceita a
+    Decision/Evaluation/Policy que fundamentam uma conclusão específica, para
+    não congelar nem misturar resultados de outros mercados no Dossier.
+    """
+
+    market_code: str
+    purpose: str
+    profile: str = "STANDARD"
+    synthetic: bool = True
+    recognition_boundary: RecognitionBoundary = RecognitionBoundary.INTERNAL_ONLY
+
+    def __post_init__(self) -> None:
+        for field_name in ("market_code", "purpose", "profile"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} deve ser texto não vazio.")
+        if not isinstance(self.synthetic, bool):
+            raise TypeError("synthetic deve ser booleano.")
+        if not isinstance(self.recognition_boundary, RecognitionBoundary):
+            raise TypeError("recognition_boundary deve ser RecognitionBoundary.")
+        if self.recognition_boundary is not RecognitionBoundary.INTERNAL_ONLY:
+            raise ValueError("O primeiro corte suporta somente a boundary INTERNAL_ONLY.")
+
+    def build(
+        self,
+        *,
+        decision: Decision,
+        evaluation: Evaluation,
+        policy: Policy,
+    ) -> VerticalSection:
+        self._guard_coherence(decision, evaluation, policy)
+        normative = evaluation.normative_basis_snapshot
+        if normative is None:
+            reference_time = evaluation.fact_snapshot.reference_time
+            knowledge_cutoff = evaluation.fact_snapshot.effective_knowledge_cutoff()
+        else:
+            reference_time = normative.reference_time
+            knowledge_cutoff = normative.knowledge_cutoff
+        return VerticalSection(
+            namespace=LIVESTOCK_NAMESPACE,
+            section_version=SECTION_VERSION + 1,
+            content={
+                "market_eligibility": {
+                    "market_profile": {
+                        "code": self.market_code,
+                        "profile": self.profile,
+                        "synthetic": self.synthetic,
+                    },
+                    "subject_scope": decision.subject_id.entity_type,
+                    "evaluated_purpose": self.purpose,
+                    "policy": {
+                        "policy_id": str(policy.policy_id.value),
+                        "code": policy.code,
+                        "version": policy.version,
+                        "valid_from": (
+                            None if policy.valid_from is None else policy.valid_from.isoformat()
+                        ),
+                        "valid_to": (
+                            None if policy.valid_to is None else policy.valid_to.isoformat()
+                        ),
+                    },
+                    "evaluation_context": {
+                        "reference_time": _iso_or_none(reference_time),
+                        "knowledge_cutoff": _iso_or_none(knowledge_cutoff),
+                        "normative_basis_snapshot_status": (
+                            "LEGACY_ABSENT" if normative is None else "PRESERVED"
+                        ),
+                    },
+                    "authority_boundary": {
+                        "recognition_boundary": self.recognition_boundary.value,
+                        "statement": ("Titan assessment; external recognition is not asserted."),
+                    },
+                    "coverage": {"dimensions": _coverage_dimensions(evaluation)},
+                    "result_boundary": MARKET_ELIGIBILITY_RESULT_BOUNDARY,
+                    "limitations": list(evaluation.normative_limitations),
+                }
+            },
+        )
+
+    def _guard_coherence(
+        self,
+        decision: Decision,
+        evaluation: Evaluation,
+        policy: Policy,
+    ) -> None:
+        if decision.evaluation_id != evaluation.evaluation_id:
+            raise ValueError("Decision deve pertencer à Evaluation informada.")
+        if decision.evaluation_hash != evaluation.evaluation_hash:
+            raise ValueError("Decision deve preservar o hash da Evaluation informada.")
+        if decision.subject_id != evaluation.subject_id:
+            raise ValueError("Decision e Evaluation devem possuir o mesmo Subject.")
+        if decision.purpose != self.purpose or evaluation.purpose != self.purpose:
+            raise ValueError(
+                "Decision e Evaluation devem possuir a finalidade de mercado informada."
+            )
+        if decision.policy_id != policy.policy_id or evaluation.policy_id != policy.policy_id:
+            raise ValueError("Decision e Evaluation devem apontar para a Policy informada.")
+        if decision.policy_version != policy.version or evaluation.policy_version != policy.version:
+            raise ValueError("Decision e Evaluation devem preservar a versão da Policy informada.")
+        if policy.code != self.market_code:
+            raise ValueError("Policy deve possuir o mesmo código do perfil de mercado.")
+        if decision.organization_id != policy.organization_id:
+            raise ValueError("Decision e Policy devem pertencer à mesma Organization.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,6 +423,36 @@ class LivestockDossierTemplate:
 def _fact_payload(evaluation: Evaluation, fact_type: str) -> dict[str, Any]:
     fact = evaluation.fact_snapshot.get_latest_fact_by_type(fact_type)
     return {} if fact is None else dict(fact.payload)
+
+
+def _iso_or_none(value: datetime | None) -> str | None:
+    return None if value is None else value.isoformat()
+
+
+def _coverage_dimensions(evaluation: Evaluation) -> list[dict[str, Any]]:
+    """Lê coverage declarada do snapshot sem criar um catálogo paralelo de gaps."""
+    dimensions: list[dict[str, Any]] = []
+    for fact in evaluation.fact_snapshot.facts:
+        payload = fact.payload
+        dimension = payload.get("dimension")
+        status = payload.get("coverage_status")
+        if not isinstance(dimension, str) or not isinstance(status, str):
+            continue
+        interval = {
+            "from": payload.get("required_from"),
+            "to": payload.get("required_until"),
+        }
+        dimensions.append({"code": dimension, "status": status, "interval": interval})
+        classification_status = payload.get("medication_classification_coverage_status")
+        if isinstance(classification_status, str):
+            dimensions.append(
+                {
+                    "code": "medication_classification",
+                    "status": classification_status,
+                    "interval": interval,
+                }
+            )
+    return dimensions
 
 
 def _uuid_text(value: str) -> str:

@@ -1,7 +1,7 @@
 # NEXT-05 — Market Eligibility Dossier: Design Package
 
-**Data:** 12 de agosto de 2026  
-**Estado:** AGUARDANDO REVISÃO HUMANA  
+**Data:** 12 de agosto de 2026
+**Estado:** CORTE 1 CONCLUÍDO
 **Escopo:** primeiro dossiê verificável de elegibilidade de mercado, estritamente controlado e fictício.
 
 ## 1. Objetivo
@@ -27,7 +27,7 @@ O primeiro incremento estende a seção `livestock` do dossiê já existente par
 - Decision composta sobre Animal e estabelecimento;
 - integração SISBOV, Odoo ou mercado real.
 
-O `Dossier` continua ancorado em **uma** `Decision`, **uma** `Evaluation`, **um** Subject e **uma** finalidade. A matriz comercial é uma projeção de leitura e não pode ser congelada como se fosse a própria decisão.
+O `Dossier` continua ancorado em **uma** `Decision`, **uma** `Evaluation`, **um** Subject e **uma** finalidade. Esta é uma invariante do incremento. A matriz comercial é uma projeção de leitura e não pode ser congelada como se fosse a própria decisão.
 
 ```text
 FactSnapshot + NormativeBasisSnapshot
@@ -85,7 +85,10 @@ Forma conceitual:
       "statement": "Titan decision; external recognition is not asserted."
     },
     "coverage": {
-      "dimensions": []
+      "dimensions": [
+        {"code": "treatment_history", "status": "COMPLETE", "interval": {"from": "...", "to": "..."}},
+        {"code": "medication_classification", "status": "COMPLETE", "interval": {"from": "...", "to": "..."}}
+      ]
     },
     "result_boundary": "MARKET_ELIGIBILITY_ASSESSMENT_NOT_EXPORT_AUTHORIZATION",
     "limitations": []
@@ -93,7 +96,7 @@ Forma conceitual:
 }
 ```
 
-O formato final não deve copiar novamente Policy, Rule, Fact, DecisionReason, Evidence ou `NormativeBasisSnapshot` completos: estes já estão no envelope canônico. A seção somente adiciona a leitura setorial necessária para um auditor entender a finalidade de mercado e seus limites.
+O formato final não deve copiar novamente Policy, Rule, Fact, DecisionReason, Evidence ou `NormativeBasisSnapshot` completos: estes já estão no envelope canônico. A seção somente adiciona a leitura setorial necessária para um auditor entender a finalidade de mercado e seus limites. O exemplo positivo mostra coverage efetiva porque `treatment_history` e `medication_classification` são dimensões independentes; o construtor só expõe os contratos de coverage realmente presentes no snapshot, sem inventar dimensão ou completude.
 
 ### Regras de coerência
 
@@ -103,6 +106,8 @@ O formato final não deve copiar novamente Policy, Rule, Fact, DecisionReason, E
 4. `INDETERMINATE`, ausência de coverage, base normativa legada ausente e reconhecimento externo não demonstrado permanecem visíveis como lacunas.
 5. Não existe campo booleano equivalente a `export_allowed`.
 6. O dossiê histórico não muda quando uma Policy nova ou uma fonte nova passa a existir.
+7. Todo Dossier de finalidade de mercado declara `MARKET_ELIGIBILITY_ASSESSMENT_NOT_EXPORT_AUTHORIZATION`: o resultado é uma avaliação Titan sob uma Policy, não autorização de exportação, habilitação oficial, certificação externa ou garantia de acesso ao mercado.
+8. `gaps` permanecem nos fatos, resultados de Rule, `DecisionReason` e snapshot normativo que já os explicam. A subseção usa `limitations` exclusivamente para limites interpretativos da conclusão; não cria estrutura paralela para lacunas.
 
 ## 5. Primeiro caso de prova
 
@@ -125,6 +130,8 @@ Ele deve provar ao menos:
 3. alteração material na boundary de reconhecimento altera a identidade do Dossier;
 4. nova versão de Policy produz novo Dossier quando reavaliada, preservando o anterior;
 5. `VerificationBundle` verifica o Dossier sem criar formato específico de mercado.
+6. Policy satisfeita sob `INTERNAL_ONLY` declara a avaliação Titan como satisfeita, mas não alega reconhecimento por terceiro.
+7. O mesmo Animal sob `MARKET_TEST_A` e `MARKET_TEST_B` produz dossiês distintos, e cada documento contém exclusivamente o seu próprio mercado, finalidade, Policy, Evaluation e Decision.
 
 Nenhum nome de país, programa oficial, requisito de exportação ou integração externa entra neste caso.
 
@@ -177,8 +184,14 @@ Antes de código, confirmar:
 1. o primeiro perfil é `MARKET_TEST_A`, integralmente fictício;
 2. a implementação estende somente a seção Livestock do `Dossier` existente;
 3. o Dossier é ancorado em uma única Decision/Evaluation/Policy, e não na matriz calculada na leitura;
-4. `INTERNAL_ONLY` é a única boundary positiva do primeiro corte;
+4. `INTERNAL_ONLY` é a única recognition boundary suportada no primeiro corte; ela delimita o escopo da afirmação ao Titan/Organization e não é selo de reconhecimento;
 5. nenhuma API, migration, conector externo ou `DecisionAuthorityProfile` entra no Corte 1;
 6. a seção declara explicitamente que a conclusão Titan não autoriza exportação nem implica reconhecimento externo.
 
 Com essas confirmações, o próximo passo é implementar somente o Corte 1 e revisar o documento produzido antes de integrar qualquer endpoint ou mercado real.
+
+## 10. Aprovação e registro de execução
+
+**Design aprovado em 12 de agosto de 2026. Autorização: somente Corte 1.** Os refinamentos de revisão tornam explícitos a ancoragem em uma única Decision, coverage dimensional real no caso positivo, `result_boundary` como invariante, separação entre gaps e limitations e os casos de fronteira `INTERNAL_ONLY` e de isolamento entre `MARKET_TEST_A`/`MARKET_TEST_B`.
+
+**CORTE 1 CONCLUÍDO EM 12 DE AGOSTO DE 2026.** `MarketEligibilityDossierSectionBuilder` em `packages/livestock_application/dossier_template.py` produz uma `VerticalSection` pura e versionada para um perfil sintético. Ele exige coerência exata entre Decision, Evaluation, Policy, Subject, finalidade e versão da Policy; só aceita `INTERNAL_ONLY`; lê `treatment_history` e `medication_classification` diretamente do snapshot quando declaradas; e fixa `MARKET_ELIGIBILITY_ASSESSMENT_NOT_EXPORT_AUTHORIZATION` como limite interpretativo. `limitations` da subseção contém somente limites próprios da Evaluation, enquanto coverage incompleta permanece exposta na dimensão já existente. Seis testes cobrem coverage completa/incompleta, boundary, isolamento de dois mercados sobre o mesmo Animal e recusas de coerência. Não houve integração ao template farmacológico existente, persistência, API, bundle, PDF, mercado real ou conector externo.
