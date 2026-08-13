@@ -3,17 +3,16 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 from apps.worker.config import WorkerSettings
+from packages.core_infrastructure.persistence.database import DatabaseConfigurationError
 
 
-def test_worker_settings_default_values() -> None:
+def test_worker_settings_requires_runtime_database_url() -> None:
     with patch.dict(os.environ, {}, clear=True):
-        settings = WorkerSettings.from_env()
-        assert "postgresql+psycopg://" in settings.db_url
-        assert "amqp://" in settings.rabbitmq_url
-        assert settings.queue_name == "titan.outbox"
-        assert settings.worker_id == "worker-1"
-        assert settings.reconciliation_interval_seconds == 60
+        with pytest.raises(DatabaseConfigurationError, match="TITAN_DATABASE_URL"):
+            WorkerSettings.from_env()
 
 
 def test_worker_settings_custom_values() -> None:

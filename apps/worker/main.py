@@ -14,6 +14,7 @@ from packages.core_application import (
     IncomingMessageEnvelope,
     OutboxReconciliationService,
 )
+from packages.core_infrastructure.persistence.database import assert_runtime_database_role
 from packages.core_infrastructure.persistence.inbox import TransactionalInboxRepository
 from packages.core_infrastructure.persistence.outbox import (
     TransactionalOutboxReconciliationRepository,
@@ -23,6 +24,7 @@ from packages.core_infrastructure.rabbitmq_consumer import RabbitMQPikaConsumer
 
 def run_reconciliation(settings: WorkerSettings) -> None:
     engine = create_engine(settings.db_url, pool_pre_ping=True)
+    assert_runtime_database_role(engine)
     with engine.connect() as connection:
         with connection.begin():
             repo = TransactionalOutboxReconciliationRepository(connection=connection)
@@ -39,6 +41,7 @@ def run_worker() -> None:
     settings = WorkerSettings.from_env()
 
     engine = create_engine(settings.db_url, pool_pre_ping=True)
+    assert_runtime_database_role(engine)
     consumer = RabbitMQPikaConsumer(
         connection_url=settings.rabbitmq_url,
         queue_name=settings.queue_name,

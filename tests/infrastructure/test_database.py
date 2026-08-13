@@ -6,6 +6,9 @@ from packages.core_infrastructure.persistence import (
     DatabaseSettings,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.database import (
+    MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE,
+)
 
 
 def test_database_url_is_required() -> None:
@@ -33,6 +36,15 @@ def test_database_settings_do_not_expose_credentials_in_repr() -> None:
 
     assert "segredo" not in repr(settings)
     assert "titan" not in repr(settings)
+
+
+def test_database_settings_can_require_the_migration_url() -> None:
+    with pytest.raises(
+        DatabaseConfigurationError, match=MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE
+    ):
+        DatabaseSettings.from_environment(
+            {}, variable_name=MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE
+        )
 
 
 def test_engine_uses_psycopg_and_pre_ping() -> None:

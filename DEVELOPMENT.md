@@ -357,11 +357,14 @@ Senha, porta e limite de dataset podem ser substituídos por `TITAN_VALKEY_PASSW
 
 ## PostgreSQL e migrations
 
-A conexão autoritativa exige `TITAN_DATABASE_URL` no formato `postgresql+psycopg://`. A variável não possui fallback para impedir conexão silenciosa ao banco errado.
+A aplicação exige `TITAN_DATABASE_URL` no formato `postgresql+psycopg://` e migrations exigem `TITAN_MIGRATION_DATABASE_URL` separado. A primeira usa role sem `SUPERUSER`, `BYPASSRLS` ou ownership das tabelas; a segunda é administrativa e não pode ser usada pela API ou worker. Não há fallback silencioso.
 
 ```powershell
 docker compose up --detach --wait postgres
-$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+$env:TITAN_MIGRATION_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+$env:TITAN_RUNTIME_DATABASE_PASSWORD="titan_local_runtime_password"
+python -m uv run --locked python -m apps.provision_runtime_database_role
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
 python -m uv run --locked alembic upgrade head
 python -m uv run --locked alembic current
 ```

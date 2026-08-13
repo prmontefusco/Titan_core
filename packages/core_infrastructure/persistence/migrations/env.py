@@ -13,6 +13,9 @@ from packages.core_infrastructure.persistence import (
 )
 from packages.core_infrastructure.persistence.checkpoints import integrity_checkpoints_table
 from packages.core_infrastructure.persistence.crypto import key_registry_table
+from packages.core_infrastructure.persistence.database import (
+    MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE,
+)
 from packages.core_infrastructure.persistence.decision import decisions_table
 from packages.core_infrastructure.persistence.decision_governance import (
     decision_authority_profiles_table,
@@ -191,7 +194,9 @@ def include_managed_schema(
 def run_migrations_offline() -> None:
     """Gera SQL sem estabelecer conexão."""
 
-    settings = DatabaseSettings.from_environment()
+    settings = DatabaseSettings.from_environment(
+        variable_name=MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE
+    )
     context.configure(
         url=settings.url,
         target_metadata=target_metadata,
@@ -208,7 +213,9 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     """Executa migrations em uma transação PostgreSQL."""
 
-    settings = DatabaseSettings.from_environment()
+    settings = DatabaseSettings.from_environment(
+        variable_name=MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE
+    )
     engine = create_database_engine(settings)
 
     try:

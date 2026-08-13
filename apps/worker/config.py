@@ -3,6 +3,8 @@
 import os
 from dataclasses import dataclass
 
+from packages.core_infrastructure.persistence.database import DatabaseSettings
+
 
 @dataclass(frozen=True, slots=True)
 class WorkerSettings:
@@ -14,11 +16,9 @@ class WorkerSettings:
 
     @classmethod
     def from_env(cls) -> "WorkerSettings":
+        database = DatabaseSettings.from_environment(os.environ)
         return cls(
-            db_url=os.getenv(
-                "TITAN_DATABASE_URL",
-                "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan",
-            ),
+            db_url=database.url,
             rabbitmq_url=os.getenv(
                 "TITAN_RABBITMQ_URL",
                 "amqp://titan:titan_rabbitmq_local_dev_password@127.0.0.1:5672/titan",

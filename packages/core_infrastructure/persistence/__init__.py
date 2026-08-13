@@ -5,6 +5,7 @@ from packages.core_infrastructure.persistence.checkpoints import IntegrityCheckp
 from packages.core_infrastructure.persistence.database import (
     DatabaseConfigurationError,
     DatabaseSettings,
+    assert_runtime_database_role,
     check_database_connection,
     create_database_engine,
 )
@@ -44,6 +45,7 @@ __all__ = [
     "DatabaseConfigurationError",
     "AuthorizationRepository",
     "DatabaseSettings",
+    "assert_runtime_database_role",
     "TransactionalDecisionAuthorityProfileRepository",
     "TransactionalDecisionGovernanceRepository",
     "ExternalIdentityRepository",

@@ -9,6 +9,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError
 
 DATABASE_URL_ENVIRONMENT_VARIABLE = "TITAN_DATABASE_URL"
+MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE = "TITAN_MIGRATION_DATABASE_URL"
 
 
 class DatabaseConfigurationError(ValueError):
@@ -22,14 +23,17 @@ class DatabaseSettings:
     url: str = field(repr=False)
 
     @classmethod
-    def from_environment(cls, environment: Mapping[str, str] | None = None) -> "DatabaseSettings":
+    def from_environment(
+        cls,
+        environment: Mapping[str, str] | None = None,
+        *,
+        variable_name: str = DATABASE_URL_ENVIRONMENT_VARIABLE,
+    ) -> "DatabaseSettings":
         source = os.environ if environment is None else environment
-        value = source.get(DATABASE_URL_ENVIRONMENT_VARIABLE)
+        value = source.get(variable_name)
 
         if not value:
-            raise DatabaseConfigurationError(
-                f"{DATABASE_URL_ENVIRONMENT_VARIABLE} não foi definida."
-            )
+            raise DatabaseConfigurationError(f"{variable_name} não foi definida.")
 
         try:
             parsed_url = make_url(value)
@@ -58,3 +62,27 @@ def check_database_connection(engine: Engine) -> None:
 
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
+
+
+def assert_runtime_database_role(engine: Engine) -> None:
+    """Recusa uma credencial que possa ignorar o isolamento RLS."""
+    with engine.connect() as connection:
+        role = connection.execute(
+            text(
+                """
+                SELECT r.rolsuper, r.rolbypassrls,
+                       EXISTS (
+                           SELECT 1 FROM pg_class c
+                           JOIN pg_namespace n ON n.oid = c.relnamespace
+                           WHERE n.nspname IN ('core_audit', 'core_identity')
+                             AND c.relkind IN ('r', 'p') AND c.relowner = r.oid
+                       ) AS owns_protected_table
+                FROM pg_roles r WHERE r.rolname = current_user
+                """
+            )
+        ).one()
+        if role.rolsuper or role.rolbypassrls or role.owns_protected_table:
+            raise DatabaseConfigurationError(
+                "A credencial de runtime não pode ser SUPERUSER, BYPASSRLS "
+                "ou owner de tabela protegida."
+            )

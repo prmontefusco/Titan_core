@@ -45,6 +45,7 @@ from packages.core_infrastructure.organization_context import (
 )
 from packages.core_infrastructure.persistence.database import (
     DatabaseSettings,
+    assert_runtime_database_role,
     create_database_engine,
 )
 from packages.core_infrastructure.persistence.external_identities import (
@@ -60,7 +61,9 @@ ORGANIZATION_HEADER = "X-Titan-Organization-Id"
 
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
-    return create_database_engine(DatabaseSettings.from_environment(os.environ))
+    engine = create_database_engine(DatabaseSettings.from_environment(os.environ))
+    assert_runtime_database_role(engine)
+    return engine
 
 
 @lru_cache(maxsize=1)
