@@ -1,5 +1,6 @@
 """Testes de domínio para SourceArtifact e EstablishmentQualificationAssertion (ADR-0045)."""
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
@@ -130,9 +131,16 @@ class TestEstablishmentQualificationAssertion:
             )
 
     def test_known_as_of_reproduz_conhecimento_historico(self) -> None:
-        """Reprodução histórica: assertion só é 'conhecida' em cutoff >= observed_at."""
+        """Reprodução histórica: assertion só é 'conhecida' em cutoff >= recorded_at.
+
+        `recorded_at` é sempre "agora" na criação real (`.create()` não o
+        recebe como parâmetro — ver ADR-0045: o Titan nunca fabrica quando
+        passou a conhecer algo). O teste fixa esse eixo explicitamente via
+        `dataclasses.replace` para exercitar o limite de `known_as_of` sem
+        depender do relógio de parede do dia em que a suíte roda.
+        """
         observed = datetime(2026, 7, 20, tzinfo=UTC)
-        assertion = _assertion(observed_at=observed)
+        assertion = replace(_assertion(observed_at=observed), recorded_at=observed)
 
         assert assertion.known_as_of(observed) is True
         assert assertion.known_as_of(observed + timedelta(days=1)) is True

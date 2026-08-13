@@ -669,16 +669,25 @@ def test_qualificacao_de_estabelecimento_prefere_assercao_bitemporal_ao_legado()
         source_version="v1",
         assessed_at=agora - timedelta(days=2),
     )
-    assertion = EstablishmentQualificationAssertion.create(
-        organization_id=org_id,
-        establishment_id=counterparty.counterparty_id,
-        qualification_type="exportacao-china",
-        asserted_status=AssertionStatus.QUALIFIED,
-        effective_from=None,
-        effective_until=None,
-        observed_at=agora - timedelta(days=1),
-        source_artifact_id=TypedId.new("qualification_source_artifact"),
-        confidence_tier=ConfidenceTier.DOCUMENTED,
+    assertion = replace(
+        EstablishmentQualificationAssertion.create(
+            organization_id=org_id,
+            establishment_id=counterparty.counterparty_id,
+            qualification_type="exportacao-china",
+            asserted_status=AssertionStatus.QUALIFIED,
+            effective_from=None,
+            effective_until=None,
+            observed_at=agora - timedelta(days=1),
+            source_artifact_id=TypedId.new("qualification_source_artifact"),
+            confidence_tier=ConfidenceTier.DOCUMENTED,
+        ),
+        # `.create()` grava `recorded_at` com `datetime.now(UTC)` próprio, tomado
+        # microssegundos depois de `agora`: em relógio de alta resolução (CI Linux)
+        # isso torna `recorded_at > agora` sempre, e `known_as_of(agora)` sempre
+        # False — falha determinística mascarada em máquinas de relógio mais
+        # grosseiro. Fixar `recorded_at` explicitamente antes de `agora` remove a
+        # corrida.
+        recorded_at=agora - timedelta(hours=1),
     )
     provider = LivestockFactProvider(
         property_repository=_NullPropertyRepo(),
@@ -720,8 +729,17 @@ def test_emite_fato_de_embargo_ambiental_da_assertion_mais_recente_da_propriedad
         status=StayStatus.ACTIVE,
         source_movement_id=TypedId.new("animal_movement"),
     )
-    antiga = _embargo_assertion(org_id, property_id, observed_at=agora - timedelta(days=3))
-    recente = _embargo_assertion(org_id, property_id, observed_at=agora - timedelta(days=1))
+    # `recorded_at` fixado explicitamente pelo mesmo motivo da asserção de
+    # qualificação acima: duas chamadas independentes a `datetime.now(UTC)`
+    # não têm ordem garantida em relógio de alta resolução.
+    antiga = replace(
+        _embargo_assertion(org_id, property_id, observed_at=agora - timedelta(days=3)),
+        recorded_at=agora - timedelta(days=3),
+    )
+    recente = replace(
+        _embargo_assertion(org_id, property_id, observed_at=agora - timedelta(days=1)),
+        recorded_at=agora - timedelta(days=1),
+    )
     provider = LivestockFactProvider(
         property_repository=_NullPropertyRepo(),
         animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
