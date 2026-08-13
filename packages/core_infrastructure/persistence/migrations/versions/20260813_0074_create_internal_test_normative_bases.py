@@ -46,7 +46,10 @@ def upgrade() -> None:
             ["record_owner_organization_id"], ["core_identity.organizations.organization_id"]
         ),
         sa.UniqueConstraint(
-            "record_owner_organization_id", "code", "version", name="uq_internal_test_normative_basis_version"
+            "record_owner_organization_id",
+            "code",
+            "version",
+            name="uq_internal_test_normative_basis_version",
         ),
         schema=_SCHEMA,
         comment="titan.classification=PROTECTED;titan.module_owner=livestock",
