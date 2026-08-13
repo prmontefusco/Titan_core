@@ -4,6 +4,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PACKAGES_ROOT = PROJECT_ROOT / "packages"
+API_ROOT = PROJECT_ROOT / "apps" / "api"
 
 # Os pacotes que compõem o Titan Core. A lista é explícita porque um teste de
 # fronteira que varre um diretório inexistente passa sem verificar nada — foi o
@@ -148,6 +149,29 @@ def test_core_does_not_import_verticals() -> None:
     ]
 
     assert not violations, "Titan Core importa módulos de verticais:\n" + "\n".join(violations)
+
+
+def test_core_named_http_adapters_do_not_import_livestock() -> None:
+    """Adapter HTTP nomeado como Core não pode interpretar uma vertical."""
+    require_existing_root(API_ROOT)
+    forbidden_verticals = (
+        "apps.api.livestock",
+        "packages.livestock_domain",
+        "packages.livestock_application",
+        "packages.livestock_infrastructure",
+    )
+    violations = [
+        f"{module.relative_to(PROJECT_ROOT)} -> {dependency}"
+        for module in API_ROOT.glob("core_*.py")
+        for dependency in imported_modules(module)
+        if any(
+            dependency == prefix or dependency.startswith(f"{prefix}.")
+            for prefix in forbidden_verticals
+        )
+    ]
+    assert not violations, "Adapter HTTP Core importa semântica Livestock:\n" + "\n".join(
+        violations
+    )
 
 
 def test_migrations_composition_root_exists() -> None:
