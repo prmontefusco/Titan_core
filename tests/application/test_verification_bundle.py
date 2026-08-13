@@ -36,6 +36,9 @@ from packages.core_domain.verification import (
     VerificationReasonCode,
     VerificationStatus,
 )
+from packages.livestock_application.verification_bundle_interpreter import (
+    LivestockVerificationBundleInterpreter,
+)
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 AGORA = datetime.now(UTC)
@@ -481,7 +484,9 @@ def test_livestock_bundle_derives_scopes_and_gaps_from_the_canonical_dossier() -
         serialization_version=dossier.serialization_version,
         document=document,
     )
-    bundle = VerificationBundleService().build_from_dossier(
+    bundle = VerificationBundleService(
+        dossier_interpreters=(LivestockVerificationBundleInterpreter(),)
+    ).build_from_dossier(
         dossier=enriquecido,
         audience="auditoria",
         created_at=AGORA,
