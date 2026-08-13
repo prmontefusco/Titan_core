@@ -1,7 +1,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
 
-/* Tema Titan para Keycloak (Patternfly v5) inspirado no Google Material Design 3.
-   Seletores confirmados contra o DOM renderizado localmente. */
+/* Tema Titan para Keycloak (Patternfly v5) inspirado no Google Material Design 3. */
 
 body {
   font-family: 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -18,7 +17,6 @@ body {
   text-align: center;
 }
 
-/* Forçar 1 coluna no grid do container PatternFly */
 html body .pf-v5-c-login__container {
   grid-template-columns: 1fr !important;
 }
@@ -78,33 +76,47 @@ html body .pf-v5-c-login__container {
   margin-top: 1.5rem;
 }
 
-/* Rótulos dos Campos no estilo Google Material */
+/* Espaçamento e Alinhamento dos Grupos de Formulário */
+.pf-v5-c-form__group {
+  margin-bottom: 1.25rem;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Rótulos dos Campos */
 .pf-v5-c-form__label,
 .pf-v5-c-form-control label,
-.pf-v5-c-form__group-label {
+.pf-v5-c-form__group-label,
+label.pf-v5-c-form__label {
   color: #bdc1c6 !important;
   font-family: 'Google Sans', 'Inter', sans-serif;
   font-size: 0.875rem;
   font-weight: 500;
   text-align: left;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.4rem;
   display: block;
 }
 
-/* Campos de Formulário no formato Material Outlined Field */
+/* Normalização de Altura e Estilo de Todos os Inputs e Selects */
 .pf-v5-c-form-control,
 input.pf-v5-c-form-control,
-select.pf-v5-c-form-control {
+select.pf-v5-c-form-control,
+.pf-v5-c-form-control select {
   font-family: 'Google Sans', 'Inter', sans-serif;
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 12px;
-  color: #ffffff;
-  padding: 0.75rem 1rem;
-  font-size: 0.95rem;
-  width: 100%;
-  box-sizing: border-box;
+  background-color: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-radius: 12px !important;
+  color: #ffffff !important;
+  height: 48px !important;
+  min-height: 48px !important;
+  padding: 0 14px !important;
+  font-size: 0.95rem !important;
+  line-height: 48px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
   transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+  appearance: auto;
 }
 
 .pf-v5-c-form-control:focus,
@@ -112,21 +124,42 @@ input.pf-v5-c-form-control:focus,
 select.pf-v5-c-form-control:focus {
   border-color: #40c057 !important;
   outline: none !important;
-  background-color: rgba(255, 255, 255, 0.08);
+  background-color: rgba(255, 255, 255, 0.08) !important;
   box-shadow: 0 0 0 3px rgba(64, 192, 87, 0.25) !important;
 }
 
-/* Opções do Menu Dropdown (<select>) */
-select.pf-v5-c-form-control option {
-  background-color: #1a221d;
-  color: #ffffff;
-  padding: 10px;
+/* Suporte para Input Group (Campo de Senha com Botão de Revelar) */
+.pf-v5-c-input-group {
+  display: flex !important;
+  width: 100% !important;
 }
 
-/* Espaçamento dos Grupos de Formulário */
-.pf-v5-c-form__group {
-  margin-bottom: 1.25rem;
-  text-align: left;
+.pf-v5-c-input-group .pf-v5-c-form-control {
+  flex: 1 1 auto !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.pf-v5-c-input-group .pf-v5-c-button {
+  height: 48px !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-top-right-radius: 12px !important;
+  border-bottom-right-radius: 12px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  border-left: none !important;
+  color: #bdc1c6 !important;
+  padding: 0 12px !important;
+}
+
+/* Opções do Menu Dropdown (<select>) */
+select.pf-v5-c-form-control option,
+.pf-v5-c-form-control option {
+  background-color: #1a221d !important;
+  color: #ffffff !important;
+  padding: 10px !important;
+  font-size: 0.95rem;
 }
 
 /* Botão Principal no estilo Google Pill Button */
@@ -137,14 +170,16 @@ select.pf-v5-c-form-control option {
   border: none !important;
   border-radius: 24px !important;
   color: #ffffff !important;
+  height: 48px !important;
   font-size: 0.95rem;
   font-weight: 600;
-  padding: 0.75rem 1.5rem;
+  padding: 0 1.5rem;
   letter-spacing: 0.3px;
   width: 100%;
   box-shadow: 0 4px 12px rgba(47, 158, 68, 0.3);
   transition: all 0.2s ease-in-out;
   cursor: pointer;
+  margin-top: 0.5rem;
 }
 
 .pf-v5-c-button.pf-m-primary:hover {

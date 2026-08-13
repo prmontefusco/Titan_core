@@ -210,10 +210,7 @@ class AdminKeycloak:
         _, perfil = _requisicao(
             "GET", f"{self.base_url}/admin/realms/{self.realm}/users/profile", token=self.token
         )
-        atributos = perfil.get("attributes", [])
-        if any(atributo["name"] == nome for atributo in atributos):
-            return
-
+        atributos = [attr for attr in perfil.get("attributes", []) if attr.get("name") != nome]
         atributos.append(
             {
                 "name": nome,
