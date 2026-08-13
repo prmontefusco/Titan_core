@@ -3509,6 +3509,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **Corte 2B — base semântica iniciada em 12 de agosto de 2026.** `SisbovSimulatorParseResult.review_projection()` entrega somente campos allowlisted, sem resposta bruta; `ExternalSourceCaptureAssociationReview` distingue confirmação de candidato, rejeição e necessidade de mais evidência, sem criar vínculo no Animal. A persistência e a API permanecem no incremento corrente.
 
+**Adapter HTTP local concluído em 12 de agosto de 2026.** `SisbovSimulatorHttpTransport` autentica no simulador somente em loopback, usa token efêmero por requisição e limita consultas aos paths construídos pelo contrato do Corte 1. Credenciais e token nunca entram em persistência, logs ou captura; falha de autenticação impede consulta posterior e falha de transporte fica explícita como indisponibilidade. Testes usam cliente falso; não houve endpoint Titan, credencial versionada, captura oficial, Facts, coverage ou Decision. Próximo corte: conectar adapter a uma operação interna autorizada de captura persistida e então expor somente leitura/review.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
