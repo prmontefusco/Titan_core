@@ -3501,6 +3501,10 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **Proposta registrada em 12 de agosto de 2026 · Estado: AGUARDANDO REVISÃO HUMANA.** `docs/adr/0057-plano-de-reavaliacao-normativa-controlado.md` prepara o contrato futuro de `NormativeReevaluationPlan` e itens idempotentes, sem implementá-los. A proposta separa impacto, aprovação humana, plano persistido, transporte assíncrono e novas conclusões; preserva imutabilidade histórica, isolamento por Organization, contexto/digests verificáveis, cancelamento, falhas parciais e boundary de reconhecimento. Não cria migration, API, outbox, worker, mercado real ou integração. A aceitação permanece condicionada ao primeiro caso operacional que defina população, autoridade, limites e retenção.
 
+### ADR-0058 — Artefato de captura externa source-neutral
+
+**Proposta registrada em 12 de agosto de 2026 · Estado: AGUARDANDO REVISÃO HUMANA.** `docs/adr/0058-artefato-de-captura-externa-source-neutral.md` resolve a lacuna exposta pelo POST-LIV-03: uma resposta de API externa não pode ser registrada como `ReceivedTransferArtifact`, pois não é transferência de custody. A proposta define `ExternalSourceCaptureArtifact` específico do Livestock, append-only e protegido por Organization, preservando perfil/ambiente da Source, contrato, escopo minimizado, digest, resultado técnico, material protegido opcional, parser e limitações. A fonte `SISBOV_SIMULATOR_LOCAL` permanece invariavelmente `SIMULATED`; captura, HTTP 200, autenticação ou parsing não criam autoridade, Fact, Evidence, coverage, associação de Animal, continuidade ou Decision. O Corte 2 fica condicionado à aceitação desta ADR e limitado a persistência/revisão da captura; importação material de Facts ou coverage continua no Corte 3.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
