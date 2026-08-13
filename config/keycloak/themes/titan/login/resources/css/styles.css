@@ -1,18 +1,16 @@
-/* Tema Titan sobre o keycloak.v2 (Patternfly v5). Seletores confirmados
-   contra o DOM real renderizado localmente — ver DEVELOPMENT.md.
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
 
-   O layout padrão do keycloak.v2 põe a marca (#kc-header) numa segunda
-   coluna do grid via `grid-template-columns: var(--pf-v5-c-login__container--xl--GridTemplateColumns)`,
-   e essa regra resiste a `!important` (mesma especificidade, mesma origem,
-   sem @layer envolvido -- não veio à tona por que exatamente). Em vez de
-   brigar com o grid, escondemos a coluna da marca e desenhamos a logo
-   dentro do próprio cartão, onde o CSS deste tema já manda sem disputa. */
+/* Tema Titan para Keycloak (Patternfly v5) inspirado no Google Material Design 3.
+   Seletores confirmados contra o DOM renderizado localmente. */
 
 body {
-  background-image: url("../img/background.jpg");
+  font-family: 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-image: linear-gradient(rgba(12, 18, 14, 0.42), rgba(12, 18, 14, 0.62)), url("../img/background.jpg");
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
+  margin: 0;
+  padding: 0;
 }
 
 .pf-v5-c-login__container {
@@ -20,9 +18,7 @@ body {
   text-align: center;
 }
 
-/* Especificidade extra (ancestrais de tipo) para vencer a mesma regra do
-   patternfly.min.css, que por algum motivo não cede a !important sozinho
-   com especificidade igual. */
+/* Forçar 1 coluna no grid do container PatternFly */
 html body .pf-v5-c-login__container {
   grid-template-columns: 1fr !important;
 }
@@ -31,14 +27,20 @@ html body .pf-v5-c-login__container {
   display: none;
 }
 
+/* Cartão do Formulário no Estilo Material Design 3 */
 .pf-v5-c-login__main {
-  background-color: rgba(20, 24, 20, 0.82);
-  border-radius: 12px;
-  padding: 2rem;
-  backdrop-filter: blur(2px);
-  max-width: 420px;
+  background-color: rgba(22, 28, 24, 0.88);
+  border-radius: 28px;
+  padding: 2.5rem 2rem;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  max-width: 440px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
+/* Logotipo Titan */
 .pf-v5-c-login__main-header::before {
   content: "";
   display: block;
@@ -46,33 +48,136 @@ html body .pf-v5-c-login__container {
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  width: 96px;
-  height: 96px;
-  margin: 0 auto 1rem;
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 1.25rem;
 }
 
+/* Título e Subtítulo */
 .pf-v5-c-login__main-header .pf-v5-c-title {
-  color: #f4f4f4;
+  color: #f1f3f4;
+  font-family: 'Google Sans', 'Inter', sans-serif;
+  font-size: 1.6rem;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  margin: 0;
 }
 
 .pf-v5-c-login__main-header .pf-v5-c-title::after {
-  content: "Bem-vindo ao Futuro da Pecuária";
+  content: "Plataforma de Rastreabilidade e Conformidade";
   display: block;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 400;
-  margin-top: 0.35rem;
-  color: #d7d7d7;
+  margin-top: 0.4rem;
+  color: #9aa0a6;
+  letter-spacing: 0.1px;
 }
 
-.pf-v5-c-login__main-body,
-.pf-v5-c-form-control label {
-  color: #f4f4f4;
+.pf-v5-c-login__main-body {
+  color: #e8eaed;
+  margin-top: 1.5rem;
 }
 
+/* Rótulos dos Campos no estilo Google Material */
+.pf-v5-c-form__label,
+.pf-v5-c-form-control label,
+.pf-v5-c-form__group-label {
+  color: #bdc1c6 !important;
+  font-family: 'Google Sans', 'Inter', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: left;
+  margin-bottom: 0.35rem;
+  display: block;
+}
+
+/* Campos de Formulário no formato Material Outlined Field */
+.pf-v5-c-form-control,
+input.pf-v5-c-form-control,
+select.pf-v5-c-form-control {
+  font-family: 'Google Sans', 'Inter', sans-serif;
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  color: #ffffff;
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.pf-v5-c-form-control:focus,
+input.pf-v5-c-form-control:focus,
+select.pf-v5-c-form-control:focus {
+  border-color: #40c057 !important;
+  outline: none !important;
+  background-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 0 3px rgba(64, 192, 87, 0.25) !important;
+}
+
+/* Opções do Menu Dropdown (<select>) */
+select.pf-v5-c-form-control option {
+  background-color: #1a221d;
+  color: #ffffff;
+  padding: 10px;
+}
+
+/* Espaçamento dos Grupos de Formulário */
+.pf-v5-c-form__group {
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+/* Botão Principal no estilo Google Pill Button */
 .pf-v5-c-button.pf-m-primary {
-  --pf-v5-c-button--m-primary--BackgroundColor: #2f9e44;
+  --pf-v5-c-button--m-primary--BackgroundColor: #2b8a3e;
+  font-family: 'Google Sans', 'Inter', sans-serif;
+  background: linear-gradient(135deg, #2b8a3e, #2f9e44) !important;
+  border: none !important;
+  border-radius: 24px !important;
+  color: #ffffff !important;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  letter-spacing: 0.3px;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(47, 158, 68, 0.3);
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
 }
 
 .pf-v5-c-button.pf-m-primary:hover {
-  --pf-v5-c-button--m-primary--BackgroundColor: #268a3a;
+  background: linear-gradient(135deg, #237032, #2b8a3e) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(47, 158, 68, 0.4);
+}
+
+.pf-v5-c-button.pf-m-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(47, 158, 68, 0.3);
+}
+
+/* Links Secundários e Rodapé */
+.pf-v5-c-login__main-footer a,
+.pf-v5-c-form__group a,
+#kc-form-options a,
+a {
+  color: #69db7c;
+  text-decoration: none;
+  font-family: 'Google Sans', 'Inter', sans-serif;
+  font-weight: 500;
+  font-size: 0.9rem;
+  padding: 4px 8px;
+  border-radius: 12px;
+  transition: background-color 0.2s, color 0.2s;
+}
+
+.pf-v5-c-login__main-footer a:hover,
+.pf-v5-c-form__group a:hover,
+#kc-form-options a:hover,
+a:hover {
+  background-color: rgba(105, 219, 124, 0.12);
+  color: #8ce99a;
+  text-decoration: none;
 }

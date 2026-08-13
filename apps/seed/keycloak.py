@@ -220,7 +220,7 @@ class AdminKeycloak:
                 "displayName": rotulo,
                 "validations": {"options": {"options": opcoes}},
                 "annotations": {
-                    "inputType": "select-radiobuttons",
+                    "inputType": "select",
                     "inputOptionLabels": rotulos_das_opcoes,
                 },
                 "permissions": {"view": ["admin", "user"], "edit": ["admin", "user"]},

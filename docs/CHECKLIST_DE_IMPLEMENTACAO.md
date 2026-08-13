@@ -1,8 +1,17 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 6 de agosto de 2026
+**Atualizado em:** 13 de agosto de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
+
+> **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
+> O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
+> 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
+> 2. Cartão Material 3 translúcido com `backdrop-filter: blur(20px)`, cantos arredondados (`28px`), elevação e sombra suave;
+> 3. Tipografia `Google Sans` e `Inter`;
+> 4. Inputs no formato *Material Outlined Text Field* e botão principal no formato *Material Pill Button*;
+> 5. Atributo `titan_requested_kind` do cadastro de novos usuários atualizado em `apps/seed/keycloak.py` de `"inputType": "select-radiobuttons"` para `"inputType": "select"`, exibindo um menu dropdown em vez de botões de rádio.
+
 
 > **Consolidação documental em 6 de agosto de 2026.** Este checklist parava no Passo 17.2 e escondia duas frentes inteiras de trabalho já concluídas: a conformidade sanitária vitalícia (`LIV-C01` a `LIV-C09`, `POST-LIV-01`, `POST-LIV-02A` — Marco 18) e o primeiro produto de frontend do Livestock (`LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md`, Ondas 0–5 — Marco 19). Ambos foram incorporados como entradas de primeira classe (ver Marcos 18 e 19, antes de "Notas de rumo"). `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi removido: sua divisão de papéis com este checklist ("plano define passos, checklist registra status") havia colapsado na prática, e é exatamente esse tipo de fronteira teórica entre documentos que causou a bifurcação. Os critérios de conclusão, riscos/controles e regra de interrupção que ainda valiam migraram para a seção "Protocolo e critérios de conclusão" abaixo.
 
@@ -3598,6 +3607,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 **ADR-0062 — T-05B concluído em 13 de agosto de 2026.** `TemporalAnimalIdentifierReader` interpreta exclusivamente os eventos canônicos `livestock.identifier_attached` e `livestock.identifier_deactivated` por meio da porta Core aprovada. A seleção exige validade até `reference_time`, registro até `knowledge_cutoff`, schema/version conhecidos, agregado/Animal coerentes e lifecycle sem conflito; `recorded_at` é preservado como tempo de registro, sem virar `known_at`. O `LivestockFactProvider` passa a emitir `livestock.identifier_history` somente quando a reconstrução é íntegra, preservando IDs e digests dos eventos-fonte. Ausência, versão/payload inválido, desativação órfã ou dois identificadores ativos do mesmo tipo geram limitação explícita, sem consultar `animal_identifiers` atual. **Evidência:** matriz T0/T1/T2, retroatividade, desativação posterior, lifecycle inválido e schema desconhecido em `tests/livestock_application/test_temporal_identifier.py`; sem migration, API, backfill, mercado real ou alteração de Decision/Dossier.
 
 **ADR-0062 — desenho detalhado para T-05C em 13 de agosto de 2026.** A investigação separou o corte em três contratos: (1) aplicações/correções append-only selecionadas por `applied_at` e `created_at`, sem chamar registro de `known_at`; (2) cálculo temporal de carência somente quando aplicação, batch, medicamento e prazo forem todos elegíveis, sem reutilizar o `WithdrawalCalculator` atual em reprodução histórica; e (3) campanhas somente como registro criado até cutoff até que exista lifecycle append-only de alteração/revogação. Correção posterior não suprime aplicação no snapshot anterior; conflito, cadeia incompleta, material farmacológico posterior ou campanha sem supersession permanecem indeterminação. **Estado:** aguardando aceite específico do T-05C1; nenhum código, migration, API ou Decision foi alterado.
+
+**ADR-0062 — T-05C1 concluído em 13 de agosto de 2026.** `TemporalTreatmentApplicationReader` seleciona `TreatmentApplication` somente quando aplicação e respectivo evento canônico `treatment_applied` são temporalmente elegíveis. Correção conhecida depois do cutoff não suprime original no snapshot anterior; correção órfã, evento ausente/ambíguo ou cadeia incompatível falham fechadas. O `LivestockFactProvider` emite `livestock.treatment_history.local` com IDs e digests das fontes e declara explicitamente `withdrawal_assessment=NOT_CALCULATED_IN_T05C1`; não relê medicamento/batch atual nem conclui carência. **Evidência:** testes T0/T1/T2, aplicação posterior, correção posterior e correção órfã em `tests/livestock_application/test_temporal_treatment.py`; sem migration, API, campanha, cálculo histórico de carência, mercado real ou alteração de Decision/Dossier. **Próximo corte:** T-05C2, condicionado a demonstrar seleção temporal de batch, medicamento e prazo de carência.
 
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
