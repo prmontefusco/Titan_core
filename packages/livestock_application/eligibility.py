@@ -1,6 +1,7 @@
 """Elegibilidade farmacologica (Passo 9.5 - Titan Livestock)."""
 
-from dataclasses import dataclass
+import hashlib
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
 
@@ -23,6 +24,11 @@ from packages.core_domain.decision_governance import (
     DecisionProposal,
 )
 from packages.core_domain.evaluation import Evaluation
+from packages.core_domain.normative import (
+    NormativeBasisSnapshot,
+    NormativeReferenceSnapshot,
+    NormativeSourceClassification,
+)
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.livestock_application.fact_provider import (
@@ -44,6 +50,12 @@ _LOT_CORRECTIVE_ACTION = (
     "Lote com animal em carencia: remover o(s) animal(is) bloqueador(es) do lote "
     "(ver blocking_animals) ou aguardar o fim da carencia, e reavaliar."
 )
+_INTERNAL_NORMATIVE_BASIS_ID = TypedId.parse(
+    "normative_basis", "5dcb5ab6-10a8-4f93-9d12-1a4d73f03f5b"
+)
+_INTERNAL_NORMATIVE_CONTENT_DIGEST = hashlib.sha256(
+    b"titan-livestock-pharmacological-baseline-v1"
+).hexdigest()
 
 
 def automated_decision_authority(
@@ -140,6 +152,80 @@ class DecisionAuthorityProfileRepositoryPort(Protocol):
     def save(self, profile: DecisionAuthorityProfile) -> None: ...
 
 
+class NormativeBasisSnapshotProviderPort(Protocol):
+    """Seleciona uma fotografia normativa para a Evaluation solicitada."""
+
+    def select(
+        self,
+        *,
+        policy: Policy,
+        rules: tuple[Rule, ...],
+        purpose: str,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> NormativeBasisSnapshot | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class InternalPharmacologicalNormativeBasisSnapshotProvider:
+    """Catalogo controlado somente para a Policy interna farmacologica inicial."""
+
+    def select(
+        self,
+        *,
+        policy: Policy,
+        rules: tuple[Rule, ...],
+        purpose: str,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> NormativeBasisSnapshot | None:
+        if (
+            policy.code != ELIGIBILITY_POLICY_CODE
+            or purpose != ELIGIBILITY_PURPOSE
+            or not rules
+            or any(
+                rule.policy_id != policy.policy_id
+                or rule.code not in {ELIGIBILITY_RULE_CODE, LOT_ELIGIBILITY_RULE_CODE}
+                for rule in rules
+            )
+            or policy.published_at is None
+            or policy.published_at > knowledge_cutoff
+        ):
+            return None
+        return NormativeBasisSnapshot(
+            schema_version=1,
+            normative_basis_id=_INTERNAL_NORMATIVE_BASIS_ID,
+            normative_basis_code="TITAN_LIVESTOCK_PHARMACOLOGICAL_BASELINE",
+            normative_basis_version=1,
+            policy_id=policy.policy_id,
+            policy_code=policy.code,
+            policy_version=policy.version,
+            rule_versions=tuple((rule.code, rule.version) for rule in rules),
+            purpose=purpose,
+            jurisdiction="INTERNAL_TEST",
+            intended_use="INTERNAL_TEST_ONLY",
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+            approved_by="SYSTEM:INTERNAL_TEST_CATALOG",
+            approval_authority="INTERNAL_TEST_ONLY",
+            approved_at=policy.published_at,
+            references=(
+                NormativeReferenceSnapshot(
+                    instrument_code="TITAN-LIVESTOCK-PHARMACOLOGICAL-BASELINE",
+                    instrument_version="1",
+                    provision="withdrawal-control",
+                    content_digest=_INTERNAL_NORMATIVE_CONTENT_DIGEST,
+                    digest_algorithm="sha256",
+                    source_classification=NormativeSourceClassification.INTERNAL_TEST,
+                ),
+            ),
+            limitations=(
+                "RECOGNITION_BOUNDARY:INTERNAL_ONLY",
+                "INTERNAL_TEST_BASELINE_NOT_EXTERNAL_MARKET_AUTHORIZATION",
+            ),
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class HumanReviewRequired(Exception):
     evaluation: Evaluation
@@ -186,6 +272,9 @@ class PharmacologicalEligibilityService:
     authority_profile_repository: DecisionAuthorityProfileRepositoryPort | None = None
     governance_repository: DecisionGovernanceRepositoryPort | None = None
     lot_rule: Rule | None = None
+    normative_snapshot_provider: NormativeBasisSnapshotProviderPort = field(
+        default_factory=InternalPharmacologicalNormativeBasisSnapshotProvider
+    )
 
     def evaluate_animal(
         self,
@@ -213,11 +302,23 @@ class PharmacologicalEligibilityService:
         at_time: datetime,
     ) -> tuple[Evaluation, Decision]:
         snapshot = self.fact_provider.get_snapshot(organization_id, subject_id, at_time)
+        normative_basis_snapshot = self.normative_snapshot_provider.select(
+            policy=self.policy,
+            rules=(rule,),
+            purpose=ELIGIBILITY_PURPOSE,
+            reference_time=snapshot.effective_reference_time(),
+            knowledge_cutoff=snapshot.effective_knowledge_cutoff(),
+        )
+        if normative_basis_snapshot is None:
+            raise ValueError(
+                "Base normativa temporal ausente ou inelegivel para a Policy farmacologica."
+            )
         evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
             policy=self.policy,
             rules=(rule,),
             snapshot=snapshot,
             purpose=ELIGIBILITY_PURPOSE,
+            normative_basis_snapshot=normative_basis_snapshot,
         )
         authority = automated_decision_authority(
             organization_id,

@@ -420,7 +420,7 @@ def test_review_required_persists_evaluation_and_creates_proposal(
     evaluations = FakeEvaluationRepository()
     decisions = FakeDecisionRepository()
     governance = _InMemoryDecisionGovernanceRepo()
-    policy = build_eligibility_policy(org_id)
+    policy = build_eligibility_policy(org_id, published_at=now - timedelta(seconds=1))
     service = PharmacologicalEligibilityService(
         fact_provider=fact_provider,
         policy=policy,
