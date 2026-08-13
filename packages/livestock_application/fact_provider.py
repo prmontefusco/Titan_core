@@ -714,7 +714,7 @@ class LivestockFactProvider(FactProviderPort):
             organization_id,
             property_id,
         )
-        known_assertions = [item for item in assertions if item.observed_at <= at_time]
+        known_assertions = [item for item in assertions if item.recorded_at <= at_time]
         if not known_assertions:
             return None
         return max(known_assertions, key=lambda item: item.observed_at)

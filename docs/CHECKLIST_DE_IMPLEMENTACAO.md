@@ -3553,6 +3553,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **P1 concluído — conhecimento de qualificação de estabelecimento em 13 de agosto de 2026.** `EstablishmentQualificationAssertion.known_as_of()` passa a selecionar por `recorded_at`, que é o instante em que o Titan recebeu/registrou a Assertion, e não por `observed_at`, que pertence à alegação temporal da fonte. Assim, informação observada no passado mas incorporada depois do cutoff não reescreve reprodução histórica. Não houve migration, API ou inferência de tempo: os campos existentes foram usados com suas responsabilidades corretas. Testes de importação/reprodução e do provider passaram; o hardening das demais fontes continua aberto.
 
+**P1 concluído — embargo ambiental selecionado por conhecimento registrado em 13 de agosto de 2026.** A escolha da última `PropertyEnvironmentalEmbargoAssertion` conhecida pelo provider usa `recorded_at <= at_time`; uma consulta observada no passado, mas registrada depois do cutoff, não aparece como se estivesse disponível na decisão histórica. O teste negativo agora prova precisamente esse caso, sem criar novo schema ou alterar API. Testes de provider e de qualificação passaram; fontes Livestock ainda sem trilha temporal demonstrável permanecem fail-closed no caminho temporal estrito.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.

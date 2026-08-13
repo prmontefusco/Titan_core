@@ -7,6 +7,7 @@ RuleCondition, sem que market_eligibility.py precise conhecer campanhas.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
@@ -715,7 +716,10 @@ def test_nao_emite_fato_de_embargo_sem_assertion_conhecida_ate_o_instante() -> N
         sex=AnimalSex.MALE,
     )
     agora = datetime.now(UTC)
-    futura = _embargo_assertion(org_id, property_id, observed_at=agora + timedelta(days=1))
+    futura = replace(
+        _embargo_assertion(org_id, property_id, observed_at=agora - timedelta(days=1)),
+        recorded_at=agora + timedelta(days=1),
+    )
     provider = LivestockFactProvider(
         property_repository=_NullPropertyRepo(),
         animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
