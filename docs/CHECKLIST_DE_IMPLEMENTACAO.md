@@ -3847,3 +3847,15 @@ Retoma o "caminho barato" que a NR-5 já havia identificado como estruturalmente
 **Risco preservado, não escondido:** `test_superficie_publica_do_core_esta_congelada` foi atualizado com as quatro rotas novas — é o portão que obriga qualquer crescimento futuro da superfície pública a passar por decisão explícita, e continua ativo.
 
 **Próximo passo (fora deste incremento):** a tela de autoria em `apps/web` que consome este API junto do catálogo de templates já existente — pedida explicitamente para preservar autoria individual por usuário Keycloak em vez de conta de serviço compartilhada, para auditoria.
+
+### NEXT-08b — Tela de autoria de regras de mercado (NR-5, passo 2 de 2)
+
+**Data:** 13 de agosto de 2026 · **Estado:** CONCLUÍDO — fecha a NR-5.
+
+Tela nova `apps/web/src/pages/MarketRuleGovernance.tsx`, em `/rule-governance` e listada em `LivestockHome`. Guia o mesmo fluxo de quatro passos que o Incremento 1 já expunha via API, sem introduzir lógica de negócio nova no navegador (proibido por `AGENTS.md`): escolher ou publicar uma Policy, escolher um template já classificado do catálogo, preencher os parâmetros e campos do fluxo, **pré-visualizar** (rota `governance-flow`, não grava nada) e só então **confirmar** (rota `execute`).
+
+Usa o login Keycloak individual já existente do produto — nenhuma conta de serviço compartilhada — para que cada regra publicada continue atribuível a uma pessoa real na auditoria, exatamente o motivo pelo qual esta trilha (tela em vez de ferramenta à parte) foi escolhida na discussão que abriu este incremento.
+
+**Evidência:** `apps/web/src/api/policyGovernance.ts` (cliente HTTP para `/v1/rule-governance/policies` e `/v1/rule-governance/catalogs/livestock-market-rules/...`); `apps/web/src/pages/MarketRuleGovernance.tsx`; rota e link adicionados em `App.tsx` e `LivestockHome.tsx`. **Testes:** `policyGovernance.test.ts` (6 casos) e `MarketRuleGovernance.test.tsx` (3 casos, incluindo o fluxo completo pré-visualizar → confirmar). **Portão verificado:** 79 testes de frontend aprovados (18 arquivos), `npm run lint` e `npm run build` limpos; suíte de backend revalidada em 1351 testes aprovados sem regressão.
+
+Com isso a NR-5 está fechada: o "caminho barato" que ela previu (`RuleCondition` declarativa, sem sandbox Wasm) foi construído ponta a ponta, de API a tela.

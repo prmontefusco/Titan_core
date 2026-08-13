@@ -45,6 +45,10 @@ export function LivestockHome({ kind, organizationId }: Props) {
           Revisão humana de decisões — a partir do aviso de revisão necessária em qualquer
           execução de elegibilidade, mercado ou explicação comercial.
         </li>
+        <li>
+          <Link to="/rule-governance">Regras de mercado</Link> — publicar política e regra
+          governada a partir de um modelo já classificado (NR-5).
+        </li>
       </ul>
     </section>
   )
