@@ -22,6 +22,10 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/medications/{medication_id}/sanitary-classifications", "post"),
     ("/v1/livestock/animals/{animal_id}/coverage-contributions", "get"),
     ("/v1/livestock/animals/{animal_id}/coverage-contributions", "post"),
+    # Captura externa simulada (ADR-0058, Corte 2B): a API só lê a projeção
+    # allowlisted e recebe a review humana; nunca material externo bruto.
+    ("/v1/livestock/external-source-captures", "get"),
+    ("/v1/livestock/external-source-captures/{capture_artifact_id}/reviews", "post"),
     # Técnico e verificação externa.
     ("/health", "get"),
     ("/technical/authentication", "get"),
