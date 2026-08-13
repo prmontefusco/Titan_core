@@ -10,12 +10,13 @@ Modelo bitemporal:
 - `effective_from`/`effective_until` (valid time): quando a qualificação
   valia no mundo real, segundo a fonte. Só preenchido se a fonte afirma
   explicitamente essas datas — nunca inferido pela ausência em uma lista.
-- `observed_at`/`recorded_at` (knowledge/transaction time): quando o Titan
-  passou a conhecer a asserção. Sempre preenchido.
+- `observed_at` (tempo declarado pela fonte) e `recorded_at` (knowledge/
+  transaction time): quando a fonte observou e quando o Titan passou a
+  conhecer a asserção. Ambos são sempre preenchidos e não são equivalentes.
 
 Essa distinção permite duas perguntas diferentes:
 - Reprodução histórica: "o que sabíamos quando decidimos?" → filtra por
-  `observed_at <= cutoff`.
+  `recorded_at <= cutoff`.
 - Auditoria retrospectiva: "o que sabemos hoje sobre aquele instante?" →
   filtra por `effective_from/until` cobrindo o instante em análise,
   independentemente de quando a asserção foi observada.
@@ -133,7 +134,7 @@ class EstablishmentQualificationAssertion:
     def known_as_of(self, cutoff: datetime) -> bool:
         """Reprodução histórica: esta asserção era conhecida no instante `cutoff`?"""
         require_utc(cutoff, field_name="cutoff")
-        return self.observed_at <= cutoff
+        return self.recorded_at <= cutoff
 
     def effective_at(self, instant: datetime) -> bool:
         """Auditoria retrospectiva: esta asserção cobre o instante `instant`?

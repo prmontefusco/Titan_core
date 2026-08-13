@@ -1,7 +1,7 @@
 """Testes do serviço de importação de asserções de qualificação (ADR-0045)."""
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -322,7 +322,6 @@ def test_ausencia_em_complete_snapshot_produz_unknown_nunca_not_qualified() -> N
             )
         ],
     )
-
     # Versao 2: estabelecimento desapareceu da lista completa
     outro_estab = _establishment(org_id)
     ambiente.counterparty_repo.save(outro_estab)
@@ -381,7 +380,6 @@ def test_ausencia_em_partial_nao_gera_assertion_derivada() -> None:
             )
         ],
     )
-
     outro_estab = _establishment(org_id)
     ambiente.counterparty_repo.save(outro_estab)
     resultado = ambiente.service.import_assertions(
@@ -444,6 +442,10 @@ def test_conhecimento_posterior_nao_altera_reproducao_historica() -> None:
             )
         ],
     )
+    ambiente.assertion_repo.store[-1] = replace(
+        ambiente.assertion_repo.store[-1],
+        recorded_at=datetime(2026, 7, 16, tzinfo=UTC),
+    )
 
     # Reproducao da decisao de 20/07: so Assertions com observed_at <= cutoff
     conhecidas_em_20_07 = [
@@ -470,6 +472,10 @@ def test_conhecimento_posterior_nao_altera_reproducao_historica() -> None:
                 effective_from=datetime(2026, 7, 10, tzinfo=UTC),
             )
         ],
+    )
+    ambiente.assertion_repo.store[-1] = replace(
+        ambiente.assertion_repo.store[-1],
+        recorded_at=datetime(2026, 7, 27, tzinfo=UTC),
     )
 
     # A reproducao com o MESMO cutoff de 20/07 continua identica:
