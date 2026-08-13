@@ -118,9 +118,17 @@ append-only, encadeados no fluxo do agregado `animal`, e preservam
 uma tabela de lifecycle, não altera `animal_identifiers` e não usa o agregado
 `Animal` atual para reconstruir identidade.
 
-Será criado, somente no Livestock Application, um leitor puro de identidade
-temporal com uma porta de leitura `DomainEventReader` já existente. Para o
-animal e Organization solicitados, ele:
+O `DomainEventReader` existente já entrega ordem, autoria e tempos, mas
+deliberadamente não expõe `payload_canonical_bytes`; sua documentação proíbe
+desserializar conteúdo na leitura genérica. Portanto, ele **não basta**, por si
+só, para T-05B. Antes de implementação será necessário aprovar uma porta de
+leitura de conteúdo imutável, ainda genérica no Core, que entregue os bytes
+canônicos e a versão do payload sem interpretar semântica Livestock. O adapter
+da Infrastructure pode reutilizar o registro append-only existente; somente o
+Livestock Application interpretará os schemas próprios.
+
+Depois desse portão, será criado no Livestock Application um leitor puro de
+identidade temporal. Para o animal e Organization solicitados, ele:
 
 1. lê o fluxo `animal` ordenado por `aggregate_version`;
 2. aceita somente eventos de esquema e versão conhecidos, com payload canônico
@@ -150,6 +158,12 @@ não substituirá nem reinterpretará o fato de permanência do T-05A.
 dos endpoints de Animal, migração/backfill da tabela atual, identificação em
 fontes externas, birth data/breed/sex, Policy de mercado e qualquer Decision ou
 Dossier já persistido.
+
+**Portão arquitetural adicional:** não é permitido contornar a porta do Core
+consultando `core_audit.domain_events` diretamente pelo Livestock Application,
+nem ampliar `DomainEventReader` com interpretação de payload. A única opção
+compatível é uma porta Core genérica, somente leitura, para conteúdo canônico
+preservado; sua introdução exige ADR/aceite específico antes de T-05B.
 
 **Matriz mínima de teste para eventual implementação:** duas Organizations;
 anexação T0 conhecida em T0; desativação válida em T2; cutoff T1 que ainda vê
