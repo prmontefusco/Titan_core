@@ -67,6 +67,11 @@ jobs:
       - name: Aplicar migrations
         run: uv run --locked alembic upgrade head
 
+      - name: Provisionar role de runtime restrita
+        env:
+          TITAN_RUNTIME_DATABASE_PASSWORD: titan_local_runtime_password
+        run: uv run --locked python -m apps.provision_runtime_database_role
+
       - name: Executar testes e verificações arquiteturais
         run: uv run --locked pytest
 

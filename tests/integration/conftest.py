@@ -12,7 +12,6 @@ CI. Um único ponto torna o esquecimento impossível para os próximos.
 import os
 from collections.abc import Iterator
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
 from sqlalchemy import Connection, create_engine, text
@@ -22,6 +21,8 @@ from apps.api.main import app
 from tests.livestock_api_support import DATABASE_URL, Ambiente
 
 _INTEGRATION_DIR = Path(__file__).parent
+_RUNTIME_ROLE_ENVIRONMENT_VARIABLE = "TITAN_RUNTIME_DATABASE_ROLE"
+_DEFAULT_RUNTIME_ROLE = "titan_app"
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
@@ -45,31 +46,24 @@ def ambiente() -> Iterator[Ambiente]:
         transaction = connection.begin()
         montado = Ambiente(connection)
 
-        # A API reusa esta mesma conexão e transação, para que o que ela grava
-        # seja desfeito junto com o cenário.
-        # O usuário `titan` é superusuário e IGNORA RLS. Sob ele, o isolamento
-        # entre organizações não é exercido de verdade — a consulta de vínculos
-        # enxergaria o vínculo de outra organização e o contexto seria concedido.
-        # As requisições da API rodam sob um role sem BYPASSRLS, que é o único
-        # jeito de a prova valer.
-        role = f"titan_api_{uuid4().hex[:12]}"
-        connection.execute(
-            text(
-                f'CREATE ROLE "{role}" NOLOGIN NOSUPERUSER NOCREATEDB '
-                "NOCREATEROLE NOINHERIT NOBYPASSRLS"
-            )
-        )
-        for schema in ("core_identity", "core_audit"):
-            connection.execute(text(f'GRANT USAGE ON SCHEMA {schema} TO "{role}"'))
-            connection.execute(
-                text(f'GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA {schema} TO "{role}"')
-            )
+        # A fixture semeia e reverte pelo administrador. A API usa a role de
+        # runtime na mesma transação, mantendo os dados semeados visíveis e RLS
+        # efetivo sem conceder permissões próprias a uma role de teste.
+        role = os.environ.get(_RUNTIME_ROLE_ENVIRONMENT_VARIABLE, _DEFAULT_RUNTIME_ROLE)
+        role_row = connection.execute(
+            text("SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = :role"),
+            {"role": role},
+        ).one_or_none()
+        assert role_row is not None, f"Role de runtime {role!r} inexistente."
+        assert not role_row.rolsuper and not role_row.rolbypassrls
+        quoted_role = connection.dialect.identifier_preparer.quote(role)
 
         originais = dict(app.dependency_overrides)
 
         def conexao_sob_role_restrito() -> Iterator[Connection]:
-            connection.execute(text(f'SET LOCAL ROLE "{role}"'))
+            connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
             try:
+                assert connection.execute(text("SELECT current_user")).scalar_one() == role
                 yield connection
             finally:
                 connection.execute(text("RESET ROLE"))
