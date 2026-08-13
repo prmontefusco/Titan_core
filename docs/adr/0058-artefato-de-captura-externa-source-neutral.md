@@ -1,8 +1,10 @@
 # ADR-0058 — Artefato de captura externa source-neutral
 
-**Status:** PROPOSTA  
+**Status:** ACEITA
 **Data:** 12 de agosto de 2026  
 **Decisores:** responsável pelo produto e arquitetura do Titan
+
+**Aceita em:** 12 de agosto de 2026, para o Corte 2 exclusivamente simulado.
 
 ## Contexto
 

@@ -21,6 +21,10 @@ from packages.livestock_infrastructure.persistence.external_counterparty_reposit
     TransactionalExternalCounterpartyRepository,
     external_counterparties_table,
 )
+from packages.livestock_infrastructure.persistence.external_source_capture_repository import (
+    TransactionalExternalSourceCaptureArtifactRepository,
+    external_source_capture_artifacts_table,
+)
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
     property_geometries_table,
@@ -119,6 +123,7 @@ __all__ = [
     "TransactionalRuralPropertyRepository",
     "TransactionalAnimalExitRepository",
     "TransactionalExternalCounterpartyRepository",
+    "TransactionalExternalSourceCaptureArtifactRepository",
     "TransactionalEstablishmentQualificationRepository",
     "TransactionalPropertyEnvironmentalEmbargoAssertionRepository",
     "TransactionalImportedLivestockFactRepository",
@@ -158,6 +163,7 @@ __all__ = [
     "rural_properties_table",
     "animal_exits_table",
     "external_counterparties_table",
+    "external_source_capture_artifacts_table",
     "establishment_qualifications_table",
     "imported_livestock_facts_table",
     "treatment_applications_table",

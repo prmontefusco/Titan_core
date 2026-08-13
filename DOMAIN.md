@@ -43,6 +43,8 @@ O Titan Core não conhece conceitos específicos de pecuária, indústria flores
 
 Conceitos como `Animal`, `Veterinarian`, `Medication`, `GTA`, `SISBOV`, `Tree`, `Part` ou `Feed` pertencem exclusivamente às respectivas verticais.
 
+Na vertical Livestock, `ExternalSourceCaptureArtifact` é o registro imutável de material capturado de fonte externa sob perfil, ambiente, contrato, escopo minimizado, digest e resultado técnico delimitados. Ele não é transferência de custódia, não é Evidence, não associa sujeitos automaticamente e não produz Fact, coverage, autoridade, Evaluation ou Decision. O primeiro perfil é exclusivamente `SISBOV_SIMULATOR_LOCAL` em ambiente `SIMULATED`; fonte oficial exige decisão e perfil próprios.
+
 Na vertical Livestock, classificação sanitária de `Medication` é representação factual versionada e não atributo intrínseco do produto. `MedicationSanitaryClassificationAssertion` preserva medicamento, categoria, estado afirmado, validade, conhecimento, fonte, validação, confiança e limitações. Inicialmente, somente `ANTIMICROBIAL` é necessária. Ausência de Assertion, Assertion `UNKNOWN` e negação explícita `DOES_NOT_APPLY` são estados distintos. A Policy decide admissibilidade e efeito; coverage de `treatment_history` e suficiência de `medication_classification` permanecem dimensões independentes. O padrão não é promovido ao Core sem segundo domínio concreto.
 
 ---
