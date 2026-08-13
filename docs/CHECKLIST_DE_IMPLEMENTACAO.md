@@ -3591,6 +3591,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **ADR-0063 proposta em 13 de agosto de 2026 — leitura canônica de eventos por extensões verticais.** Propõe uma porta Core adicional, somente leitura e genérica (`CanonicalDomainEventReader`), que entrega bytes canônicos preservados, schema e versão sem os desserializar ou interpretar. A Infrastructure reutilizará o log append-only/RLS existente; o Livestock será o primeiro consumidor e continuará responsável por interpretar somente seus schemas. Não há endpoint, migration, backfill ou alteração de eventos neste desenho. **Estado:** aguardando aceite arquitetural; bloqueador explícito do T-05B da ADR-0062.
 
+**Revisão da ADR-0063 em 13 de agosto de 2026.** O desenho foi endurecido para declarar expressamente que `recorded_at` não é `known_at`; evento canônico selecionado é evidência, não Fact reconstruído; e a porta não autoriza consumo semântico universal entre verticais. O retorno incluirá `payload_digest` calculado dos bytes preservados e referência de integridade, sem persistência nova. O portão passou a exigir RLS contra IDs conhecidos de outro tenant, não exposição em logs/traces/métricas/erros e teste de que Core não atribui semântica `known_at` a `recorded_at`. **Estado:** permanece PROPOSTA, aguardando aceite arquitetural antes de código.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
