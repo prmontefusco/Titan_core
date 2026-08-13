@@ -14,6 +14,9 @@ from packages.livestock_application.dimensional_coverage import (
 )
 from packages.livestock_application.fact_provider import LivestockFactProvider
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
+from packages.livestock_application.transfer_artifact_service import (
+    ReceivedTransferArtifactRepositoryPort,
+)
 from packages.livestock_domain.imported_fact import ImportedLivestockFact
 from packages.livestock_domain.medication_classification import (
     MedicationClassificationStatus,
@@ -21,6 +24,7 @@ from packages.livestock_domain.medication_classification import (
     MedicationSanitaryCategory,
     MedicationSanitaryClassificationAssertion,
 )
+from packages.livestock_domain.transfer_artifact import HistoryCoverage, ReceivedTransferArtifact
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
@@ -56,6 +60,14 @@ class ImportedFacts:
             for item in self.items
             if item.organization_id == organization_id and item.animal_id == animal_id
         ]
+
+
+@dataclass
+class TransferArtifacts:
+    items: list[ReceivedTransferArtifact]
+
+    def list_by_animal(self, animal_id: TypedId) -> list[ReceivedTransferArtifact]:
+        return [item for item in self.items if item.animal_id == animal_id]
 
 
 @dataclass
@@ -133,6 +145,45 @@ def test_temporal_snapshot_excludes_coverage_known_after_cutoff() -> None:
     ]
     assert len(coverage_facts) == 1
     assert coverage_facts[0].known_at == cutoff - timedelta(days=1)
+
+
+def test_temporal_snapshot_includes_transfer_coverage_known_after_reference_before_cutoff() -> None:
+    organization_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    reference_time = datetime(2026, 2, 1, tzinfo=UTC)
+    cutoff = reference_time + timedelta(days=2)
+    artifact = ReceivedTransferArtifact(
+        artifact_id=TypedId.new("received_transfer_artifact"),
+        organization_id=organization_id,
+        animal_id=animal_id,
+        source_counterparty_id=TypedId.new("external_counterparty"),
+        bundle_digest="a" * 64,
+        bundle_issued_at=reference_time - timedelta(days=2),
+        transfer_effective_at=reference_time - timedelta(days=1),
+        coverage=HistoryCoverage(
+            known_from=reference_time - timedelta(days=10),
+            known_until=reference_time,
+        ),
+        created_at=reference_time + timedelta(days=1),
+    )
+    provider = LivestockFactProvider(
+        property_repository=cast(RuralPropertyRepositoryPort, EmptyRepository()),
+        animal_repository=cast(AnimalRepositoryPort, EmptyRepository()),
+        transfer_artifact_repository=cast(
+            ReceivedTransferArtifactRepositoryPort, TransferArtifacts([artifact])
+        ),
+    )
+
+    snapshot = provider.get_snapshot_with_temporal_context(
+        organization_id,
+        animal_id,
+        reference_time=reference_time,
+        knowledge_cutoff=cutoff,
+    )
+
+    fact = next(item for item in snapshot.facts if item.fact_type == "livestock.history_coverage")
+    assert fact.observed_at == artifact.transfer_effective_at
+    assert fact.known_at == artifact.created_at
 
 
 def test_sanitary_fact_requires_classification_known_by_cutoff() -> None:

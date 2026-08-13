@@ -176,7 +176,14 @@ class LivestockFactProvider(FactProviderPort):
         limitations = ["LIVESTOCK_CURRENT_STATE_NOT_HISTORICALLY_RECONSTRUCTABLE"]
 
         if target_id.entity_type == "animal":
-            facts.extend(self._imported_sanitary_facts(organization_id, target_id))
+            facts.extend(
+                self._imported_sanitary_facts(
+                    organization_id,
+                    target_id,
+                    reference_time=reference_time,
+                    knowledge_cutoff=knowledge_cutoff,
+                )
+            )
             facts.extend(
                 self._dimensional_coverage_facts(
                     organization_id,
@@ -193,7 +200,12 @@ class LivestockFactProvider(FactProviderPort):
             )
             if sanitary_fact is not None:
                 facts.append(sanitary_fact)
-            coverage_fact = self._history_coverage_fact(organization_id, target_id, reference_time)
+            coverage_fact = self._history_coverage_fact(
+                organization_id,
+                target_id,
+                reference_time,
+                knowledge_cutoff=knowledge_cutoff,
+            )
             if coverage_fact is not None:
                 facts.append(coverage_fact)
 
@@ -201,7 +213,7 @@ class LivestockFactProvider(FactProviderPort):
             organization_id=organization_id,
             target_id=target_id,
             as_of=reference_time,
-            facts=tuple(fact for fact in facts if fact.observed_at <= reference_time),
+            facts=tuple(facts),
             reference_time=reference_time,
             knowledge_cutoff=knowledge_cutoff,
             knowledge_limitations=tuple(limitations),
@@ -572,6 +584,8 @@ class LivestockFactProvider(FactProviderPort):
         organization_id: OrganizationId,
         animal_id: TypedId,
         at_time: datetime,
+        *,
+        knowledge_cutoff: datetime | None = None,
     ) -> Fact | None:
         if self.transfer_artifact_repository is None:
             return None
@@ -580,6 +594,7 @@ class LivestockFactProvider(FactProviderPort):
             for artifact in self.transfer_artifact_repository.list_by_animal(animal_id)
             if artifact.organization_id == organization_id
             and artifact.transfer_effective_at <= at_time
+            and (knowledge_cutoff is None or artifact.created_at <= knowledge_cutoff)
         ]
         if not artifacts:
             return None
@@ -587,7 +602,9 @@ class LivestockFactProvider(FactProviderPort):
         return Fact.create(
             fact_type=HISTORY_COVERAGE_FACT_TYPE,
             payload=_history_coverage_payload(artifact),
-            observed_at=artifact.created_at,
+            observed_at=artifact.transfer_effective_at,
+            recorded_at=artifact.created_at,
+            known_at=artifact.created_at,
         )
 
     def _dimensional_coverage_facts(
@@ -750,6 +767,9 @@ class LivestockFactProvider(FactProviderPort):
         self,
         organization_id: OrganizationId,
         animal_id: TypedId,
+        *,
+        reference_time: datetime | None = None,
+        knowledge_cutoff: datetime | None = None,
     ) -> list[Fact]:
         if self.imported_fact_repository is None:
             return []
@@ -757,6 +777,10 @@ class LivestockFactProvider(FactProviderPort):
         for imported_fact in self.imported_fact_repository.list_by_animal(
             organization_id, animal_id
         ):
+            if reference_time is not None and imported_fact.occurred_at > reference_time:
+                continue
+            if knowledge_cutoff is not None and imported_fact.imported_at > knowledge_cutoff:
+                continue
             facts.append(
                 Fact.create(
                     fact_type=imported_fact.fact_type,
