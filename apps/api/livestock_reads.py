@@ -32,6 +32,7 @@ from packages.core_infrastructure.persistence.relations import TransactionalRela
 from packages.livestock_application.authorization import (
     ANIMAL_LER,
     ANIMAL_LER_GENEALOGIA,
+    EXTERNAL_SOURCE_CAPTURE_LER,
     LOT_LER,
     MEDICATION_LER,
     MOVEMENT_LER,
@@ -80,6 +81,10 @@ from packages.livestock_infrastructure.persistence.coverage_contribution_reposit
 )
 from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
     TransactionalExternalCounterpartyRepository,
+)
+from packages.livestock_infrastructure.persistence.external_source_capture_repository import (
+    TransactionalExternalSourceCaptureArtifactRepository,
+    TransactionalExternalSourceCaptureAssociationReviewRepository,
 )
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
@@ -522,6 +527,65 @@ def listar_fatos_importados(
     encontrados = repositorio.list_by_animal(contexto.organization_id, alvo)
     janela = encontrados[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
     return montar_pagina([_fato_importado(item) for item in janela], paginacao)
+
+
+class CapturaExternaResumo(BaseModel):
+    artifact_id: str
+    source_profile_code: str
+    source_environment: str
+    resource_kind: str
+    transport_outcome: str
+    captured_at: datetime
+    review_projection: dict[str, Any] | None
+    reviews: list[dict[str, Any]]
+
+
+@router.get(
+    "/external-source-captures",
+    response_model=Pagina[CapturaExternaResumo],
+    summary="Listar capturas externas simuladas",
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_capturas_externas(
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(EXTERNAL_SOURCE_CAPTURE_LER))
+    ],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
+) -> Any:
+    captures = TransactionalExternalSourceCaptureArtifactRepository(
+        connection
+    ).list_by_organization(contexto.organization_id)
+    reviews = TransactionalExternalSourceCaptureAssociationReviewRepository(connection)
+    janela = captures[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
+    response = []
+    for capture in janela:
+        response.append(
+            CapturaExternaResumo(
+                artifact_id=str(capture.artifact_id.value),
+                source_profile_code=capture.source_profile_code,
+                source_environment=capture.source_environment.value,
+                resource_kind=capture.resource_kind,
+                transport_outcome=capture.transport_outcome,
+                captured_at=capture.captured_at,
+                review_projection=None
+                if capture.review_projection is None
+                else dict(capture.review_projection),
+                reviews=[
+                    {
+                        "review_id": str(item.review_id.value),
+                        "candidate_animal_id": str(item.candidate_animal_id.value),
+                        "status": item.status.value,
+                        "basis_code": item.basis_code,
+                        "reviewed_at": item.reviewed_at,
+                    }
+                    for item in reviews.list_by_capture(
+                        contexto.organization_id, capture.artifact_id
+                    )
+                ],
+            )
+        )
+    return montar_pagina(response, paginacao)
 
 
 class ContribuicaoCoverageResumo(BaseModel):

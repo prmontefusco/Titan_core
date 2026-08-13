@@ -23,6 +23,7 @@ from packages.livestock_infrastructure.persistence.external_counterparty_reposit
 )
 from packages.livestock_infrastructure.persistence.external_source_capture_repository import (
     TransactionalExternalSourceCaptureArtifactRepository,
+    TransactionalExternalSourceCaptureAssociationReviewRepository,
     external_source_capture_artifacts_table,
     external_source_capture_association_reviews_table,
 )
@@ -125,6 +126,7 @@ __all__ = [
     "TransactionalAnimalExitRepository",
     "TransactionalExternalCounterpartyRepository",
     "TransactionalExternalSourceCaptureArtifactRepository",
+    "TransactionalExternalSourceCaptureAssociationReviewRepository",
     "TransactionalEstablishmentQualificationRepository",
     "TransactionalPropertyEnvironmentalEmbargoAssertionRepository",
     "TransactionalImportedLivestockFactRepository",

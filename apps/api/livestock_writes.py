@@ -39,6 +39,7 @@ from packages.livestock_application.authorization import (
     ANIMAL_REGISTRAR_SAIDA,
     ELIGIBILITY_EXECUTAR,
     ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR,
+    EXTERNAL_SOURCE_CAPTURE_REVIEW,
     LOT_CRIAR,
     MOVEMENT_REGISTRAR,
     PROPERTY_CRIAR,
@@ -65,6 +66,9 @@ from packages.livestock_application.establishment_qualification_service import (
 from packages.livestock_application.event_recorder import LivestockEventRecorder
 from packages.livestock_application.exit_service import AnimalExitService
 from packages.livestock_application.external_counterparty_service import ExternalCounterpartyService
+from packages.livestock_application.external_source_capture_service import (
+    ExternalSourceCaptureReviewService,
+)
 from packages.livestock_application.geometry_service import PropertyGeometryService
 from packages.livestock_application.imported_fact_service import ImportedLivestockFactService
 from packages.livestock_application.lot_service import LotService
@@ -86,6 +90,9 @@ from packages.livestock_domain.establishment_qualification import (
 )
 from packages.livestock_domain.exit import ExitType
 from packages.livestock_domain.external_counterparty import CounterpartyType
+from packages.livestock_domain.external_source_capture import (
+    ExternalSourceCaptureAssociationReviewStatus,
+)
 from packages.livestock_domain.geometry import (
     CAMADA_PERIMETRO,
     SRID_CANONICO,
@@ -121,6 +128,10 @@ from packages.livestock_infrastructure.persistence.exit_repository import (
 )
 from packages.livestock_infrastructure.persistence.external_counterparty_repository import (
     TransactionalExternalCounterpartyRepository,
+)
+from packages.livestock_infrastructure.persistence.external_source_capture_repository import (
+    TransactionalExternalSourceCaptureArtifactRepository,
+    TransactionalExternalSourceCaptureAssociationReviewRepository,
 )
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,
@@ -807,6 +818,12 @@ class ContribuicaoCoverageResponse(BaseModel):
     recorded_at: datetime
 
 
+class RegistrarReviewCapturaExternaRequest(BaseModel):
+    candidate_animal_id: str
+    status: ExternalSourceCaptureAssociationReviewStatus
+    basis_code: str = Field(min_length=1, max_length=120)
+
+
 def _coverage_contribution_response(item: Any) -> ContribuicaoCoverageResponse:
     source = item.contribution.source_reference
     return ContribuicaoCoverageResponse(
@@ -1180,6 +1197,53 @@ def registrar_contribuicao_coverage(
     except ValueError as error:
         raise _conflito(error) from error
     return _coverage_contribution_response(item)
+
+
+@router.post(
+    "/external-source-captures/{capture_artifact_id}/reviews",
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar revisão de candidato de captura simulada",
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_review_captura_externa(
+    capture_artifact_id: str,
+    corpo: RegistrarReviewCapturaExternaRequest,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(EXTERNAL_SOURCE_CAPTURE_REVIEW))
+    ],
+    connection: ConnectionDependency,
+) -> dict[str, Any]:
+    service = ExternalSourceCaptureReviewService(
+        artifact_repository=TransactionalExternalSourceCaptureArtifactRepository(connection),
+        review_repository=TransactionalExternalSourceCaptureAssociationReviewRepository(connection),
+        animal_repository=TransactionalAnimalRepository(connection),
+    )
+    try:
+        review = service.review_candidate(
+            context=operation_context(contexto),
+            capture_artifact_id=typed_id_or_problem(
+                capture_artifact_id,
+                entity_type="external_source_capture_artifact",
+                campo="capture_artifact_id",
+            ),
+            candidate_animal_id=typed_id_or_problem(
+                corpo.candidate_animal_id, entity_type="animal", campo="candidate_animal_id"
+            ),
+            status=corpo.status,
+            basis_code=corpo.basis_code,
+        )
+    except KeyError as error:
+        raise _nao_encontrado("Captura") from error
+    except ValueError as error:
+        raise _conflito(error) from error
+    return {
+        "review_id": str(review.review_id.value),
+        "capture_artifact_id": str(review.capture_artifact_id.value),
+        "candidate_animal_id": str(review.candidate_animal_id.value),
+        "status": review.status.value,
+        "basis_code": review.basis_code,
+        "reviewed_at": review.reviewed_at,
+    }
 
 
 # -- Genealogia --------------------------------------------------------------

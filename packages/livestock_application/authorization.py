@@ -83,6 +83,8 @@ TRACEABILITY_LER: Final = "LIVESTOCK_TRACEABILITY.LER"
 # aprovar gente na Organization sem essa decisão ter sido tomada de verdade.
 ENTITY_TYPE_REQUEST_LER: Final = "LIVESTOCK_ENTITY_TYPE_REQUEST.LER"
 ENTITY_TYPE_REQUEST_DECIDIR: Final = "LIVESTOCK_ENTITY_TYPE_REQUEST.DECIDIR"
+EXTERNAL_SOURCE_CAPTURE_LER: Final = "LIVESTOCK_EXTERNAL_SOURCE_CAPTURE.LER"
+EXTERNAL_SOURCE_CAPTURE_REVIEW: Final = "LIVESTOCK_EXTERNAL_SOURCE_CAPTURE.REVIEW"
 
 # A leitura é permissão própria por área, e não uma só para tudo. Papel de
 # consulta restrita — um comprador que só precisa ver o dossiê, um técnico que só
@@ -104,6 +106,7 @@ LEITURA: Final = frozenset(
         PROPERTY_LER_GEOMETRIA,
         ESTABLISHMENT_QUALIFICATION_ASSERTION_LER,
         TRACEABILITY_LER,
+        EXTERNAL_SOURCE_CAPTURE_LER,
     }
 )
 
@@ -125,6 +128,7 @@ ESCRITA: Final = frozenset(
         DECISION_REVIEW_EXECUTE,
         ESTABLISHMENT_QUALIFICATION_ASSERTION_IMPORTAR,
         TRANSFORMATION_REGISTRAR,
+        EXTERNAL_SOURCE_CAPTURE_REVIEW,
     }
 )
 

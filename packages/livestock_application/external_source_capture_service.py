@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 from typing import Protocol
 
+from packages.livestock_application.animal_service import AnimalRepositoryPort
 from packages.livestock_application.event_recorder import LivestockOperationContext
 from packages.livestock_application.sisbov_simulator import (
     SisbovSimulatorCapture,
@@ -93,6 +94,7 @@ class SisbovSimulatorIngestionService:
 class ExternalSourceCaptureReviewService:
     artifact_repository: ExternalSourceCaptureArtifactRepositoryPort
     review_repository: ExternalSourceCaptureAssociationReviewRepositoryPort
+    animal_repository: AnimalRepositoryPort
 
     def review_candidate(
         self,
@@ -106,6 +108,9 @@ class ExternalSourceCaptureReviewService:
         captures = self.artifact_repository.list_by_organization(context.organization_id)
         if not any(item.artifact_id == capture_artifact_id for item in captures):
             raise KeyError("Captura não encontrada na Organization ativa.")
+        animal = self.animal_repository.get_by_id(candidate_animal_id)
+        if animal is None or animal.organization_id != context.organization_id:
+            raise KeyError("Animal não encontrado na Organization ativa.")
         review = ExternalSourceCaptureAssociationReview(
             review_id=TypedId.new("external_source_capture_association_review"),
             organization_id=context.organization_id,

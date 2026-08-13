@@ -3513,6 +3513,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **Operação interna de captura concluída em 12 de agosto de 2026.** `SisbovSimulatorIngestionService` encadeia transporte allowlisted, parsing e `ExternalSourceCaptureService` para registrar a captura simulada; `review_projection` é armazenada somente como projeção canônica do parser e nunca como resposta bruta. O fluxo continua interno, sem endpoint, segredo persistido, Fact, Evidence, coverage, associação de Animal ou Decision. Testes de Application provam a cadeia com transporte falso. Próximo corte: expor leitura/review autorizadas e roteiro manual automatizado, sem aceitar corpo externo nem executar captura HTTP pela API.
 
+**API de leitura/review implementada em 12 de agosto de 2026.** A permissão nova `LIVESTOCK_EXTERNAL_SOURCE_CAPTURE.LER` permite listar apenas capturas simuladas da Organization ativa com a projeção allowlisted e reviews preservadas; `LIVESTOCK_EXTERNAL_SOURCE_CAPTURE.REVIEW`, concedida ao operador pecuário, permite registrar review append-only para captura e Animal da mesma Organization. A API não recebe material externo, não executa HTTP e não altera o Animal, Facts, Evidence, coverage, associação, Policy ou Decision. Falta somente o roteiro manual automatizado e testes de integração de autorização para encerrar o Corte 2B.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
