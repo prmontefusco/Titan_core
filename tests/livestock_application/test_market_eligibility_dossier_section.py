@@ -76,6 +76,9 @@ def _artifacts(
     *,
     market_code: str = "MARKET_TEST_A",
     purpose: str = PURPOSE,
+    policy_version: int = 1,
+    valid_from: datetime = NOW,
+    valid_to: datetime | None = None,
     classification_status: str = "COMPLETE",
     organization_id: OrganizationId | None = None,
     animal_id: TypedId | None = None,
@@ -88,9 +91,10 @@ def _artifacts(
         code=market_code,
         name="Policy de teste",
         description="Somente para teste.",
-        version=1,
+        version=policy_version,
         status=PolicyStatus.PUBLISHED,
-        valid_from=NOW,
+        valid_from=valid_from,
+        valid_to=valid_to,
         published_at=NOW,
     )
     coverage = Fact.create(
@@ -262,6 +266,20 @@ def test_section_declares_real_dimensional_coverage_and_result_boundary() -> Non
     assert market["limitations"] == []
 
 
+def test_satisfied_synthetic_policy_does_not_assert_external_recognition() -> None:
+    decision, evaluation, policy = _artifacts()
+
+    section = MarketEligibilityDossierSectionBuilder(
+        market_code="MARKET_TEST_A", purpose=PURPOSE
+    ).build(decision=decision, evaluation=evaluation, policy=policy)
+
+    assert decision.result is DecisionResult.APROVADA
+    market = section.content["market_eligibility"]
+    assert market["market_profile"]["synthetic"] is True
+    assert market["authority_boundary"]["recognition_boundary"] == "INTERNAL_ONLY"
+    assert market["result_boundary"] == MARKET_ELIGIBILITY_RESULT_BOUNDARY
+
+
 def test_incomplete_coverage_remains_a_gap_in_its_existing_dimension() -> None:
     decision, evaluation, policy = _artifacts(classification_status="INCOMPLETE")
 
@@ -355,6 +373,55 @@ def test_market_test_a_dossier_uses_existing_persistence_path() -> None:
         dossier.document["vertical"]["content"]["market_eligibility"]["market_profile"]["code"]
         == MARKET_TEST_A_CODE
     )
+
+
+def test_later_policy_version_does_not_change_the_prior_dossier() -> None:
+    organization_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    repository = _DossierRepository()
+    template = MarketEligibilityDossierTemplate(
+        section_builder=MarketEligibilityDossierSectionBuilder(
+            market_code=MARKET_TEST_A_CODE,
+            purpose=PURPOSE,
+        ),
+        dossier_service=DossierService(repository=repository),
+    )
+    decision_v1, evaluation_v1, policy_v1 = _artifacts(
+        market_code=MARKET_TEST_A_CODE,
+        organization_id=organization_id,
+        animal_id=animal_id,
+        policy_version=1,
+        valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+        valid_to=datetime(2026, 7, 1, tzinfo=UTC),
+    )
+    dossier_v1 = template.build_and_store(
+        decision=decision_v1,
+        evaluation=evaluation_v1,
+        policy=policy_v1,
+        generated_at=NOW,
+    )
+    preserved_hash = dossier_v1.dossier_hash
+    preserved_document = dossier_v1.document
+
+    decision_v2, evaluation_v2, policy_v2 = _artifacts(
+        market_code=MARKET_TEST_A_CODE,
+        organization_id=organization_id,
+        animal_id=animal_id,
+        policy_version=2,
+        valid_from=datetime(2026, 7, 1, tzinfo=UTC),
+    )
+    dossier_v2 = template.build_and_store(
+        decision=decision_v2,
+        evaluation=evaluation_v2,
+        policy=policy_v2,
+        generated_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+
+    assert dossier_v1.dossier_hash == preserved_hash
+    assert dossier_v1.document == preserved_document
+    assert dossier_v1.document["policy"]["version"] == 1
+    assert dossier_v2.document["policy"]["version"] == 2
+    assert dossier_v1.dossier_hash != dossier_v2.dossier_hash
 
 
 def test_second_cut_refuses_another_market_profile() -> None:
