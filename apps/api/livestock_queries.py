@@ -139,6 +139,9 @@ from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
     TransactionalLotMembershipRepository,
 )
+from packages.livestock_infrastructure.persistence.medication_classification_repository import (
+    TransactionalMedicationClassificationRepository,
+)
 from packages.livestock_infrastructure.persistence.medication_repository import (
     TransactionalMedicationBatchRepository,
     TransactionalMedicationRepository,
@@ -496,6 +499,9 @@ def _eligibility_components(
         sanitary_campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
         treatment_application_repository=application_repository,
         coverage_contribution_repository=TransactionalCoverageContributionRepository(
+            connection=connection
+        ),
+        medication_classification_repository=TransactionalMedicationClassificationRepository(
             connection=connection
         ),
         territorial_timeline_service=(

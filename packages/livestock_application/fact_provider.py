@@ -19,6 +19,9 @@ from packages.livestock_application.external_counterparty_service import (
     ExternalCounterpartyRepositoryPort,
 )
 from packages.livestock_application.lot_service import LotMembershipRepositoryPort
+from packages.livestock_application.medication_classification_service import (
+    MedicationClassificationRepositoryPort,
+)
 from packages.livestock_application.movement_service import PropertyStayRepositoryPort
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_application.sanitary_campaign_service import (
@@ -26,6 +29,11 @@ from packages.livestock_application.sanitary_campaign_service import (
 )
 from packages.livestock_application.sanitary_requirement_service import (
     SanitaryRequirementService,
+)
+from packages.livestock_application.sanitary_test_coverage import (
+    MedicationTreatmentRecord,
+    SanitaryTestACoverageService,
+    TreatmentMaterialSource,
 )
 from packages.livestock_application.territorial_overlap_service import (
     PropertyTerritorialOverlapAssessment,
@@ -147,6 +155,7 @@ class LivestockFactProvider(FactProviderPort):
     sanitary_campaign_repository: SanitaryCampaignRepositoryPort | None = None
     treatment_application_repository: TreatmentApplicationRepositoryPort | None = None
     coverage_contribution_repository: CoverageContributionReaderPort | None = None
+    medication_classification_repository: MedicationClassificationRepositoryPort | None = None
 
     def get_snapshot_with_temporal_context(
         self,
@@ -176,6 +185,14 @@ class LivestockFactProvider(FactProviderPort):
                     knowledge_cutoff=knowledge_cutoff,
                 )
             )
+            sanitary_fact = self._sanitary_test_a_fact(
+                organization_id,
+                target_id,
+                reference_time=reference_time,
+                knowledge_cutoff=knowledge_cutoff,
+            )
+            if sanitary_fact is not None:
+                facts.append(sanitary_fact)
             coverage_fact = self._history_coverage_fact(organization_id, target_id, reference_time)
             if coverage_fact is not None:
                 facts.append(coverage_fact)
@@ -619,6 +636,71 @@ class LivestockFactProvider(FactProviderPort):
                 )
             )
         return facts
+
+    def _sanitary_test_a_fact(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> Fact | None:
+        """Compõe o único contrato sanitário controlado do NEXT-01.
+
+        Não existe inferência de ausência de tratamento: se material ou
+        classificação não forem suficientes, o fato não terá a chave conclusiva
+        e a Rule correspondente retornará INDETERMINADA.
+        """
+        if (
+            self.coverage_contribution_repository is None
+            or self.imported_fact_repository is None
+            or self.medication_classification_repository is None
+        ):
+            return None
+        contributions = tuple(
+            item.contribution
+            for item in self.coverage_contribution_repository.list_by_subject(
+                organization_id, animal_id
+            )
+            if item.known_at is not None and item.known_at <= knowledge_cutoff
+        )
+        treatments: list[MedicationTreatmentRecord] = []
+        medication_ids: set[TypedId] = set()
+        for imported in self.imported_fact_repository.list_by_animal(organization_id, animal_id):
+            if imported.fact_type != IMPORTED_TREATMENT_FACT_TYPE:
+                continue
+            if imported.imported_at > knowledge_cutoff:
+                continue
+            raw_medication_id = imported.payload.get("medication_id")
+            if not isinstance(raw_medication_id, str):
+                continue
+            try:
+                medication_id = TypedId.parse("medication", raw_medication_id)
+            except ValueError:
+                continue
+            treatments.append(
+                MedicationTreatmentRecord(
+                    medication_id=medication_id,
+                    occurred_at=imported.occurred_at,
+                    source=TreatmentMaterialSource.IMPORTED_DOCUMENTED,
+                    source_artifact_id=imported.source_artifact_id.value.hex,
+                )
+            )
+            medication_ids.add(medication_id)
+        classifications = tuple(
+            assertion
+            for medication_id in medication_ids
+            for assertion in self.medication_classification_repository.list_by_medication(
+                organization_id, medication_id
+            )
+        )
+        return SanitaryTestACoverageService().build_fact_from_classified_material(
+            reference_time=reference_time,
+            contributions=contributions,
+            treatments=tuple(treatments),
+            classifications=classifications,
+            knowledge_cutoff=knowledge_cutoff,
+        )
 
     def _latest_environmental_embargo_assertion(
         self,

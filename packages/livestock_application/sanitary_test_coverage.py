@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 
+from packages.core_domain.evidence import ConfidenceTier
 from packages.core_domain.facts import Fact
 from packages.livestock_application.dimensional_coverage import (
     CoverageContribution,
@@ -55,11 +56,17 @@ class MedicationTreatmentRecord:
     medication_id: TypedId
     occurred_at: datetime
     source: TreatmentMaterialSource
+    source_artifact_id: str | None = None
 
     def __post_init__(self) -> None:
         require_utc(self.occurred_at, field_name="occurred_at")
         if self.medication_id.entity_type != "medication":
             raise ValueError("medication_id deve ser medication.")
+        if self.source is TreatmentMaterialSource.IMPORTED_DOCUMENTED:
+            if self.source_artifact_id is None or not self.source_artifact_id.strip():
+                raise ValueError("Tratamento importado documentado exige source_artifact_id.")
+        elif self.source_artifact_id is not None:
+            raise ValueError("source_artifact_id pertence apenas ao material importado.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -209,6 +216,7 @@ class SanitaryTestACoverageService:
         )
         antimicrobial: list[AntimicrobialTreatmentRecord] = []
         gaps: list[str] = []
+        selected_assertions: list[MedicationSanitaryClassificationAssertion] = []
         for treatment in material:
             eligible = tuple(
                 item
@@ -218,16 +226,28 @@ class SanitaryTestACoverageService:
                 and item.valid_at(treatment.occurred_at)
                 and item.validation_status
                 is MedicationClassificationValidation.STRUCTURALLY_VALIDATED
+                and item.confidence_tier
+                in {
+                    ConfidenceTier.DOCUMENTED,
+                    ConfidenceTier.VERIFIED_SOURCE,
+                    ConfidenceTier.HARDENED_SYSTEM,
+                    ConfidenceTier.CRYPTOGRAPHICALLY_ATTESTED,
+                }
             )
             statuses = {item.status for item in eligible}
             if len(statuses) != 1 or MedicationClassificationStatus.UNKNOWN in statuses:
                 gaps.append(f"MEDICATION_CLASSIFICATION_GAP:{treatment.medication_id.value}")
             elif MedicationClassificationStatus.APPLIES in statuses:
+                selected_assertions.extend(eligible)
                 antimicrobial.append(
                     AntimicrobialTreatmentRecord(
-                        occurred_at=treatment.occurred_at, source=treatment.source
+                        occurred_at=treatment.occurred_at,
+                        source=treatment.source,
+                        source_artifact_id=treatment.source_artifact_id,
                     )
                 )
+            else:
+                selected_assertions.extend(eligible)
         fact = self.build_fact_from_contributions(
             reference_time=reference_time,
             contributions=contributions,
@@ -242,6 +262,12 @@ class SanitaryTestACoverageService:
             else MedicationClassificationCoverageStatus.COMPLETE.value
         )
         payload["medication_classification_limitations"] = gaps
+        payload["medication_classification_assertion_ids"] = sorted(
+            {item.assertion_id.value.hex for item in selected_assertions}
+        )
+        payload["medication_classification_source_references"] = sorted(
+            {item.source_reference.target_id.value.hex for item in selected_assertions}
+        )
         if gaps:
             payload.pop("has_antimicrobial_treatment", None)
         return Fact.create(
