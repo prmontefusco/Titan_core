@@ -576,7 +576,7 @@ print(f"Payload do QR Code de verificação: {pdf_representation.verification_qr
 
 **GS1 EPCIS** — padrão internacional de eventos de cadeia de suprimentos. Define `TransformationEvent` exatamente para o caso fan-in/fan-out descrito acima, com listas de entrada e de saída.
 
-> **Recomendação de rumo:** quando o Titan chegar a abate e produtos, adotar o vocabulário do EPCIS em vez de inventar outro. Um sistema de auditoria que não troca dados com o sistema do frigorífico e do comprador perde valor como prova para terceiros.
+> **Já implementado:** o Titan chegou a abate e produtos no Marco 11a (ADR-0046), adotando a forma do `TransformationEvent` do EPCIS em vez de inventar vocabulário próprio — `SLAUGHTER` está em produção, com fan-out de um animal para meia-carcaça, couro e miúdos (`TraceableItem`). `DEBONING` (desossa, fan-in de múltiplas entradas) está desenhado no mesmo contrato, mas ainda não implementado. Ver `packages/livestock_domain/transformation.py` e o roteiro executável `apps/validacao/transformacao_industrial.py`.
 
 **CTE (*Critical Tracking Event*) e KDE (*Key Data Element*)** — vocabulário da regulação norte-americana FSMA 204: os eventos que obrigatoriamente devem ser registrados e os campos mínimos de cada um.
 
