@@ -3543,6 +3543,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **P1 — seleção temporal de NormativeBasisSnapshot.** A Policy já é resolvida de modo fail-closed; a base normativa usada pela Evaluation/Dossier ainda precisa ser selecionada e preservada sob os mesmos eixos temporais, sem inferir disponibilidade histórica.
 
+**ADR-0061 aceita em 13 de agosto de 2026 — portão normativo antes de Market Eligibility.** A auditoria confirmou que `NormativeBasisSnapshot` existe no Core, mas o caminho operacional ainda pode emitir Evaluation sem fotografia e não possui fonte persistida para selecionar `NormativeBasis` por `reference_time`/`knowledge_cutoff`. A ADR proíbe usar `Rule.normative_source` como atalho e determina que o próximo corte introduza uma porta de seleção com material normativo versionado ou perfil interno explicitamente `INTERNAL_TEST`; até então, a ausência deve resultar em indeterminação sem Evaluation/Decision. O item permanece aberto: falta implementar a porta e o primeiro adapter controlado, com testes de lacuna, ambiguidade, conhecimento posterior e digest alterado.
+
 **P1 — admissibilidade verificável da fonte de coverage.** O endpoint de contribuição ainda não verifica universalmente que `source_entity_type`/`source_id` correspondem a um artefato ou adaptador existente e admissível. UUID arbitrário não pode sustentar coverage conclusiva; a correção deve reaproveitar o contrato source-neutral, sem tornar `ReceivedTransferArtifact` dono da semântica.
 
 **P1 — restaurar fronteiras Core → vertical.** Remover dependências em que Core interpreta namespace/payload ou dependências Livestock. O Core deve continuar genérico; a interpretação setorial pertence à vertical/adaptador apropriado.
