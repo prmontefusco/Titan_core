@@ -26,6 +26,7 @@ from apps.api.livestock_sanitary_campaigns import router as livestock_sanitary_c
 from apps.api.livestock_transformations import router as livestock_transformations_router
 from apps.api.livestock_treatments import router as livestock_treatments_router
 from apps.api.livestock_writes import router as livestock_writes_router
+from apps.api.policy_governance import router as policy_governance_router
 from apps.api.problem import (
     DomainProblem,
     domain_problem_handler,
@@ -87,6 +88,7 @@ if _origens:
 # próprio chamador enviou e não consulta registro algum do Titan.
 app.include_router(verification_router)
 app.include_router(livestock_rule_governance_router)
+app.include_router(policy_governance_router)
 
 
 def _openapi_com_contrato_publico() -> dict[str, Any]:

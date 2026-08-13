@@ -3831,3 +3831,19 @@ Vale medir quanto da regulação real cabe nessas primitivas antes de construir 
 Decidido em 24/07/2026: `VeterinaryPrescription` **não** integra a API mínima do Marco 10 — ver Passo 10.4. A pendência é de **regra de negócio**, não de API.
 
 Relacionado: [ADR-0011] fontes normativas, vigência e reavaliação temporal; [ADR-0016] decisões explicáveis e revisão humana; NR-4, sobre quem registra cada fato.
+
+### NEXT-08 — API de Policy para a autoria declarativa de regras de mercado (NR-5, passo 1 de 2)
+
+**Data:** 13 de agosto de 2026 · **Estado:** CONCLUÍDO o pré-requisito de API; a tela de autoria (passo 2) fica para incremento próprio.
+
+Retoma o "caminho barato" que a NR-5 já havia identificado como estruturalmente pronto: `RuleCondition` é dado declarativo, e o catálogo de fatos/templates de `livestock_rule_governance.py` (ADR-0043) já classifica que regras reais de mercado cabem nas primitivas — carência farmacológica, embargo IBAMA, PRODES, DETER, FUNAI, habilitação de estabelecimento, campanha sanitária. O que faltava, exatamente como a NR-5 previu, era só a autoria.
+
+**O bloqueio concreto encontrado ao planejar a tela:** publicar uma versão de regra exige `policy_id` já existente, e não havia nenhuma rota HTTP para criar uma Policy — o roteiro `apps/validacao/governanca_regras.py` sempre criou a Policy de apoio chamando `PolicyService` direto no banco, contornando a API. `PolicyService` (ADR-0038/Passo 6.1) já estava completo (`create_draft`, `publish_policy`, `create_next_version`, `revoke_policy`, `list_by_organization`); faltava só o wrapper HTTP.
+
+**Decisão de desenho corrigida em revisão:** a primeira versão deste incremento expôs `POST /v1/policies` como rota solta — e `test_endpoints_de_dominio_do_core_continuam_fechados` reprovou corretamente, porque isso seria uma primitiva do Core exposta sem passar por caso de uso algum (a mesma tensão que `RuleGovernanceService` já havia resolvido para `Rule`). Corrigido para nascer sob o prefixo já aprovado `/v1/rule-governance/policies`: a Policy aqui existe a serviço do mesmo caso de uso de governança de regras, não como CRUD genérico do Core.
+
+**Evidência:** `packages/core_application/policy_authorization.py` (permissões `POLICY.CRIAR`/`POLICY.PUBLICAR`/`POLICY.LER`, seguindo o padrão de `RULE_GOVERNANCE.*`); `apps/api/policy_governance.py` (criar rascunho, publicar, consultar, listar); `apps/seed/__main__.py` e `tests/livestock_api_support.py` atualizados para conceder as permissões novas ao operador (criar/publicar/ler) e ao auditor (ler). **Testes:** `tests/integration/test_policy_governance_api.py` (7 casos: criação, publicação, listagem, conflito de código repetido, conflito de dupla publicação, 404 para Policy inexistente ou de outra Organization, 403 para auditor tentando criar/publicar). **Portão verificado:** 1351 testes aprovados, 0 falhas, 1 pulado; Ruff check, Ruff format e Mypy (615 arquivos) limpos; `alembic check` sem divergência (nenhuma migration — reaproveita a tabela `core_audit.policies` já existente).
+
+**Risco preservado, não escondido:** `test_superficie_publica_do_core_esta_congelada` foi atualizado com as quatro rotas novas — é o portão que obriga qualquer crescimento futuro da superfície pública a passar por decisão explícita, e continua ativo.
+
+**Próximo passo (fora deste incremento):** a tela de autoria em `apps/web` que consome este API junto do catálogo de templates já existente — pedida explicitamente para preservar autoria individual por usuário Keycloak em vez de conta de serviço compartilhada, para auditoria.

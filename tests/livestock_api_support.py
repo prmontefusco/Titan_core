@@ -24,6 +24,12 @@ from sqlalchemy import Connection, text
 
 from apps.api.authentication import require_authenticated_principal
 from apps.api.main import app
+from packages.core_application.policy_authorization import (
+    POLICY_CRIAR,
+    POLICY_LER,
+    POLICY_PERMISSIONS,
+    POLICY_PUBLICAR,
+)
 from packages.core_application.rule_governance_authorization import (
     RULE_GOVERNANCE_ADOTAR,
     RULE_GOVERNANCE_CRIAR,
@@ -65,16 +71,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 ISSUER = "http://localhost:8080/realms/titan"
-TODAS_AS_PERMISSOES = LIVESTOCK_PERMISSIONS | RULE_GOVERNANCE_PERMISSIONS
+TODAS_AS_PERMISSOES = LIVESTOCK_PERMISSIONS | RULE_GOVERNANCE_PERMISSIONS | POLICY_PERMISSIONS
 PERMISSOES_OPERADOR = ROLE_PERMISSIONS[OPERADOR_PECUARIO] | frozenset(
     {
         RULE_GOVERNANCE_ADOTAR,
         RULE_GOVERNANCE_CRIAR,
         RULE_GOVERNANCE_LER,
         RULE_GOVERNANCE_PUBLICAR,
+        POLICY_CRIAR,
+        POLICY_LER,
+        POLICY_PUBLICAR,
     }
 )
-PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER})
+PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER, POLICY_LER})
 
 
 class Ambiente:

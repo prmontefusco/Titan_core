@@ -45,6 +45,13 @@ SUPERFICIE_ESPERADA = {
         "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/governance-flow",
         "post",
     ),
+    # Core - Policy versionada, exposta a servico da governanca de regras
+    # (ADR-0038/Passo 6.1): nao e CRUD generico do Core, e a Policy a que uma
+    # regra governada se vincula.
+    ("/v1/rule-governance/policies", "post"),
+    ("/v1/rule-governance/policies", "get"),
+    ("/v1/rule-governance/policies/{policy_id}", "get"),
+    ("/v1/rule-governance/policies/{policy_id}/publish", "post"),
     (
         "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/execute",
         "post",

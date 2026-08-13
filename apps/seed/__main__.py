@@ -23,6 +23,12 @@ from uuid import uuid4
 from sqlalchemy import Connection, text
 
 from apps.seed.keycloak import AdminKeycloak, KeycloakError
+from packages.core_application.policy_authorization import (
+    POLICY_CRIAR,
+    POLICY_LER,
+    POLICY_PERMISSIONS,
+    POLICY_PUBLICAR,
+)
 from packages.core_application.rule_governance_authorization import (
     RULE_GOVERNANCE_ADOTAR,
     RULE_GOVERNANCE_CRIAR,
@@ -64,16 +70,21 @@ from packages.shared_kernel import OrganizationId, TypedId
 # Derivada da fonte única, e não repetida aqui. Uma lista paralela fica para trás
 # em silêncio quando uma permissão nova nasce — foi o que aconteceu ao acrescentar
 # as permissões de leitura.
-TODAS_AS_PERMISSOES = tuple(sorted(LIVESTOCK_PERMISSIONS | RULE_GOVERNANCE_PERMISSIONS))
+TODAS_AS_PERMISSOES = tuple(
+    sorted(LIVESTOCK_PERMISSIONS | RULE_GOVERNANCE_PERMISSIONS | POLICY_PERMISSIONS)
+)
 PERMISSOES_OPERADOR = ROLE_PERMISSIONS[OPERADOR_PECUARIO] | frozenset(
     {
         RULE_GOVERNANCE_ADOTAR,
         RULE_GOVERNANCE_CRIAR,
         RULE_GOVERNANCE_LER,
         RULE_GOVERNANCE_PUBLICAR,
+        POLICY_CRIAR,
+        POLICY_LER,
+        POLICY_PUBLICAR,
     }
 )
-PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER})
+PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER, POLICY_LER})
 
 SENHA_DEMONSTRACAO = "titan_demo_local"  # noqa: S105 — ambiente local descartável
 
