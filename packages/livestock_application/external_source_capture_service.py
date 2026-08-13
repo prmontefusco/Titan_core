@@ -106,13 +106,20 @@ class ExternalSourceCaptureReviewService:
         basis_code: str,
     ) -> ExternalSourceCaptureAssociationReview:
         captures = self.artifact_repository.list_by_organization(context.organization_id)
-        if not any(item.artifact_id == capture_artifact_id for item in captures):
+        artifact = next(
+            (item for item in captures if item.artifact_id == capture_artifact_id), None
+        )
+        if artifact is None:
             raise KeyError("Captura não encontrada na Organization ativa.")
+        if (
+            status is ExternalSourceCaptureAssociationReviewStatus.CONFIRMED_CANDIDATE
+            and not artifact.supports_confirmed_candidate_review()
+        ):
+            raise ValueError("CONFIRMED_CANDIDATE exige captura parseada e revis\u00e1vel.")
         animal = self.animal_repository.get_by_id(candidate_animal_id)
         if animal is None or animal.organization_id != context.organization_id:
             raise KeyError("Animal não encontrado na Organization ativa.")
-        review = ExternalSourceCaptureAssociationReview(
-            review_id=TypedId.new("external_source_capture_association_review"),
+        review = ExternalSourceCaptureAssociationReview.create(
             organization_id=context.organization_id,
             capture_artifact_id=capture_artifact_id,
             candidate_animal_id=candidate_animal_id,

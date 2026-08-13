@@ -10,10 +10,12 @@ from sqlalchemy import (
     Connection,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
     Table,
+    UniqueConstraint,
     insert,
     select,
 )
@@ -58,8 +60,16 @@ external_source_capture_artifacts_table = Table(
     Column("parser_version", String(40), nullable=False),
     Column("parsing_diagnostic_code", String(120), nullable=True),
     Column("review_projection", JSONB, nullable=True),
+    Column("projection_digest", String(64), nullable=True),
+    Column("limitations", JSONB, nullable=False),
     Column("recorded_by", PG_UUID(as_uuid=True), nullable=False),
+    Column("recorded_by_entity_type", String(40), nullable=False),
     Column("recorded_at", DateTime(timezone=True), nullable=False),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "artifact_id",
+        name="uq_external_source_capture_artifacts_owner_artifact",
+    ),
     Index(
         "ix_external_source_capture_artifacts_organization_captured",
         "record_owner_organization_id",
@@ -79,25 +89,41 @@ external_source_capture_association_reviews_table = Table(
         ForeignKey("core_identity.organizations.organization_id"),
         nullable=False,
     ),
-    Column(
-        "capture_artifact_id",
-        PG_UUID(as_uuid=True),
-        ForeignKey("core_audit.external_source_capture_artifacts.artifact_id"),
-        nullable=False,
-    ),
-    Column(
-        "candidate_animal_id",
-        PG_UUID(as_uuid=True),
-        ForeignKey("core_audit.animals.animal_id"),
-        nullable=False,
-    ),
+    Column("capture_artifact_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("candidate_animal_id", PG_UUID(as_uuid=True), nullable=False),
     Column("status", String(40), nullable=False),
     Column("basis_code", String(120), nullable=False),
     Column("reviewed_by", PG_UUID(as_uuid=True), nullable=False),
+    Column("reviewed_by_entity_type", String(40), nullable=False),
     Column("reviewed_at", DateTime(timezone=True), nullable=False),
+    Column("limitations", JSONB, nullable=False),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id", "capture_artifact_id"],
+        [
+            "core_audit.external_source_capture_artifacts.record_owner_organization_id",
+            "core_audit.external_source_capture_artifacts.artifact_id",
+        ],
+        name="fk_capture_reviews_capture_same_owner",
+    ),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id", "candidate_animal_id"],
+        [
+            "core_audit.animals.record_owner_organization_id",
+            "core_audit.animals.animal_id",
+        ],
+        name="fk_capture_reviews_animal_same_owner",
+    ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=livestock",
 )
+
+
+def _json_compatible(value: Any) -> Any:
+    if isinstance(value, MappingProxyType):
+        return {key: _json_compatible(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_compatible(item) for item in value]
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,8 +151,11 @@ class TransactionalExternalSourceCaptureArtifactRepository(
                 parsing_diagnostic_code=artifact.parsing_diagnostic_code,
                 review_projection=None
                 if artifact.review_projection is None
-                else dict(artifact.review_projection),
+                else _json_compatible(artifact.review_projection),
+                projection_digest=artifact.projection_digest,
+                limitations=list(artifact.limitations),
                 recorded_by=artifact.recorded_by.value,
+                recorded_by_entity_type=artifact.recorded_by.entity_type,
                 recorded_at=artifact.recorded_at,
             )
         )
@@ -164,11 +193,12 @@ class TransactionalExternalSourceCaptureArtifactRepository(
             row.parser_name,
             row.parser_version,
             row.parsing_diagnostic_code,
-            TypedId("actor", row.recorded_by),
+            TypedId(row.recorded_by_entity_type, row.recorded_by),
             None
             if row.review_projection is None
             else MappingProxyType(dict(row.review_projection)),
             aware(row.recorded_at),
+            tuple(row.limitations),
         )
 
 
@@ -188,7 +218,9 @@ class TransactionalExternalSourceCaptureAssociationReviewRepository(
                 status=review.status.value,
                 basis_code=review.basis_code,
                 reviewed_by=review.reviewed_by.value,
+                reviewed_by_entity_type=review.reviewed_by.entity_type,
                 reviewed_at=review.reviewed_at,
+                limitations=list(review.limitations),
             )
         )
 
@@ -213,10 +245,11 @@ class TransactionalExternalSourceCaptureAssociationReviewRepository(
                 TypedId("animal", row.candidate_animal_id),
                 ExternalSourceCaptureAssociationReviewStatus(row.status),
                 row.basis_code,
-                TypedId("actor", row.reviewed_by),
+                TypedId(row.reviewed_by_entity_type, row.reviewed_by),
                 row.reviewed_at
                 if row.reviewed_at.tzinfo is not None
                 else row.reviewed_at.replace(tzinfo=UTC),
+                tuple(row.limitations),
             )
             for row in rows
         ]

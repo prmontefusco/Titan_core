@@ -15,6 +15,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    UniqueConstraint,
     delete,
     exists,
     insert,
@@ -77,6 +78,11 @@ animals_table = Table(
         name="ck_animals_birth_property_source",
     ),
     Index("ix_animals_org_birth_prop", "record_owner_organization_id", "birth_property_id"),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "animal_id",
+        name="uq_animals_owner_animal",
+    ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=titan_livestock",
 )

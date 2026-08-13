@@ -11,6 +11,7 @@ a chance de pedir dados de outra.
 """
 
 import json
+from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Annotated, Any
 
@@ -540,6 +541,14 @@ class CapturaExternaResumo(BaseModel):
     reviews: list[dict[str, Any]]
 
 
+def _json_projection(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _json_projection(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_json_projection(item) for item in value]
+    return value
+
+
 @router.get(
     "/external-source-captures",
     response_model=Pagina[CapturaExternaResumo],
@@ -570,7 +579,7 @@ def listar_capturas_externas(
                 captured_at=capture.captured_at,
                 review_projection=None
                 if capture.review_projection is None
-                else dict(capture.review_projection),
+                else _json_projection(capture.review_projection),
                 reviews=[
                     {
                         "review_id": str(item.review_id.value),

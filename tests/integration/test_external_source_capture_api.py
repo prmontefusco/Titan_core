@@ -46,9 +46,9 @@ def _capture(ambiente: Ambiente) -> str:
     artifact = ExternalSourceCaptureArtifact.create(
         organization_id=ambiente.org_a.organization_id,
         contract_version="SISBOV_SIMULATOR_CAPTURE/v1",
-        resource_kind="animal",
+        resource_kind="ANIMAL",
         request_scope_digest="a" * 64,
-        transport_outcome="SUCCEEDED",
+        transport_outcome="CAPTURED",
         response_status_code=200,
         response_digest="b" * 64,
         captured_at=datetime.now(UTC),
@@ -57,9 +57,12 @@ def _capture(ambiente: Ambiente) -> str:
         parsing_diagnostic_code=None,
         recorded_by=TypedId.new("actor"),
         review_projection={
-            "resource_kind": "animal",
+            "resource_kind": "ANIMAL",
             "external_reference": "BR123456789012345",
-            "declared_fields": {"statusAnimal": "ATIVO"},
+            "declared_fields": {
+                "statusAnimal": "ATIVO",
+                "ERASPropriedadeLocalizacao": None,
+            },
         },
     )
     TransactionalExternalSourceCaptureArtifactRepository(ambiente.connection).save(artifact)
