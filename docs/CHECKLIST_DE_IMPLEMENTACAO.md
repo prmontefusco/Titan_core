@@ -3523,6 +3523,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **ADR-0059 — corte temporal T-02 concluído em 13 de agosto de 2026.** `MedicationSanitaryClassificationAssertion` passou a preservar `known_at` UTC separado de `observed_at`; `known_as_of()` não usa mais observação como aproximação. A migration `20260813_0071` acrescenta a coluna nullable e índice de seleção sem backfill: Assertion legada sem `known_at` não é elegível para reprodução histórica estrita. O endpoint de registro exige e devolve `known_at`; testes cobrem conhecimento posterior e rejeição HTTP de ausência do campo. **Próximo corte:** seleção temporal de Policy/NormativeBasis no runtime.
 
+**ADR-0059 — hardening append-only do Core concluído em 13 de agosto de 2026.** A migration `20260813_0072` substitui policies RLS genéricas de `evaluations`, `decisions` e `dossiers` por policies explícitas de `SELECT` e `INSERT`. Assim, mesmo uma role com grants SQL amplos não recebe autorização RLS para sobrescrever ou excluir registros probatórios. O teste PostgreSQL consulta `pg_policies` após migration e prova a matriz física de comandos permitidos. A separação da credencial runtime sem `SUPERUSER`/`BYPASSRLS` permanece o próximo hardening operacional.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.
