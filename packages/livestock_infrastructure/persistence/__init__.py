@@ -35,6 +35,10 @@ from packages.livestock_infrastructure.persistence.imported_fact_repository impo
     TransactionalImportedLivestockFactRepository,
     imported_livestock_facts_table,
 )
+from packages.livestock_infrastructure.persistence.internal_test_normative_basis_repository import (
+    TransactionalInternalTestNormativeBasisRepository,
+    internal_test_normative_bases_table,
+)
 from packages.livestock_infrastructure.persistence.lot_repository import (
     TransactionalLivestockLotRepository,
     TransactionalLotMembershipRepository,
@@ -130,6 +134,7 @@ __all__ = [
     "TransactionalEstablishmentQualificationRepository",
     "TransactionalPropertyEnvironmentalEmbargoAssertionRepository",
     "TransactionalImportedLivestockFactRepository",
+    "TransactionalInternalTestNormativeBasisRepository",
     "TransactionalPropertyGeometryRepository",
     "TransactionalReproductiveEventRepository",
     "TransactionalSanitaryCampaignRepository",
@@ -170,6 +175,7 @@ __all__ = [
     "external_source_capture_association_reviews_table",
     "establishment_qualifications_table",
     "imported_livestock_facts_table",
+    "internal_test_normative_bases_table",
     "treatment_applications_table",
     "received_transfer_artifacts_table",
     "veterinarians_table",
