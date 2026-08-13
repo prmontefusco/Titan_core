@@ -1,20 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
 
-/* Tema Titan para Keycloak (Patternfly v5) inspirado no Google Material Design 3. */
+/* Reset e Configuração Global */
+* {
+  box-sizing: border-box;
+}
 
 body {
   font-family: 'Google Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-image: linear-gradient(rgba(12, 18, 14, 0.42), rgba(12, 18, 14, 0.62)), url("../img/background.jpg");
+  background-image: linear-gradient(rgba(12, 18, 14, 0.45), rgba(12, 18, 14, 0.65)), url("../img/background.jpg");
   background-size: cover;
   background-position: center;
   background-attachment: fixed;
   margin: 0;
   padding: 0;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .pf-v5-c-login__container {
-  justify-items: center;
-  text-align: center;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1rem;
 }
 
 html body .pf-v5-c-login__container {
@@ -22,23 +32,32 @@ html body .pf-v5-c-login__container {
 }
 
 #kc-header {
-  display: none;
+  display: none !important;
 }
 
-/* Cartão do Formulário no Estilo Material Design 3 */
+/* Cartão do Formulário Compacto e Proporcional (Material Design 3) */
 .pf-v5-c-login__main {
-  background-color: rgba(22, 28, 24, 0.88);
-  border-radius: 28px;
-  padding: 2.5rem 2rem;
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
-  max-width: 440px;
-  width: 100%;
-  box-sizing: border-box;
+  background-color: rgba(22, 28, 24, 0.92) !important;
+  border-radius: 20px !important;
+  padding: 1.75rem 1.5rem !important;
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.12) !important;
+  max-width: 380px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+  margin: 0 auto !important;
 }
 
-/* Logotipo Titan */
+/* Logotipo e Cabeçalho Alinhados Verticalmente no Centro */
+.pf-v5-c-login__main-header {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  text-align: center !important;
+  margin-bottom: 1.25rem !important;
+}
+
 .pf-v5-c-login__main-header::before {
   content: "";
   display: block;
@@ -46,173 +65,212 @@ html body .pf-v5-c-login__container {
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
-  width: 72px;
-  height: 72px;
-  margin: 0 auto 1.25rem;
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 0.6rem !important;
 }
 
-/* Título e Subtítulo */
 .pf-v5-c-login__main-header .pf-v5-c-title {
-  color: #f1f3f4;
-  font-family: 'Google Sans', 'Inter', sans-serif;
-  font-size: 1.6rem;
-  font-weight: 500;
+  color: #f1f3f4 !important;
+  font-family: 'Google Sans', 'Inter', sans-serif !important;
+  font-size: 1.35rem !important;
+  font-weight: 500 !important;
   letter-spacing: -0.2px;
-  margin: 0;
+  margin: 0 !important;
+  text-align: center !important;
 }
 
 .pf-v5-c-login__main-header .pf-v5-c-title::after {
   content: "Plataforma de Rastreabilidade e Conformidade";
   display: block;
-  font-size: 0.875rem;
-  font-weight: 400;
-  margin-top: 0.4rem;
-  color: #9aa0a6;
+  font-size: 0.78rem !important;
+  font-weight: 400 !important;
+  margin-top: 0.25rem !important;
+  color: #9aa0a6 !important;
   letter-spacing: 0.1px;
 }
 
 .pf-v5-c-login__main-body {
-  color: #e8eaed;
-  margin-top: 1.5rem;
+  color: #e8eaed !important;
+  margin-top: 0.75rem !important;
 }
 
-/* Espaçamento e Alinhamento dos Grupos de Formulário */
+/* Grupos de Formulário */
 .pf-v5-c-form__group {
-  margin-bottom: 1.25rem;
-  text-align: left;
-  width: 100%;
-  box-sizing: border-box;
+  margin-bottom: 0.85rem !important;
+  text-align: left !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
 }
 
-/* Rótulos dos Campos */
+/* Rótulos Limpos e Proporcionais */
 .pf-v5-c-form__label,
 .pf-v5-c-form-control label,
 .pf-v5-c-form__group-label,
-label.pf-v5-c-form__label {
-  color: #bdc1c6 !important;
-  font-family: 'Google Sans', 'Inter', sans-serif;
-  font-size: 0.875rem;
-  font-weight: 500;
-  text-align: left;
-  margin-bottom: 0.4rem;
-  display: block;
+label.pf-v5-c-form__label,
+label {
+  color: #c4c7c5 !important;
+  font-family: 'Google Sans', 'Inter', sans-serif !important;
+  font-size: 0.825rem !important;
+  font-weight: 500 !important;
+  text-align: left !important;
+  margin-bottom: 0.3rem !important;
+  display: block !important;
 }
 
-/* Normalização de Altura e Estilo de Todos os Inputs e Selects */
-.pf-v5-c-form-control,
+/* Reset do Wrapper PatternFly para Evitar Bordas Duplas/Caixas Aninhadas */
+.pf-v5-c-form-control {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  width: 100% !important;
+  display: block !important;
+}
+
+/* Estilização Única e Direta de Todos os Inputs e Selects */
+.pf-v5-c-form-control input,
+.pf-v5-c-form-control select,
 input.pf-v5-c-form-control,
 select.pf-v5-c-form-control,
-.pf-v5-c-form-control select {
-  font-family: 'Google Sans', 'Inter', sans-serif;
-  background-color: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.22) !important;
-  border-radius: 12px !important;
+input[type="text"],
+input[type="password"],
+input[type="email"],
+select {
+  font-family: 'Google Sans', 'Inter', sans-serif !important;
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 8px !important;
   color: #ffffff !important;
-  height: 48px !important;
-  min-height: 48px !important;
-  padding: 0 14px !important;
-  font-size: 0.95rem !important;
-  line-height: 48px !important;
+  height: 40px !important;
+  min-height: 40px !important;
+  padding: 0 12px !important;
+  font-size: 0.875rem !important;
   width: 100% !important;
   box-sizing: border-box !important;
-  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
-  appearance: auto;
-}
-
-.pf-v5-c-form-control:focus,
-input.pf-v5-c-form-control:focus,
-select.pf-v5-c-form-control:focus {
-  border-color: #40c057 !important;
   outline: none !important;
-  background-color: rgba(255, 255, 255, 0.08) !important;
-  box-shadow: 0 0 0 3px rgba(64, 192, 87, 0.25) !important;
+  box-shadow: none !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
-/* Suporte para Input Group (Campo de Senha com Botão de Revelar) */
+.pf-v5-c-form-control input:focus,
+.pf-v5-c-form-control select:focus,
+input:focus,
+select:focus {
+  border-color: #40c057 !important;
+  background-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 0 0 2px rgba(64, 192, 87, 0.3) !important;
+}
+
+/* Trata o Input Group (Campo de Senha com o Olho de Revelar) para ficar numa única caixa perfeita */
 .pf-v5-c-input-group {
   display: flex !important;
+  align-items: center !important;
   width: 100% !important;
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 8px !important;
+  height: 40px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
 }
 
-.pf-v5-c-input-group .pf-v5-c-form-control {
-  flex: 1 1 auto !important;
-  border-top-right-radius: 0 !important;
-  border-bottom-right-radius: 0 !important;
+.pf-v5-c-input-group:focus-within {
+  border-color: #40c057 !important;
+  box-shadow: 0 0 0 2px rgba(64, 192, 87, 0.3) !important;
 }
 
-.pf-v5-c-input-group .pf-v5-c-button {
-  height: 48px !important;
-  border-top-left-radius: 0 !important;
-  border-bottom-left-radius: 0 !important;
-  border-top-right-radius: 12px !important;
-  border-bottom-right-radius: 12px !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-  border: 1px solid rgba(255, 255, 255, 0.22) !important;
-  border-left: none !important;
-  color: #bdc1c6 !important;
+.pf-v5-c-input-group .pf-v5-c-form-control,
+.pf-v5-c-input-group input {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  box-shadow: none !important;
   padding: 0 12px !important;
 }
 
-/* Opções do Menu Dropdown (<select>) */
-select.pf-v5-c-form-control option,
-.pf-v5-c-form-control option {
-  background-color: #1a221d !important;
-  color: #ffffff !important;
-  padding: 10px !important;
-  font-size: 0.95rem;
+.pf-v5-c-input-group .pf-v5-c-button {
+  background: transparent !important;
+  border: none !important;
+  color: #9aa0a6 !important;
+  padding: 0 10px !important;
+  height: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
 }
 
-/* Botão Principal no estilo Google Pill Button */
+.pf-v5-c-input-group .pf-v5-c-button:hover {
+  color: #ffffff !important;
+}
+
+/* Menu Dropdown (<select>) e Opções */
+select option {
+  background-color: #1a221d !important;
+  color: #ffffff !important;
+  padding: 8px 10px !important;
+}
+
+/* Botão Principal em Formato Pílula Compacto */
 .pf-v5-c-button.pf-m-primary {
   --pf-v5-c-button--m-primary--BackgroundColor: #2b8a3e;
-  font-family: 'Google Sans', 'Inter', sans-serif;
+  font-family: 'Google Sans', 'Inter', sans-serif !important;
   background: linear-gradient(135deg, #2b8a3e, #2f9e44) !important;
   border: none !important;
-  border-radius: 24px !important;
+  border-radius: 20px !important;
   color: #ffffff !important;
-  height: 48px !important;
-  font-size: 0.95rem;
-  font-weight: 600;
-  padding: 0 1.5rem;
-  letter-spacing: 0.3px;
-  width: 100%;
-  box-shadow: 0 4px 12px rgba(47, 158, 68, 0.3);
-  transition: all 0.2s ease-in-out;
-  cursor: pointer;
-  margin-top: 0.5rem;
+  height: 42px !important;
+  font-size: 0.9rem !important;
+  font-weight: 600 !important;
+  padding: 0 1.25rem !important;
+  letter-spacing: 0.3px !important;
+  width: 100% !important;
+  box-shadow: 0 4px 10px rgba(47, 158, 68, 0.3) !important;
+  transition: all 0.2s ease-in-out !important;
+  cursor: pointer !important;
+  margin-top: 0.5rem !important;
 }
 
 .pf-v5-c-button.pf-m-primary:hover {
   background: linear-gradient(135deg, #237032, #2b8a3e) !important;
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(47, 158, 68, 0.4);
+  transform: translateY(-1px) !important;
+  box-shadow: 0 6px 14px rgba(47, 158, 68, 0.4) !important;
 }
 
-.pf-v5-c-button.pf-m-primary:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(47, 158, 68, 0.3);
-}
-
-/* Links Secundários e Rodapé */
+/* Links Secundários */
 .pf-v5-c-login__main-footer a,
 .pf-v5-c-form__group a,
 #kc-form-options a,
 a {
-  color: #69db7c;
-  text-decoration: none;
-  font-family: 'Google Sans', 'Inter', sans-serif;
-  font-weight: 500;
-  font-size: 0.9rem;
-  padding: 4px 8px;
-  border-radius: 12px;
-  transition: background-color 0.2s, color 0.2s;
+  color: #69db7c !important;
+  text-decoration: none !important;
+  font-family: 'Google Sans', 'Inter', sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 0.85rem !important;
+  padding: 2px 6px !important;
+  border-radius: 8px !important;
+  transition: background-color 0.2s, color 0.2s !important;
 }
 
 .pf-v5-c-login__main-footer a:hover,
 .pf-v5-c-form__group a:hover,
 #kc-form-options a:hover,
 a:hover {
-  background-color: rgba(105, 219, 124, 0.12);
-  color: #8ce99a;
-  text-decoration: none;
+  background-color: rgba(105, 219, 124, 0.12) !important;
+  color: #8ce99a !important;
+}
+
+/* Ajustes de Rodapé e Texto Secundário */
+.pf-v5-c-login__main-footer {
+  margin-top: 1rem !important;
+  padding-top: 0.75rem !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+  font-size: 0.85rem !important;
+  color: #bdc1c6 !important;
 }
