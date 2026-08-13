@@ -10,7 +10,7 @@ from packages.livestock_domain.external_source_capture import ExternalSourceCapt
 from packages.livestock_infrastructure.persistence import (
     TransactionalExternalSourceCaptureArtifactRepository,
 )
-from packages.shared_kernel import TypedId
+from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
 
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TITAN_DATABASE_URL não configurada.")
@@ -40,30 +40,42 @@ def _animal(ambiente: Ambiente, operador: ClienteAutenticado) -> str:
     return str(response.json()["animal_id"])
 
 
-def _capture(ambiente: Ambiente) -> str:
+def _capture(
+    ambiente: Ambiente,
+    *,
+    organization_id: OrganizationId | None = None,
+    response_status_code: int = 200,
+    transport_outcome: str = "CAPTURED",
+    parsing_diagnostic_code: str | None = None,
+) -> str:
     """Prepara somente o artefato imutável; a revisão é sempre HTTP no teste."""
-    set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
+    organization_id = organization_id or ambiente.org_a.organization_id
+    set_local_organization_context(ambiente.connection, organization_id)
     artifact = ExternalSourceCaptureArtifact.create(
-        organization_id=ambiente.org_a.organization_id,
+        organization_id=organization_id,
         contract_version="SISBOV_SIMULATOR_CAPTURE/v1",
         resource_kind="ANIMAL",
         request_scope_digest="a" * 64,
-        transport_outcome="CAPTURED",
-        response_status_code=200,
+        transport_outcome=transport_outcome,
+        response_status_code=response_status_code,
         response_digest="b" * 64,
         captured_at=datetime.now(UTC),
         parser_name="SisbovSimulatorParser",
         parser_version="1",
-        parsing_diagnostic_code=None,
+        parsing_diagnostic_code=parsing_diagnostic_code,
         recorded_by=TypedId.new("actor"),
-        review_projection={
-            "resource_kind": "ANIMAL",
-            "external_reference": "BR123456789012345",
-            "declared_fields": {
-                "statusAnimal": "ATIVO",
-                "ERASPropriedadeLocalizacao": None,
-            },
-        },
+        review_projection=(
+            None
+            if parsing_diagnostic_code is not None
+            else {
+                "resource_kind": "ANIMAL",
+                "external_reference": "BR123456789012345",
+                "declared_fields": {
+                    "statusAnimal": "ATIVO",
+                    "ERASPropriedadeLocalizacao": None,
+                },
+            }
+        ),
     )
     TransactionalExternalSourceCaptureArtifactRepository(ambiente.connection).save(artifact)
     return str(artifact.artifact_id.value)
@@ -129,3 +141,60 @@ def test_auditor_nao_registra_review(
 
     assert response.status_code == 403
     assert response.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_review_para_captura_inexistente_retorna_404(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _animal(ambiente, operador)
+
+    response = operador.post(
+        f"/v1/livestock/external-source-captures/{TypedId.new('external_source_capture_artifact').value}/reviews",
+        json={
+            "candidate_animal_id": animal_id,
+            "status": "NEEDS_MORE_EVIDENCE",
+            "basis_code": "CAPTURA_NAO_LOCALIZADA",
+        },
+        headers=_headers(ambiente),
+    )
+
+    assert response.status_code == 404
+
+
+def test_captura_404_nao_pode_confirmar_candidato(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _animal(ambiente, operador)
+    artifact_id = _capture(
+        ambiente,
+        response_status_code=404,
+        transport_outcome="NOT_FOUND",
+        parsing_diagnostic_code="HTTP_NOT_FOUND",
+    )
+
+    response = operador.post(
+        f"/v1/livestock/external-source-captures/{artifact_id}/reviews",
+        json={
+            "candidate_animal_id": animal_id,
+            "status": "CONFIRMED_CANDIDATE",
+            "basis_code": "IDENTIFICADOR_SISBOV_CONFERIDO",
+        },
+        headers=_headers(ambiente),
+    )
+
+    assert response.status_code == 409
+    assert "CONFIRMED_CANDIDATE" in response.json()["detail"]
+
+
+def test_lista_nao_vaza_captura_de_outra_organization(
+    ambiente: Ambiente, auditor: ClienteAutenticado
+) -> None:
+    artifact_a = _capture(ambiente)
+    artifact_b = _capture(ambiente, organization_id=ambiente.org_b.organization_id)
+
+    response = auditor.get("/v1/livestock/external-source-captures", headers=_headers(ambiente))
+
+    assert response.status_code == 200
+    returned_ids = {item["artifact_id"] for item in response.json()["items"]}
+    assert artifact_a in returned_ids
+    assert artifact_b not in returned_ids
