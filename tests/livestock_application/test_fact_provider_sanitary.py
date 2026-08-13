@@ -18,13 +18,17 @@ from packages.livestock_application.establishment_qualification_service import (
 from packages.livestock_application.fact_provider import (
     ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE,
     HISTORY_COVERAGE_FACT_TYPE,
+    MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE,
     TERRITORIAL_DETER_FACT_TYPE,
     TERRITORIAL_FUNAI_FACT_TYPE,
     TERRITORIAL_PRODES_FACT_TYPE,
     LivestockFactProvider,
     sanitary_requirement_fact_type,
 )
-from packages.livestock_application.movement_service import PropertyStayRepositoryPort
+from packages.livestock_application.movement_service import (
+    MovementRepositoryPort,
+    PropertyStayRepositoryPort,
+)
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_application.territorial_overlap_service import (
     PropertyTerritorialOverlapAssessment,
@@ -56,7 +60,7 @@ from packages.livestock_domain.external_counterparty import (
     ExternalCounterparty,
 )
 from packages.livestock_domain.imported_fact import FactOrigin, ImportedLivestockFact
-from packages.livestock_domain.movement import PropertyStay, StayStatus
+from packages.livestock_domain.movement import AnimalMovement, PropertyStay, StayStatus
 from packages.livestock_domain.property import RuralProperty
 from packages.livestock_domain.sanitary_campaign import SanitaryCampaign
 from packages.livestock_domain.transfer_artifact import (
@@ -210,6 +214,30 @@ class _InMemoryStayRepo(PropertyStayRepositoryPort):
     def get_timeline(self, animal_id: TypedId) -> list[PropertyStay]:
         active = self.get_active_stay(animal_id)
         return [] if active is None else [active]
+
+
+class _InMemoryMovementRepo(MovementRepositoryPort):
+    def __init__(self, movements: list[AnimalMovement]) -> None:
+        self._movements = movements
+
+    def save(self, movement: AnimalMovement) -> None:
+        self._movements.append(movement)
+
+    def get_by_id(self, movement_id: TypedId) -> AnimalMovement | None:
+        return next(
+            (item for item in self._movements if item.movement_id == movement_id),
+            None,
+        )
+
+    def list_by_animal(self, animal_id: TypedId) -> list[AnimalMovement]:
+        return [item for item in self._movements if animal_id in item.animal_ids]
+
+    def list_by_organization(
+        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+    ) -> list[AnimalMovement]:
+        return [item for item in self._movements if item.organization_id == organization_id][
+            offset : offset + limit
+        ]
 
 
 class _TerritorialTimelineServiceFake:
@@ -840,3 +868,150 @@ def test_selecao_temporal_nao_reclassifica_estado_atual_como_historico() -> None
     assert "LIVESTOCK_CURRENT_STATE_NOT_HISTORICALLY_RECONSTRUCTABLE" in (
         snapshot.knowledge_limitations
     )
+
+
+def test_temporal_snapshot_derives_property_stay_only_from_known_movements() -> None:
+    organization_id = _org()
+    animal = _animal(organization_id)
+    property_a = TypedId.new("rural_property")
+    property_b = TypedId.new("rural_property")
+    movement_known_then = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=organization_id,
+        origin_property_id=animal.birth_property_id or TypedId.new("rural_property"),
+        destination_property_id=property_a,
+        movement_time=datetime(2026, 1, 2, tzinfo=UTC),
+        animal_ids=(animal.animal_id,),
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    movement_later = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=organization_id,
+        origin_property_id=property_a,
+        destination_property_id=property_b,
+        movement_time=datetime(2026, 1, 10, tzinfo=UTC),
+        animal_ids=(animal.animal_id,),
+        created_at=datetime(2026, 1, 10, tzinfo=UTC),
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        movement_repository=_InMemoryMovementRepo([movement_known_then, movement_later]),
+    )
+
+    snapshot = provider.get_snapshot_with_temporal_context(
+        organization_id,
+        animal.animal_id,
+        reference_time=datetime(2026, 1, 5, tzinfo=UTC),
+        knowledge_cutoff=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+
+    facts = snapshot.get_facts_by_type(MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE)
+    assert len(facts) == 1
+    assert facts[0].payload["property_id"] == property_a.value.hex
+    assert facts[0].recorded_at == movement_known_then.created_at
+    assert facts[0].known_at is None
+
+
+def test_temporal_snapshot_excludes_retroactive_movement_known_after_cutoff() -> None:
+    organization_id = _org()
+    animal = _animal(organization_id)
+    movement = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=organization_id,
+        origin_property_id=animal.birth_property_id or TypedId.new("rural_property"),
+        destination_property_id=TypedId.new("rural_property"),
+        movement_time=datetime(2026, 1, 2, tzinfo=UTC),
+        animal_ids=(animal.animal_id,),
+        created_at=datetime(2026, 1, 10, tzinfo=UTC),
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        movement_repository=_InMemoryMovementRepo([movement]),
+    )
+
+    before_knowledge = provider.get_snapshot_with_temporal_context(
+        organization_id,
+        animal.animal_id,
+        reference_time=datetime(2026, 1, 5, tzinfo=UTC),
+        knowledge_cutoff=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+    after_knowledge = provider.get_snapshot_with_temporal_context(
+        organization_id,
+        animal.animal_id,
+        reference_time=datetime(2026, 1, 5, tzinfo=UTC),
+        knowledge_cutoff=datetime(2026, 1, 11, tzinfo=UTC),
+    )
+
+    assert before_knowledge.get_facts_by_type(MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE) == ()
+    assert "LIVESTOCK_MOVEMENT_HISTORY_ABSENT_AT_CONTEXT" in before_knowledge.knowledge_limitations
+    assert len(after_knowledge.get_facts_by_type(MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE)) == 1
+
+
+def test_temporal_snapshot_refuses_conflicting_movement_sequence() -> None:
+    organization_id = _org()
+    animal = _animal(organization_id)
+    movement_1 = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=organization_id,
+        origin_property_id=animal.birth_property_id or TypedId.new("rural_property"),
+        destination_property_id=TypedId.new("rural_property"),
+        movement_time=datetime(2026, 1, 2, tzinfo=UTC),
+        animal_ids=(animal.animal_id,),
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    movement_2 = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=organization_id,
+        origin_property_id=TypedId.new("rural_property"),
+        destination_property_id=TypedId.new("rural_property"),
+        movement_time=datetime(2026, 1, 3, tzinfo=UTC),
+        animal_ids=(animal.animal_id,),
+        created_at=datetime(2026, 1, 3, tzinfo=UTC),
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        movement_repository=_InMemoryMovementRepo([movement_1, movement_2]),
+    )
+
+    snapshot = provider.get_snapshot_with_temporal_context(
+        organization_id,
+        animal.animal_id,
+        reference_time=datetime(2026, 1, 5, tzinfo=UTC),
+        knowledge_cutoff=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+
+    assert snapshot.get_facts_by_type(MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE) == ()
+    assert "LIVESTOCK_MOVEMENT_HISTORY_CONFLICT" in snapshot.knowledge_limitations
+
+
+def test_temporal_snapshot_ignores_movement_from_other_organization() -> None:
+    organization_id = _org()
+    other_organization_id = _org()
+    animal = _animal(organization_id)
+    foreign_movement = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=other_organization_id,
+        origin_property_id=animal.birth_property_id or TypedId.new("rural_property"),
+        destination_property_id=TypedId.new("rural_property"),
+        movement_time=datetime(2026, 1, 2, tzinfo=UTC),
+        animal_ids=(animal.animal_id,),
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+        movement_repository=_InMemoryMovementRepo([foreign_movement]),
+    )
+
+    snapshot = provider.get_snapshot_with_temporal_context(
+        organization_id,
+        animal.animal_id,
+        reference_time=datetime(2026, 1, 5, tzinfo=UTC),
+        knowledge_cutoff=datetime(2026, 1, 5, tzinfo=UTC),
+    )
+
+    assert snapshot.get_facts_by_type(MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE) == ()
+    assert "LIVESTOCK_MOVEMENT_HISTORY_ABSENT_AT_CONTEXT" in snapshot.knowledge_limitations

@@ -22,7 +22,10 @@ from packages.livestock_application.lot_service import LotMembershipRepositoryPo
 from packages.livestock_application.medication_classification_service import (
     MedicationClassificationRepositoryPort,
 )
-from packages.livestock_application.movement_service import PropertyStayRepositoryPort
+from packages.livestock_application.movement_service import (
+    MovementRepositoryPort,
+    PropertyStayRepositoryPort,
+)
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
 from packages.livestock_application.sanitary_campaign_service import (
     SanitaryCampaignRepositoryPort,
@@ -69,6 +72,7 @@ ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE = "livestock.environmental_embargo.ibama"
 TERRITORIAL_PRODES_FACT_TYPE = "livestock.territorial.prodes"
 TERRITORIAL_DETER_FACT_TYPE = "livestock.territorial.deter"
 TERRITORIAL_FUNAI_FACT_TYPE = "livestock.territorial.funai"
+MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE = "livestock.property_stay_from_movement"
 # Sem limite de paginação real na leitura para fatos: uma campanha sanitária
 # que exista e não seja lida aqui produziria uma matriz que finge que aquela
 # campanha nunca foi exigida — pior que uma consulta um pouco mais cara.
@@ -143,6 +147,7 @@ class LivestockFactProvider(FactProviderPort):
         EstablishmentQualificationAssertionReaderPort | None
     ) = None
     stay_repository: PropertyStayRepositoryPort | None = None
+    movement_repository: MovementRepositoryPort | None = None
     environmental_embargo_assertion_repository: (
         PropertyEnvironmentalEmbargoAssertionRepositoryPort | None
     ) = None
@@ -167,10 +172,12 @@ class LivestockFactProvider(FactProviderPort):
     ) -> FactSnapshot:
         """Obtém apenas material cuja seleção histórica é demonstrável.
 
-        Cadastros de Animal, stay e projeções territoriais atuais ainda não possuem
-        leitor histórico verificável. Eles não podem integrar uma avaliação temporal
-        como se descrevessem o passado; a limitação é parte do snapshot e força a
-        Policy material a permanecer inconclusiva.
+        Cadastros de Animal e projeções territoriais atuais ainda não possuem leitor
+        histórico verificável. A permanência só pode ser derivada de movimentos
+        append-only elegíveis; a projeção mutável ``PropertyStay`` nunca é usada.
+        O restante não pode integrar uma avaliação temporal como se descrevesse o
+        passado; a limitação é parte do snapshot e força a Policy material a
+        permanecer inconclusiva.
         """
         facts: list[Fact] = []
         limitations = ["LIVESTOCK_CURRENT_STATE_NOT_HISTORICALLY_RECONSTRUCTABLE"]
@@ -209,6 +216,17 @@ class LivestockFactProvider(FactProviderPort):
             if coverage_fact is not None:
                 facts.append(coverage_fact)
 
+            movement_stay_fact, movement_limitation = self._movement_derived_property_stay_fact(
+                organization_id,
+                target_id,
+                reference_time=reference_time,
+                knowledge_cutoff=knowledge_cutoff,
+            )
+            if movement_stay_fact is not None:
+                facts.append(movement_stay_fact)
+            if movement_limitation is not None:
+                limitations.append(movement_limitation)
+
         return FactSnapshot.create(
             organization_id=organization_id,
             target_id=target_id,
@@ -217,6 +235,53 @@ class LivestockFactProvider(FactProviderPort):
             reference_time=reference_time,
             knowledge_cutoff=knowledge_cutoff,
             knowledge_limitations=tuple(limitations),
+        )
+
+    def _movement_derived_property_stay_fact(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> tuple[Fact | None, str | None]:
+        """Deriva permanência de movimentos append-only conhecidos no corte."""
+        if self.movement_repository is None:
+            return None, "LIVESTOCK_MOVEMENT_HISTORY_SOURCE_UNAVAILABLE"
+        movements = [
+            movement
+            for movement in self.movement_repository.list_by_animal(animal_id)
+            if movement.organization_id == organization_id
+            and movement.movement_time <= reference_time
+            and movement.created_at <= knowledge_cutoff
+        ]
+        if not movements:
+            return None, "LIVESTOCK_MOVEMENT_HISTORY_ABSENT_AT_CONTEXT"
+
+        movements.sort(key=lambda item: (item.movement_time, item.movement_id.value.hex))
+        if any(
+            current.movement_time == previous.movement_time
+            or current.origin_property_id != previous.destination_property_id
+            for previous, current in zip(movements[:-1], movements[1:], strict=True)
+        ):
+            return None, "LIVESTOCK_MOVEMENT_HISTORY_CONFLICT"
+
+        latest = movements[-1]
+        return (
+            Fact.create(
+                fact_type=MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE,
+                payload={
+                    "property_id": latest.destination_property_id.value.hex,
+                    "source_movement_id": latest.movement_id.value.hex,
+                    "movement_time": latest.movement_time.isoformat(),
+                    "derivation": "APPEND_ONLY_MOVEMENT_SEQUENCE_V1",
+                },
+                observed_at=latest.movement_time,
+                # ``created_at`` é o único instante de registro hoje preservado
+                # pelo movimento; não o promovemos a known_at.
+                recorded_at=latest.created_at,
+            ),
+            None,
         )
 
     def get_snapshot(
