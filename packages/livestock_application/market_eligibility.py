@@ -38,6 +38,7 @@ from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_CODE,
     GovernedRuleReference,
     HumanReviewRequired,
+    NormativeBasisSnapshotProviderPort,
     automated_decision_authority,
 )
 from packages.livestock_application.fact_provider import WITHDRAWAL_FACT_TYPE
@@ -93,6 +94,7 @@ class MarketEligibilityGapCode(Enum):
     CARENCIA_POR_MERCADO_AUSENTE = "CARENCIA_POR_MERCADO_AUSENTE"
     DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO = "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
     POLITICA_TEMPORAL_INDETERMINADA = "POLITICA_TEMPORAL_INDETERMINADA"
+    BASE_NORMATIVA_TEMPORAL_AUSENTE = "BASE_NORMATIVA_TEMPORAL_AUSENTE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -533,6 +535,7 @@ class MarketEligibilityService:
     decision_repository: MarketDecisionRepositoryPort | None = None
     authority_profile_repository: MarketDecisionAuthorityProfileRepositoryPort | None = None
     governance_repository: DecisionGovernanceRepositoryPort | None = None
+    normative_snapshot_provider: NormativeBasisSnapshotProviderPort | None = None
     profiles: Sequence[MarketProfile] = DEFAULT_MARKET_PROFILES
 
     def evaluate(
@@ -932,12 +935,66 @@ class MarketEligibilityService:
                 )
             current_policy = selection.selected_policy
             assert current_policy is not None
+            if current_policy.policy_id != policy.policy_id:
+                return MarketRequirementResult(
+                    rule_code=requirement.rule_code,
+                    scope=requirement.scope,
+                    status=MarketEligibilityStatus.INDETERMINADO,
+                    gaps=(
+                        MarketEligibilityGap(
+                            code=MarketEligibilityGapCode.POLITICA_TEMPORAL_INDETERMINADA,
+                            message=(
+                                "A versao temporalmente selecionada da Policy nao possui "
+                                "a Rule governada correspondente para avaliacao."
+                            ),
+                        ),
+                    ),
+                    governed_rule=governed_rule,
+                    adoption=adoption_summary,
+                    rule_version=rule_version,
+                    reasons=(),
+                    dependency=dependency,
+                    withdrawal_basis=withdrawal_basis,
+                )
+            normative_basis_snapshot = (
+                None
+                if self.normative_snapshot_provider is None
+                else self.normative_snapshot_provider.select(
+                    policy=policy,
+                    rules=(rule,),
+                    purpose=market,
+                    reference_time=snapshot.effective_reference_time(),
+                    knowledge_cutoff=snapshot.effective_knowledge_cutoff(),
+                )
+            )
+            if normative_basis_snapshot is None:
+                return MarketRequirementResult(
+                    rule_code=requirement.rule_code,
+                    scope=requirement.scope,
+                    status=MarketEligibilityStatus.INDETERMINADO,
+                    gaps=(
+                        MarketEligibilityGap(
+                            code=MarketEligibilityGapCode.BASE_NORMATIVA_TEMPORAL_AUSENTE,
+                            message=(
+                                "Base normativa temporal ausente, ambigua ou inelegivel "
+                                "para a Policy e o corte de conhecimento."
+                            ),
+                        ),
+                    ),
+                    governed_rule=governed_rule,
+                    adoption=adoption_summary,
+                    rule_version=rule_version,
+                    reasons=(),
+                    dependency=dependency,
+                    withdrawal_basis=withdrawal_basis,
+                )
             projection_status = _projection_status_from_policies(policy, current_policy)
             evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
                 policy=policy,
                 rules=(rule,),
                 snapshot=snapshot,
                 purpose=market,
+                normative_basis_snapshot=normative_basis_snapshot,
             )
             authority = automated_decision_authority(
                 organization_id,

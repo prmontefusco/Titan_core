@@ -1341,7 +1341,7 @@ def test_avaliacao_orientada_a_mercados_para_lote_usa_frigorifico_escolhido(
             "subject_label": "estabelecimento",
             "selected_subject_id": slaughterhouse_id,
         }
-        assert "nao declarou o prazo de carencia usado na avaliacao" in animal["summary"]
+        assert "Base normativa temporal ausente" in animal["summary"]
 
 
 def test_explicacao_comercial_do_lote_resume_animais_afetados(
@@ -1451,22 +1451,16 @@ def test_matriz_de_mercado_falha_fechado_sem_carencia_declarada_por_mercado(
     assert europa["rule_version"]["code"] == "rule-carencia-farmacologica"
     assert europa["requirements"][0]["status"] == "INDETERMINADO"
     assert europa["requirements"][0]["gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
-    # requirements[0] (carencia) e curto-circuitado pela lacuna acima, sem
-    # reasons proprias. requirements[1] (rastreabilidade) e [2] (embargo
-    # ambiental) sao adotados e executados normalmente, entao as reasons
-    # agregadas do mercado vem deles -- nao ha reasons "fantasma" nem
-    # confusao entre os tres requisitos.
-    assert [reason["rule_code"] for reason in europa["reasons"]] == [
-        "rule-rastreabilidade-minima",
-        "rule-embargo-ambiental-ibama",
-    ]
+    # Sem fotografia normativa temporal, regras de mercado adotadas nao sao
+    # executadas nem persistidas; a Policy farmacologica base continua sendo
+    # apenas a ancora operacional da resposta.
+    assert europa["reasons"] == []
     assert europa["requirements"][1]["rule_code"] == "rule-rastreabilidade-minima"
-    assert europa["requirements"][1]["status"] == "ELEGIVEL"
+    assert europa["requirements"][1]["status"] == "INDETERMINADO"
+    assert europa["requirements"][1]["gaps"][0]["code"] == "BASE_NORMATIVA_TEMPORAL_AUSENTE"
     assert europa["requirements"][2]["rule_code"] == "rule-embargo-ambiental-ibama"
-    # Sem nenhuma assertion de embargo registrada, o fact_provider nao emite o
-    # fato: silencio nao afirma "sem embargo" (ADR-0041), entao a regra fica
-    # INDETERMINADA por evidencia pendente, e nao ELEGIVEL por omissao.
     assert europa["requirements"][2]["status"] == "INDETERMINADO"
+    assert europa["requirements"][2]["gaps"][0]["code"] == "BASE_NORMATIVA_TEMPORAL_AUSENTE"
 
 
 def test_matriz_de_mercado_bloqueia_ue_por_regra_governada_de_embargo_ambiental(
@@ -1494,12 +1488,12 @@ def test_matriz_de_mercado_bloqueia_ue_por_regra_governada_de_embargo_ambiental(
     europa = {item["market"]: item for item in resposta.json()["markets"]}[
         "exportacao-uniao-europeia"
     ]
-    assert europa["status"] == "NAO_ELEGIVEL"
+    assert europa["status"] == "INDETERMINADO"
     assert europa["requirements"][2]["rule_code"] == "rule-embargo-ambiental-ibama"
-    assert europa["requirements"][2]["status"] == "NAO_ELEGIVEL"
+    assert europa["requirements"][2]["status"] == "INDETERMINADO"
     assert europa["requirements"][2]["rule_version"]["code"] == "rule-embargo-ambiental-ibama"
     assert europa["requirements"][2]["adoption"]["purpose"] == "exportacao-uniao-europeia"
-    assert europa["requirements"][2]["reasons"][0]["rule_code"] == "rule-embargo-ambiental-ibama"
+    assert europa["requirements"][2]["gaps"][0]["code"] == "BASE_NORMATIVA_TEMPORAL_AUSENTE"
 
 
 def test_matriz_de_mercado_mostra_sujeito_escolhido_e_falha_fechado_sem_avaliador(
@@ -1542,16 +1536,16 @@ def test_matriz_de_mercado_mostra_sujeito_escolhido_e_falha_fechado_sem_avaliado
         "subject_label": "estabelecimento",
         "selected_subject_id": slaughterhouse_id,
     }
-    assert china["gaps"][0]["code"] == "CARENCIA_POR_MERCADO_AUSENTE"
-    assert china["requirements"][0]["status"] == "ELEGIVEL"
+    assert china["gaps"][0]["code"] == "BASE_NORMATIVA_TEMPORAL_AUSENTE"
+    assert china["requirements"][0]["status"] == "INDETERMINADO"
     assert china["requirements"][1]["rule_code"] == "rule-habilitacao-estabelecimento"
-    assert china["requirements"][1]["status"] == "ELEGIVEL"
+    assert china["requirements"][1]["status"] == "INDETERMINADO"
     assert china["requirements"][1]["dependency"] == {
         "subject_key": "slaughterhouse",
         "subject_label": "estabelecimento",
         "selected_subject_id": slaughterhouse_id,
     }
-    assert china["requirements"][1]["gaps"] == []
+    assert china["requirements"][1]["gaps"][0]["code"] == "BASE_NORMATIVA_TEMPORAL_AUSENTE"
 
 
 def test_listar_dossies_sem_sujeito_e_recusado(

@@ -18,11 +18,17 @@ from packages.core_domain.decision_governance import (
     DecisionReview,
 )
 from packages.core_domain.facts import Fact, FactSnapshot
+from packages.core_domain.normative import (
+    NormativeBasisSnapshot,
+    NormativeReferenceSnapshot,
+    NormativeSourceClassification,
+)
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import ComparisonOperator, Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import RuleAdoption, RuleAdoptionStatus
 from packages.livestock_application.eligibility import (
     ELIGIBILITY_RULE_ADOPTION_SCOPE,
+    ELIGIBILITY_RULE_CODE,
     HumanReviewRequired,
 )
 from packages.livestock_application.establishment_qualification_service import (
@@ -224,6 +230,48 @@ class InMemoryDecisions:
 
     def save(self, decision: object) -> None:
         self.saved.append(decision)
+
+
+@dataclass
+class InMemoryNormativeSnapshotProvider:
+    def select(
+        self,
+        *,
+        policy: Policy,
+        rules: tuple[Rule, ...],
+        purpose: str,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> NormativeBasisSnapshot:
+        return NormativeBasisSnapshot(
+            schema_version=1,
+            normative_basis_id=TypedId.new("normative_basis"),
+            normative_basis_code="MARKET_TEST_CONTROLLED_BASIS",
+            normative_basis_version=1,
+            policy_id=policy.policy_id,
+            policy_code=policy.code,
+            policy_version=policy.version,
+            rule_versions=tuple((rule.code, rule.version) for rule in rules),
+            purpose=purpose,
+            jurisdiction="INTERNAL_TEST",
+            intended_use="INTERNAL_TEST_ONLY",
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+            approved_by="SYSTEM:TEST",
+            approval_authority="INTERNAL_TEST_ONLY",
+            approved_at=policy.published_at or reference_time,
+            references=(
+                NormativeReferenceSnapshot(
+                    instrument_code="MARKET-TEST-CONTROLLED",
+                    instrument_version="1",
+                    provision="test",
+                    content_digest="a" * 64,
+                    digest_algorithm="sha256",
+                    source_classification=NormativeSourceClassification.INTERNAL_TEST,
+                ),
+            ),
+            limitations=("RECOGNITION_BOUNDARY:INTERNAL_ONLY",),
+        )
 
 
 @dataclass
@@ -486,6 +534,7 @@ def test_market_specific_withdrawal_basis_does_not_silently_reuse_local_medicati
         fact_provider=LocalWithdrawalAlreadyEndedFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         profiles=(
             MarketProfile(
                 market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
@@ -539,6 +588,7 @@ def test_supported_markets_generate_independent_executions_side_by_side() -> Non
         fact_provider=InMemoryFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         profiles=(
             MarketProfile(
                 market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
@@ -579,6 +629,47 @@ def test_supported_markets_generate_independent_executions_side_by_side() -> Non
     assert executions[0].evaluation_id != executions[1].evaluation_id
     assert executions[0].decision_id != executions[1].decision_id
     assert all(entry.status is MarketEligibilityStatus.ELEGIVEL for entry in matrix.entries)
+
+
+def test_market_without_temporal_normative_snapshot_is_indeterminate_without_persistence() -> None:
+    org_id = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    adoptions = InMemoryAdoptions()
+    rules = InMemoryRules()
+    policies = InMemoryPolicies()
+    evaluations = InMemoryEvaluations()
+    decisions = InMemoryDecisions()
+    adoption = adoptions.add(org_id, ELIGIBILITY_RULE_CODE, "exportacao-china")
+    rule = rules.add_from_adoption(adoption, code=ELIGIBILITY_RULE_CODE)
+    policies.add_from_rule(rule)
+
+    matrix = MarketEligibilityService(
+        adoption_reader=adoptions,
+        rule_reader=rules,
+        policy_reader=policies,
+        fact_provider=InMemoryFactProvider(),
+        evaluation_repository=evaluations,
+        decision_repository=decisions,
+        profiles=(
+            MarketProfile(
+                market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
+                requirements=(
+                    MarketRequirement(
+                        rule_code=ELIGIBILITY_RULE_CODE,
+                        scope=ELIGIBILITY_RULE_ADOPTION_SCOPE,
+                    ),
+                ),
+                declared_withdrawal_period_days=30,
+            ),
+        ),
+    ).evaluate(org_id, subject_id=animal_id, at_time=datetime.now(UTC))
+
+    requirement = matrix.entries[0].requirements[0]
+    assert requirement.status is MarketEligibilityStatus.INDETERMINADO
+    assert requirement.gaps[0].code is MarketEligibilityGapCode.BASE_NORMATIVA_TEMPORAL_AUSENTE
+    assert requirement.execution is None
+    assert evaluations.saved == []
+    assert decisions.saved == []
 
 
 def test_market_dependency_without_selected_subject_is_conditioned() -> None:
@@ -710,6 +801,7 @@ def test_market_dependency_selected_subject_is_evaluated_on_establishment() -> N
         fact_provider=InMemoryFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         profiles=(DEFAULT_MARKET_PROFILES[1],),
     ).evaluate(
         org_id,
@@ -763,6 +855,7 @@ def test_market_projection_requires_reevaluation_when_policy_used_is_not_current
         fact_provider=InMemoryFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         profiles=(
             MarketProfile(
                 market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
@@ -956,6 +1049,7 @@ def test_market_with_adopted_environmental_embargo_rule_can_block_by_governed_fa
         fact_provider=EmbargoedFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         profiles=(
             MarketProfile(
                 market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
@@ -1052,6 +1146,7 @@ def test_market_with_adopted_prodes_rule_can_block_by_governed_fact() -> None:
         fact_provider=ProdesFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         profiles=(
             MarketProfile(
                 market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
@@ -1155,6 +1250,7 @@ def test_market_with_adopted_funai_rule_can_block_by_governed_fact() -> None:
         fact_provider=FunaiFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         profiles=(
             MarketProfile(
                 market=MarketEligibilityPurpose.EXPORTACAO_CHINA,
@@ -1228,6 +1324,7 @@ def test_market_evaluation_creates_proposal_when_review_is_required() -> None:
         fact_provider=ConflictingFactProvider(),
         evaluation_repository=evaluations,
         decision_repository=decisions,
+        normative_snapshot_provider=InMemoryNormativeSnapshotProvider(),
         governance_repository=governance,
         profiles=(
             MarketProfile(

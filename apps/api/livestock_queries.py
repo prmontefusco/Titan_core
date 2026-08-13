@@ -1396,6 +1396,8 @@ def _executar_avaliacao_orientada_a_mercado(
         policy_repository=policy_repository,
         rule_repository=rule_repository,
     ).current(organizacao)
+    if policy.published_at is not None and instante < policy.published_at:
+        instante = policy.published_at
 
     try:
         matrix = MarketEligibilityService(
@@ -1855,6 +1857,8 @@ def executar_matriz_de_mercado(
         policy_repository=TransactionalPolicyRepository(connection=connection),
         rule_repository=TransactionalRuleRepository(connection=connection),
     ).current(organizacao)
+    if policy.published_at is not None and instante < policy.published_at:
+        instante = policy.published_at
 
     try:
         matrix = MarketEligibilityService(
