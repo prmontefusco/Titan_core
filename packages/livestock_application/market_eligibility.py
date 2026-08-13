@@ -813,10 +813,22 @@ class MarketEligibilityService:
             assert evaluation_subject_id is not None
             assert at_time is not None
             assert self.fact_provider is not None
-            snapshot = self.fact_provider.get_snapshot(
-                organization_id,
-                evaluation_subject_id,
-                at_time,
+            temporal_snapshot = getattr(
+                self.fact_provider, "get_snapshot_with_temporal_context", None
+            )
+            snapshot = (
+                self.fact_provider.get_snapshot(
+                    organization_id,
+                    evaluation_subject_id,
+                    at_time,
+                )
+                if temporal_snapshot is None
+                else temporal_snapshot(
+                    organization_id,
+                    evaluation_subject_id,
+                    reference_time=at_time,
+                    knowledge_cutoff=at_time,
+                )
             )
             if requirement.rule_code == ELIGIBILITY_RULE_CODE and withdrawal_basis is not None:
                 snapshot = _with_market_withdrawal_basis(snapshot, withdrawal_basis)

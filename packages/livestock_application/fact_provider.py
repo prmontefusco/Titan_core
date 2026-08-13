@@ -140,6 +140,40 @@ class LivestockFactProvider(FactProviderPort):
     sanitary_campaign_repository: SanitaryCampaignRepositoryPort | None = None
     treatment_application_repository: TreatmentApplicationRepositoryPort | None = None
 
+    def get_snapshot_with_temporal_context(
+        self,
+        organization_id: OrganizationId,
+        target_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> FactSnapshot:
+        """Obtém apenas material cuja seleção histórica é demonstrável.
+
+        Cadastros de Animal, stay e projeções territoriais atuais ainda não possuem
+        leitor histórico verificável. Eles não podem integrar uma avaliação temporal
+        como se descrevessem o passado; a limitação é parte do snapshot e força a
+        Policy material a permanecer inconclusiva.
+        """
+        facts: list[Fact] = []
+        limitations = ["LIVESTOCK_CURRENT_STATE_NOT_HISTORICALLY_RECONSTRUCTABLE"]
+
+        if target_id.entity_type == "animal":
+            facts.extend(self._imported_sanitary_facts(organization_id, target_id))
+            coverage_fact = self._history_coverage_fact(organization_id, target_id, reference_time)
+            if coverage_fact is not None:
+                facts.append(coverage_fact)
+
+        return FactSnapshot.create(
+            organization_id=organization_id,
+            target_id=target_id,
+            as_of=reference_time,
+            facts=tuple(fact for fact in facts if fact.observed_at <= reference_time),
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+            knowledge_limitations=tuple(limitations),
+        )
+
     def get_snapshot(
         self,
         organization_id: OrganizationId,

@@ -805,3 +805,28 @@ def test_emite_fato_territorial_funai_para_a_propriedade_atual() -> None:
     assert facts[TERRITORIAL_FUNAI_FACT_TYPE].payload["has_overlap"] is True
     assert facts[TERRITORIAL_FUNAI_FACT_TYPE].payload["feature_count"] == 1
     assert facts[TERRITORIAL_FUNAI_FACT_TYPE].payload["layer"] == "FUNAI_TI"
+
+
+def test_selecao_temporal_nao_reclassifica_estado_atual_como_historico() -> None:
+    org_id = _org()
+    animal = _animal(org_id)
+    provider = LivestockFactProvider(
+        property_repository=_NullPropertyRepo(),
+        animal_repository=InMemoryAnimalRepo({animal.animal_id.value.hex: animal}),
+    )
+    reference_time = datetime(2026, 1, 10, tzinfo=UTC)
+    knowledge_cutoff = datetime(2026, 1, 11, tzinfo=UTC)
+
+    snapshot = provider.get_snapshot_with_temporal_context(
+        org_id,
+        animal.animal_id,
+        reference_time=reference_time,
+        knowledge_cutoff=knowledge_cutoff,
+    )
+
+    assert snapshot.reference_time == reference_time
+    assert snapshot.knowledge_cutoff == knowledge_cutoff
+    assert snapshot.get_facts_by_type("livestock.animal") == ()
+    assert "LIVESTOCK_CURRENT_STATE_NOT_HISTORICALLY_RECONSTRUCTABLE" in (
+        snapshot.knowledge_limitations
+    )

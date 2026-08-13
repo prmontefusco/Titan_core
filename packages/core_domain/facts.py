@@ -264,6 +264,7 @@ class FactSnapshot:
         facts: Sequence[Fact],
         reference_time: datetime | None = None,
         knowledge_cutoff: datetime | None = None,
+        knowledge_limitations: Sequence[str] = (),
     ) -> "FactSnapshot":
         resolved_reference_time = reference_time or as_of
         resolved_knowledge_cutoff = knowledge_cutoff or as_of
@@ -275,7 +276,14 @@ class FactSnapshot:
         )
         limitations = tuple(
             sorted(
-                {limitation for fact in sorted_facts for limitation in fact.temporal_limitations()}
+                {
+                    *knowledge_limitations,
+                    *(
+                        limitation
+                        for fact in sorted_facts
+                        for limitation in fact.temporal_limitations()
+                    ),
+                }
             )
         )
 
