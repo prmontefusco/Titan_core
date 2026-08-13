@@ -3573,6 +3573,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **Regressões negativas da captura externa ampliadas em 13 de agosto de 2026.** A API agora é exercitada também contra identificador de captura inexistente (`404`), contra tentativa de `CONFIRMED_CANDIDATE` baseada em captura simulada `404`/não parseada (`409`) e contra artefato semeado para Organization B, invisível na listagem autenticada da Organization A. Esses casos preservam a regra de que material técnico inválido não produz associação positiva nem revela dados entre tenants. **Portão verificado:** seis testes HTTP de captura externa passaram sob a role `titan_app`, com Ruff e Mypy verdes.
 
+**Regressão de provenance de coverage ampliada em 13 de agosto de 2026.** Além do UUID inexistente já recusado pela API, o adapter `ReceivedTransferCoverageSourceValidator` é agora provado contra um `ReceivedTransferArtifact` real de outro Animal da mesma Organization: a referência não é verificável e não pode sustentar contribuição `VALIDATED`/`ADMISSIBLE`. O contrato permanece source-neutral; o teste apenas fixa a fronteira do primeiro adapter concreto. **Portão verificado:** quatro testes unitários do serviço e cinco testes HTTP de coverage passaram; Ruff e Mypy verdes.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.

@@ -11,7 +11,11 @@ from packages.livestock_application.dimensional_coverage import (
     StoredCoverageContribution,
 )
 from packages.livestock_application.event_recorder import LivestockOperationContext
+from packages.livestock_application.received_transfer_coverage_source_validator import (
+    ReceivedTransferCoverageSourceValidator,
+)
 from packages.livestock_domain.animal import Animal, AnimalSex, BirthPropertySource
+from packages.livestock_domain.transfer_artifact import HistoryCoverage, ReceivedTransferArtifact
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
@@ -61,6 +65,20 @@ class Sources:
 
     def supports(self, **_: object) -> bool:
         return self.supported
+
+
+@dataclass
+class TransferArtifacts:
+    artifact: ReceivedTransferArtifact
+
+    def get_by_id(self, artifact_id: TypedId) -> ReceivedTransferArtifact | None:
+        return self.artifact if self.artifact.artifact_id == artifact_id else None
+
+    def save(self, artifact: ReceivedTransferArtifact) -> None:
+        self.artifact = artifact
+
+    def list_by_animal(self, animal_id: TypedId) -> list[ReceivedTransferArtifact]:
+        return [self.artifact] if self.artifact.animal_id == animal_id else []
 
 
 def test_records_source_neutral_contribution() -> None:
@@ -177,3 +195,30 @@ def test_rejects_cross_organization_source() -> None:
             contribution=contribution,
             known_at=datetime(2026, 2, 2, tzinfo=UTC),
         )
+
+
+def test_received_transfer_source_for_another_animal_is_not_verifiable() -> None:
+    org = OrganizationId.new()
+    source_artifact = ReceivedTransferArtifact(
+        artifact_id=TypedId.new("received_transfer_artifact"),
+        organization_id=org,
+        animal_id=TypedId.new("animal"),
+        source_counterparty_id=TypedId.new("external_counterparty"),
+        bundle_digest="a" * 64,
+        bundle_issued_at=datetime(2026, 1, 1, tzinfo=UTC),
+        transfer_effective_at=datetime(2026, 1, 2, tzinfo=UTC),
+        coverage=HistoryCoverage(
+            known_from=datetime(2025, 1, 1, tzinfo=UTC),
+            known_until=datetime(2026, 1, 2, tzinfo=UTC),
+        ),
+    )
+
+    supported = ReceivedTransferCoverageSourceValidator(
+        TransferArtifacts(source_artifact)
+    ).supports(
+        organization_id=org,
+        subject_id=TypedId.new("animal"),
+        source_id=source_artifact.artifact_id,
+    )
+
+    assert supported is False
