@@ -59,12 +59,20 @@ coverage_contributions_table = Table(
     Column("conflicting", Boolean, nullable=False),
     Column("recorded_by", PG_UUID(as_uuid=True), nullable=False),
     Column("recorded_at", DateTime(timezone=True), nullable=False),
+    Column("known_at", DateTime(timezone=True), nullable=True),
     Index(
         "ix_coverage_contributions_subject_dimension",
         "record_owner_organization_id",
         "subject_id",
         "dimension",
         "covered_from",
+    ),
+    Index(
+        "ix_coverage_contributions_temporal_selection",
+        "record_owner_organization_id",
+        "subject_id",
+        "dimension",
+        "known_at",
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=livestock",
@@ -93,6 +101,7 @@ class TransactionalCoverageContributionRepository(CoverageContributionRepository
                 conflicting=item.contribution.conflicting,
                 recorded_by=item.recorded_by.value,
                 recorded_at=item.recorded_at,
+                known_at=item.known_at,
             )
         )
 
@@ -140,4 +149,5 @@ class TransactionalCoverageContributionRepository(CoverageContributionRepository
             ),
             recorded_by=TypedId(entity_type="actor", value=row.recorded_by),
             recorded_at=aware(row.recorded_at),
+            known_at=aware(row.known_at) if row.known_at is not None else None,
         )

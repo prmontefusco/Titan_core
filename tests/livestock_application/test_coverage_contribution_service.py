@@ -85,7 +85,10 @@ def test_records_source_neutral_contribution() -> None:
         admissibility=CoverageContributionAdmissibility.ADMISSIBLE,
     )
     saved = CoverageContributionService(repo, Animals(animal)).record(
-        context=context, subject_id=animal_id, contribution=contribution
+        context=context,
+        subject_id=animal_id,
+        contribution=contribution,
+        known_at=datetime(2026, 2, 2, tzinfo=UTC),
     )
     assert saved.contribution.source_reference is None
     assert repo.items == [saved]
@@ -126,5 +129,8 @@ def test_rejects_cross_organization_source() -> None:
     )
     with pytest.raises(ValueError, match="outra Organization"):
         CoverageContributionService(Repo(), Animals(animal)).record(
-            context=context, subject_id=animal_id, contribution=contribution
+            context=context,
+            subject_id=animal_id,
+            contribution=contribution,
+            known_at=datetime(2026, 2, 2, tzinfo=UTC),
         )

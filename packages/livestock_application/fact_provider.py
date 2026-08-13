@@ -7,6 +7,7 @@ from typing import Any, Protocol
 from packages.core_application.fact_service import FactProviderPort
 from packages.core_domain.facts import Fact, FactSnapshot
 from packages.livestock_application.animal_service import AnimalRepositoryPort
+from packages.livestock_application.dimensional_coverage import StoredCoverageContribution
 from packages.livestock_application.environmental_embargo_assertion_service import (
     PropertyEnvironmentalEmbargoAssertionRepositoryPort,
 )
@@ -84,6 +85,12 @@ class ImportedFactReaderPort(Protocol):
     ) -> list[ImportedLivestockFact]: ...
 
 
+class CoverageContributionReaderPort(Protocol):
+    def list_by_subject(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[StoredCoverageContribution]: ...
+
+
 class EstablishmentQualificationAssertionReaderPort(Protocol):
     def list_by_establishment(
         self, organization_id: OrganizationId, establishment_id: TypedId
@@ -139,6 +146,7 @@ class LivestockFactProvider(FactProviderPort):
     transfer_artifact_repository: ReceivedTransferArtifactRepositoryPort | None = None
     sanitary_campaign_repository: SanitaryCampaignRepositoryPort | None = None
     treatment_application_repository: TreatmentApplicationRepositoryPort | None = None
+    coverage_contribution_repository: CoverageContributionReaderPort | None = None
 
     def get_snapshot_with_temporal_context(
         self,
@@ -160,6 +168,14 @@ class LivestockFactProvider(FactProviderPort):
 
         if target_id.entity_type == "animal":
             facts.extend(self._imported_sanitary_facts(organization_id, target_id))
+            facts.extend(
+                self._dimensional_coverage_facts(
+                    organization_id,
+                    target_id,
+                    reference_time=reference_time,
+                    knowledge_cutoff=knowledge_cutoff,
+                )
+            )
             coverage_fact = self._history_coverage_fact(organization_id, target_id, reference_time)
             if coverage_fact is not None:
                 facts.append(coverage_fact)
@@ -556,6 +572,53 @@ class LivestockFactProvider(FactProviderPort):
             payload=_history_coverage_payload(artifact),
             observed_at=artifact.created_at,
         )
+
+    def _dimensional_coverage_facts(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> list[Fact]:
+        """Expõe somente declarações dimensionais já conhecidas no corte.
+
+        Cada contribuição mantém sua identidade e proveniência. A composição em
+        cobertura suficiente pertence ao contrato de Policy e será feita pelo
+        próximo corte; este leitor não transforma uma declaração isolada em
+        cobertura completa.
+        """
+        if self.coverage_contribution_repository is None:
+            return []
+        facts: list[Fact] = []
+        for item in self.coverage_contribution_repository.list_by_subject(
+            organization_id, animal_id
+        ):
+            if item.known_at is None or item.known_at > knowledge_cutoff:
+                continue
+            contribution = item.contribution
+            if contribution.covered_from > reference_time:
+                continue
+            facts.append(
+                Fact.create(
+                    fact_type="livestock.dimensional_coverage_contribution",
+                    payload={
+                        "contribution_id": item.contribution_id.value.hex,
+                        "dimension": contribution.dimension,
+                        "covered_from": contribution.covered_from.isoformat(),
+                        "covered_until": contribution.covered_until.isoformat(),
+                        "validation": contribution.validation.value,
+                        "admissibility": contribution.admissibility.value,
+                        "accessible": contribution.accessible,
+                        "conflicting": contribution.conflicting,
+                    },
+                    observed_at=contribution.covered_from,
+                    recorded_at=item.recorded_at,
+                    known_at=item.known_at,
+                    source_reference=contribution.source_reference,
+                )
+            )
+        return facts
 
     def _latest_environmental_embargo_assertion(
         self,

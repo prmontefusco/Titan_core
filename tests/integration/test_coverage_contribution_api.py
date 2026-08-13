@@ -42,6 +42,7 @@ def _payload() -> dict[str, object]:
         "admissibility": "ADMISSIBLE",
         "accessible": True,
         "conflicting": False,
+        "known_at": end.isoformat(),
     }
 
 

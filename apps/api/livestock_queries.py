@@ -120,6 +120,9 @@ from packages.livestock_infrastructure.persistence import (
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
+from packages.livestock_infrastructure.persistence.coverage_contribution_repository import (
+    TransactionalCoverageContributionRepository,
+)
 from packages.livestock_infrastructure.persistence.establishment_qualification_repository import (
     TransactionalEstablishmentQualificationRepository,
 )
@@ -492,6 +495,9 @@ def _eligibility_components(
         ),
         sanitary_campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
         treatment_application_repository=application_repository,
+        coverage_contribution_repository=TransactionalCoverageContributionRepository(
+            connection=connection
+        ),
         territorial_timeline_service=(
             TerritorialTimelineService(
                 property_repository=TransactionalRuralPropertyRepository(connection=connection),

@@ -801,6 +801,7 @@ class RegistrarContribuicaoCoverageRequest(BaseModel):
     source_id: str | None = None
     accessible: bool = True
     conflicting: bool = False
+    known_at: datetime
 
 
 class ContribuicaoCoverageResponse(BaseModel):
@@ -816,6 +817,7 @@ class ContribuicaoCoverageResponse(BaseModel):
     accessible: bool
     conflicting: bool
     recorded_at: datetime
+    known_at: datetime | None
 
 
 class RegistrarReviewCapturaExternaRequest(BaseModel):
@@ -839,6 +841,7 @@ def _coverage_contribution_response(item: Any) -> ContribuicaoCoverageResponse:
         accessible=item.contribution.accessible,
         conflicting=item.contribution.conflicting,
         recorded_at=item.recorded_at,
+        known_at=item.known_at,
     )
 
 
@@ -1191,6 +1194,7 @@ def registrar_contribuicao_coverage(
                 accessible=corpo.accessible,
                 conflicting=corpo.conflicting,
             ),
+            known_at=corpo.known_at,
         )
     except KeyError as error:
         raise _nao_encontrado("Animal") from error

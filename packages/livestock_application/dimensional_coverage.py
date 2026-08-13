@@ -44,8 +44,8 @@ class CoverageContribution:
         require_utc(self.covered_until, field_name="covered_until")
         if not self.dimension.strip():
             raise ValueError("dimension nao pode ser vazia.")
-        if self.covered_from > self.covered_until:
-            raise ValueError("covered_from nao pode ser posterior a covered_until.")
+        if self.covered_from >= self.covered_until:
+            raise ValueError("covered_from deve ser anterior a covered_until.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,9 +56,12 @@ class StoredCoverageContribution:
     contribution: CoverageContribution
     recorded_by: TypedId
     recorded_at: datetime
+    known_at: datetime | None
 
     def __post_init__(self) -> None:
         require_utc(self.recorded_at, field_name="recorded_at")
+        if self.known_at is not None:
+            require_utc(self.known_at, field_name="known_at")
         if self.contribution_id.entity_type != "coverage_contribution":
             raise ValueError("contribution_id deve ser coverage_contribution.")
         if self.subject_id.entity_type != "animal":
@@ -72,6 +75,7 @@ class StoredCoverageContribution:
         subject_id: TypedId,
         contribution: CoverageContribution,
         recorded_by: TypedId,
+        known_at: datetime,
     ) -> "StoredCoverageContribution":
         return cls(
             contribution_id=TypedId.new("coverage_contribution"),
@@ -80,6 +84,7 @@ class StoredCoverageContribution:
             contribution=contribution,
             recorded_by=recorded_by,
             recorded_at=datetime.now(UTC),
+            known_at=known_at,
         )
 
 
@@ -106,8 +111,8 @@ class DimensionalCoverageService:
     ) -> DimensionalCoverageAssessment:
         require_utc(required_from, field_name="required_from")
         require_utc(required_until, field_name="required_until")
-        if required_from > required_until:
-            raise ValueError("required_from nao pode ser posterior a required_until.")
+        if required_from >= required_until:
+            raise ValueError("required_from deve ser anterior a required_until.")
 
         matching = tuple(item for item in contributions if item.dimension == dimension)
         status, accepted, limitations = self._resolve(matching, required_from, required_until)
@@ -161,7 +166,7 @@ class DimensionalCoverageService:
             (
                 (max(item.covered_from, required_from), min(item.covered_until, required_until))
                 for item in eligible
-                if item.covered_until >= required_from and item.covered_from <= required_until
+                if item.covered_until > required_from and item.covered_from < required_until
             ),
             key=lambda interval: interval[0],
         )

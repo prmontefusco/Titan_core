@@ -119,6 +119,19 @@ def test_gap_between_contributions_remains_partial() -> None:
     assert assessment.limitations == ("COVERAGE_INTERVAL_GAP",)
 
 
+def test_coverage_intervals_are_strictly_half_open() -> None:
+    with pytest.raises(ValueError, match="anterior"):
+        _contribution(REFERENCE_TIME, REFERENCE_TIME)
+
+    with pytest.raises(ValueError, match="anterior"):
+        DimensionalCoverageService().assess(
+            dimension="treatment_history",
+            required_from=REFERENCE_TIME,
+            required_until=REFERENCE_TIME,
+            contributions=(),
+        )
+
+
 def test_received_transfer_artifact_without_declaration_contributes_nothing() -> None:
     assert ReceivedTransferArtifactCoverageAdapter().adapt(_artifact()) == ()
 

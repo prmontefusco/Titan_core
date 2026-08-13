@@ -1,6 +1,7 @@
 """Caso de uso de importação source-neutral de coverage dimensional."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 
 from packages.livestock_application.animal_service import AnimalRepositoryPort
@@ -31,6 +32,7 @@ class CoverageContributionService:
         context: LivestockOperationContext,
         subject_id: TypedId,
         contribution: CoverageContribution,
+        known_at: datetime,
     ) -> StoredCoverageContribution:
         animal = self.animal_repository.get_by_id(subject_id)
         if animal is None or animal.organization_id != context.organization_id:
@@ -43,6 +45,7 @@ class CoverageContributionService:
             subject_id=subject_id,
             contribution=contribution,
             recorded_by=context.actor_reference.target_id,
+            known_at=known_at,
         )
         self.repository.save(item)
         return item
