@@ -275,6 +275,12 @@ class _InMemoryTransferArtifactRepo:
     def save(self, artifact: ReceivedTransferArtifact) -> None:
         self._artifacts.append(artifact)
 
+    def get_by_id(self, artifact_id: TypedId) -> ReceivedTransferArtifact | None:
+        return next(
+            (item for item in self._artifacts if item.artifact_id == artifact_id),
+            None,
+        )
+
     def list_by_animal(self, animal_id: TypedId) -> list[ReceivedTransferArtifact]:
         return [item for item in self._artifacts if item.animal_id == animal_id]
 
