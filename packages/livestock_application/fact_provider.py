@@ -38,6 +38,10 @@ from packages.livestock_application.sanitary_test_coverage import (
     SanitaryTestACoverageService,
     TreatmentMaterialSource,
 )
+from packages.livestock_application.temporal_identifier import (
+    TEMPORAL_IDENTIFIER_FACT_TYPE,
+    TemporalAnimalIdentifierReader,
+)
 from packages.livestock_application.territorial_overlap_service import (
     PropertyTerritorialOverlapAssessment,
 )
@@ -161,6 +165,7 @@ class LivestockFactProvider(FactProviderPort):
     treatment_application_repository: TreatmentApplicationRepositoryPort | None = None
     coverage_contribution_repository: CoverageContributionReaderPort | None = None
     medication_classification_repository: MedicationClassificationRepositoryPort | None = None
+    temporal_identifier_reader: TemporalAnimalIdentifierReader | None = None
 
     def get_snapshot_with_temporal_context(
         self,
@@ -227,6 +232,17 @@ class LivestockFactProvider(FactProviderPort):
             if movement_limitation is not None:
                 limitations.append(movement_limitation)
 
+            identifier_fact, identifier_limitation = self._temporal_identifier_fact(
+                organization_id,
+                target_id,
+                reference_time=reference_time,
+                knowledge_cutoff=knowledge_cutoff,
+            )
+            if identifier_fact is not None:
+                facts.append(identifier_fact)
+            if identifier_limitation is not None:
+                limitations.append(identifier_limitation)
+
         return FactSnapshot.create(
             organization_id=organization_id,
             target_id=target_id,
@@ -235,6 +251,52 @@ class LivestockFactProvider(FactProviderPort):
             reference_time=reference_time,
             knowledge_cutoff=knowledge_cutoff,
             knowledge_limitations=tuple(limitations),
+        )
+
+    def _temporal_identifier_fact(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> tuple[Fact | None, str | None]:
+        if self.temporal_identifier_reader is None:
+            return None, "LIVESTOCK_IDENTIFIER_HISTORY_SOURCE_UNAVAILABLE"
+        selection = self.temporal_identifier_reader.select(
+            organization_id,
+            animal_id,
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+        )
+        if selection.limitation is not None:
+            return None, selection.limitation.value
+        assert selection.observed_at is not None
+        assert selection.recorded_at is not None
+        return (
+            Fact.create(
+                fact_type=TEMPORAL_IDENTIFIER_FACT_TYPE,
+                payload={
+                    "identifiers": [
+                        {
+                            "identifier_id": item.identifier_id.value.hex,
+                            "identifier_type": item.identifier_type.value,
+                            "identifier_value": item.identifier_value,
+                            "attached_event_id": item.attached_event_id.value.hex,
+                            "attached_payload_digest": item.attached_payload_digest,
+                        }
+                        for item in selection.identifiers
+                    ],
+                    "supporting_event_ids": [
+                        item.value.hex for item in selection.supporting_event_ids
+                    ],
+                    "supporting_payload_digests": list(selection.supporting_payload_digests),
+                    "derivation": "ANIMAL_IDENTIFIER_EVENT_LIFECYCLE_V1",
+                },
+                observed_at=selection.observed_at,
+                recorded_at=selection.recorded_at,
+            ),
+            None,
         )
 
     def _movement_derived_property_stay_fact(

@@ -91,6 +91,7 @@ from packages.livestock_application.market_eligibility import (
     MarketEligibilityService,
     MarketProfile,
 )
+from packages.livestock_application.temporal_identifier import TemporalAnimalIdentifierReader
 from packages.livestock_application.territorial_overlap_service import (
     TerritorialOverlapService,
 )
@@ -491,6 +492,10 @@ def _eligibility_components(
             connection=connection
         ),
         stay_repository=TransactionalPropertyStayRepository(connection=connection),
+        movement_repository=TransactionalAnimalMovementRepository(connection=connection),
+        temporal_identifier_reader=TemporalAnimalIdentifierReader(
+            event_reader=DomainEventRepository(connection=connection)
+        ),
         withdrawal_calculator=WithdrawalCalculator(
             application_repository=application_repository,
             batch_repository=batch_repository,

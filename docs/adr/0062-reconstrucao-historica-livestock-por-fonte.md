@@ -264,3 +264,13 @@ registrada até `knowledge_cutoff`. `movement_time` permanece tempo válido e
 `known_at`. Ausência, conflito temporal ou sequência descontínua resultam em
 limitação explícita e não em permanência atual. `PropertyStay` segue fora do
 leitor histórico.
+
+**T-05B concluído em 13 de agosto de 2026.** O lifecycle de identificadores é
+reconstruído exclusivamente dos eventos canônicos append-only
+`identifier_attached` e `identifier_deactivated`, selecionados por
+`occurred_at` e `recorded_at` sem atribuir a este último semântica automática de
+`known_at`. Schema, versão, agregado, Animal, tempo declarado e sequência são
+validados; ausência, evento inválido ou lifecycle incompatível produzem
+limitação, nunca leitura de `animal_identifiers` atual. O fato resultante
+preserva IDs e digests dos eventos-fonte. Nenhuma migration, API, backfill ou
+alteração de Decision/Dossier foi introduzida.
