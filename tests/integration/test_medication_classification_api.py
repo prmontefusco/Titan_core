@@ -35,15 +35,17 @@ def test_records_unknown_distinct_from_absence_and_lists(ambiente: Ambiente) -> 
         headers=headers(ambiente),
     )
     assert before.status_code == 200 and before.json() == []
+    now = datetime.now(UTC).isoformat()
     created = client.post(
         f"/v1/livestock/medications/{medication_id}/sanitary-classifications",
-        json={"status": "UNKNOWN", "observed_at": datetime.now(UTC).isoformat()},
+        json={"status": "UNKNOWN", "observed_at": now, "known_at": now},
         headers=headers(ambiente),
     )
     assert created.status_code == 201, created.text
     assert created.json()["status"] == "UNKNOWN"
     assert created.json()["confidence_tier"] == "DOCUMENTED"
     assert created.json()["validation_status"] == "STRUCTURALLY_VALIDATED"
+    assert created.json()["known_at"] is not None
     listed = client.get(
         f"/v1/livestock/medications/{medication_id}/sanitary-classifications",
         headers=headers(ambiente),
@@ -55,9 +57,23 @@ def test_auditor_cannot_record_classification(ambiente: Ambiente) -> None:
     operator = _cliente(ambiente, ambiente.operador)
     auditor = _cliente(ambiente, ambiente.auditor)
     medication_id = medication(ambiente, operator)
+    now = datetime.now(UTC).isoformat()
     response = auditor.post(
         f"/v1/livestock/medications/{medication_id}/sanitary-classifications",
-        json={"status": "APPLIES", "observed_at": datetime.now(UTC).isoformat()},
+        json={"status": "APPLIES", "observed_at": now, "known_at": now},
         headers=headers(ambiente),
     )
     assert response.status_code == 403
+
+
+def test_classification_requires_explicit_knowledge_time(ambiente: Ambiente) -> None:
+    client = _cliente(ambiente, ambiente.operador)
+    medication_id = medication(ambiente, client)
+
+    response = client.post(
+        f"/v1/livestock/medications/{medication_id}/sanitary-classifications",
+        json={"status": "UNKNOWN", "observed_at": datetime.now(UTC).isoformat()},
+        headers=headers(ambiente),
+    )
+
+    assert response.status_code == 422

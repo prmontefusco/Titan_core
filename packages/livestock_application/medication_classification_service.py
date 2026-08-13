@@ -37,6 +37,7 @@ class MedicationClassificationService:
         valid_from: datetime | None,
         valid_to: datetime | None,
         observed_at: datetime,
+        known_at: datetime,
         limitations: tuple[str, ...] = (),
     ) -> MedicationSanitaryClassificationAssertion:
         medication = self.medication_repository.get_by_id(medication_id)
@@ -55,6 +56,7 @@ class MedicationClassificationService:
             validation_status=MedicationClassificationValidation.STRUCTURALLY_VALIDATED,
             confidence_tier=ConfidenceTier.DOCUMENTED,
             limitations=tuple(value.strip() for value in limitations if value.strip()),
+            known_at=known_at,
         )
         self.repository.save(item)
         return item

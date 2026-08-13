@@ -84,6 +84,7 @@ class RegistrarClassificacaoSanitariaRequest(BaseModel):
     valid_from: datetime | None = None
     valid_to: datetime | None = None
     observed_at: datetime
+    known_at: datetime
     limitations: list[str] = Field(default_factory=list)
 
 
@@ -95,6 +96,7 @@ class ClassificacaoSanitariaResponse(BaseModel):
     valid_from: datetime | None
     valid_to: datetime | None
     observed_at: datetime
+    known_at: datetime | None
     confidence_tier: str
     validation_status: str
     limitations: list[str]
@@ -114,6 +116,7 @@ def _classificacao(item: object) -> ClassificacaoSanitariaResponse:
         valid_from=item.valid_from,
         valid_to=item.valid_to,
         observed_at=item.observed_at,
+        known_at=item.known_at,
         confidence_tier=item.confidence_tier.value,
         validation_status=item.validation_status.value,
         limitations=list(item.limitations),
@@ -386,6 +389,7 @@ def registrar_classificacao_sanitaria(
             valid_from=corpo.valid_from,
             valid_to=corpo.valid_to,
             observed_at=corpo.observed_at,
+            known_at=corpo.known_at,
             limitations=tuple(corpo.limitations),
         )
     except KeyError as error:

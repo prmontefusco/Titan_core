@@ -223,6 +223,7 @@ def test_known_antimicrobial_is_not_satisfied(reference_time: datetime) -> None:
         UniversalReference(TypedId.new("manual_source"), organization_id, 1),
         MedicationClassificationValidation.STRUCTURALLY_VALIDATED,
         ConfidenceTier.DOCUMENTED,
+        known_at=reference_time - timedelta(days=2),
     )
     fact = SanitaryTestACoverageService().build_fact_from_classified_material(
         reference_time=reference_time,

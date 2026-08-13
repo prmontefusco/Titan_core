@@ -39,10 +39,13 @@ class MedicationSanitaryClassificationAssertion:
     confidence_tier: ConfidenceTier
     limitations: tuple[str, ...] = ()
     recorded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    known_at: datetime | None = None
 
     def __post_init__(self) -> None:
         require_utc(self.observed_at, field_name="observed_at")
         require_utc(self.recorded_at, field_name="recorded_at")
+        if self.known_at is not None:
+            require_utc(self.known_at, field_name="known_at")
         if self.valid_from is not None:
             require_utc(self.valid_from, field_name="valid_from")
         if self.valid_to is not None:
@@ -58,7 +61,7 @@ class MedicationSanitaryClassificationAssertion:
 
     def known_as_of(self, cutoff: datetime) -> bool:
         require_utc(cutoff, field_name="knowledge_cutoff")
-        return self.observed_at <= cutoff
+        return self.known_at is not None and self.known_at <= cutoff
 
     def valid_at(self, instant: datetime) -> bool:
         require_utc(instant, field_name="reference_time")

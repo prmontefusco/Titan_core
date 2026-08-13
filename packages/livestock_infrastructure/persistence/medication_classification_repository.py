@@ -3,7 +3,18 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import Column, Connection, DateTime, ForeignKey, String, Table, Text, insert, select
+from sqlalchemy import (
+    Column,
+    Connection,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Table,
+    Text,
+    insert,
+    select,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, UUID
 
 from packages.core_domain.evidence import ConfidenceTier
@@ -38,12 +49,20 @@ medication_classification_assertions_table = Table(
     Column("valid_from", DateTime(timezone=True)),
     Column("valid_to", DateTime(timezone=True)),
     Column("observed_at", DateTime(timezone=True), nullable=False),
+    Column("known_at", DateTime(timezone=True), nullable=True),
     Column("source_entity_type", String(80), nullable=False),
     Column("source_id", UUID(as_uuid=True), nullable=False),
     Column("confidence_tier", String(50), nullable=False),
     Column("validation_status", String(50), nullable=False),
     Column("limitations", ARRAY(Text), nullable=False),
     Column("recorded_at", DateTime(timezone=True), nullable=False),
+    Index(
+        "ix_medication_classification_assertions_temporal_selection",
+        "record_owner_organization_id",
+        "medication_id",
+        "category",
+        "known_at",
+    ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=livestock",
 )
@@ -64,6 +83,7 @@ class TransactionalMedicationClassificationRepository:
                 valid_from=item.valid_from,
                 valid_to=item.valid_to,
                 observed_at=item.observed_at,
+                known_at=item.known_at,
                 source_entity_type=item.source_reference.target_id.entity_type,
                 source_id=item.source_reference.target_id.value,
                 confidence_tier=item.confidence_tier.value,
@@ -111,6 +131,7 @@ class TransactionalMedicationClassificationRepository:
                     validation_status=MedicationClassificationValidation(row.validation_status),
                     limitations=tuple(row.limitations),
                     recorded_at=recorded_at,
+                    known_at=aware(row.known_at),
                 )
             )
         return items
