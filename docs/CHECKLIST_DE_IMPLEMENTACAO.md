@@ -3507,6 +3507,8 @@ Primeiro produto de frontend do Livestock: leitura do animal, registro de tratam
 
 **Design Package de revisão elaborado em 12 de agosto de 2026 · Estado: AGUARDANDO REVISÃO HUMANA.** `docs/plans/POST_LIV_03_CAPTURE_REVIEW_ASSOCIATION_DESIGN_PACKAGE.md` registra que digest e diagnóstico não são material suficiente para revisão humana significativa. Ele propõe o Corte 2B: `review_projection` canônica, minimizada e allowlisted no artefato existente, mais `ExternalSourceCaptureAssociationReview` append-only para confirmar somente um candidato local — jamais identidade, continuidade, custody, fato, coverage ou admissibilidade. O desenho recusa corpo JSON bruto no banco, endpoints de captura HTTP e qualquer alteração em Animal. Requer adendo aprovado à ADR-0058 antes de código, migration, API, permissão ou roteiro manual.
 
+**Corte 2B — base semântica iniciada em 12 de agosto de 2026.** `SisbovSimulatorParseResult.review_projection()` entrega somente campos allowlisted, sem resposta bruta; `ExternalSourceCaptureAssociationReview` distingue confirmação de candidato, rejeição e necessidade de mais evidência, sem criar vínculo no Animal. A persistência e a API permanecem no incremento corrente.
+
 ## Notas de rumo — decisões de direção fora da numeração do PLANO
 
 **Registradas em 24 de julho de 2026.** Não são passos do plano e não têm portão de verificação. São conclusões de análise que orientam passos futuros e que se perderiam se ficassem apenas em conversa. Nenhuma delas está implementada.

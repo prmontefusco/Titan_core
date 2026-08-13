@@ -69,6 +69,7 @@ from packages.livestock_infrastructure.persistence import (
     coverage_contributions_table,
     establishment_qualifications_table,
     external_source_capture_artifacts_table,
+    external_source_capture_association_reviews_table,
     livestock_lots_table,
     lot_memberships_table,
     medication_batches_table,
@@ -138,6 +139,7 @@ assert rural_properties_table.metadata is target_metadata
 assert animals_table.metadata is target_metadata
 assert coverage_contributions_table.metadata is target_metadata
 assert external_source_capture_artifacts_table.metadata is target_metadata
+assert external_source_capture_association_reviews_table.metadata is target_metadata
 assert animal_identifiers_table.metadata is target_metadata
 assert animal_movements_table.metadata is target_metadata
 assert animal_movement_items_table.metadata is target_metadata

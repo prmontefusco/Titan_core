@@ -16,6 +16,7 @@ from sqlalchemy import (
     insert,
     select,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.engine import Row
 
@@ -52,6 +53,7 @@ external_source_capture_artifacts_table = Table(
     Column("parser_name", String(120), nullable=False),
     Column("parser_version", String(40), nullable=False),
     Column("parsing_diagnostic_code", String(120), nullable=True),
+    Column("review_projection", JSONB, nullable=True),
     Column("recorded_by", PG_UUID(as_uuid=True), nullable=False),
     Column("recorded_at", DateTime(timezone=True), nullable=False),
     Index(
@@ -59,6 +61,36 @@ external_source_capture_artifacts_table = Table(
         "record_owner_organization_id",
         "captured_at",
     ),
+    schema=CORE_AUDIT_SCHEMA,
+    comment="titan.classification=PROTECTED;titan.module_owner=livestock",
+)
+
+external_source_capture_association_reviews_table = Table(
+    "external_source_capture_association_reviews",
+    livestock_metadata,
+    Column("review_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column(
+        "record_owner_organization_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("core_identity.organizations.organization_id"),
+        nullable=False,
+    ),
+    Column(
+        "capture_artifact_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("core_audit.external_source_capture_artifacts.artifact_id"),
+        nullable=False,
+    ),
+    Column(
+        "candidate_animal_id",
+        PG_UUID(as_uuid=True),
+        ForeignKey("core_audit.animals.animal_id"),
+        nullable=False,
+    ),
+    Column("status", String(40), nullable=False),
+    Column("basis_code", String(120), nullable=False),
+    Column("reviewed_by", PG_UUID(as_uuid=True), nullable=False),
+    Column("reviewed_at", DateTime(timezone=True), nullable=False),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=livestock",
 )
