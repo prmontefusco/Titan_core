@@ -1,5 +1,6 @@
 """Event store PostgreSQL append-only do Titan Core."""
 
+import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -165,6 +166,16 @@ class StoredDomainEvent:
     hash_profile_version: int | None
     canonical_serialization_version: str | None
 
+    @property
+    def payload_digest(self) -> str:
+        """Digest verificável dos bytes preservados, sem decodificá-los."""
+        return hashlib.sha256(self.payload_canonical_bytes).hexdigest()
+
+    @property
+    def integrity_hash(self) -> bytes | None:
+        """Referência à cadeia de integridade, não uma afirmação semântica."""
+        return self.current_hash
+
 
 @dataclass(frozen=True, slots=True)
 class DomainEventRepository:
@@ -277,9 +288,18 @@ class DomainEventRepository:
                 domain_events_table.c.aggregate_type == aggregate_reference.target_id.entity_type,
                 domain_events_table.c.aggregate_id == aggregate_reference.target_id.value,
             )
-            .order_by(domain_events_table.c.aggregate_version)
+            .order_by(
+                domain_events_table.c.aggregate_version,
+                domain_events_table.c.event_id,
+            )
         ).all()
         return tuple(_from_row(row) for row in rows)
+
+    def list_canonical_for_aggregate(
+        self, aggregate_reference: UniversalReference
+    ) -> tuple[StoredDomainEvent, ...]:
+        """Retorna conteúdo canônico sem interpretá-lo ou registrá-lo em logs."""
+        return self.list_for_aggregate(aggregate_reference)
 
     def list_versions(self, aggregate_reference: UniversalReference) -> tuple[int, ...]:
         return tuple(

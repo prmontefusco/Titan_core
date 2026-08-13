@@ -1,3 +1,4 @@
+import hashlib
 import os
 from datetime import UTC, datetime
 from uuid import uuid4
@@ -128,10 +129,23 @@ def test_event_store_orders_versions_rejects_gaps_and_isolates_organizations() -
                 assert stored_chain[0].previous_hash is None
                 assert stored_chain[0].current_hash == stored_chain[1].previous_hash
                 assert stored_chain[1].current_hash is not None
+                canonical = events.list_canonical_for_aggregate(first_aggregate)
+                assert [item.aggregate_version for item in canonical] == [1, 2]
+                assert (
+                    canonical[0].payload_canonical_bytes
+                    == events.list_for_aggregate(first_aggregate)[0].payload_canonical_bytes
+                )
+                assert (
+                    canonical[0].payload_digest
+                    == hashlib.sha256(canonical[0].payload_canonical_bytes).hexdigest()
+                )
+                assert canonical[0].integrity_hash == canonical[0].current_hash
+                assert not hasattr(canonical[0], "known_at")
 
                 set_local_organization_context(connection, second_organization.organization_id)
                 organizations.add(second_organization)
                 assert events.list_for_aggregate(first_aggregate) == ()
+                assert events.list_canonical_for_aggregate(first_aggregate) == ()
                 events.append(
                     _event(
                         organization_id=second_organization.organization_id,

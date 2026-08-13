@@ -29,9 +29,11 @@ from packages.core_application.evaluation_service import (
     RuleEvaluationEngine,
 )
 from packages.core_application.event_log import (
+    CanonicalDomainEventReader,
     DomainEventLog,
     DomainEventLogService,
     DomainEventReader,
+    RecordedCanonicalEvent,
     RecordedEvent,
 )
 from packages.core_application.evidence_service import EvidenceRepositoryPort, EvidenceService
@@ -138,6 +140,7 @@ __all__ = [
     "DomainEventLog",
     "DomainEventLogService",
     "DomainEventReader",
+    "CanonicalDomainEventReader",
     "IdentityAndAccessReader",
     "IntegrityCheckpointService",
     "IntegrityCheckpointWriter",
@@ -153,6 +156,7 @@ __all__ = [
     "PolicyService",
     "RuleRepositoryPort",
     "RuleService",
+    "RecordedCanonicalEvent",
     "PolicyEvaluationService",
     "EvaluationRepositoryPort",
     "DecisionService",

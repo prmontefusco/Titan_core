@@ -71,6 +71,40 @@ class DomainEventReader(Protocol):
     ) -> Sequence[RecordedEvent]: ...
 
 
+class RecordedCanonicalEvent(RecordedEvent, Protocol):
+    """Evento preservado cujo conteúdo pode ser interpretado por uma vertical.
+
+    O Core apenas entrega bytes, schema e versão que já foram persistidos. Ele
+    não desserializa o payload nem atribui semântica temporal ou de domínio ao
+    conteúdo. Em particular, ``recorded_at`` continua sendo tempo de registro,
+    não ``known_at``.
+    """
+
+    @property
+    def payload_version(self) -> int: ...
+
+    @property
+    def payload_canonical_bytes(self) -> bytes: ...
+
+    @property
+    def payload_digest(self) -> str: ...
+
+    @property
+    def integrity_hash(self) -> bytes | None: ...
+
+
+class CanonicalDomainEventReader(Protocol):
+    """Leitura genérica, somente leitura, de conteúdo canônico preservado.
+
+    A autorização de interpretar qualquer schema/version é responsabilidade da
+    Application consumidora; esta porta não conhece nem autoriza verticais.
+    """
+
+    def list_canonical_for_aggregate(
+        self, aggregate_reference: UniversalReference
+    ) -> Sequence[RecordedCanonicalEvent]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class DomainEventLogService:
     event_log: DomainEventLog

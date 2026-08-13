@@ -1,6 +1,6 @@
 # ADR-0063 - Leitura canônica de conteúdo de eventos por extensões verticais
 
-**Status:** PROPOSTA
+**Status:** ACEITA
 **Data:** 13 de agosto de 2026
 **Escopo:** Core Application/Infrastructure e extensões verticais; bloqueador do T-05B da ADR-0062
 **Relacionadas:** ADR-0003, ADR-0052, ADR-0060, ADR-0062
@@ -142,3 +142,13 @@ atual.
 8. Testes confirmam que payload não aparece em logs, traces, métricas ou erros.
 9. Teste explícito confirma que o Core não expõe `recorded_at` com o nome ou a
    semântica de `known_at`.
+
+## Aceite e execução
+
+Aceita em 13 de agosto de 2026. A implementação inicial entrega
+`CanonicalDomainEventReader` como porta aditiva do Core e
+`DomainEventRepository.list_canonical_for_aggregate()` como adapter PostgreSQL
+sob o RLS já existente. O retorno preserva bytes, schema, versão, digest SHA-256
+e hash de integridade, sem decodificação, logging ou API pública. O T-05B
+permanece deliberadamente fora deste corte e só poderá interpretar os eventos
+depois de seus próprios testes temporais.
