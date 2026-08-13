@@ -166,6 +166,40 @@ class SisbovSimulatorParseResult:
     observation: SisbovAnimalObservation | SisbovGtaObservation | SisbovMovementObservation | None
     diagnostic_code: str | None = None
 
+    def review_projection(self) -> dict[str, object] | None:
+        observation = self.observation
+        if isinstance(observation, SisbovAnimalObservation):
+            return {
+                "resource_kind": "ANIMAL",
+                "external_reference": observation.numero,
+                "declared_fields": {
+                    "statusAnimal": observation.status,
+                    "ERASPropriedadeLocalizacao": observation.local_property_eras,
+                },
+            }
+        if isinstance(observation, SisbovGtaObservation):
+            return {
+                "resource_kind": "GTA",
+                "external_reference": observation.numero_completo,
+                "declared_fields": {
+                    "status": observation.status,
+                    "dataEmissao": observation.issued_on,
+                    "ERASPropriedadeOrigem": observation.origin_property_eras,
+                    "ERASPropriedadeDestino": observation.destination_property_eras,
+                },
+            }
+        if isinstance(observation, SisbovMovementObservation):
+            return {
+                "resource_kind": "MOVEMENT",
+                "external_reference": observation.external_id,
+                "declared_fields": {
+                    "statusMovimentacao": observation.status,
+                    "gtas": list(observation.gta_references),
+                    "animais": list(observation.animal_references),
+                },
+            }
+        return None
+
 
 @dataclass(frozen=True, slots=True)
 class SisbovSimulatorParser:

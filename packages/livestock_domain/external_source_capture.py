@@ -12,6 +12,35 @@ class ExternalSourceEnvironment(StrEnum):
     SIMULATED = "SIMULATED"
 
 
+class ExternalSourceCaptureAssociationReviewStatus(StrEnum):
+    CONFIRMED_CANDIDATE = "CONFIRMED_CANDIDATE"
+    REJECTED = "REJECTED"
+    NEEDS_MORE_EVIDENCE = "NEEDS_MORE_EVIDENCE"
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalSourceCaptureAssociationReview:
+    review_id: TypedId
+    organization_id: OrganizationId
+    capture_artifact_id: TypedId
+    candidate_animal_id: TypedId
+    status: ExternalSourceCaptureAssociationReviewStatus
+    basis_code: str
+    reviewed_by: TypedId
+    reviewed_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    def __post_init__(self) -> None:
+        require_utc(self.reviewed_at, field_name="reviewed_at")
+        if self.review_id.entity_type != "external_source_capture_association_review":
+            raise ValueError("review_id inválido.")
+        if self.capture_artifact_id.entity_type != "external_source_capture_artifact":
+            raise ValueError("capture_artifact_id inválido.")
+        if self.candidate_animal_id.entity_type != "animal":
+            raise ValueError("candidate_animal_id deve ser animal.")
+        if not self.basis_code.strip():
+            raise ValueError("basis_code não pode ser vazio.")
+
+
 @dataclass(frozen=True, slots=True)
 class ExternalSourceCaptureArtifact:
     artifact_id: TypedId
