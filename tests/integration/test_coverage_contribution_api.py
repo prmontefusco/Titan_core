@@ -38,8 +38,8 @@ def _payload() -> dict[str, object]:
         "dimension": "treatment_history",
         "covered_from": (end - timedelta(days=45)).isoformat(),
         "covered_until": end.isoformat(),
-        "validation": "VALIDATED",
-        "admissibility": "ADMISSIBLE",
+        "validation": "NOT_VALIDATED",
+        "admissibility": "INSUFFICIENT",
         "accessible": True,
         "conflicting": False,
         "known_at": end.isoformat(),
@@ -100,3 +100,21 @@ def test_animal_inexistente_retorna_404(ambiente: Ambiente, operador: ClienteAut
         headers=_headers(ambiente),
     )
     assert response.status_code == 404
+
+
+def test_fonte_inexistente_nao_sustenta_coverage_admissivel(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _animal(ambiente, operador)
+    payload = _payload() | {
+        "validation": "VALIDATED",
+        "admissibility": "ADMISSIBLE",
+        "source_entity_type": "received_transfer_artifact",
+        "source_id": "00000000-0000-0000-0000-000000000001",
+    }
+    response = operador.post(
+        f"/v1/livestock/animals/{animal_id}/coverage-contributions",
+        json=payload,
+        headers=_headers(ambiente),
+    )
+    assert response.status_code == 409

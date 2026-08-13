@@ -75,6 +75,9 @@ from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
 from packages.livestock_application.parentage_service import ParentageService
 from packages.livestock_application.property_service import RuralPropertyService
+from packages.livestock_application.received_transfer_coverage_source_validator import (
+    ReceivedTransferCoverageSourceValidator,
+)
 from packages.livestock_application.reproduction_service import (
     CriaDeclarada,
     ReproductionService,
@@ -1179,6 +1182,9 @@ def registrar_contribuicao_coverage(
     service = CoverageContributionService(
         repository=TransactionalCoverageContributionRepository(connection),
         animal_repository=TransactionalAnimalRepository(connection),
+        source_validator=ReceivedTransferCoverageSourceValidator(
+            TransactionalReceivedTransferArtifactRepository(connection)
+        ),
     )
     try:
         item = service.record(

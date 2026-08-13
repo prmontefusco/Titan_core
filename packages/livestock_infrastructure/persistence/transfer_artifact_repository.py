@@ -89,6 +89,16 @@ class TransactionalReceivedTransferArtifactRepository(ReceivedTransferArtifactRe
             )
         )
 
+    def get_by_id(self, artifact_id: TypedId) -> ReceivedTransferArtifact | None:
+        if artifact_id.entity_type != "received_transfer_artifact":
+            return None
+        row = self.connection.execute(
+            select(received_transfer_artifacts_table).where(
+                received_transfer_artifacts_table.c.artifact_id == artifact_id.value
+            )
+        ).first()
+        return None if row is None else self._map(row)
+
     def list_by_animal(self, animal_id: TypedId) -> list[ReceivedTransferArtifact]:
         rows = self.connection.execute(
             select(received_transfer_artifacts_table)

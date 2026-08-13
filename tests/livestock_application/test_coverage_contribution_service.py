@@ -55,6 +55,14 @@ class Animals:
         return None
 
 
+@dataclass
+class Sources:
+    supported: bool
+
+    def supports(self, **_: object) -> bool:
+        return self.supported
+
+
 def test_records_source_neutral_contribution() -> None:
     org = OrganizationId.new()
     animal_id = TypedId.new("animal")
@@ -81,8 +89,8 @@ def test_records_source_neutral_contribution() -> None:
         dimension="treatment_history",
         covered_from=datetime(2026, 1, 1, tzinfo=UTC),
         covered_until=datetime(2026, 2, 1, tzinfo=UTC),
-        validation=CoverageContributionValidation.VALIDATED,
-        admissibility=CoverageContributionAdmissibility.ADMISSIBLE,
+        validation=CoverageContributionValidation.NOT_VALIDATED,
+        admissibility=CoverageContributionAdmissibility.INSUFFICIENT,
     )
     saved = CoverageContributionService(repo, Animals(animal)).record(
         context=context,
@@ -92,6 +100,41 @@ def test_records_source_neutral_contribution() -> None:
     )
     assert saved.contribution.source_reference is None
     assert repo.items == [saved]
+
+
+def test_admissible_contribution_rejects_unverifiable_source() -> None:
+    org = OrganizationId.new()
+    animal_id = TypedId.new("animal")
+    actor = TypedId.new("actor")
+    animal = Animal(
+        animal_id=animal_id,
+        organization_id=org,
+        sex=AnimalSex.FEMALE,
+        birth_property_id=None,
+        birth_property_source=BirthPropertySource.UNKNOWN,
+    )
+    context = LivestockOperationContext(
+        organization_id=org,
+        actor_reference=UniversalReference(actor, org, 1),
+        source_reference=UniversalReference(actor, org, 1),
+        correlation_id=TypedId.new("correlation"),
+    )
+    contribution = CoverageContribution(
+        dimension="treatment_history",
+        covered_from=datetime(2026, 1, 1, tzinfo=UTC),
+        covered_until=datetime(2026, 2, 1, tzinfo=UTC),
+        validation=CoverageContributionValidation.VALIDATED,
+        admissibility=CoverageContributionAdmissibility.ADMISSIBLE,
+        source_reference=UniversalReference(TypedId.new("received_transfer_artifact"), org, 1),
+    )
+
+    with pytest.raises(ValueError, match="nao e verificavel"):
+        CoverageContributionService(Repo(), Animals(animal), Sources(False)).record(
+            context=context,
+            subject_id=animal_id,
+            contribution=contribution,
+            known_at=datetime(2026, 2, 2, tzinfo=UTC),
+        )
 
 
 def test_rejects_cross_organization_source() -> None:

@@ -7,10 +7,22 @@ from typing import Protocol
 from packages.livestock_application.animal_service import AnimalRepositoryPort
 from packages.livestock_application.dimensional_coverage import (
     CoverageContribution,
+    CoverageContributionAdmissibility,
+    CoverageContributionValidation,
     StoredCoverageContribution,
 )
 from packages.livestock_application.event_recorder import LivestockOperationContext
 from packages.shared_kernel import OrganizationId, TypedId
+
+
+class CoverageContributionSourceValidatorPort(Protocol):
+    def supports(
+        self,
+        *,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+        source_id: TypedId,
+    ) -> bool: ...
 
 
 class CoverageContributionRepositoryPort(Protocol):
@@ -25,6 +37,7 @@ class CoverageContributionRepositoryPort(Protocol):
 class CoverageContributionService:
     repository: CoverageContributionRepositoryPort
     animal_repository: AnimalRepositoryPort
+    source_validator: CoverageContributionSourceValidatorPort | None = None
 
     def record(
         self,
@@ -40,6 +53,18 @@ class CoverageContributionService:
         source = contribution.source_reference
         if source is not None and source.organization_id != context.organization_id:
             raise ValueError("A fonte da contribuicao pertence a outra Organization.")
+        if (
+            contribution.validation is CoverageContributionValidation.VALIDATED
+            and contribution.admissibility is CoverageContributionAdmissibility.ADMISSIBLE
+        ):
+            if source is None:
+                raise ValueError("Contribuicao admissivel exige fonte verificavel.")
+            if self.source_validator is None or not self.source_validator.supports(
+                organization_id=context.organization_id,
+                subject_id=subject_id,
+                source_id=source.target_id,
+            ):
+                raise ValueError("A fonte da contribuicao nao e verificavel para este Animal.")
         item = StoredCoverageContribution.create(
             organization_id=context.organization_id,
             subject_id=subject_id,
