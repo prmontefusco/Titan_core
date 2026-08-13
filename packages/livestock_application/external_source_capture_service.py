@@ -9,8 +9,12 @@ from packages.livestock_application.sisbov_simulator import (
     SisbovSimulatorCapture,
     SisbovSimulatorParseResult,
 )
-from packages.livestock_domain.external_source_capture import ExternalSourceCaptureArtifact
-from packages.shared_kernel import OrganizationId
+from packages.livestock_domain.external_source_capture import (
+    ExternalSourceCaptureArtifact,
+    ExternalSourceCaptureAssociationReview,
+    ExternalSourceCaptureAssociationReviewStatus,
+)
+from packages.shared_kernel import OrganizationId, TypedId
 
 
 class ExternalSourceCaptureArtifactRepositoryPort(Protocol):
@@ -19,6 +23,14 @@ class ExternalSourceCaptureArtifactRepositoryPort(Protocol):
     def list_by_organization(
         self, organization_id: OrganizationId
     ) -> list[ExternalSourceCaptureArtifact]: ...
+
+
+class ExternalSourceCaptureAssociationReviewRepositoryPort(Protocol):
+    def save(self, review: ExternalSourceCaptureAssociationReview) -> None: ...
+
+    def list_by_capture(
+        self, organization_id: OrganizationId, capture_artifact_id: TypedId
+    ) -> list[ExternalSourceCaptureAssociationReview]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,3 +63,33 @@ class ExternalSourceCaptureService:
         )
         self.repository.save(artifact)
         return artifact
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalSourceCaptureReviewService:
+    artifact_repository: ExternalSourceCaptureArtifactRepositoryPort
+    review_repository: ExternalSourceCaptureAssociationReviewRepositoryPort
+
+    def review_candidate(
+        self,
+        *,
+        context: LivestockOperationContext,
+        capture_artifact_id: TypedId,
+        candidate_animal_id: TypedId,
+        status: ExternalSourceCaptureAssociationReviewStatus,
+        basis_code: str,
+    ) -> ExternalSourceCaptureAssociationReview:
+        captures = self.artifact_repository.list_by_organization(context.organization_id)
+        if not any(item.artifact_id == capture_artifact_id for item in captures):
+            raise KeyError("Captura não encontrada na Organization ativa.")
+        review = ExternalSourceCaptureAssociationReview(
+            review_id=TypedId.new("external_source_capture_association_review"),
+            organization_id=context.organization_id,
+            capture_artifact_id=capture_artifact_id,
+            candidate_animal_id=candidate_animal_id,
+            status=status,
+            basis_code=basis_code,
+            reviewed_by=context.actor_reference.target_id,
+        )
+        self.review_repository.save(review)
+        return review

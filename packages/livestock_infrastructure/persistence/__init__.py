@@ -23,8 +23,8 @@ from packages.livestock_infrastructure.persistence.external_counterparty_reposit
 )
 from packages.livestock_infrastructure.persistence.external_source_capture_repository import (
     TransactionalExternalSourceCaptureArtifactRepository,
-    external_source_capture_association_reviews_table,
     external_source_capture_artifacts_table,
+    external_source_capture_association_reviews_table,
 )
 from packages.livestock_infrastructure.persistence.geometry_repository import (
     TransactionalPropertyGeometryRepository,

@@ -23,9 +23,12 @@ from sqlalchemy.engine import Row
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.livestock_application.external_source_capture_service import (
     ExternalSourceCaptureArtifactRepositoryPort,
+    ExternalSourceCaptureAssociationReviewRepositoryPort,
 )
 from packages.livestock_domain.external_source_capture import (
     ExternalSourceCaptureArtifact,
+    ExternalSourceCaptureAssociationReview,
+    ExternalSourceCaptureAssociationReviewStatus,
     ExternalSourceEnvironment,
 )
 from packages.livestock_infrastructure.persistence.metadata import livestock_metadata
@@ -160,3 +163,53 @@ class TransactionalExternalSourceCaptureArtifactRepository(
             TypedId("actor", row.recorded_by),
             aware(row.recorded_at),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalExternalSourceCaptureAssociationReviewRepository(
+    ExternalSourceCaptureAssociationReviewRepositoryPort
+):
+    connection: Connection
+
+    def save(self, review: ExternalSourceCaptureAssociationReview) -> None:
+        self.connection.execute(
+            insert(external_source_capture_association_reviews_table).values(
+                review_id=review.review_id.value,
+                record_owner_organization_id=review.organization_id.value,
+                capture_artifact_id=review.capture_artifact_id.value,
+                candidate_animal_id=review.candidate_animal_id.value,
+                status=review.status.value,
+                basis_code=review.basis_code,
+                reviewed_by=review.reviewed_by.value,
+                reviewed_at=review.reviewed_at,
+            )
+        )
+
+    def list_by_capture(
+        self, organization_id: OrganizationId, capture_artifact_id: TypedId
+    ) -> list[ExternalSourceCaptureAssociationReview]:
+        rows = self.connection.execute(
+            select(external_source_capture_association_reviews_table)
+            .where(
+                external_source_capture_association_reviews_table.c.record_owner_organization_id
+                == organization_id.value,
+                external_source_capture_association_reviews_table.c.capture_artifact_id
+                == capture_artifact_id.value,
+            )
+            .order_by(external_source_capture_association_reviews_table.c.reviewed_at)
+        ).all()
+        return [
+            ExternalSourceCaptureAssociationReview(
+                TypedId("external_source_capture_association_review", row.review_id),
+                OrganizationId(row.record_owner_organization_id),
+                TypedId("external_source_capture_artifact", row.capture_artifact_id),
+                TypedId("animal", row.candidate_animal_id),
+                ExternalSourceCaptureAssociationReviewStatus(row.status),
+                row.basis_code,
+                TypedId("actor", row.reviewed_by),
+                row.reviewed_at
+                if row.reviewed_at.tzinfo is not None
+                else row.reviewed_at.replace(tzinfo=UTC),
+            )
+            for row in rows
+        ]
