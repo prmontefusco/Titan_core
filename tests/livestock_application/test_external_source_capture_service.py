@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from packages.livestock_application.event_recorder import LivestockOperationContext
 from packages.livestock_application.external_source_capture_service import (
     ExternalSourceCaptureService,
+    SisbovSimulatorIngestionService,
 )
 from packages.livestock_application.sisbov_simulator import (
     SisbovSimulatorCaptureService,
@@ -60,3 +61,24 @@ def test_registro_preserva_captura_simulada_sem_produzir_fato() -> None:
     assert artifact.source_environment.value == "SIMULATED"
     assert artifact.response_digest == capture.response_digest
     assert artifact.resource_kind == "ANIMAL"
+
+
+def test_ingestao_interna_persiste_apenas_projecao_allowlisted() -> None:
+    organization_id, actor_id = OrganizationId.new(), TypedId.new("actor")
+    context = LivestockOperationContext(
+        organization_id,
+        UniversalReference(actor_id, organization_id, 1),
+        UniversalReference(actor_id, organization_id, 1),
+        TypedId.new("correlation"),
+    )
+    repo = Repo()
+    artifact = SisbovSimulatorIngestionService(
+        Transport(), ExternalSourceCaptureService(repo)
+    ).capture_animal(context=context, numero="BR1")
+
+    assert repo.items == [artifact]
+    assert artifact.review_projection == {
+        "resource_kind": "ANIMAL",
+        "external_reference": "BR1",
+        "declared_fields": {"statusAnimal": None, "ERASPropriedadeLocalizacao": None},
+    }

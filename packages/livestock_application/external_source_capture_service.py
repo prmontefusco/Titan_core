@@ -8,6 +8,7 @@ from packages.livestock_application.event_recorder import LivestockOperationCont
 from packages.livestock_application.sisbov_simulator import (
     SisbovSimulatorCapture,
     SisbovSimulatorParseResult,
+    SisbovSimulatorTransportPort,
 )
 from packages.livestock_domain.external_source_capture import (
     ExternalSourceCaptureArtifact,
@@ -60,9 +61,32 @@ class ExternalSourceCaptureService:
             parser_version="1",
             parsing_diagnostic_code=parsing.diagnostic_code,
             recorded_by=context.actor_reference.target_id,
+            review_projection=parsing.review_projection(),
         )
         self.repository.save(artifact)
         return artifact
+
+
+@dataclass(frozen=True, slots=True)
+class SisbovSimulatorIngestionService:
+    transport: SisbovSimulatorTransportPort
+    capture_service: ExternalSourceCaptureService
+
+    def capture_animal(
+        self, *, context: LivestockOperationContext, numero: str
+    ) -> ExternalSourceCaptureArtifact:
+        from packages.livestock_application.sisbov_simulator import (
+            SisbovSimulatorCaptureService,
+            SisbovSimulatorParser,
+            SisbovSimulatorRequest,
+        )
+
+        capture = SisbovSimulatorCaptureService(self.transport).capture(
+            SisbovSimulatorRequest.animal(numero)
+        )
+        return self.capture_service.record_simulated_capture(
+            context=context, capture=capture, parsing=SisbovSimulatorParser().parse(capture)
+        )
 
 
 @dataclass(frozen=True, slots=True)

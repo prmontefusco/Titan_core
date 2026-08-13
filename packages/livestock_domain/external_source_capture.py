@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
+from types import MappingProxyType
+from typing import Any
 
 from packages.shared_kernel import OrganizationId, TypedId
 from packages.shared_kernel.temporal import require_utc
@@ -58,6 +60,7 @@ class ExternalSourceCaptureArtifact:
     parser_version: str
     parsing_diagnostic_code: str | None
     recorded_by: TypedId
+    review_projection: MappingProxyType[str, Any] | None = None
     recorded_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def __post_init__(self) -> None:
@@ -86,6 +89,10 @@ class ExternalSourceCaptureArtifact:
                 raise ValueError(f"{name} deve ser SHA-256 hexadecimal.")
         if self.recorded_by.entity_type not in {"actor", "user", "system"}:
             raise ValueError("recorded_by deve apontar para actor, user ou system.")
+        if self.review_projection is not None and not isinstance(
+            self.review_projection, MappingProxyType
+        ):
+            raise TypeError("review_projection deve ser imutável.")
 
     @classmethod
     def create(
@@ -103,6 +110,7 @@ class ExternalSourceCaptureArtifact:
         parser_version: str,
         parsing_diagnostic_code: str | None,
         recorded_by: TypedId,
+        review_projection: dict[str, Any] | None = None,
     ) -> "ExternalSourceCaptureArtifact":
         return cls(
             artifact_id=TypedId.new("external_source_capture_artifact"),
@@ -120,4 +128,7 @@ class ExternalSourceCaptureArtifact:
             parser_version=parser_version,
             parsing_diagnostic_code=parsing_diagnostic_code,
             recorded_by=recorded_by,
+            review_projection=None
+            if review_projection is None
+            else MappingProxyType(dict(review_projection)),
         )

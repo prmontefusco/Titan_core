@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Any
 
 from sqlalchemy import (
@@ -122,6 +123,9 @@ class TransactionalExternalSourceCaptureArtifactRepository(
                 parser_name=artifact.parser_name,
                 parser_version=artifact.parser_version,
                 parsing_diagnostic_code=artifact.parsing_diagnostic_code,
+                review_projection=None
+                if artifact.review_projection is None
+                else dict(artifact.review_projection),
                 recorded_by=artifact.recorded_by.value,
                 recorded_at=artifact.recorded_at,
             )
@@ -161,6 +165,9 @@ class TransactionalExternalSourceCaptureArtifactRepository(
             row.parser_version,
             row.parsing_diagnostic_code,
             TypedId("actor", row.recorded_by),
+            None
+            if row.review_projection is None
+            else MappingProxyType(dict(row.review_projection)),
             aware(row.recorded_at),
         )
 
