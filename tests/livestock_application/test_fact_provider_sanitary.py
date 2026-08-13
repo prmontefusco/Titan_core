@@ -909,6 +909,9 @@ def test_temporal_snapshot_derives_property_stay_only_from_known_movements() -> 
     facts = snapshot.get_facts_by_type(MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE)
     assert len(facts) == 1
     assert facts[0].payload["property_id"] == property_a.value.hex
+    assert facts[0].payload["supporting_movement_ids"] == [
+        movement_known_then.movement_id.value.hex
+    ]
     assert facts[0].recorded_at == movement_known_then.created_at
     assert facts[0].known_at is None
 

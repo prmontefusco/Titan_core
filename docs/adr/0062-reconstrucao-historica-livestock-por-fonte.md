@@ -86,6 +86,14 @@ conhecidos até o cutoff e derive a permanência aplicável ao instante de
 referência. Nenhuma atualização de `PropertyStay` será usada como prova de que
 o fechamento já era conhecido antes de sua persistência.
 
+A permanência derivada não é fonte histórica independente: é uma projeção
+efêmera formada exclusivamente da sequência de movimentos temporalmente
+admissíveis. O resultado preserva os IDs de todos os `AnimalMovement` usados na
+derivação. Nenhum campo de `PropertyStay` pode completar lacuna, desempatar ou
+resolver conflito. Dois movimentos incompatíveis no mesmo contexto resultam em
+limitação estável `LIVESTOCK_MOVEMENT_HISTORY_CONFLICT`; a ordem de persistência
+do banco não possui autoridade semântica para escolher um deles.
+
 **Aceite:** mover o animal em T2 não altera a permanência retornada para T0;
 movimento ocorrido em T0, registrado em T2, só aparece com cutoff >= T2;
 conflito de movimentos não é resolvido por ordenação do banco.
@@ -100,6 +108,55 @@ identificador.
 **Aceite:** identificador anexado ou desativado depois do cutoff não modifica
 um snapshot anterior; dois identificadores ativos incompatíveis produzem
 lacuna/conflito, não escolha arbitrária.
+
+#### Desenho proposto para T-05B
+
+Os eventos já persistidos `livestock.identifier_attached` e
+`livestock.identifier_deactivated` são a primeira fonte candidata. Ambos são
+append-only, encadeados no fluxo do agregado `animal`, e preservam
+`occurred_at` e `recorded_at`. Portanto, este corte **não** cria por enquanto
+uma tabela de lifecycle, não altera `animal_identifiers` e não usa o agregado
+`Animal` atual para reconstruir identidade.
+
+Será criado, somente no Livestock Application, um leitor puro de identidade
+temporal com uma porta de leitura `DomainEventReader` já existente. Para o
+animal e Organization solicitados, ele:
+
+1. lê o fluxo `animal` ordenado por `aggregate_version`;
+2. aceita somente eventos de esquema e versão conhecidos, com payload canônico
+   válido e `animal_id` igual ao alvo;
+3. seleciona eventos cujo `occurred_at <= reference_time` **e**
+   `recorded_at <= knowledge_cutoff`;
+4. aplica `identifier_attached` e `identifier_deactivated` em ordem de versão;
+5. devolve somente identificadores ativos no instante solicitado, com IDs dos
+   eventos-fonte e limites de conhecimento preservados.
+
+O evento usa dois eixos distintos: `attached_at`/`deactivated_at` do payload
+define a validade declarada do identificador; `recorded_at` do evento é o
+conhecimento demonstrável do Titan. Um evento ocorrido no passado, mas gravado
+depois do cutoff, não participa da reprodução. O leitor não promove
+`recorded_at` a `known_at` novo: ele o expõe como a base de conhecimento do
+evento, conforme o contrato `RecordTimestamps` já existente.
+
+Falha fechada é obrigatória. Payload inválido, versão desconhecida, evento de
+desativação sem anexação anteriormente elegível, identificador reanexado de
+forma incompatível, dois identificadores ativos do mesmo tipo ou conflito entre
+tempo do evento e tempo declarado não serão arbitrariamente resolvidos. O
+leitor devolverá lacuna/limitação determinística; o `LivestockFactProvider` só
+poderá emitir um fato de identidade quando a seleção estiver íntegra. O fato
+não substituirá nem reinterpretará o fato de permanência do T-05A.
+
+**Fora de escopo deste corte:** busca operacional por identificador, alteração
+dos endpoints de Animal, migração/backfill da tabela atual, identificação em
+fontes externas, birth data/breed/sex, Policy de mercado e qualquer Decision ou
+Dossier já persistido.
+
+**Matriz mínima de teste para eventual implementação:** duas Organizations;
+anexação T0 conhecida em T0; desativação válida em T2; cutoff T1 que ainda vê
+o identificador; evento retroativo ocorrido antes de T1, mas registrado em T2,
+que só aparece em cutoff >= T2; desativação sem anexação; dois ativos do mesmo
+tipo; payload/schema desconhecido; e prova de que a tabela `animal_identifiers`
+atual não é consultada pelo leitor histórico.
 
 ### T-05C — Tratamentos locais, correções e campanhas
 
@@ -139,6 +196,10 @@ como evidência de estado histórico.
    T0 (válido), T1 (cutoff) e T2 (mudança ou conhecimento posterior).
 10. Nenhum corte desta ADR autoriza mercado real, reconhecimento externo ou
     alteração de `Decision`/`Dossier` históricos.
+11. Uma reconstrução histórica pode conter menos fatos que a leitura atual; isso
+    é conhecimento demonstrável menor, não perda de informação.
+12. `reference_time` responde quando o estado é perguntado;
+    `knowledge_cutoff` limita o conhecimento que pode participar da resposta.
 
 ## Alternativas rejeitadas
 

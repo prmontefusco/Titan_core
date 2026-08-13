@@ -273,6 +273,9 @@ class LivestockFactProvider(FactProviderPort):
                 payload={
                     "property_id": latest.destination_property_id.value.hex,
                     "source_movement_id": latest.movement_id.value.hex,
+                    "supporting_movement_ids": [
+                        movement.movement_id.value.hex for movement in movements
+                    ],
                     "movement_time": latest.movement_time.isoformat(),
                     "derivation": "APPEND_ONLY_MOVEMENT_SEQUENCE_V1",
                 },
