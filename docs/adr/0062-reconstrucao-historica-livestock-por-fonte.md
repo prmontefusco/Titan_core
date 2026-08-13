@@ -182,6 +182,48 @@ todas as contribuições utilizadas forem temporalmente elegíveis.
 avaliação anterior; alteração de campanha não reescreve fotografia já emitida;
 ausência de trilha de supersession mantém indeterminação.
 
+#### Desenho proposto para T-05C
+
+O corte será dividido para não esconder dependências temporais sob um cálculo de
+carência aparentemente simples.
+
+**T-05C1 — seleção de aplicações locais e correções.** `TreatmentApplication`
+é append-only; `applied_at` é o tempo válido da aplicação e `created_at` é o
+tempo de registro preservado. O seletor temporal considerará somente
+aplicações com `applied_at <= reference_time` e `created_at <= knowledge_cutoff`.
+`created_at` será tratado como limite de registro demonstrável, nunca renomeado
+para `known_at`. Uma correção elegível só suprime a aplicação corrigida quando
+ela própria já era elegível no cutoff; correção posterior não reescreve o
+snapshot anterior. Cadeia cíclica, correção estrangeira, múltiplas correções
+incompatíveis ou referência ausente produzem limitação, não escolha de versão.
+
+**T-05C2 — material farmacológico e cálculo de carência.** A seleção de uma
+aplicação não autoriza ainda uma conclusão de carência. Para cada aplicação
+efetiva, lote de medicamento, medicamento e `withdrawal_period_days` precisam
+possuir registro temporalmente elegível e proveniência preservada. Enquanto o
+contrato de imutabilidade/registro desses materiais não for provado na mesma
+seleção, o resultado é `INDETERMINATE`; `WithdrawalCalculator` atual, que relê
+repositórios de medicamento/batch atuais, não será usado para reprodução
+histórica.
+
+**T-05C3 — campanhas sanitárias.** `SanitaryCampaign` hoje só registra criação
+e não possui correção, revogação ou supersession. Poderá contribuir apenas como
+registro de campanha criada até o cutoff e com intervalo declarado compatível;
+qualquer alteração futura exige versão append-only explícita antes de poder
+reconstruir passado. A fronteira `[starts_at, ends_at)` será aplicada no novo
+seletor; o método legado inclusivo não define a semântica histórica.
+
+Todos os subcortes preservam IDs e digests das fontes selecionadas. Nenhum deles
+altera aplicações existentes, cria backfill, expõe API ou promove registro local
+sem admissibilidade suficiente a prova de mercado.
+
+**Matriz mínima antes de implementação:** aplicação T0 registrada T2; correção
+ocorrida/registrada após cutoff que não suprime original; correção retroativa
+conhecida depois; múltiplas correções do mesmo original; batch ou medicamento
+criado depois do cutoff; prazo ausente/conflitante; campanha no limite final;
+campanha alterada sem supersession; duas Organizations e preservação do snapshot
+anterior.
+
 ### T-05D — Territorialidade versionada
 
 Antes de usar PRODES, DETER, FUNAI, embargo ou geometrias em avaliação
