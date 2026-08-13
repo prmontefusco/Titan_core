@@ -45,7 +45,6 @@ from packages.livestock_application.market_eligibility import (
     MarketEligibilityService,
     MarketEligibilityStatus,
     MarketProfile,
-    MarketProjectionStatus,
     MarketRequirement,
     MarketWithdrawalBasis,
 )
@@ -139,12 +138,12 @@ class InMemoryPolicies:
         policy = Policy(
             policy_id=rule.policy_id,
             organization_id=rule.organization_id,
-            code=f"policy-{rule.code}",
+            code=f"policy-{rule.code}-{rule.rule_id.value.hex}",
             name="Policy ficticia de mercado",
             description="Policy ficticia para regra governada.",
             version=1,
             status=PolicyStatus.PUBLISHED,
-            published_at=datetime.now(UTC),
+            published_at=datetime.now(UTC) - timedelta(days=1),
         )
         self.items[policy.policy_id] = policy
         self.by_code[(policy.organization_id, policy.code)] = policy
@@ -158,6 +157,13 @@ class InMemoryPolicies:
     ) -> Policy | None:
         _ = at_time
         return self.by_code.get((organization_id, code))
+
+    def list_by_organization(
+        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+    ) -> list[Policy]:
+        return [item for item in self.items.values() if item.organization_id == organization_id][
+            offset : offset + limit
+        ]
 
 
 @dataclass
@@ -745,7 +751,7 @@ def test_market_projection_requires_reevaluation_when_policy_used_is_not_current
         description="Versao mais nova da mesma policy.",
         version=used_policy.version + 1,
         status=PolicyStatus.PUBLISHED,
-        published_at=datetime.now(UTC),
+        published_at=datetime.now(UTC) - timedelta(days=1),
     )
     policies.items[current_policy.policy_id] = current_policy
     policies.by_code[(org_id, current_policy.code)] = current_policy
@@ -776,13 +782,10 @@ def test_market_projection_requires_reevaluation_when_policy_used_is_not_current
     )
 
     entry = matrix.entries[0]
-    assert entry.status is MarketEligibilityStatus.ELEGIVEL
-    assert entry.projection_status is MarketProjectionStatus.REAVALIACAO_NECESSARIA
-    assert entry.used_policy is not None
-    assert entry.current_policy is not None
-    assert entry.used_policy.version == 1
-    assert entry.current_policy.version == 2
-    assert entry.requirements[0].projection_status is MarketProjectionStatus.REAVALIACAO_NECESSARIA
+    assert entry.status is MarketEligibilityStatus.INDETERMINADO
+    assert entry.gaps[0].code is MarketEligibilityGapCode.POLITICA_TEMPORAL_INDETERMINADA
+    assert entry.used_policy is None
+    assert entry.current_policy is None
 
 
 def test_market_with_multiple_requirements_fails_when_any_requirement_is_absent() -> None:

@@ -16,6 +16,12 @@ from packages.core_application.evaluation_service import (
     RuleEvaluationEngine,
 )
 from packages.core_application.fact_service import FactProviderPort
+from packages.core_application.policy_temporal_selection import (
+    PolicySelectionOutcome,
+    PolicySelectionRequest,
+    PolicyTemporalCandidate,
+    PolicyTemporalResolver,
+)
 from packages.core_domain.decision import Decision, DecisionReason, DecisionResult
 from packages.core_domain.decision_governance import (
     DecisionAuthorityProfile,
@@ -86,6 +92,7 @@ class MarketEligibilityGapCode(Enum):
     AVALIADOR_DE_REQUISITO_AUSENTE = "AVALIADOR_DE_REQUISITO_AUSENTE"
     CARENCIA_POR_MERCADO_AUSENTE = "CARENCIA_POR_MERCADO_AUSENTE"
     DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO = "DEPENDENCIA_DE_SUJEITO_NAO_ESCOLHIDO"
+    POLITICA_TEMPORAL_INDETERMINADA = "POLITICA_TEMPORAL_INDETERMINADA"
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +245,10 @@ class MarketPolicyReaderPort(Protocol):
     def get_active_at(
         self, organization_id: OrganizationId, code: str, at_time: datetime
     ) -> Policy | None: ...
+
+    def list_by_organization(
+        self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
+    ) -> list[Policy]: ...
 
 
 class MarketEvaluationRepositoryPort(Protocol):
@@ -878,11 +889,49 @@ class MarketEligibilityService:
                     dependency=dependency,
                     withdrawal_basis=withdrawal_basis,
                 )
-            current_policy = self.policy_reader.get_active_at(
-                organization_id,
-                policy.code,
-                snapshot.as_of,
+            candidates = tuple(
+                PolicyTemporalCandidate(
+                    policy=item,
+                    purpose=market,
+                    known_at=item.published_at,
+                    knowledge_basis="TITAN_INTERNAL_PUBLICATION",
+                )
+                for item in self.policy_reader.list_by_organization(organization_id, limit=1000)
+                if item.code == policy.code and item.published_at is not None
             )
+            selection = PolicyTemporalResolver().resolve(
+                PolicySelectionRequest(
+                    organization_id=organization_id,
+                    policy_code=policy.code,
+                    purpose=market,
+                    reference_time=snapshot.effective_reference_time(),
+                    knowledge_cutoff=snapshot.effective_knowledge_cutoff(),
+                ),
+                candidates,
+            )
+            if selection.outcome is not PolicySelectionOutcome.SELECTED:
+                return MarketRequirementResult(
+                    rule_code=requirement.rule_code,
+                    scope=requirement.scope,
+                    status=MarketEligibilityStatus.INDETERMINADO,
+                    gaps=(
+                        MarketEligibilityGap(
+                            code=MarketEligibilityGapCode.POLITICA_TEMPORAL_INDETERMINADA,
+                            message=(
+                                "Policy aplicável ausente, ambígua ou desconhecida no "
+                                "corte temporal da avaliação."
+                            ),
+                        ),
+                    ),
+                    governed_rule=governed_rule,
+                    adoption=adoption_summary,
+                    rule_version=rule_version,
+                    reasons=(),
+                    dependency=dependency,
+                    withdrawal_basis=withdrawal_basis,
+                )
+            current_policy = selection.selected_policy
+            assert current_policy is not None
             projection_status = _projection_status_from_policies(policy, current_policy)
             evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
                 policy=policy,
