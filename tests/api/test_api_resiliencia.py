@@ -189,15 +189,19 @@ class TestErroInesperadoSanitizado:
 class TestTransacaoPorRequisicao:
     """Ou tudo é gravado, ou nada: registro sem a prova correspondente é pior que nada."""
 
-    def test_falha_no_meio_da_requisicao_desfaz_o_que_ja_havia_sido_gravado(self) -> None:
-        from apps.api.livestock_dependencies import request_connection
+    def test_falha_no_meio_da_requisicao_desfaz_o_que_ja_havia_sido_gravado(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        import apps.api.livestock_dependencies as dependencies
 
         assert DATABASE_URL is not None
         marcador = "titan-teste-rollback"
+        engine = create_engine(DATABASE_URL)
+        monkeypatch.setattr(dependencies, "get_engine", lambda: engine)
 
         # O gerador é a própria dependência: dirigi-lo à mão exercita o
         # `with connection.begin()` real, que é onde o rollback vive.
-        gerador = cast("Generator[Connection, None, None]", request_connection())
+        gerador = cast("Generator[Connection, None, None]", dependencies.request_connection())
         connection = next(gerador)
         # A organização é dona de si mesma (ck_organizations_self_owned).
         connection.execute(
