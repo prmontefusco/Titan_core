@@ -6,6 +6,11 @@
 
 **Aceita em:** 12 de agosto de 2026, para o Corte 2 exclusivamente simulado.
 
+**Adendo aceito em:** 12 de agosto de 2026. O Corte 2B pode preservar uma projeção
+canônica e minimizada de revisão e uma review humana append-only, conforme
+`POST-LIV-03-REVIEW-DP-v1`. A projeção não é resposta bruta nem Evidence; a review
+confirma somente um candidato local e não altera identidade, Facts, coverage ou Policy.
+
 ## Contexto
 
 O Corte 1 do POST-LIV-03 provou, com dados e transporte falsos, que o Titan consegue
