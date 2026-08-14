@@ -177,6 +177,11 @@ export function MarketRuleGovernance(options: Options) {
       </p>
 
       <h3>1. Política (Policy)</h3>
+      <p>
+        Uma política agrupa regras relacionadas — por exemplo, todas as exigências de um mercado
+        ou uma política interna do frigorífico. Toda regra publicada abaixo pertence a uma
+        política.
+      </p>
       {erroPolicies && <p role="alert">{erroPolicies}</p>}
       {policies && policies.length > 0 && (
         <p>
@@ -214,19 +219,28 @@ export function MarketRuleGovernance(options: Options) {
       <p>
         <label htmlFor="novo-policy-codigo">Código</label>
         <br />
+        <small>
+          Identificador estável, minúsculo, sem espaço — não muda depois de criado (ex.:
+          politica-mercado-interno).
+        </small>
+        <br />
         <input
           id="novo-policy-codigo"
           value={novoCodigo}
           onChange={(evento) => setNovoCodigo(evento.target.value)}
+          placeholder="ex.: politica-mercado-interno"
         />
       </p>
       <p>
         <label htmlFor="novo-policy-nome">Nome</label>
         <br />
+        <small>Nome legível, para reconhecer esta política nas listagens.</small>
+        <br />
         <input
           id="novo-policy-nome"
           value={novoNome}
           onChange={(evento) => setNovoNome(evento.target.value)}
+          placeholder="ex.: Política de Mercado Interno"
         />
       </p>
       <button
@@ -239,6 +253,12 @@ export function MarketRuleGovernance(options: Options) {
       {erroPolicyForm && <p role="alert">{erroPolicyForm}</p>}
 
       <h3>2. Modelo de regra (template)</h3>
+      <p>
+        Cada modelo já traz pronta a verificação técnica que ele faz — o <code>fact_type</code> é
+        o dado que o Titan já sabe calcular (carência, embargo ambiental, campanha sanitária
+        etc.) e que a regra vai conferir. Você não escreve isso; só escolhe o modelo e preenche os
+        parâmetros que ele pedir.
+      </p>
       <p>
         <label htmlFor="template-select">Modelo</label>
         <br />
@@ -282,36 +302,66 @@ export function MarketRuleGovernance(options: Options) {
 
       <h3>3. Mercado e identificação</h3>
       <p>
+        Estes campos dizem para qual finalidade a regra vale e como ela vai aparecer depois — não
+        existe uma lista fixa de valores permitidos, você escolhe e reaproveita os mesmos daqui em
+        diante.
+      </p>
+      <p>
         <label htmlFor="market-purpose">Mercado (purpose)</label>
+        <br />
+        <small>
+          Chave que identifica a finalidade — é o valor de <code>market_purpose</code> que depois
+          aparece nas consultas de elegibilidade. Escolha algo estável e reconhecível.
+        </small>
         <br />
         <input
           id="market-purpose"
           value={marketPurpose}
           onChange={(evento) => setMarketPurpose(evento.target.value)}
-          placeholder="ex.: exportacao-china"
+          placeholder="ex.: mercado-interno, exportacao-china"
         />
       </p>
       <p>
         <label htmlFor="adoption-scope">Escopo de adoção</label>
         <br />
+        <small>
+          Sobre qual tipo de sujeito a regra atua. Hoje só existe{' '}
+          <code>livestock.animal</code> (nível do animal individual) — deixe como está, a menos
+          que o modelo escolhido acima peça outro.
+        </small>
+        <br />
         <input
           id="adoption-scope"
           value={adoptionScope}
           onChange={(evento) => setAdoptionScope(evento.target.value)}
+          placeholder="livestock.animal"
         />
       </p>
       <p>
         <label htmlFor="regra-nome">Nome da regra</label>
         <br />
-        <input id="regra-nome" value={nome} onChange={(evento) => setNome(evento.target.value)} />
+        <small>Nome legível — aparece no dossiê e nas telas de elegibilidade.</small>
+        <br />
+        <input
+          id="regra-nome"
+          value={nome}
+          onChange={(evento) => setNome(evento.target.value)}
+          placeholder="ex.: Carência farmacológica — Mercado Interno"
+        />
       </p>
       <p>
         <label htmlFor="fonte-normativa">Fonte normativa</label>
+        <br />
+        <small>
+          De onde vem a exigência — lei, instrução normativa, protocolo do frigorífico ou política
+          interna. Texto livre; aparece no dossiê como justificativa.
+        </small>
         <br />
         <input
           id="fonte-normativa"
           value={normativeSource}
           onChange={(evento) => setNormativeSource(evento.target.value)}
+          placeholder="ex.: Instrução Normativa MAPA nº X, ou 'Política interna do frigorífico'"
         />
       </p>
 
@@ -334,6 +384,10 @@ export function MarketRuleGovernance(options: Options) {
             </dd>
             <dt>Condições</dt>
             <dd>
+              <small>
+                O que o Titan vai conferir de fato. Sem frase explicativa pronta, aparece o
+                formato técnico: fato.campo operador valor-esperado.
+              </small>
               <ul>
                 {previa.version.conditions.map((condicao, indice) => (
                   <li key={indice}>
