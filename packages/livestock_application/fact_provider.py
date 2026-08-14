@@ -43,6 +43,10 @@ from packages.livestock_application.temporal_identifier import (
     TEMPORAL_IDENTIFIER_FACT_TYPE,
     TemporalAnimalIdentifierReader,
 )
+from packages.livestock_application.temporal_territorial_capture import (
+    TemporalTerritorialCaptureReader,
+    facts_from_temporal_territorial_selection,
+)
 from packages.livestock_application.temporal_treatment import (
     TEMPORAL_TREATMENT_HISTORY_FACT_TYPE,
     TemporalTreatmentApplicationReader,
@@ -178,6 +182,7 @@ class LivestockFactProvider(FactProviderPort):
     temporal_treatment_reader: TemporalTreatmentApplicationReader | None = None
     temporal_withdrawal_reader: TemporalWithdrawalReader | None = None
     temporal_campaign_reader: TemporalSanitaryCampaignReader | None = None
+    temporal_territorial_capture_reader: TemporalTerritorialCaptureReader | None = None
 
     def get_snapshot_with_temporal_context(
         self,
@@ -241,6 +246,15 @@ class LivestockFactProvider(FactProviderPort):
             )
             if movement_stay_fact is not None:
                 facts.append(movement_stay_fact)
+                territorial_facts, territorial_limitation = self._temporal_territorial_facts(
+                    organization_id,
+                    TypedId.parse("rural_property", movement_stay_fact.payload["property_id"]),
+                    reference_time=reference_time,
+                    knowledge_cutoff=knowledge_cutoff,
+                )
+                facts.extend(territorial_facts)
+                if territorial_limitation is not None:
+                    limitations.append(territorial_limitation)
             if movement_limitation is not None:
                 limitations.append(movement_limitation)
 
@@ -444,6 +458,26 @@ class LivestockFactProvider(FactProviderPort):
             ),
             None,
         )
+
+    def _temporal_territorial_facts(
+        self,
+        organization_id: OrganizationId,
+        property_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> tuple[tuple[Fact, ...], str | None]:
+        if self.temporal_territorial_capture_reader is None:
+            return (), "LIVESTOCK_TEMPORAL_TERRITORIAL_CAPTURE_SOURCE_UNAVAILABLE"
+        selection = self.temporal_territorial_capture_reader.select(
+            organization_id,
+            property_id,
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+        )
+        if selection.limitation is not None:
+            return (), selection.limitation.value
+        return facts_from_temporal_territorial_selection(selection), None
 
     def _temporal_withdrawal_fact(
         self,

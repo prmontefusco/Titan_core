@@ -350,3 +350,18 @@ conta dentro da fronteira semiaberta `[starts_at, ends_at)`; ausência de
 aplicação elegível produz `INDETERMINADA`, nunca afirmação negativa de que o
 animal não foi tratado. Nenhuma migration, API, mercado real ou alteração de
 Decision/Dossier foi introduzida.
+
+**T-05D Corte 1 concluído em 14 de agosto de 2026.** A primeira reconstrução
+territorial histórica usa somente fonte sintética `TERRITORIAL_TEST_SOURCE`.
+`TerritorialSourceCapture` preserva propriedade, geometria/versionamento,
+camada, operação, escopo, resumo canonizado, digest, versões da fonte,
+`captured_at`, `known_at` e limitações. `TemporalTerritorialCaptureReader`
+seleciona capturas por `reference_time` e `knowledge_cutoff`; captura posterior,
+conhecimento posterior, intervalo inválido ou múltiplas capturas para o mesmo
+escopo falham fechados. O `LivestockFactProvider` emite os fatos
+`livestock.territorial.test_timeline` e `livestock.territorial.test_overlap`
+somente quando a propriedade do animal já foi derivada temporalmente por
+movimentos, preservando IDs/digests da captura e sem consultar PRODES, DETER,
+FUNAI, IBAMA ou geodados atuais. Ausência de captura elegível vira limitação, não
+`SEM_RESTRICAO`. Nenhuma migration, API, fonte real, mercado real ou alteração
+de Decision/Dossier foi introduzida.

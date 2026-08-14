@@ -1,7 +1,7 @@
 # T-05D — Territorialidade versionada e captura histórica
 
 **Data:** 14 de agosto de 2026  
-**Estado:** PROPOSTO — aguardando revisão humana antes de código  
+**Estado:** CORTE 1 IMPLEMENTADO — persistência/API/fontes reais permanecem fora  
 **Escopo:** Titan Livestock; reconstrução histórica territorial da ADR-0062  
 **Relacionadas:** ADR-0026, ADR-0041, ADR-0052, ADR-0058, ADR-0062
 
@@ -209,3 +209,23 @@ Antes de código do Corte 1, confirmar:
    normativa;
 4. ausência de captura elegível deverá resultar em indeterminação/lacuna;
 5. nenhum adapter real ou migration será criado no primeiro corte.
+
+## Registro de execução do Corte 1
+
+Implementado em 14 de agosto de 2026 com fonte exclusivamente sintética
+`TERRITORIAL_TEST_SOURCE`.
+
+Entregas:
+
+- `TerritorialSourceCapture` como fotografia territorial imutável em memória;
+- `TemporalTerritorialCaptureReader` com seleção por `reference_time` e
+  `knowledge_cutoff`;
+- facts sintéticos `livestock.territorial.test_timeline` e
+  `livestock.territorial.test_overlap`;
+- integração opcional no `LivestockFactProvider` temporal estrito, usando somente
+  propriedade derivada por movimentos;
+- testes artificiais para posterioridade, cutoff, conflito, ausência e
+  preservação de IDs/digests no snapshot.
+
+Permanecem fora: migration, API pública, fonte real, adapter geodados,
+Market Eligibility real, Dossier, VerificationBundle e alteração de Decisions.
