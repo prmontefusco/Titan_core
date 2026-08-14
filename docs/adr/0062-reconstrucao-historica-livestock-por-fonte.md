@@ -377,3 +377,14 @@ geometria, constraints de perfil/camada/digest/intervalo e RLS somente para
 mantém a seleção temporal do Corte 1 via `TemporalTerritorialCaptureReader`.
 Continuam fora API pública, fonte real, adapter geodados, mercado real, Dossier,
 VerificationBundle e alteração de Decisions.
+
+**T-05D Corte 3 concluído em 14 de agosto de 2026.** O adapter
+`SyntheticTerritorialCaptureAdapter` normaliza payloads controlados dos perfis
+`PRODES_LIKE_TIMELINE`, `DETER_LIKE_TIMELINE`, `FUNAI_LIKE_OVERLAP` e
+`IBAMA_LIKE_OVERLAP` em `TerritorialSourceCapture`, reaproveitando o contrato
+sintético persistido sem consultar fonte oficial. O adapter preserva digest
+canônico de escopo, `response_digest` versionado, `known_at` explícito,
+`source_valid_from/to` apenas como semântica declarada pela fonte,
+`source_version_ids` sem invenção de versão e limitações obrigatórias de fonte
+sintética. Continua fora qualquer conclusão normativa, fonte real, API pública,
+mercado real, Dossier, VerificationBundle ou alteração de Decisions.

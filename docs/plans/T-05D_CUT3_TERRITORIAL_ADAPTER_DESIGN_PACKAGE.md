@@ -1,7 +1,7 @@
 # T-05D Corte 3 — Adapter territorial sintético-realista
 
 **Data:** 14 de agosto de 2026
-**Estado:** PROPOSTO — aguardando revisão antes de código
+**Estado:** IMPLEMENTADO em 14 de agosto de 2026 — adapter sintético-realista sem API pública
 **Escopo:** Titan Livestock; ADR-0062; continuidade do T-05D Corte 1/2
 **Pré-requisitos concluídos:** captura territorial sintética em memória e persistência append-only em `core_audit.territorial_source_captures`
 
@@ -278,3 +278,25 @@ API interna/controlada + roteiro apps/validacao + seed fictício
 
 Esse corte permitiria ensaio manual durante o frontend sem ainda afirmar mercado
 real ou integração oficial.
+
+## Registro de execução do Corte 3
+
+Implementado em 14 de agosto de 2026 sem fonte oficial e sem API pública.
+
+Entregas:
+
+- `SyntheticTerritorialCaptureAdapter`, em `packages/livestock_application`,
+  normalizando payloads controlados em `TerritorialSourceCapture`;
+- perfis sintético-realistas `PRODES_LIKE_TIMELINE`,
+  `DETER_LIKE_TIMELINE`, `FUNAI_LIKE_OVERLAP` e `IBAMA_LIKE_OVERLAP`;
+- digest canônico de `request_scope` independente da ordem de chaves;
+- `response_digest` preservado pelo contrato canônico versionado já aprovado;
+- `known_at` explícito e independente de `source_valid_from/to`;
+- limitações obrigatórias de fonte sintética, ausência de reconhecimento externo,
+  bytes brutos não preservados e acurácia geométrica não reavaliada;
+- ausência de versão de fonte tratada como limitação, sem inventar versão;
+- round-trip PostgreSQL de captura criada pelo adapter.
+
+Permanecem fora: PRODES, DETER, FUNAI, IBAMA, MapBiomas ou provider real; HTTP
+client externo; secrets; API pública; roteiro manual em `apps/validacao`; Market
+Eligibility real; Policy, Evaluation, Decision, Dossier e VerificationBundle.

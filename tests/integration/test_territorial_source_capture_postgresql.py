@@ -13,6 +13,11 @@ from packages.core_infrastructure.persistence import set_local_organization_cont
 from packages.livestock_application.temporal_territorial_capture import (
     TemporalTerritorialCaptureReader,
 )
+from packages.livestock_application.territorial_adapter import (
+    SyntheticTerritorialAdapterProfile,
+    SyntheticTerritorialCaptureAdapter,
+    SyntheticTerritorialCaptureRequest,
+)
 from packages.livestock_domain.geometry import (
     CAMADA_PERIMETRO,
     SRID_CANONICO,
@@ -179,6 +184,51 @@ def test_territorial_capture_roundtrip_preserves_canonical_contract(
     assert found[0].limitations == ("SYNTHETIC_TEST_SOURCE",)
     assert selection.limitation is None
     assert [item.capture_id for item in selection.captures] == [capture.capture_id]
+
+
+def test_synthetic_realistic_adapter_capture_roundtrip(
+    ambiente: Ambiente,
+) -> None:
+    connection = ambiente.connection
+    organization_id = ambiente.org_a.organization_id
+    property_id = _property_for_organization(connection, organization_id)
+    geometry = _geometry(connection, organization_id, property_id)
+    request = SyntheticTerritorialCaptureRequest(
+        organization_id=organization_id,
+        property_id=property_id,
+        geometry_id=geometry.geometry_id,
+        geometry_version=geometry.version,
+        profile=SyntheticTerritorialAdapterProfile.FUNAI_LIKE_OVERLAP,
+        request_scope={
+            "property_id": property_id.value.hex,
+            "geometry_id": geometry.geometry_id.value.hex,
+            "geometry_version": geometry.version,
+            "layer": "FUNAI_LIKE",
+            "operation": "OVERLAP",
+        },
+        response_payload={
+            "feature_count": 1,
+            "property_area_hectares": 1000.0,
+            "overlap_area_hectares": 42.0,
+            "source_version_ids": ["FUNAI_TEST_2026_V1"],
+        },
+        captured_at=datetime(2026, 3, 1, tzinfo=UTC),
+        known_at=datetime(2026, 3, 2, tzinfo=UTC),
+        recorded_at=datetime(2026, 3, 2, tzinfo=UTC),
+    )
+    capture = SyntheticTerritorialCaptureAdapter().capture(request)
+    repository = TransactionalTerritorialSourceCaptureRepository(connection)
+    set_local_organization_context(connection, organization_id)
+
+    repository.save(capture)
+    found = repository.list_by_property(organization_id, property_id)
+
+    assert len(found) == 1
+    assert found[0].capture_id == capture.capture_id
+    assert found[0].response_summary["profile"] == "FUNAI_LIKE_OVERLAP"
+    assert found[0].response_summary["overlap_area_hectares"] == 42.0
+    assert found[0].source_version_ids == ("FUNAI_TEST_2026_V1",)
+    assert "NO_EXTERNAL_RECOGNITION_ASSERTED" in found[0].limitations
 
 
 def test_territorial_capture_rls_is_select_insert_only_for_tenant_role(
