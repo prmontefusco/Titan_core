@@ -91,6 +91,7 @@ from packages.livestock_application.market_eligibility import (
     MarketEligibilityService,
     MarketProfile,
 )
+from packages.livestock_application.temporal_campaign import TemporalSanitaryCampaignReader
 from packages.livestock_application.temporal_identifier import TemporalAnimalIdentifierReader
 from packages.livestock_application.temporal_treatment import TemporalTreatmentApplicationReader
 from packages.livestock_application.temporal_withdrawal import TemporalWithdrawalReader
@@ -509,6 +510,10 @@ def _eligibility_components(
             ),
             batch_repository=batch_repository,
             medication_repository=TransactionalMedicationRepository(connection=connection),
+            event_reader=DomainEventRepository(connection=connection),
+        ),
+        temporal_campaign_reader=TemporalSanitaryCampaignReader(
+            campaign_repository=TransactionalSanitaryCampaignRepository(connection=connection),
             event_reader=DomainEventRepository(connection=connection),
         ),
         withdrawal_calculator=WithdrawalCalculator(

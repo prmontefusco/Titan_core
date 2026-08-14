@@ -336,3 +336,17 @@ medicamento comprovado, não do `WithdrawalCalculator` de leitura atual; lote,
 medicamento, eventos e digests integram a proveniência do fato
 `livestock.withdrawal`. Material posterior, evento ausente/ambíguo ou divergência
 entre registro e evento produzem limitação explícita, sem conclusão de carência.
+
+**T-05C3 concluído em 14 de agosto de 2026.** Campanhas sanitárias passam a ser
+fonte histórica limitada somente quando o registro atual coincide com um evento
+canônico único `sanitary_campaign_registered`, criado até `knowledge_cutoff` e
+já iniciado em `reference_time`. Sem lifecycle de alteração, revogação ou
+supersession, divergência entre registro e evento remove a campanha da seleção
+histórica em vez de reinterpretar o passado. O `LivestockFactProvider` emite o
+fato `livestock.sanitary_requirement.<code>` com derivação
+`TEMPORAL_SANITARY_CAMPAIGN_V1`, IDs e digests da campanha e, quando houver
+atendimento comprovado, da aplicação selecionada pelo T-05C1. A aplicação só
+conta dentro da fronteira semiaberta `[starts_at, ends_at)`; ausência de
+aplicação elegível produz `INDETERMINADA`, nunca afirmação negativa de que o
+animal não foi tratado. Nenhuma migration, API, mercado real ou alteração de
+Decision/Dossier foi introduzida.

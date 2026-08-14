@@ -38,6 +38,7 @@ from packages.livestock_application.sanitary_test_coverage import (
     SanitaryTestACoverageService,
     TreatmentMaterialSource,
 )
+from packages.livestock_application.temporal_campaign import TemporalSanitaryCampaignReader
 from packages.livestock_application.temporal_identifier import (
     TEMPORAL_IDENTIFIER_FACT_TYPE,
     TemporalAnimalIdentifierReader,
@@ -176,6 +177,7 @@ class LivestockFactProvider(FactProviderPort):
     temporal_identifier_reader: TemporalAnimalIdentifierReader | None = None
     temporal_treatment_reader: TemporalTreatmentApplicationReader | None = None
     temporal_withdrawal_reader: TemporalWithdrawalReader | None = None
+    temporal_campaign_reader: TemporalSanitaryCampaignReader | None = None
 
     def get_snapshot_with_temporal_context(
         self,
@@ -274,6 +276,15 @@ class LivestockFactProvider(FactProviderPort):
                 facts.append(withdrawal_fact)
             if withdrawal_limitation is not None:
                 limitations.append(withdrawal_limitation)
+
+            facts.extend(
+                self._temporal_campaign_facts(
+                    organization_id,
+                    target_id,
+                    reference_time=reference_time,
+                    knowledge_cutoff=knowledge_cutoff,
+                )
+            )
 
         return FactSnapshot.create(
             organization_id=organization_id,
@@ -494,6 +505,67 @@ class LivestockFactProvider(FactProviderPort):
             ),
             None,
         )
+
+    def _temporal_campaign_facts(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> list[Fact]:
+        if self.temporal_campaign_reader is None or self.temporal_treatment_reader is None:
+            return []
+        treatments = self.temporal_treatment_reader.select(
+            organization_id,
+            animal_id,
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+        )
+        facts: list[Fact] = []
+        for source in self.temporal_campaign_reader.list_applicable(
+            organization_id,
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+        ):
+            application = None
+            if treatments.limitation is None:
+                application = next(
+                    (
+                        item
+                        for item in treatments.effective_applications
+                        if item.application.sanitary_campaign_id == source.campaign.campaign_id
+                        and source.campaign.starts_at <= item.application.applied_at
+                        and item.application.applied_at < source.campaign.ends_at
+                    ),
+                    None,
+                )
+            facts.append(
+                Fact.create(
+                    fact_type=sanitary_requirement_fact_type(source.campaign.code),
+                    payload={
+                        "status": "ATENDIDA" if application is not None else "INDETERMINADA",
+                        "campaign_id": source.campaign.campaign_id.value.hex,
+                        "campaign_event_id": source.event_id.value.hex,
+                        "campaign_payload_digest": source.payload_digest,
+                        "application_id": (
+                            None
+                            if application is None
+                            else application.application.application_id.value.hex
+                        ),
+                        "application_event_id": (
+                            None if application is None else application.event_id.value.hex
+                        ),
+                        "application_payload_digest": (
+                            None if application is None else application.payload_digest
+                        ),
+                        "derivation": "TEMPORAL_SANITARY_CAMPAIGN_V1",
+                    },
+                    observed_at=source.campaign.starts_at,
+                    recorded_at=source.recorded_at,
+                )
+            )
+        return facts
 
     def get_snapshot(
         self,
