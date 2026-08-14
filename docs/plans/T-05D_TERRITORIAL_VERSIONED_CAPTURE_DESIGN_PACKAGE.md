@@ -145,6 +145,115 @@ Critérios mínimos:
 - `known_at` obrigatório para novas capturas;
 - linhas legadas inexistentes, sem backfill.
 
+### Corte 2 — pacote de implementação proposto
+
+**Estado:** PROPOSTO — aguardando aprovação antes de migration.
+
+O Corte 2 deve persistir exatamente o contrato sintético já provado no Corte 1,
+sem ampliar para fonte real e sem expor API pública. A migration prevista será a
+próxima da cadeia Alembic, criando uma única tabela append-only:
+
+```text
+core_audit.territorial_source_captures
+```
+
+Colunas propostas:
+
+```text
+capture_id uuid primary key
+record_owner_organization_id uuid not null
+property_id uuid not null
+geometry_id uuid not null
+geometry_version integer not null
+source_profile_code varchar(120) not null
+source_environment varchar(40) not null
+source_name varchar(120) not null
+source_layer varchar(120) not null
+kind varchar(40) not null
+operation varchar(80) not null
+request_scope_digest varchar(64) not null
+response_digest varchar(64) not null
+response_summary jsonb not null
+source_version_ids jsonb not null
+source_valid_from timestamptz null
+source_valid_to timestamptz null
+captured_at timestamptz not null
+known_at timestamptz not null
+recorded_at timestamptz not null
+limitations jsonb not null
+```
+
+Constraints mínimas:
+
+- `geometry_version >= 1`;
+- `source_valid_to IS NULL OR source_valid_from IS NULL OR source_valid_to > source_valid_from`;
+- `request_scope_digest` e `response_digest` com 64 caracteres hexadecimais;
+- `source_environment = 'SYNTHETIC'` no Corte 2;
+- `source_profile_code = 'TERRITORIAL_TEST_SOURCE'` no Corte 2;
+- `kind IN ('TIMELINE', 'OVERLAP')`;
+- `(kind, source_layer)` coerente com as camadas sintéticas;
+- FK simples para `core_identity.organizations`;
+- FK composta para `rural_properties` por `(record_owner_organization_id, property_id)`;
+- FK composta para `property_geometries` por
+  `(record_owner_organization_id, geometry_id)`.
+
+Se `property_geometries` ainda não possuir `UNIQUE(record_owner_organization_id,
+geometry_id)`, o Corte 2 deve adicioná-la explicitamente antes da FK composta.
+Essa constraint não muda semântica de dados; apenas torna o tenant owner parte da
+integridade referencial, repetindo o padrão usado no hardening de capturas
+externas da ADR-0058.
+
+RLS:
+
+- habilitar RLS e `FORCE ROW LEVEL SECURITY`;
+- criar uma policy `FOR SELECT USING (...)`;
+- criar uma policy `FOR INSERT WITH CHECK (...)`;
+- não criar policy `FOR ALL`;
+- não criar policy para `UPDATE` ou `DELETE`.
+
+O predicado deve seguir o padrão:
+
+```sql
+record_owner_organization_id =
+NULLIF(current_setting('titan.organization_id', true), '')::uuid
+```
+
+Repositório:
+
+```text
+TransactionalTerritorialSourceCaptureRepository
+```
+
+Responsabilidades:
+
+- `save(capture)`;
+- `list_by_property(organization_id, property_id)`;
+- mapear JSONB de volta para `MappingProxyType`/tuplas imutáveis via domínio;
+- não recalcular nem substituir `known_at`, `captured_at` ou digest;
+- ordenar leitura por `(known_at, captured_at, capture_id)`.
+
+Testes mínimos do Corte 2:
+
+- round-trip PostgreSQL preserva `response_summary`, digest, versões, intervalos,
+  `captured_at`, `known_at`, `recorded_at` e limitações;
+- Organization A não lista captura da Organization B sob RLS;
+- role restrita com grants amplos consegue `SELECT`/`INSERT`, mas `UPDATE` e
+  `DELETE` retornam `rowcount == 0`;
+- FK composta rejeita captura que aponta para propriedade ou geometria de outra
+  Organization;
+- `TemporalTerritorialCaptureReader` usando o repositório PostgreSQL mantém os
+  testes T0/T1/T2 do Corte 1;
+- `alembic check` não detecta divergência após a migration.
+
+Fora de escopo do Corte 2:
+
+- API pública;
+- roteiro manual em `apps/validacao`;
+- adapter PRODES, DETER, FUNAI, IBAMA, MapBiomas ou geodados real;
+- integração com `TerritorialTimelineService` ou `TerritorialOverlapService`
+  atuais;
+- mercado real, Dossier, VerificationBundle ou alteração de Decisions.
+
 ## Corte 3 — Adapters reais
 
 Adapters para PRODES, DETER, FUNAI ou IBAMA só entram depois de um caso real
