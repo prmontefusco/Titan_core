@@ -229,6 +229,14 @@ def test_temporal_snapshot_emits_synthetic_territorial_facts_from_movement_prope
         facts[TEMPORAL_TERRITORIAL_TEST_TIMELINE_FACT_TYPE].payload["response_digest"]
         == timeline.response_digest
     )
+    assert (
+        facts[TEMPORAL_TERRITORIAL_TEST_TIMELINE_FACT_TYPE].payload["response_schema"]
+        == "livestock.territorial.synthetic_capture_response"
+    )
+    assert (
+        facts[TEMPORAL_TERRITORIAL_TEST_TIMELINE_FACT_TYPE].payload["canonicalization_version"]
+        == "TERRITORIAL_RESPONSE_SUMMARY_CANONICAL_JSON_V1"
+    )
     assert facts[TEMPORAL_TERRITORIAL_TEST_OVERLAP_FACT_TYPE].payload["response_summary"] == {
         "has_overlap": False,
         "feature_count": 0,

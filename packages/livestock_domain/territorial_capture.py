@@ -25,6 +25,9 @@ class TerritorialCaptureKind(StrEnum):
 TERRITORIAL_TEST_SOURCE = "TERRITORIAL_TEST_SOURCE"
 TERRITORIAL_TEST_TIMELINE_LAYER = "TERRITORIAL_TEST_TIMELINE"
 TERRITORIAL_TEST_OVERLAP_LAYER = "TERRITORIAL_TEST_OVERLAP"
+TERRITORIAL_RESPONSE_SCHEMA = "livestock.territorial.synthetic_capture_response"
+TERRITORIAL_RESPONSE_SCHEMA_VERSION = 1
+TERRITORIAL_CANONICALIZATION_VERSION = "TERRITORIAL_RESPONSE_SUMMARY_CANONICAL_JSON_V1"
 
 
 def territorial_response_digest(response_summary: Mapping[str, Any]) -> str:
@@ -71,6 +74,9 @@ class TerritorialSourceCapture:
     kind: TerritorialCaptureKind
     operation: str
     request_scope_digest: str
+    response_schema: str
+    response_schema_version: int
+    canonicalization_version: str
     response_digest: str
     response_summary: MappingProxyType[str, Any]
     source_version_ids: tuple[str, ...]
@@ -119,6 +125,12 @@ class TerritorialSourceCapture:
         for name in ("source_name", "source_layer", "operation"):
             if not getattr(self, name).strip():
                 raise ValueError(f"{name} nao pode ser vazio.")
+        if not self.response_schema.strip():
+            raise ValueError("response_schema nao pode ser vazio.")
+        if self.response_schema_version < 1:
+            raise ValueError("response_schema_version deve ser >= 1.")
+        if self.canonicalization_version != TERRITORIAL_CANONICALIZATION_VERSION:
+            raise ValueError("canonicalization_version nao suportada.")
         for name in ("request_scope_digest", "response_digest"):
             digest = getattr(self, name)
             if len(digest) != 64 or any(c not in "0123456789abcdef" for c in digest):
@@ -171,6 +183,9 @@ class TerritorialSourceCapture:
             kind=kind,
             operation=operation,
             request_scope_digest=request_scope_digest,
+            response_schema=TERRITORIAL_RESPONSE_SCHEMA,
+            response_schema_version=TERRITORIAL_RESPONSE_SCHEMA_VERSION,
+            canonicalization_version=TERRITORIAL_CANONICALIZATION_VERSION,
             response_digest=territorial_response_digest(response_summary),
             response_summary=MappingProxyType(dict(response_summary)),
             source_version_ids=source_version_ids,

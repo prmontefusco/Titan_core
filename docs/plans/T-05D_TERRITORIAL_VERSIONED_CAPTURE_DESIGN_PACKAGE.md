@@ -1,7 +1,9 @@
 # T-05D — Territorialidade versionada e captura histórica
 
 **Data:** 14 de agosto de 2026  
-**Estado:** CORTE 1 IMPLEMENTADO — persistência/API/fontes reais permanecem fora  
+**ADR status:** PROPOSTA para a trilha T-05D  
+**T-05D Corte 1:** IMPLEMENTED_AS_EXPERIMENT, com fonte sintética e sem persistência  
+**T-05D Corte 2:** PENDING_APPROVAL após os refinamentos deste documento  
 **Escopo:** Titan Livestock; reconstrução histórica territorial da ADR-0062  
 **Relacionadas:** ADR-0026, ADR-0041, ADR-0052, ADR-0058, ADR-0062
 
@@ -82,6 +84,9 @@ operation
 request_scope_digest
 response_digest
 response_summary
+response_schema
+response_schema_version
+canonicalization_version
 source_version_ids[]
 source_valid_from?
 source_valid_to?
@@ -95,6 +100,27 @@ limitations[]
 `known_at` é quando o Titan pode usar essa captura em reconstrução histórica.  
 `recorded_at` é persistência/auditoria interna.  
 Nenhum desses campos deve ser inferido retroativamente em backfill.
+
+`response_digest` identifica conteúdo sob contrato canônico explicitamente
+versionado: `response_schema`, `response_schema_version` e
+`canonicalization_version` declaram como `response_summary` foi canonizado antes
+do SHA-256. Ele nunca é hash da serialização incidental do JSONB, de uma resposta
+HTTP bruta ou de bytes externos não preservados. Se um adapter futuro precisar
+provar bytes originais da fonte, a captura territorial deverá referenciar um
+SourceArtifact/Document protegido que preserve esses bytes; `response_summary`
+continuará sendo a interpretação estruturada minimizada da captura.
+
+Todo adapter deve declarar como `known_at` é demonstrado. No
+`TERRITORIAL_TEST_SOURCE`, ele é controlado artificialmente pelos testes. Em
+fontes reais, pode coincidir com a resposta de uma consulta síncrona, mas isso
+precisa ser regra do adapter, não conveniência de implementação.
+
+`source_valid_from` e `source_valid_to` representam somente o intervalo temporal
+que a própria fonte/camada afirma que aquele conteúdo descreve, quando essa
+semântica existir. Eles não representam vigência do registro Titan, vigência da
+geometria do imóvel ou versão de dataset por inferência. Se a fonte não declarar
+intervalo de validade, ambos permanecem nulos e a limitação correspondente deve
+ser explícita quando material.
 
 ## Corte 1 — Fonte territorial sintética
 
@@ -157,6 +183,15 @@ próxima da cadeia Alembic, criando uma única tabela append-only:
 core_audit.territorial_source_captures
 ```
 
+Ownership do schema: embora `TerritorialSourceCapture` permaneça conceito
+Livestock e não seja promovido ao Core, o projeto já define em
+`packages/livestock_infrastructure/persistence/metadata.py` que as tabelas da
+vertical vivem fisicamente em `core_audit`, com `titan.module_owner=livestock`.
+Portanto, `core_audit` aqui é armazenamento técnico/auditável compartilhado, não
+generalização conceitual do contrato para o Core. Caso o projeto introduza no
+futuro um schema físico `livestock_audit`, essa tabela é candidata natural a
+migração; isso exigiria ADR/migration própria.
+
 Colunas propostas:
 
 ```text
@@ -172,6 +207,9 @@ source_layer varchar(120) not null
 kind varchar(40) not null
 operation varchar(80) not null
 request_scope_digest varchar(64) not null
+response_schema varchar(160) not null
+response_schema_version integer not null
+canonicalization_version varchar(120) not null
 response_digest varchar(64) not null
 response_summary jsonb not null
 source_version_ids jsonb not null
@@ -188,6 +226,10 @@ Constraints mínimas:
 - `geometry_version >= 1`;
 - `source_valid_to IS NULL OR source_valid_from IS NULL OR source_valid_to > source_valid_from`;
 - `request_scope_digest` e `response_digest` com 64 caracteres hexadecimais;
+- `response_schema` obrigatório e não vazio;
+- `response_schema_version >= 1`;
+- `canonicalization_version = 'TERRITORIAL_RESPONSE_SUMMARY_CANONICAL_JSON_V1'`
+  no Corte 2;
 - `source_environment = 'SYNTHETIC'` no Corte 2;
 - `source_profile_code = 'TERRITORIAL_TEST_SOURCE'` no Corte 2;
 - `kind IN ('TIMELINE', 'OVERLAP')`;
@@ -235,7 +277,11 @@ Responsabilidades:
 Testes mínimos do Corte 2:
 
 - round-trip PostgreSQL preserva `response_summary`, digest, versões, intervalos,
+  `response_schema`, `response_schema_version`, `canonicalization_version`,
   `captured_at`, `known_at`, `recorded_at` e limitações;
+- digest recalculado a partir do contrato canônico versionado de
+  `response_summary` confere com `response_digest`, sem depender da serialização
+  física do JSONB;
 - Organization A não lista captura da Organization B sob RLS;
 - role restrita com grants amplos consegue `SELECT`/`INSERT`, mas `UPDATE` e
   `DELETE` retornam `rowcount == 0`;
