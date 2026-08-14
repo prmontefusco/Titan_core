@@ -316,3 +316,13 @@ validados; ausência, evento inválido ou lifecycle incompatível produzem
 limitação, nunca leitura de `animal_identifiers` atual. O fato resultante
 preserva IDs e digests dos eventos-fonte. Nenhuma migration, API, backfill ou
 alteração de Decision/Dossier foi introduzida.
+
+**T-05C1 concluído em 13 de agosto de 2026.** Aplicações locais e correções são
+selecionadas apenas quando `applied_at <= reference_time`, o registro local e o
+evento canônico `treatment_applied` correspondente existiam até
+`knowledge_cutoff`. Correção temporalmente elegível suprime somente o original
+que ela referencia; correção posterior não altera snapshot anterior. Desativação
+órfã, evento ausente/ambíguo ou cadeia incompatível geram limitação. O fato
+`livestock.treatment_history.local` preserva IDs e digests de evento, mas
+declara `withdrawal_assessment=NOT_CALCULATED_IN_T05C1`: medicamento, batch,
+prazo e campanhas seguem fora deste corte.

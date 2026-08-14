@@ -42,6 +42,10 @@ from packages.livestock_application.temporal_identifier import (
     TEMPORAL_IDENTIFIER_FACT_TYPE,
     TemporalAnimalIdentifierReader,
 )
+from packages.livestock_application.temporal_treatment import (
+    TEMPORAL_TREATMENT_HISTORY_FACT_TYPE,
+    TemporalTreatmentApplicationReader,
+)
 from packages.livestock_application.territorial_overlap_service import (
     PropertyTerritorialOverlapAssessment,
 )
@@ -166,6 +170,7 @@ class LivestockFactProvider(FactProviderPort):
     coverage_contribution_repository: CoverageContributionReaderPort | None = None
     medication_classification_repository: MedicationClassificationRepositoryPort | None = None
     temporal_identifier_reader: TemporalAnimalIdentifierReader | None = None
+    temporal_treatment_reader: TemporalTreatmentApplicationReader | None = None
 
     def get_snapshot_with_temporal_context(
         self,
@@ -242,6 +247,17 @@ class LivestockFactProvider(FactProviderPort):
                 facts.append(identifier_fact)
             if identifier_limitation is not None:
                 limitations.append(identifier_limitation)
+
+            treatment_fact, treatment_limitation = self._temporal_treatment_history_fact(
+                organization_id,
+                target_id,
+                reference_time=reference_time,
+                knowledge_cutoff=knowledge_cutoff,
+            )
+            if treatment_fact is not None:
+                facts.append(treatment_fact)
+            if treatment_limitation is not None:
+                limitations.append(treatment_limitation)
 
         return FactSnapshot.create(
             organization_id=organization_id,
@@ -345,6 +361,59 @@ class LivestockFactProvider(FactProviderPort):
                 # ``created_at`` é o único instante de registro hoje preservado
                 # pelo movimento; não o promovemos a known_at.
                 recorded_at=latest.created_at,
+            ),
+            None,
+        )
+
+    def _temporal_treatment_history_fact(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> tuple[Fact | None, str | None]:
+        if self.temporal_treatment_reader is None:
+            return None, "LIVESTOCK_TREATMENT_HISTORY_SOURCE_UNAVAILABLE"
+        selection = self.temporal_treatment_reader.select(
+            organization_id,
+            animal_id,
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+        )
+        if selection.limitation is not None:
+            return None, selection.limitation.value
+        latest = max(
+            selection.supporting_applications,
+            key=lambda item: (item.application.applied_at, item.recorded_at),
+        )
+        return (
+            Fact.create(
+                fact_type=TEMPORAL_TREATMENT_HISTORY_FACT_TYPE,
+                payload={
+                    "effective_application_ids": [
+                        item.application.application_id.value.hex
+                        for item in selection.effective_applications
+                    ],
+                    "supporting_applications": [
+                        {
+                            "application_id": item.application.application_id.value.hex,
+                            "corrects_application_id": (
+                                None
+                                if item.application.corrects_application_id is None
+                                else item.application.corrects_application_id.value.hex
+                            ),
+                            "applied_at": item.application.applied_at.isoformat(),
+                            "event_id": item.event_id.value.hex,
+                            "payload_digest": item.payload_digest,
+                        }
+                        for item in selection.supporting_applications
+                    ],
+                    "derivation": "TREATMENT_APPLICATION_EVENT_SELECTION_V1",
+                    "withdrawal_assessment": "NOT_CALCULATED_IN_T05C1",
+                },
+                observed_at=latest.application.applied_at,
+                recorded_at=latest.recorded_at,
             ),
             None,
         )
