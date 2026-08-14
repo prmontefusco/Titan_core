@@ -365,3 +365,15 @@ movimentos, preservando IDs/digests da captura e sem consultar PRODES, DETER,
 FUNAI, IBAMA ou geodados atuais. Ausência de captura elegível vira limitação, não
 `SEM_RESTRICAO`. Nenhuma migration, API, fonte real, mercado real ou alteração
 de Decision/Dossier foi introduzida.
+
+**T-05D Corte 2 concluído em 14 de agosto de 2026.** A fotografia territorial
+sintética ganhou persistência append-only em
+`core_audit.territorial_source_captures`, com ownership vertical Livestock,
+contrato canônico explícito (`response_schema`, `response_schema_version` e
+`canonicalization_version`), FKs compostas por Organization para propriedade e
+geometria, constraints de perfil/camada/digest/intervalo e RLS somente para
+`SELECT`/`INSERT`. O repositório PostgreSQL preserva os tempos `captured_at`,
+`known_at` e `recorded_at` sem recalcular digest nem reinterpretar fonte atual, e
+mantém a seleção temporal do Corte 1 via `TemporalTerritorialCaptureReader`.
+Continuam fora API pública, fonte real, adapter geodados, mercado real, Dossier,
+VerificationBundle e alteração de Decisions.

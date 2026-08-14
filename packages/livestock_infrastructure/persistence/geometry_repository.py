@@ -82,6 +82,11 @@ property_geometries_table = Table(
         name="fk_property_geometries_property",
     ),
     UniqueConstraint("property_id", "layer", "version", name="uq_property_geometries_version"),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "geometry_id",
+        name="uq_property_geometries_owner_geometry",
+    ),
     CheckConstraint("version >= 1", name="ck_property_geometries_version"),
     CheckConstraint("source_srid > 0", name="ck_property_geometries_srid"),
     CheckConstraint("char_length(source_digest) = 64", name="ck_property_geometries_digest"),

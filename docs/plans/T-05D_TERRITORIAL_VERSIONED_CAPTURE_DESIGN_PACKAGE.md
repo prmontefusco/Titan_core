@@ -3,7 +3,7 @@
 **Data:** 14 de agosto de 2026  
 **ADR status:** PROPOSTA para a trilha T-05D  
 **T-05D Corte 1:** IMPLEMENTED_AS_EXPERIMENT, com fonte sintética e sem persistência  
-**T-05D Corte 2:** PENDING_APPROVAL após os refinamentos deste documento  
+**T-05D Corte 2:** IMPLEMENTED_APPEND_ONLY_PERSISTENCE, sem API pública e sem fonte real
 **Escopo:** Titan Livestock; reconstrução histórica territorial da ADR-0062  
 **Relacionadas:** ADR-0026, ADR-0041, ADR-0052, ADR-0058, ADR-0062
 
@@ -173,7 +173,7 @@ Critérios mínimos:
 
 ### Corte 2 — pacote de implementação proposto
 
-**Estado:** PROPOSTO — aguardando aprovação antes de migration.
+**Estado:** IMPLEMENTADO em 14 de agosto de 2026 — persistência append-only sintética.
 
 O Corte 2 deve persistir exatamente o contrato sintético já provado no Corte 1,
 sem ampliar para fonte real e sem expor API pública. A migration prevista será a
@@ -382,5 +382,31 @@ Entregas:
 - testes artificiais para posterioridade, cutoff, conflito, ausência e
   preservação de IDs/digests no snapshot.
 
-Permanecem fora: migration, API pública, fonte real, adapter geodados,
+Permanecem fora neste corte: API pública, fonte real, adapter geodados,
 Market Eligibility real, Dossier, VerificationBundle e alteração de Decisions.
+
+## Registro de execução do Corte 2
+
+Implementado em 14 de agosto de 2026 como persistência exclusivamente sintética
+do contrato já provado no Corte 1.
+
+Entregas:
+
+- migration `20260814_0075_create_territorial_source_captures.py`, criando
+  `core_audit.territorial_source_captures`;
+- tabela append-only com RLS explícito somente para `SELECT` e `INSERT`, sem
+  policy `FOR ALL` e sem policy para `UPDATE`/`DELETE`;
+- FKs compostas por `record_owner_organization_id` para propriedade e geometria,
+  impedindo que uma captura aponte para material de outra Organization;
+- constraints de ambiente sintético, perfil `TERRITORIAL_TEST_SOURCE`, camada,
+  operação, digest, canonicalização e intervalo temporal declarado pela fonte;
+- repositório `TransactionalTerritorialSourceCaptureRepository`, preservando
+  `captured_at`, `known_at`, `recorded_at`, digest, versões da fonte,
+  limitações e resumo canonizado;
+- teste PostgreSQL com duas Organizations, role restrita sem `BYPASSRLS`,
+  round-trip, bloqueio efetivo de `UPDATE`/`DELETE`, FK cross-tenant e leitura
+  temporal pelo `TemporalTerritorialCaptureReader`.
+
+Permanecem fora: API pública, roteiro manual em `apps/validacao`, fonte real,
+adapter geodados, Market Eligibility real, Dossier, VerificationBundle e
+alteração de Decisions.

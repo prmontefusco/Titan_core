@@ -46,6 +46,11 @@ rural_properties_table = Table(
         "code",
         name="uq_rural_properties_org_code",
     ),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "property_id",
+        name="uq_rural_properties_owner_property",
+    ),
     ForeignKeyConstraint(
         ["record_owner_organization_id"],
         ["core_identity.organizations.organization_id"],

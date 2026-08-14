@@ -84,6 +84,10 @@ from packages.livestock_infrastructure.persistence.sanitary_campaign_repository 
     TransactionalSanitaryCampaignRepository,
     sanitary_campaigns_table,
 )
+from packages.livestock_infrastructure.persistence.territorial_capture_repository import (
+    TransactionalTerritorialSourceCaptureRepository,
+    territorial_source_captures_table,
+)
 from packages.livestock_infrastructure.persistence.transfer_artifact_repository import (
     TransactionalReceivedTransferArtifactRepository,
     received_transfer_artifacts_table,
@@ -135,6 +139,7 @@ __all__ = [
     "TransactionalPropertyEnvironmentalEmbargoAssertionRepository",
     "TransactionalImportedLivestockFactRepository",
     "TransactionalInternalTestNormativeBasisRepository",
+    "TransactionalTerritorialSourceCaptureRepository",
     "TransactionalPropertyGeometryRepository",
     "TransactionalReproductiveEventRepository",
     "TransactionalSanitaryCampaignRepository",
@@ -176,6 +181,7 @@ __all__ = [
     "establishment_qualifications_table",
     "imported_livestock_facts_table",
     "internal_test_normative_bases_table",
+    "territorial_source_captures_table",
     "treatment_applications_table",
     "received_transfer_artifacts_table",
     "veterinarians_table",
