@@ -326,3 +326,13 @@ que ela referencia; correção posterior não altera snapshot anterior. Desativa
 `livestock.treatment_history.local` preserva IDs e digests de evento, mas
 declara `withdrawal_assessment=NOT_CALCULATED_IN_T05C1`: medicamento, batch,
 prazo e campanhas seguem fora deste corte.
+
+**T-05C2 concluído em 14 de agosto de 2026.** A carência histórica é calculada
+somente a partir das aplicações efetivas do T-05C1 quando o lote e o medicamento
+imutáveis pertencem à mesma Organization, foram registrados até o
+`knowledge_cutoff` e possuem evento canônico de registro único cujo payload
+corresponde integralmente ao material persistido. O prazo é tomado desse
+medicamento comprovado, não do `WithdrawalCalculator` de leitura atual; lote,
+medicamento, eventos e digests integram a proveniência do fato
+`livestock.withdrawal`. Material posterior, evento ausente/ambíguo ou divergência
+entre registro e evento produzem limitação explícita, sem conclusão de carência.

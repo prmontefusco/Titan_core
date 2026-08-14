@@ -163,6 +163,7 @@ def test_retroactive_application_requires_registration_before_cutoff() -> None:
     assert [item.application.application_id for item in after.effective_applications] == [
         application.application_id
     ]
+    assert after.effective_applications[0].recorded_at == application.created_at
 
 
 def test_correction_known_after_cutoff_does_not_suppress_original() -> None:

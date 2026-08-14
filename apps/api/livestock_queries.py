@@ -93,6 +93,7 @@ from packages.livestock_application.market_eligibility import (
 )
 from packages.livestock_application.temporal_identifier import TemporalAnimalIdentifierReader
 from packages.livestock_application.temporal_treatment import TemporalTreatmentApplicationReader
+from packages.livestock_application.temporal_withdrawal import TemporalWithdrawalReader
 from packages.livestock_application.territorial_overlap_service import (
     TerritorialOverlapService,
 )
@@ -499,6 +500,15 @@ def _eligibility_components(
         ),
         temporal_treatment_reader=TemporalTreatmentApplicationReader(
             application_repository=application_repository,
+            event_reader=DomainEventRepository(connection=connection),
+        ),
+        temporal_withdrawal_reader=TemporalWithdrawalReader(
+            treatment_reader=TemporalTreatmentApplicationReader(
+                application_repository=application_repository,
+                event_reader=DomainEventRepository(connection=connection),
+            ),
+            batch_repository=batch_repository,
+            medication_repository=TransactionalMedicationRepository(connection=connection),
             event_reader=DomainEventRepository(connection=connection),
         ),
         withdrawal_calculator=WithdrawalCalculator(

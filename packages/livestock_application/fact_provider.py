@@ -46,6 +46,10 @@ from packages.livestock_application.temporal_treatment import (
     TEMPORAL_TREATMENT_HISTORY_FACT_TYPE,
     TemporalTreatmentApplicationReader,
 )
+from packages.livestock_application.temporal_withdrawal import (
+    TemporalWithdrawalReader,
+    build_temporal_withdrawal_status,
+)
 from packages.livestock_application.territorial_overlap_service import (
     PropertyTerritorialOverlapAssessment,
 )
@@ -171,6 +175,7 @@ class LivestockFactProvider(FactProviderPort):
     medication_classification_repository: MedicationClassificationRepositoryPort | None = None
     temporal_identifier_reader: TemporalAnimalIdentifierReader | None = None
     temporal_treatment_reader: TemporalTreatmentApplicationReader | None = None
+    temporal_withdrawal_reader: TemporalWithdrawalReader | None = None
 
     def get_snapshot_with_temporal_context(
         self,
@@ -258,6 +263,17 @@ class LivestockFactProvider(FactProviderPort):
                 facts.append(treatment_fact)
             if treatment_limitation is not None:
                 limitations.append(treatment_limitation)
+
+            withdrawal_fact, withdrawal_limitation = self._temporal_withdrawal_fact(
+                organization_id,
+                target_id,
+                reference_time=reference_time,
+                knowledge_cutoff=knowledge_cutoff,
+            )
+            if withdrawal_fact is not None:
+                facts.append(withdrawal_fact)
+            if withdrawal_limitation is not None:
+                limitations.append(withdrawal_limitation)
 
         return FactSnapshot.create(
             organization_id=organization_id,
@@ -414,6 +430,67 @@ class LivestockFactProvider(FactProviderPort):
                 },
                 observed_at=latest.application.applied_at,
                 recorded_at=latest.recorded_at,
+            ),
+            None,
+        )
+
+    def _temporal_withdrawal_fact(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+        *,
+        reference_time: datetime,
+        knowledge_cutoff: datetime,
+    ) -> tuple[Fact | None, str | None]:
+        if self.temporal_withdrawal_reader is None:
+            return None, "LIVESTOCK_TEMPORAL_WITHDRAWAL_SOURCE_UNAVAILABLE"
+        selection = self.temporal_withdrawal_reader.select(
+            organization_id,
+            animal_id,
+            reference_time=reference_time,
+            knowledge_cutoff=knowledge_cutoff,
+        )
+        if selection.limitation is not None:
+            return None, selection.limitation.value
+        status = build_temporal_withdrawal_status(animal_id, selection)
+        latest_recorded_at = max(item.recorded_at for item in selection.contributions)
+        contributions = [
+            {
+                "application_id": item.contribution.application_id.value.hex,
+                "application_event_id": item.application_event_id.value.hex,
+                "application_payload_digest": item.application_payload_digest,
+                "medication_batch_id": item.batch_id.value.hex,
+                "batch_event_id": item.batch_event_id.value.hex,
+                "batch_payload_digest": item.batch_payload_digest,
+                "medication_id": item.medication_id.value.hex,
+                "medication_event_id": item.medication_event_id.value.hex,
+                "medication_payload_digest": item.medication_payload_digest,
+                "applied_at": item.contribution.applied_at.isoformat(),
+                "withdrawal_period_days": item.contribution.withdrawal_period_days,
+                "withdrawal_ends_at": item.contribution.withdrawal_ends_at.isoformat(),
+                "origin": "LOCAL_TEMPORAL_RECONSTRUCTION",
+            }
+            for item in selection.contributions
+        ]
+        return (
+            Fact.create(
+                fact_type=WITHDRAWAL_FACT_TYPE,
+                payload={
+                    "in_withdrawal": status.is_in_withdrawal_at(reference_time),
+                    "eligible_from": (
+                        None if status.eligible_from is None else status.eligible_from.isoformat()
+                    ),
+                    "rule_version": status.rule_version,
+                    "blocking_batches": [
+                        item.batch_id.value.hex
+                        for item in selection.contributions
+                        if item.contribution.withdrawal_ends_at > reference_time
+                    ],
+                    "contributions": contributions,
+                    "derivation": "TEMPORAL_TREATMENT_MATERIAL_V1",
+                },
+                observed_at=max(item.contribution.applied_at for item in selection.contributions),
+                recorded_at=latest_recorded_at,
             ),
             None,
         )

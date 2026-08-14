@@ -71,7 +71,10 @@ class TemporalTreatmentApplicationReader:
                     application=application,
                     event_id=event.event_id,
                     payload_digest=event.payload_digest,
-                    recorded_at=event.recorded_at,
+                    # A aplicação e seu evento são evidências independentes: o
+                    # fato derivado só pode dizer que era conhecido quando ambas
+                    # já estavam registradas.
+                    recorded_at=max(application.created_at, event.recorded_at),
                 )
             )
         if not selected:
