@@ -24,6 +24,7 @@ import { LotSearch } from './pages/LotSearch'
 import { LotDetail } from './pages/LotDetail'
 import { DecisionReview } from './pages/DecisionReview'
 import { MarketRuleGovernance } from './pages/MarketRuleGovernance'
+import { TerritorialCaptureQa } from './pages/TerritorialCaptureQa'
 import titanLogo from './assets/titan-bode.png'
 
 function Brand() {
@@ -60,7 +61,8 @@ function StatusConteudo({
         <nav>
           <Link to="/">Início</Link> | <Link to="/animals">Animais</Link> |{' '}
           <Link to="/lots">Lotes</Link> | <Link to="/admin">Fila de aprovação</Link> |{' '}
-          <Link to="/rule-governance">Regras de mercado</Link>
+          <Link to="/rule-governance">Regras de mercado</Link> |{' '}
+          <Link to="/territorial-capture-qa">QA territorial</Link>
         </nav>
         <Routes>
           <Route path="/" element={<LivestockHome kind={kind} organizationId={organizationId} />} />
@@ -88,6 +90,7 @@ function StatusConteudo({
           />
           <Route path="/review/:proposalId" element={<DecisionReview {...options} />} />
           <Route path="/rule-governance" element={<MarketRuleGovernance {...options} />} />
+          <Route path="/territorial-capture-qa" element={<TerritorialCaptureQa {...options} />} />
           <Route path="/admin" element={<AdminQueue {...options} />} />
         </Routes>
       </>

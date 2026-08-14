@@ -400,3 +400,13 @@ endpoint de leitura expõe apenas metadados aprovados e `response_summary`.
 `apps/validacao/captura_territorial_sintetica.py` executa o fluxo completo com
 dados fictícios. Continuam fora fonte real, `Titan_geodata`, mercado real,
 Policy, Evaluation, Decision, Dossier, VerificationBundle e frontend.
+
+**T-05D Corte 5A concluído em 14 de agosto de 2026.** O frontend passou a
+consumir a API sintética do Corte 4 por uma tela técnica de QA manual
+(`/territorial-capture-qa`). A tela cria uma propriedade fictícia, registra uma
+geometria declarada fixa, produz duas capturas sintéticas controladas
+(`FUNAI_LIKE_OVERLAP` e `PRODES_LIKE_TIMELINE`) e lista somente os metadados
+aprovados e `response_summary`, reforçando que captura territorial sintética não
+é conformidade, autorização externa nem elegibilidade de mercado. Continuam fora
+fonte real, `Titan_geodata`, mapa interativo, edição de payload, Policy,
+Evaluation, Decision, Dossier e VerificationBundle.

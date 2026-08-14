@@ -49,6 +49,10 @@ export function LivestockHome({ kind, organizationId }: Props) {
           <Link to="/rule-governance">Regras de mercado</Link> — publicar política e regra
           governada a partir de um modelo já classificado (NR-5).
         </li>
+        <li>
+          <Link to="/territorial-capture-qa">QA territorial sintético</Link> — criar dados
+          artificiais e conferir a captura territorial sem fonte real nem conclusão normativa.
+        </li>
       </ul>
     </section>
   )
