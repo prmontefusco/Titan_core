@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from sqlalchemy import Connection, text
+from sqlalchemy import Connection, bindparam, text
 
 from apps.seed.keycloak import AdminKeycloak, KeycloakError
 from packages.core_application.policy_authorization import (
@@ -53,6 +53,7 @@ from packages.core_infrastructure.persistence import (
     set_local_organization_context,
 )
 from packages.core_infrastructure.persistence.database import (
+    MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE,
     DatabaseSettings,
     create_database_engine,
 )
@@ -167,6 +168,29 @@ def _identidade_externa(
     return usuario.user_id
 
 
+def _operadora_das_identidades_existentes(
+    connection: Connection,
+    *,
+    issuer: str,
+    subjects: tuple[str, ...],
+) -> OrganizationId | None:
+    query = text(
+        "SELECT DISTINCT record_owner_organization_id "
+        "FROM core_identity.external_identities "
+        "WHERE issuer = :issuer AND subject IN :subjects"
+    ).bindparams(bindparam("subjects", expanding=True))
+    linhas = connection.execute(query, {"issuer": issuer, "subjects": list(subjects)}).fetchall()
+    if not linhas:
+        return None
+    if len(linhas) > 1:
+        raise RuntimeError(
+            "Os usuários de demonstração existentes pertencem a operadoras "
+            "diferentes; limpe o realm/banco local ou defina "
+            "TITAN_OPERATOR_ORGANIZATION_ID explicitamente."
+        )
+    return OrganizationId(linhas[0].record_owner_organization_id)
+
+
 def _vincular(
     connection: Connection,
     *,
@@ -206,7 +230,16 @@ def semear(connection: Connection, *, issuer: str, subs: dict[str, str]) -> Seme
     agora = datetime.now(UTC)
 
     operadora_raw = os.environ.get("TITAN_OPERATOR_ORGANIZATION_ID", "")
-    operadora = OrganizationId.parse(operadora_raw) if operadora_raw else OrganizationId.new()
+    operadora = (
+        OrganizationId.parse(operadora_raw)
+        if operadora_raw
+        else _operadora_das_identidades_existentes(
+            connection,
+            issuer=issuer,
+            subjects=(subs["operador"], subs["auditor"]),
+        )
+        or OrganizationId.new()
+    )
     organizacoes = {"operadora": operadora, "a": OrganizationId.new(), "b": OrganizationId.new()}
     for identificador in organizacoes.values():
         set_local_organization_context(connection, identificador)
@@ -297,6 +330,10 @@ def _roteiro(semeado: Semeado, keycloak_url: str) -> str:
     org_a = semeado.org_a.value
     org_b = semeado.org_b.value
     propriedade = semeado.property_id.value
+    runtime_database_url = os.environ.get(
+        "TITAN_RUNTIME_DATABASE_URL",
+        "postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan",
+    )
     return f"""
 ================== CENÁRIO SEMEADO ==================
 
@@ -314,7 +351,7 @@ Usuários no Keycloak ({keycloak_url}):
 
 1. Suba a API numa janela dedicada, com as quatro variáveis:
 
-   $env:TITAN_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+   $env:TITAN_DATABASE_URL = "{runtime_database_url}"
    $env:TITAN_OPERATOR_ORGANIZATION_ID = "{semeado.operadora.value}"
    $env:TITAN_OIDC_ISSUER = "http://localhost:8080/realms/titan"
    $env:TITAN_OIDC_AUDIENCE = "titan-api"
@@ -632,7 +669,13 @@ def main() -> None:
 
     print(f"Keycloak : {keycloak_url} (realm {realm})")
     print(f"Emissor  : {issuer}")
-    print(f"Banco    : {os.environ.get('TITAN_DATABASE_URL', '(não definido)')}\n")
+    database_variable = (
+        MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE
+        if os.environ.get(MIGRATION_DATABASE_URL_ENVIRONMENT_VARIABLE)
+        else "TITAN_DATABASE_URL"
+    )
+    print(f"Banco    : {os.environ.get(database_variable, '(não definido)')}")
+    print(f"Uso      : {database_variable} (semeadura local)\n")
 
     try:
         admin = AdminKeycloak.autenticar(
@@ -651,7 +694,9 @@ def main() -> None:
         print(f"Falha no Keycloak: {erro}", file=sys.stderr)
         raise SystemExit(1) from erro
 
-    engine = create_database_engine(DatabaseSettings.from_environment())
+    engine = create_database_engine(
+        DatabaseSettings.from_environment(variable_name=database_variable)
+    )
     try:
         with engine.connect() as connection, connection.begin():
             semeado = semear(connection, issuer=issuer, subs=subs)

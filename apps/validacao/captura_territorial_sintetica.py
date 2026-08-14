@@ -241,8 +241,8 @@ def main() -> int:
     database_url = _ambiente("TITAN_DATABASE_URL", "")
     if not database_url:
         raise SystemExit("Defina TITAN_DATABASE_URL antes do roteiro.")
-    _preflight(database_url)
-    organization = options.organizacao or _descobrir_organizacao(database_url)
+    inspection_database_url = _ambiente("TITAN_MIGRATION_DATABASE_URL", database_url)
+    _preflight(inspection_database_url)
     admin = AdminKeycloak.autenticar(
         base_url=keycloak,
         realm=realm,
@@ -250,6 +250,16 @@ def main() -> int:
         senha=_ambiente("TITAN_OIDC_ADMIN_PASSWORD", "titan_oidc_local_admin_password"),
     )
     admin.garantir_cliente_de_validacao(CLIENTE_DE_VALIDACAO)
+    operator_subject = admin.garantir_usuario(
+        username="titan_operador",
+        senha=SENHA_DEMONSTRACAO,
+    )
+    issuer = _ambiente("TITAN_OIDC_ISSUER", f"{keycloak}/realms/{realm}").rstrip("/")
+    organization = options.organizacao or _descobrir_organizacao(
+        inspection_database_url,
+        issuer=issuer,
+        subject=operator_subject,
+    )
     diary: list[Requisicao] = []
     operator = Cliente(
         base_url=api,
