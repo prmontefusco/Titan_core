@@ -45,6 +45,7 @@ from packages.livestock_application.authorization import (
     PROPERTY_CRIAR,
     PROPERTY_REGISTRAR_GEOMETRIA,
     REPRODUCTION_REGISTRAR,
+    TERRITORIAL_CAPTURE_SYNTHETIC_CREATE,
     TREATMENT_REGISTRAR,
     VETERINARIAN_CRIAR,
 )
@@ -83,6 +84,11 @@ from packages.livestock_application.reproduction_service import (
     ReproductionService,
     StayBasedPropertyReader,
 )
+from packages.livestock_application.territorial_adapter import (
+    SyntheticTerritorialAdapterProfile,
+    SyntheticTerritorialCaptureAdapter,
+    SyntheticTerritorialCaptureRequest,
+)
 from packages.livestock_application.transfer_artifact_service import (
     ReceivedTransferArtifactService,
 )
@@ -109,6 +115,7 @@ from packages.livestock_domain.parentage import (
     confidence_from_tier,
 )
 from packages.livestock_domain.reproduction import GestationalAgeBasis
+from packages.livestock_domain.territorial_capture import thaw_territorial_response_summary
 from packages.livestock_infrastructure.geodata import (
     CarNaoEncontrado,
     GeodataIndisponivel,
@@ -160,6 +167,9 @@ from packages.livestock_infrastructure.persistence.qualification_assertion_repos
 from packages.livestock_infrastructure.persistence.reproduction_repository import (
     TransactionalReproductiveEventRepository,
 )
+from packages.livestock_infrastructure.persistence.territorial_capture_repository import (
+    TransactionalTerritorialSourceCaptureRepository,
+)
 from packages.livestock_infrastructure.persistence.transfer_artifact_repository import (
     TransactionalReceivedTransferArtifactRepository,
 )
@@ -192,6 +202,15 @@ def _nao_encontrado(o_que: str) -> DomainProblem:
         reason_code="RECURSO_NAO_ENCONTRADO",
         title="Recurso não encontrado",
         detail=f"{o_que} não encontrado nesta organização.",
+    )
+
+
+def _conflito_referencia(detail: str) -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_409_CONFLICT,
+        reason_code="CONFLITO_DE_REFERENCIA",
+        title="Referência em conflito",
+        detail=detail,
     )
 
 
@@ -1740,6 +1759,145 @@ def registrar_geometria(
         raise _conflito(error) from error
 
     return _geometria(geometria)
+
+
+class CapturaTerritorialSinteticaRequest(BaseModel):
+    geometry_id: str
+    geometry_version: int = Field(ge=1)
+    profile: SyntheticTerritorialAdapterProfile
+    request_scope: dict[str, Any]
+    response_payload: dict[str, Any]
+    captured_at: datetime
+    known_at: datetime
+    source_valid_from: datetime | None = None
+    source_valid_to: datetime | None = None
+    limitations: list[str] = Field(default_factory=list, max_length=20)
+
+
+class CapturaTerritorialResponse(BaseModel):
+    capture_id: str
+    property_id: str
+    geometry_id: str
+    geometry_version: int
+    source_profile_code: str
+    source_environment: str
+    source_layer: str
+    operation: str
+    request_scope_digest: str
+    response_schema: str
+    response_schema_version: int
+    canonicalization_version: str
+    response_digest: str
+    response_summary: dict[str, Any]
+    source_version_ids: list[str]
+    source_valid_from: datetime | None
+    source_valid_to: datetime | None
+    captured_at: datetime
+    known_at: datetime
+    recorded_at: datetime
+    limitations: list[str]
+
+
+def _json_limitado(valor: dict[str, Any], *, campo: str) -> None:
+    material = json.dumps(valor, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    if len(material.encode("utf-8")) > 12_000:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason_code="PAYLOAD_TERRITORIAL_EXCESSIVO",
+            title="Payload territorial excessivo",
+            detail=f"{campo} excede o limite do Corte 4.",
+        )
+
+
+def _captura_territorial_response(captura: Any) -> CapturaTerritorialResponse:
+    return CapturaTerritorialResponse(
+        capture_id=str(captura.capture_id.value),
+        property_id=str(captura.property_id.value),
+        geometry_id=str(captura.geometry_id.value),
+        geometry_version=captura.geometry_version,
+        source_profile_code=captura.source_profile_code,
+        source_environment=captura.source_environment.value,
+        source_layer=captura.source_layer,
+        operation=captura.operation,
+        request_scope_digest=captura.request_scope_digest,
+        response_schema=captura.response_schema,
+        response_schema_version=captura.response_schema_version,
+        canonicalization_version=captura.canonicalization_version,
+        response_digest=captura.response_digest,
+        response_summary=thaw_territorial_response_summary(captura.response_summary),
+        source_version_ids=list(captura.source_version_ids),
+        source_valid_from=captura.source_valid_from,
+        source_valid_to=captura.source_valid_to,
+        captured_at=captura.captured_at,
+        known_at=captura.known_at,
+        recorded_at=captura.recorded_at,
+        limitations=list(captura.limitations),
+    )
+
+
+@router.post(
+    "/properties/{property_id}/territorial-captures/synthetic",
+    response_model=CapturaTerritorialResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Registrar captura territorial sintética",
+    description=(
+        "Registra uma fotografia territorial **sintética** e append-only para testes. "
+        "A rota não consulta fonte oficial, não aceita digest do cliente, não cria "
+        "Fact/Evaluation/Decision/Dossier e não afirma conformidade territorial."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def registrar_captura_territorial_sintetica(
+    property_id: str,
+    corpo: CapturaTerritorialSinteticaRequest,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(TERRITORIAL_CAPTURE_SYNTHETIC_CREATE))
+    ],
+    connection: ConnectionDependency,
+) -> CapturaTerritorialResponse:
+    propriedade_id = typed_id_or_problem(
+        property_id, entity_type="rural_property", campo="property_id"
+    )
+    geometria_id = typed_id_or_problem(
+        corpo.geometry_id, entity_type="property_geometry", campo="geometry_id"
+    )
+    propriedade = TransactionalRuralPropertyRepository(connection).get_by_id(propriedade_id)
+    if propriedade is None or propriedade.organization_id != contexto.organization_id:
+        raise _nao_encontrado("Propriedade")
+    geometria = TransactionalPropertyGeometryRepository(connection).get_by_id(geometria_id)
+    if (
+        geometria is None
+        or geometria.organization_id != contexto.organization_id
+        or geometria.property_id != propriedade_id
+    ):
+        raise _nao_encontrado("Geometria")
+    if geometria.version != corpo.geometry_version:
+        raise _conflito_referencia(
+            "geometry_version diverge da geometria informada nesta organização."
+        )
+    _json_limitado(corpo.request_scope, campo="request_scope")
+    _json_limitado(corpo.response_payload, campo="response_payload")
+    try:
+        captura = SyntheticTerritorialCaptureAdapter().capture(
+            SyntheticTerritorialCaptureRequest(
+                organization_id=contexto.organization_id,
+                property_id=propriedade_id,
+                geometry_id=geometria_id,
+                geometry_version=corpo.geometry_version,
+                profile=corpo.profile,
+                request_scope=corpo.request_scope,
+                response_payload=corpo.response_payload,
+                captured_at=corpo.captured_at,
+                known_at=corpo.known_at,
+                source_valid_from=corpo.source_valid_from,
+                source_valid_to=corpo.source_valid_to,
+                limitations=tuple(corpo.limitations),
+            )
+        )
+        TransactionalTerritorialSourceCaptureRepository(connection).save(captura)
+    except ValueError as error:
+        raise _conflito(error) from error
+    return _captura_territorial_response(captura)
 
 
 class CamadaRecusadaResponse(BaseModel):

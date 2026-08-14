@@ -388,3 +388,15 @@ canônico de escopo, `response_digest` versionado, `known_at` explícito,
 `source_version_ids` sem invenção de versão e limitações obrigatórias de fonte
 sintética. Continua fora qualquer conclusão normativa, fonte real, API pública,
 mercado real, Dossier, VerificationBundle ou alteração de Decisions.
+
+**T-05D Corte 4 concluído em 14 de agosto de 2026.** A captura territorial
+sintética passou a ter API controlada e roteiro executável. As permissões
+`LIVESTOCK_TERRITORIAL_CAPTURE.SYNTHETIC_CREATE` e
+`LIVESTOCK_TERRITORIAL_CAPTURE.READ` delimitam escrita/leitura; o endpoint de
+registro valida propriedade e geometria na Organization ativa, trata
+`geometry_version` divergente como `409 CONFLITO_DE_REFERENCIA`, calcula digests
+e metadados internamente e não aceita payload bruto como material persistido. O
+endpoint de leitura expõe apenas metadados aprovados e `response_summary`.
+`apps/validacao/captura_territorial_sintetica.py` executa o fluxo completo com
+dados fictícios. Continuam fora fonte real, `Titan_geodata`, mercado real,
+Policy, Evaluation, Decision, Dossier, VerificationBundle e frontend.

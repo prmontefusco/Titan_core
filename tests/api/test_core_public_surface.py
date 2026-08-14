@@ -205,6 +205,12 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/entity-type-requests/mine", "get"),
     ("/v1/livestock/entity-type-requests/{request_id}/approve", "post"),
     ("/v1/livestock/entity-type-requests/{request_id}/deny", "post"),
+    # T-05D Corte 4 (ADR-0062): API controlada para capturas territoriais
+    # sintéticas. Não consulta fonte real, não cria Fact/Evaluation/Decision e
+    # não afirma conformidade; apenas registra/lista fotografia territorial
+    # sintética para validação operacional.
+    ("/v1/livestock/properties/{property_id}/territorial-captures/synthetic", "post"),
+    ("/v1/livestock/properties/{property_id}/territorial-captures", "get"),
 }
 
 

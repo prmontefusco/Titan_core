@@ -40,6 +40,7 @@ from packages.livestock_application.authorization import (
     PROPERTY_LER,
     PROPERTY_LER_GEOMETRIA,
     REPRODUCTION_LER,
+    TERRITORIAL_CAPTURE_READ,
     TREATMENT_LER,
     VETERINARIAN_LER,
 )
@@ -66,6 +67,7 @@ from packages.livestock_application.territorial_timeline_service import (
     TerritorialTimelineService,
 )
 from packages.livestock_domain.geometry import CAMADA_PERIMETRO
+from packages.livestock_domain.territorial_capture import thaw_territorial_response_summary
 from packages.livestock_infrastructure.geodata import (
     CarNaoEncontrado,
     GeodataIndisponivel,
@@ -109,6 +111,9 @@ from packages.livestock_infrastructure.persistence.property_repository import (
 )
 from packages.livestock_infrastructure.persistence.reproduction_repository import (
     TransactionalReproductiveEventRepository,
+)
+from packages.livestock_infrastructure.persistence.territorial_capture_repository import (
+    TransactionalTerritorialSourceCaptureRepository,
 )
 from packages.livestock_infrastructure.persistence.transfer_artifact_repository import (
     TransactionalReceivedTransferArtifactRepository,
@@ -1173,6 +1178,84 @@ def consultar_geometria(
     alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
     encontrada = _geometria_servico(connection).current_for(contexto.organization_id, alvo, layer)
     return None if encontrada is None else _geometria_resumo(encontrada)
+
+
+class CapturaTerritorialResumo(BaseModel):
+    capture_id: str
+    property_id: str
+    geometry_id: str
+    geometry_version: int
+    source_profile_code: str
+    source_environment: str
+    source_layer: str
+    operation: str
+    request_scope_digest: str
+    response_schema: str
+    response_schema_version: int
+    canonicalization_version: str
+    response_digest: str
+    response_summary: dict[str, Any]
+    source_version_ids: list[str]
+    source_valid_from: datetime | None
+    source_valid_to: datetime | None
+    captured_at: datetime
+    known_at: datetime
+    recorded_at: datetime
+    limitations: list[str]
+
+
+def _captura_territorial_resumo(captura: Any) -> CapturaTerritorialResumo:
+    return CapturaTerritorialResumo(
+        capture_id=str(captura.capture_id.value),
+        property_id=str(captura.property_id.value),
+        geometry_id=str(captura.geometry_id.value),
+        geometry_version=captura.geometry_version,
+        source_profile_code=captura.source_profile_code,
+        source_environment=captura.source_environment.value,
+        source_layer=captura.source_layer,
+        operation=captura.operation,
+        request_scope_digest=captura.request_scope_digest,
+        response_schema=captura.response_schema,
+        response_schema_version=captura.response_schema_version,
+        canonicalization_version=captura.canonicalization_version,
+        response_digest=captura.response_digest,
+        response_summary=thaw_territorial_response_summary(captura.response_summary),
+        source_version_ids=list(captura.source_version_ids),
+        source_valid_from=captura.source_valid_from,
+        source_valid_to=captura.source_valid_to,
+        captured_at=captura.captured_at,
+        known_at=captura.known_at,
+        recorded_at=captura.recorded_at,
+        limitations=list(captura.limitations),
+    )
+
+
+@router.get(
+    "/properties/{property_id}/territorial-captures",
+    response_model=Pagina[CapturaTerritorialResumo],
+    summary="Listar capturas territoriais sintéticas da propriedade",
+    description=(
+        "Lista fotografias territoriais sintéticas já preservadas para a propriedade. "
+        "A resposta expõe somente metadados aprovados e resumo estruturado; não "
+        "expõe payload bruto nem afirma conformidade territorial."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_capturas_territoriais(
+    property_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_permission(TERRITORIAL_CAPTURE_READ))],
+    paginacao: PaginacaoDependency,
+    connection: ConnectionDependency,
+) -> Any:
+    alvo = typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    propriedade = TransactionalRuralPropertyRepository(connection).get_by_id(alvo)
+    if propriedade is None or propriedade.organization_id != contexto.organization_id:
+        raise _nao_encontrado("Propriedade")
+    captures = TransactionalTerritorialSourceCaptureRepository(connection).list_by_property(
+        contexto.organization_id, alvo
+    )
+    janela = captures[paginacao.offset : paginacao.offset + paginacao.limite_de_sondagem]
+    return montar_pagina([_captura_territorial_resumo(item) for item in janela], paginacao)
 
 
 @router.get(

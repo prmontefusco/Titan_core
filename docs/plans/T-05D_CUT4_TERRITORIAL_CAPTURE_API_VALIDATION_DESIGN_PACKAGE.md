@@ -1,7 +1,7 @@
 # T-05D Corte 4 — API controlada e roteiro de validação territorial sintética
 
 **Data:** 14 de agosto de 2026
-**Estado:** PROPOSTO — aguardando revisão antes de código
+**Estado:** IMPLEMENTADO em 14 de agosto de 2026 — API sintética controlada e roteiro executável
 **Escopo:** Titan Livestock; ADR-0062; continuação dos Cortes 1, 2 e 3
 **Pré-requisitos concluídos:** captura territorial temporal, persistência append-only e adapter sintético-realista
 
@@ -77,7 +77,8 @@ POST /v1/livestock/properties/{property_id}/territorial-captures/synthetic
 Permissão sugerida:
 
 ```text
-livestock.territorial_capture.synthetic.record
+LIVESTOCK_TERRITORIAL_CAPTURE.SYNTHETIC_CREATE
+LIVESTOCK_TERRITORIAL_CAPTURE.READ
 ```
 
 Justificativa para permissão nova: registrar captura territorial sintética é
@@ -279,3 +280,27 @@ Depois do Corte 4, existem duas rotas possíveis:
    segredo no código.
 
 Sem caso normativo real, a rota mais segura é Corte 5A.
+
+## Registro de execução do Corte 4
+
+Implementado em 14 de agosto de 2026 com API exclusivamente sintética.
+
+Entregas:
+
+- permissão específica `LIVESTOCK_TERRITORIAL_CAPTURE.SYNTHETIC_CREATE`;
+- permissão específica `LIVESTOCK_TERRITORIAL_CAPTURE.READ`;
+- `POST /v1/livestock/properties/{property_id}/territorial-captures/synthetic`;
+- `GET /v1/livestock/properties/{property_id}/territorial-captures?limit=50&offset=0`;
+- validação de propriedade e geometria na Organization ativa;
+- `geometry_version` divergente retornando `409 CONFLITO_DE_REFERENCIA`;
+- servidor calculando `request_scope_digest`, `response_digest`,
+  `recorded_at`, `capture_id`, Organization owner e metadados internos;
+- resposta HTTP sem payload bruto e sem `response_payload`;
+- teste de duas capturas com mesmo conteúdo e `response_digest` igual, mas
+  `capture_id` distinto;
+- roteiro executável `apps/validacao/captura_territorial_sintetica.py` com
+  `--pausar`, preflight de migration/permissão, criação de propriedade,
+  geometria, captura overlap, captura timeline, listagem e caso negativo.
+
+Permanecem fora: fonte real, `Titan_geodata`, secrets, mercado real, Policy,
+Evaluation, Decision, Dossier, VerificationBundle e frontend.
