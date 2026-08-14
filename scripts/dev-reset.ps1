@@ -6,7 +6,10 @@
     Derruba e recria o volume `postgres_data` do Titan, reprovisiona o papel
     de runtime restrito, aplica as migrations do zero, roda o bootstrap mínimo
     da Organization operadora, concede ADMIN_MESTRE ao usuário administrador
-    configurado abaixo e, por padrão, semeia dados de demonstração.
+    configurado abaixo, concede a ele também os papéis operacionais extras
+    (governança de regras/política e LIVESTOCK_PERMISSIONS de operador -- ver
+    apps/grant_local_admin_governance.py) e, por padrão, semeia dados de
+    demonstração.
 
     NÃO afeta o Keycloak (usuários e realm sobrevivem -- outro volume) nem o
     Titan_geodata. Só o banco de aplicação do Titan.
@@ -69,11 +72,11 @@ $env:TITAN_BOOTSTRAP_ISSUER = $TitanBootstrapIssuer
 $env:TITAN_BOOTSTRAP_SUBJECT = $TitanBootstrapSubject
 python -m uv run --locked python -m apps.bootstrap_admin
 
-Write-Host "== Concedendo governanca de regras e politicas ao mesmo usuario ==" -ForegroundColor Cyan
+Write-Host "== Concedendo papeis operacionais (regras/politica + livestock) ao mesmo usuario ==" -ForegroundColor Cyan
 $env:TITAN_GRANT_ORGANIZATION_ID = $TitanTargetOrg
 $env:TITAN_GRANT_ISSUER = $TitanBootstrapIssuer
 $env:TITAN_GRANT_SUBJECT = $TitanBootstrapSubject
-python -m uv run --locked python scripts\grant_local_admin_governance.py
+python -m uv run --locked python -m apps.grant_local_admin_governance
 
 if (-not $SemSemeadura) {
     Write-Host "== Semeando dados de demonstracao ==" -ForegroundColor Cyan
