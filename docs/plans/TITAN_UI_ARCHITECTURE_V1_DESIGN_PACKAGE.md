@@ -182,7 +182,7 @@ Future participant taxonomy; Organization relationships and cross-Organization o
 ## 35. Proposed Implementation Cuts
 
 1. **UI-FOUNDATION-00**: document and enforce these frontend invariants in future design/code review; no component extraction.
-2. **UI-FOUNDATION-01**: normalize status/reason/empty/error/unauthorized primitives after two consumers are identified.
+2. **UI-FOUNDATION-01**: normalize loading/empty/error/unauthorized/not-found primitives. **Initial cut implemented** after three concrete consumers (`AdminDashboard`, `AnimalDetail`, `LotDetail`) proved the duplication.
 3. **UI-FOUNDATION-02**: detail page pattern. **Initial cut implemented** with `AnimalDetail` and `LotDetail` as concrete consumers, using compositional components only.
 4. **UI-FOUNDATION-03**: Organization context/switch, after membership API and authorization design.
 5. **UI-FOUNDATION-04**: server-backed capability/navigation contract, only after ADR-level authorization decision.

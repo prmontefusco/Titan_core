@@ -99,9 +99,12 @@ describe('AdminDashboard', () => {
 
     await waitFor(() => {
       expect(
-        screen.getByText(/Não autorizado a consultar solicitações de acesso nesta Organization/i),
+        screen.getByRole('alert'),
       ).toBeInTheDocument()
     })
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /Não autorizado a consultar solicitações de acesso nesta Organization/i,
+    )
   })
 
   it('exibe erro de backend sem convertê-lo em estado vazio', async () => {

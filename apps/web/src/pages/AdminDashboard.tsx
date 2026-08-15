@@ -5,6 +5,7 @@ import {
   listPendingRequests,
   type EntityTypeRequestSummary,
 } from '../api/entityTypeRequests'
+import { EmptyState, ErrorState, LoadingState, UnauthorizedState } from '../components/AsyncStates'
 import { ENTITY_KIND_LABELS } from '../entityKinds'
 
 interface Props {
@@ -61,17 +62,16 @@ export function AdminDashboard({ baseUrl, accessToken, organizationId }: Props) 
 
           <div className="card-body">
             {semPermissao && (
-              <div className="card-notice notice-neutral" role="alert">
-                Não autorizado a consultar solicitações de acesso nesta Organization.
-              </div>
+              <UnauthorizedState
+                tone="compact"
+                message="Não autorizado a consultar solicitações de acesso nesta Organization."
+              />
             )}
             {erroFila && (
-              <div className="card-notice notice-error" role="alert">
-                {erroFila}
-              </div>
+              <ErrorState tone="compact" message={erroFila} />
             )}
             {pendentes === null && !semPermissao && !erroFila && (
-              <div className="card-loading">Consultando solicitações pendentes…</div>
+              <LoadingState tone="compact" message="Consultando solicitações pendentes…" />
             )}
             {pendentes !== null && !semPermissao && !erroFila && (
               <div className="pending-queue-summary">
@@ -94,7 +94,10 @@ export function AdminDashboard({ baseUrl, accessToken, organizationId }: Props) 
                     ))}
                   </ul>
                 ) : (
-                  <p className="empty-notice">Nenhuma solicitação aguardando decisão no momento.</p>
+                  <EmptyState
+                    tone="compact"
+                    message="Nenhuma solicitação aguardando decisão no momento."
+                  />
                 )}
               </div>
             )}

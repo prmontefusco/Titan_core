@@ -9,6 +9,12 @@ import {
   type ContraparteExternaResumo,
   type LotMarketEntry,
 } from '../api/eligibility'
+import {
+  ErrorState,
+  LoadingState,
+  NotFoundState,
+  UnauthorizedState,
+} from '../components/AsyncStates'
 import { DetailDescriptionList, DetailPageHeader, DetailSection } from '../components/DetailPage'
 
 interface Options {
@@ -126,16 +132,26 @@ export function LotDetail(options: Options) {
   }
 
   if (semPermissao) {
-    return <p role="alert">Você não tem permissão para ler lotes nesta Organization.</p>
+    return (
+      <UnauthorizedState
+        title="Acesso não autorizado"
+        message="Você não tem permissão para ler lotes nesta Organization."
+      />
+    )
   }
   if (naoEncontrado) {
-    return <p role="alert">Lote não encontrado nesta Organization.</p>
+    return (
+      <NotFoundState
+        title="Lote não encontrado"
+        message="Lote não encontrado nesta Organization."
+      />
+    )
   }
   if (erroCarga) {
-    return <p role="alert">{erroCarga}</p>
+    return <ErrorState title="Falha ao carregar lote" message={erroCarga} />
   }
   if (!lote) {
-    return <p>Carregando…</p>
+    return <LoadingState message="Carregando lote..." />
   }
 
   return (

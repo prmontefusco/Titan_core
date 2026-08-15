@@ -755,6 +755,64 @@ body {
 }
 
 /* ==========================================================================
+   Async States
+   ========================================================================== */
+.async-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.async-state h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.async-state p {
+  margin: 0;
+}
+
+.async-state-page {
+  padding: 1.25rem 0;
+}
+
+.async-state-compact {
+  padding: 0.65rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.8125rem;
+}
+
+.async-state-loading {
+  color: var(--color-text-muted);
+}
+
+.async-state-empty {
+  color: var(--color-text-muted);
+}
+
+.async-state-error {
+  color: #fca5a5;
+}
+
+.async-state-error.async-state-compact {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.async-state-unauthorized {
+  color: #fcd34d;
+}
+
+.async-state-unauthorized.async-state-compact {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.async-state-not-found {
+  color: #cbd5e1;
+}
+
+/* ==========================================================================
    Detail Page Pattern
    ========================================================================== */
 .detail-page {

@@ -7,6 +7,12 @@ import {
   type AnimalResumo,
   type PropriedadeResumo,
 } from '../api/animals'
+import {
+  ErrorState,
+  LoadingState,
+  NotFoundState,
+  UnauthorizedState,
+} from '../components/AsyncStates'
 import { DetailDescriptionList, DetailPageHeader, DetailSection } from '../components/DetailPage'
 
 interface Options {
@@ -71,16 +77,26 @@ export function AnimalDetail(options: Options) {
   }, [options.baseUrl, options.accessToken, options.organizationId, animalId])
 
   if (semPermissao) {
-    return <p role="alert">Você não tem permissão para ler animais nesta Organization.</p>
+    return (
+      <UnauthorizedState
+        title="Acesso não autorizado"
+        message="Você não tem permissão para ler animais nesta Organization."
+      />
+    )
   }
   if (naoEncontrado) {
-    return <p role="alert">Animal não encontrado nesta Organization.</p>
+    return (
+      <NotFoundState
+        title="Animal não encontrado"
+        message="Animal não encontrado nesta Organization."
+      />
+    )
   }
   if (erro) {
-    return <p role="alert">{erro}</p>
+    return <ErrorState title="Falha ao carregar animal" message={erro} />
   }
   if (!animal) {
-    return <p>Carregando…</p>
+    return <LoadingState message="Carregando animal..." />
   }
 
   return (
@@ -98,37 +114,37 @@ export function AnimalDetail(options: Options) {
         description="Dados que o backend já expõe para este animal."
       >
         <DetailDescriptionList>
-        <dt>Sexo</dt>
-        <dd>{animal.sex}</dd>
-        <dt>Raça</dt>
-        <dd>{animal.breed ?? '—'}</dd>
-        <dt>Data de nascimento</dt>
-        <dd>{animal.birth_date ?? 'desconhecida'}</dd>
-        <dt>Propriedade de nascimento</dt>
-        <dd>
-          {propriedade
-            ? `${propriedade.name} (${propriedade.municipality}/${propriedade.state_code})`
-            : (animal.birth_property_id ?? 'não determinável')}
-        </dd>
-        <dt>Localização atual</dt>
-        <dd>
-          <em>não disponível nesta versão</em>
-        </dd>
-        <dt>Identificadores</dt>
-        <dd>
-          {animal.identifiers.length === 0
-            ? 'nenhum'
-            : animal.identifiers.map((id) => `${id.type}: ${id.value} (${id.state})`).join(', ')}
-        </dd>
-        {animal.saida && (
-          <>
-            <dt>Saída do rebanho</dt>
-            <dd>
-              {animal.saida.exit_type} em{' '}
-              {new Date(animal.saida.occurred_at).toLocaleDateString('pt-BR')}
-            </dd>
-          </>
-        )}
+          <dt>Sexo</dt>
+          <dd>{animal.sex}</dd>
+          <dt>Raça</dt>
+          <dd>{animal.breed ?? '—'}</dd>
+          <dt>Data de nascimento</dt>
+          <dd>{animal.birth_date ?? 'desconhecida'}</dd>
+          <dt>Propriedade de nascimento</dt>
+          <dd>
+            {propriedade
+              ? `${propriedade.name} (${propriedade.municipality}/${propriedade.state_code})`
+              : (animal.birth_property_id ?? 'não determinável')}
+          </dd>
+          <dt>Localização atual</dt>
+          <dd>
+            <em>não disponível nesta versão</em>
+          </dd>
+          <dt>Identificadores</dt>
+          <dd>
+            {animal.identifiers.length === 0
+              ? 'nenhum'
+              : animal.identifiers.map((id) => `${id.type}: ${id.value} (${id.state})`).join(', ')}
+          </dd>
+          {animal.saida && (
+            <>
+              <dt>Saída do rebanho</dt>
+              <dd>
+                {animal.saida.exit_type} em{' '}
+                {new Date(animal.saida.occurred_at).toLocaleDateString('pt-BR')}
+              </dd>
+            </>
+          )}
         </DetailDescriptionList>
       </DetailSection>
 
