@@ -1,6 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { AnimalApiError, fetchAnimals, type AnimalResumo } from '../api/animals'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  UnauthorizedState,
+} from '../components/AsyncStates'
 
 interface Options {
   baseUrl: string
@@ -66,12 +72,18 @@ export function AnimalSearch(options: Options) {
       </form>
 
       {semPermissao && (
-        <p role="alert">Você não tem permissão para ler animais nesta Organization.</p>
+        <UnauthorizedState
+          tone="compact"
+          message="Você não tem permissão para ler animais nesta Organization."
+        />
       )}
-      {erro && <p role="alert">{erro}</p>}
-      {!semPermissao && !erro && pagina === null && <p>Carregando…</p>}
+      {erro && <ErrorState tone="compact" message={erro} />}
+      {!semPermissao && !erro && pagina === null && <LoadingState tone="compact" message="Carregando..." />}
       {!semPermissao && !erro && pagina !== null && pagina.items.length === 0 && (
-        <p>Nenhum animal encontrado{filtroAtivo ? ` para "${filtroAtivo}"` : ''}.</p>
+        <EmptyState
+          tone="compact"
+          message={`Nenhum animal encontrado${filtroAtivo ? ` para "${filtroAtivo}"` : ''}.`}
+        />
       )}
       {!semPermissao && !erro && pagina !== null && pagina.items.length > 0 && (
         <>

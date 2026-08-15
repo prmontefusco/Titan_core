@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { LotApiError, fetchLots, type LoteAnimaisResumo } from '../api/lots'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  UnauthorizedState,
+} from '../components/AsyncStates'
 
 interface Options {
   baseUrl: string
@@ -49,12 +55,15 @@ export function LotSearch(options: Options) {
       <h2>Buscar lote</h2>
 
       {semPermissao && (
-        <p role="alert">Você não tem permissão para ler lotes nesta Organization.</p>
+        <UnauthorizedState
+          tone="compact"
+          message="Você não tem permissão para ler lotes nesta Organization."
+        />
       )}
-      {erro && <p role="alert">{erro}</p>}
-      {!semPermissao && !erro && pagina === null && <p>Carregando…</p>}
+      {erro && <ErrorState tone="compact" message={erro} />}
+      {!semPermissao && !erro && pagina === null && <LoadingState tone="compact" message="Carregando..." />}
       {!semPermissao && !erro && pagina !== null && pagina.items.length === 0 && (
-        <p>Nenhum lote encontrado.</p>
+        <EmptyState tone="compact" message="Nenhum lote encontrado." />
       )}
       {!semPermissao && !erro && pagina !== null && pagina.items.length > 0 && (
         <>
