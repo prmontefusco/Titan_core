@@ -184,14 +184,14 @@ Future participant taxonomy; Organization relationships and cross-Organization o
 1. **UI-FOUNDATION-00**: document and enforce these frontend invariants in future design/code review; no component extraction.
 2. **UI-FOUNDATION-01**: normalize loading/empty/error/unauthorized/not-found primitives. **Initial cut implemented** after concrete consumers proved the duplication, first in `AdminDashboard`, `AnimalDetail` and `LotDetail`, then extended to `AnimalSearch`, `LotSearch`, `AdminQueue` and `MarketRuleGovernance`.
 3. **UI-FOUNDATION-02**: detail page pattern. **Initial cut implemented** with `AnimalDetail` and `LotDetail` as concrete consumers, using compositional components only.
-4. **UI-FOUNDATION-03**: Organization context/switch, after membership API and authorization design.
+4. **UI-FOUNDATION-03**: Organization context/switch, after membership API and authorization design. Until then, fixed context visibility may expand only on screens that already consume real client-known scope; no selector, no manifest and no semantic `ContextBanner`.
 5. **UI-FOUNDATION-04**: server-backed capability/navigation contract, only after ADR-level authorization decision.
 6. **UI-FOUNDATION-05**: NeedsAttention projection with two real sources.
 6. Verification, Audit, Operations and Integrations follow their safe read models.
 
 ## 36. Recommended First Cut
 
-**UI-FOUNDATION-02 initial cut implemented after the baseline guidance.** Treat the invariants as the baseline for every new UI cut. Extract status/reason primitives only when two concrete screens need them. Detail composition may continue incrementally when another concrete page benefits from the same header/section/summary shape; capability navigation remains blocked pending an authorization decision.
+**UI-FOUNDATION-02 initial cut implemented after the baseline guidance.** Treat the invariants as the baseline for every new UI cut. Extract status/reason primitives only when two concrete screens need them. Detail composition may continue incrementally when another concrete page benefits from the same header/section/summary shape. Fixed Organization context visibility was later reinforced in `DecisionReview`, `TreatmentForm`, `AnimalTimeline` and `MarketRuleGovernance` through a small presentation component only; capability navigation and Organization switching remain blocked pending an authorization decision and membership discovery contract.
 
 ## 37. Blocking Conditions
 
