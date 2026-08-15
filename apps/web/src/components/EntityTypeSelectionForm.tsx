@@ -28,10 +28,11 @@ export function EntityTypeSelectionForm({ onSubmit, negatedReason, defaultKind }
 
   return (
     <form onSubmit={handleSubmit}>
-      <h2>Qual é o seu tipo de entidade?</h2>
+      <p className="eyebrow">Primeiro acesso</p>
+      <h2>Solicite seu acesso à organização</h2>
       <p>
-        Isto é só um pedido — quem administra a Organization precisa aprovar antes de você
-        ganhar acesso.
+        Escolha como você atua. Este pedido será encaminhado para a organização piloto
+        configurada neste ambiente; você não receberá acesso até que um administrador o aprove.
       </p>
       {negatedReason && (
         <p role="alert">Seu pedido anterior foi negado: {negatedReason}</p>
@@ -56,7 +57,7 @@ export function EntityTypeSelectionForm({ onSubmit, negatedReason, defaultKind }
       </fieldset>
       {erro && <p role="alert">{erro}</p>}
       <button type="submit" disabled={enviando}>
-        {enviando ? 'Enviando…' : 'Enviar pedido'}
+        {enviando ? 'Enviando solicitação…' : 'Solicitar acesso'}
       </button>
     </form>
   )

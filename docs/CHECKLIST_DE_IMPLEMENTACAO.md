@@ -1,6 +1,6 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 14 de agosto de 2026
+**Atualizado em:** 15 de agosto de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
 
@@ -3447,6 +3447,14 @@ Substitui o payload outbound específico de tratamento por um contrato de inten�
 **Data:** 6 de agosto de 2026 · **Estado:** CONCLUÍDA. Fonte: `docs/plans/LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md` (Ondas 0–5, Telas S1–S10).
 
 Primeiro produto de frontend do Livestock: leitura do animal, registro de tratamento, elegibilidade e matriz de mercado do animal, operação comercial do lote e o workspace de revisão humana (S10, consumindo diretamente o LIV-C06 acima em `/review/:proposalId`). Mergeado em `main` via PRs #7 a #12, cada onda com portão de verificação próprio (`npm run build`/`lint`/`test` do frontend) e validação manual ponta a ponta contra API e PostgreSQL reais.
+
+### LIV-PROD-02 — Acesso e onboarding compreensíveis
+
+**Data:** 14 de agosto de 2026 · **Estado:** IMPLEMENTADO; validação manual pendente. O fluxo OIDC existente foi preservado sem alterar Keycloak, `OrganizationContext`, Membership, Role ou Permission: a entrada explica que o login ocorre no provider de identidade, oferece "Entrar ou criar conta", comunica a possível aprovação administrativa posterior e apresenta nova tentativa para falha de autenticação ou consulta do status. O pedido de tipo de entidade agora declara que é encaminhado à Organization piloto configurada no ambiente; não promete seleção de Organization que o produto ainda não possui. O tema real do Keycloak foi refinado para mobile, foco visível e erro, e passou a separar honestamente "Criar conta" de "solicitar acesso" — a conta autentica, mas a operação ainda exige autorização. **Evidência:** `apps/web/src/App.tsx`, `apps/web/src/components/EntityTypeSelectionForm.tsx`, `apps/web/src/components/PendingStatus.tsx`, `config/keycloak/themes/titan/login/` e teste de submissão no componente. **Portão verificado:** `npm run test` (21 arquivos, 88 testes), `npm run lint` e `npm run build` aprovados; tela real de login Keycloak local recarregada e inspecionada. **Limite preservado:** descoberta/seleção de Organizations, criação da primeira Organization, convite e concessão de Membership continuam decisões RED de tenancy/autorização e não foram implementados.
+
+### ADMIN-CUT-01 — Overview administrativo inicial
+
+**Data:** 15 de agosto de 2026 · **Estado:** IMPLEMENTADO; revisão humana pendente. Após o Discovery em `docs/plans/ADMIN_UI_CAPABILITY_MAP.md`, a área administrativa foi limitada às capacidades reais já suportadas pelo backend: a fila de solicitações de acesso por Organization. O `AdminDashboard` reutiliza `ApplicationShell`, `TopBar`, `Sidebar` e `UserAccountMenu`, apresenta o Overview como capacidades administrativas atualmente disponíveis e não renderiza módulos futuros sem contrato real. `403` permanece estado `UNAUTHORIZED`, erro de backend não vira lista vazia e a contagem exibida vem somente de `listPendingRequests`. **Evidência:** `apps/web/src/pages/AdminDashboard.tsx`, `apps/web/src/pages/AdminDashboard.test.tsx`, `apps/web/src/App.tsx` e `docs/plans/ADMIN_UI_CAPABILITY_MAP.md`. **Portão verificado:** testes focados do dashboard e shell, `npm run test`, `npm run lint` e `npm run build` do frontend aprovados. **Limite preservado:** não houve API nova, migration, mock, métrica fictícia, contrato de autorização, Odoo/ERP, Organization management, Roles/Capabilities UI, audit browser, operations dashboard ou módulos administrativos futuros.
 
 ### NEXT-01 — Coverage e admissibilidade sanitária explícitas
 
