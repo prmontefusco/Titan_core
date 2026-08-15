@@ -7,6 +7,7 @@ import {
   type AnimalResumo,
   type PropriedadeResumo,
 } from '../api/animals'
+import { DetailDescriptionList, DetailPageHeader, DetailSection } from '../components/DetailPage'
 
 interface Options {
   baseUrl: string
@@ -83,12 +84,20 @@ export function AnimalDetail(options: Options) {
   }
 
   return (
-    <section>
-      <p>
-        <Link to="/animals">&larr; Voltar para a busca</Link>
-      </p>
-      <h2>Animal {animal.animal_id}</h2>
-      <dl>
+    <article className="detail-page">
+      <DetailPageHeader
+        eyebrow="Livestock / Animal"
+        title={`Animal ${animal.animal_id}`}
+        subtitle="Identidade operacional do animal dentro da Organization ativa."
+        backTo="/animals"
+        backLabel="Voltar para a busca"
+      />
+
+      <DetailSection
+        title="Resumo"
+        description="Dados que o backend já expõe para este animal."
+      >
+        <DetailDescriptionList>
         <dt>Sexo</dt>
         <dd>{animal.sex}</dd>
         <dt>Raça</dt>
@@ -120,23 +129,22 @@ export function AnimalDetail(options: Options) {
             </dd>
           </>
         )}
-      </dl>
+        </DetailDescriptionList>
+      </DetailSection>
 
-      <h3>Ações</h3>
-      <ul>
-        <li>
+      <DetailSection
+        title="Ações disponíveis"
+        description="Atalhos para operações existentes sobre este animal."
+      >
+        <div className="detail-action-list">
           <Link to={`/animals/${animal.animal_id}/timeline`}>Ver timeline</Link>
-        </li>
-        <li>
           <Link to={`/animals/${animal.animal_id}/treatments/new`}>Registrar tratamento</Link>
-        </li>
-        <li>
           <Link to={`/animals/${animal.animal_id}/eligibility`}>Executar elegibilidade</Link>
-        </li>
-        <li>
-          <Link to={`/animals/${animal.animal_id}/market-matrix`}>Executar análise de mercado</Link>
-        </li>
-      </ul>
-    </section>
+          <Link to={`/animals/${animal.animal_id}/market-matrix`}>
+            Executar análise de mercado
+          </Link>
+        </div>
+      </DetailSection>
+    </article>
   )
 }

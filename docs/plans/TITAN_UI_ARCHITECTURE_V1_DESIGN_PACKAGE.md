@@ -183,7 +183,7 @@ Future participant taxonomy; Organization relationships and cross-Organization o
 
 1. **UI-FOUNDATION-00**: document and enforce these frontend invariants in future design/code review; no component extraction.
 2. **UI-FOUNDATION-01**: normalize status/reason/empty/error/unauthorized primitives after two consumers are identified.
-3. **UI-FOUNDATION-02**: detail page pattern, after a second concrete consumer proves compositional sections.
+3. **UI-FOUNDATION-02**: detail page pattern. **Initial cut implemented** with `AnimalDetail` and `LotDetail` as concrete consumers, using compositional components only.
 4. **UI-FOUNDATION-03**: Organization context/switch, after membership API and authorization design.
 5. **UI-FOUNDATION-04**: server-backed capability/navigation contract, only after ADR-level authorization decision.
 6. **UI-FOUNDATION-05**: NeedsAttention projection with two real sources.
@@ -191,7 +191,7 @@ Future participant taxonomy; Organization relationships and cross-Organization o
 
 ## 36. Recommended First Cut
 
-**UI-FOUNDATION-00 now; UI-FOUNDATION-01 conditionally.** Treat the invariants as the baseline for every new UI cut. Extract status/reason primitives only when two concrete screens need them. Detail composition may precede a capability-navigation contract because multiple domain detail pages already exist; capability navigation remains blocked pending an authorization decision.
+**UI-FOUNDATION-02 initial cut implemented after the baseline guidance.** Treat the invariants as the baseline for every new UI cut. Extract status/reason primitives only when two concrete screens need them. Detail composition may continue incrementally when another concrete page benefits from the same header/section/summary shape; capability navigation remains blocked pending an authorization decision.
 
 ## 37. Blocking Conditions
 

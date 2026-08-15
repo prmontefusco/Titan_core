@@ -755,6 +755,172 @@ body {
 }
 
 /* ==========================================================================
+   Detail Page Pattern
+   ========================================================================== */
+.detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.detail-page-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.detail-back-link {
+  width: fit-content;
+  color: #52b788;
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.detail-back-link:hover {
+  color: #8ce99a;
+}
+
+.detail-header-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.detail-eyebrow {
+  margin: 0 0 0.25rem;
+  color: var(--color-amber-gold);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.detail-title {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.detail-subtitle {
+  max-width: 52rem;
+  margin: 0.35rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+}
+
+.detail-header-meta,
+.detail-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.detail-status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid rgba(82, 183, 136, 0.35);
+  border-radius: var(--radius-pill);
+  background: rgba(82, 183, 136, 0.14);
+  color: #8ce99a;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.detail-section-header h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.detail-section-header p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+}
+
+.detail-section-body {
+  padding: 1rem 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.detail-description-list {
+  display: grid;
+  grid-template-columns: minmax(10rem, max-content) minmax(0, 1fr);
+  gap: 0.65rem 1.25rem;
+  margin: 0;
+}
+
+.detail-description-list dt {
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.detail-description-list dd {
+  min-width: 0;
+  color: #ffffff;
+}
+
+.detail-description-list ul {
+  margin: 0.4rem 0 0;
+  padding-left: 1.25rem;
+}
+
+.detail-action-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.detail-action-list a {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--color-bg-surface);
+  color: #cbd5e1;
+  padding: 0.5rem 0.85rem;
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.detail-action-list a:hover {
+  border-color: rgba(82, 183, 136, 0.4);
+  color: #52b788;
+}
+
+.detail-result-block {
+  margin-top: 1rem;
+}
+
+@media (max-width: 640px) {
+  .detail-description-list {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-description-list dd {
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+}
+
+/* ==========================================================================
    Telas Pré-Autenticação e Login Split Card
    ========================================================================== */
 .access-screen {
