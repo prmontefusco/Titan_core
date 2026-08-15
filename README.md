@@ -1,155 +1,89 @@
-# Titan
+# Titan Technologies
 
-Titan é uma plataforma de confiança para decisões auditáveis em cadeias reguladas.
+Titan Technologies é uma plataforma de confiança para decisões auditáveis em cadeias reguladas. O produto registra evidências, relações, políticas, avaliações e decisões de modo explicável, temporal e verificável — sem afirmar automaticamente que uma informação é verdadeira.
 
-O Titan Core é independente das verticais. A primeira vertical planejada é o Titan Livestock, que somente será iniciada após a comprovação das capacidades do Core.
+O Titan Core permanece independente das verticais. A vertical implementada hoje é o **Titan Livestock**, voltada à rastreabilidade, conformidade sanitária e territorial, elegibilidade por mercado e proveniência na cadeia pecuária.
 
 ## Estado atual
 
-O projeto está na fundação documental.
+O repositório contém uma implementação ativa, não apenas uma fundação documental:
 
-- Passos 0.1 a 0.4 concluídos;
-- ADRs 0001 a 0032 aceitas em `docs/adr/`;
-- workspace Python mínimo criado, com API técnica, infraestrutura local incremental, conexão PostgreSQL e migration técnica inicial, ainda sem pacote de domínio;
-- pytest, Ruff e Mypy configurados, com teste de sanidade e verificação arquitetural inicial;
-- aplicação FastAPI mínima implementada com health check técnico e erros em Problem Details;
-- PostgreSQL com PostGIS configurado no Docker Compose, com health check e volume persistente;
-- MongoDB local configurado com autenticação, health check e volume persistente, ainda sem integração GridFS;
-- Keycloak local configurado como OIDC Provider inicial, com PostgreSQL dedicado, readiness e persistência;
-- RabbitMQ local configurado como Message Broker inicial, com autenticação, health check e persistência;
-- Valkey local configurado como cache efêmero autenticado, sem persistência e com limite de memória;
-- progresso e validações registrados em `docs/CHECKLIST_DE_IMPLEMENTACAO.md`;
-- workflow de qualidade do GitHub Actions configurado, ainda pendente de execução remota;
-- os comandos oficiais estão definidos em `DEVELOPMENT.md`, com disponibilidade vinculada aos passos que criarão seus manifestos e executáveis.
+- monólito modular Python com API FastAPI, worker e frontend React;
+- Core com identidade, Organizations, autorização, auditoria append-only, integridade, evidências, políticas, regras, avaliações, decisões, dossiês e verificação independente;
+- isolamento multi-tenant por `OrganizationContext`, autorização da aplicação e Row-Level Security (RLS) no PostgreSQL;
+- persistência PostgreSQL/PostGIS com migrations Alembic; MongoDB está provisionado localmente para a fronteira de documentos, mas não é fonte de dados de domínio;
+- Outbox/Inbox e RabbitMQ para entrega assíncrona, com worker para fluxos Livestock;
+- capacidades de operação offline e sincronização segura no Core;
+- Livestock: propriedades, animais, movimentações, lotes, reprodução, tratamentos, campanhas sanitárias, carência, elegibilidade de mercado, decisão humana, capturas externas e territoriais, rastreabilidade de transformação e integrações simuladas;
+- geoespacial: geometrias de propriedades, PostGIS e adapter para o provider territorial configurável;
+- frontend técnico para os fluxos Livestock e QA de captura territorial;
+- validações manuais executáveis em `apps/validacao/`, sem cópia manual de identificadores;
+- testes automatizados de domínio, aplicação, API, integração, infraestrutura, arquitetura e frontend; CI no GitHub Actions.
 
-Não execute comandos antigos ou inferidos. Enquanto o respectivo manifesto não existir, o comando ainda não está disponível.
+O estado detalhado de cada marco, evidência de validação e lacunas conhecidas está em `docs/CHECKLIST_DE_IMPLEMENTACAO.md`.
 
-## Arquitetura aprovada
+## Arquitetura
 
-- monólito modular;
-- executáveis em `apps/`;
-- capacidades reutilizáveis em `packages/`;
-- Python e FastAPI no backend;
-- PostgreSQL como banco transacional autoritativo, com PostGIS para evidência geoespacial vetorial;
-- MongoDB/GridFS somente para bytes de documentos autorizados;
-- Valkey somente para cache e coordenação efêmera;
-- OIDC Provider por contrato substituível;
-- Message Broker por contrato substituível;
-- React para eventual frontend;
-- Docker Compose para o ambiente local incremental.
+- monólito modular em monorepo;
+- executáveis em `apps/`; capacidades reutilizáveis e limites de domínio em `packages/`;
+- dependências para dentro: apresentação/infraestrutura → aplicação → domínio;
+- Core não depende de verticais; Livestock depende somente de contratos públicos do Core;
+- PostgreSQL/PostGIS é o banco transacional autoritativo; migrations são o único meio de alterar o schema;
+- Keycloak é o provider OIDC local; RabbitMQ é o broker inicial; Valkey é cache e coordenação efêmera;
+- Docker Compose fornece o ambiente local.
 
-Keycloak e RabbitMQ são as implementações iniciais dos contratos substituíveis de OIDC Provider e Message Broker. O executor de workers ainda exige decisão própria antes da adoção.
+As fronteiras são verificadas automaticamente em `tests/architecture/`. A arquitetura de destino e os limites incrementais estão em `ARCHITECTURE.md`.
 
 ## Documentos de autoridade
 
-Leia, nesta ordem de trabalho:
+Antes de implementar, leia nesta ordem:
 
-1. `VISION.md`;
-2. `DOMAIN.md`;
-3. `ARCHITECTURE.md`;
-4. `DEVELOPMENT.md`;
-5. `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, para plano, estado, evidências e validações de cada passo.
+1. `VISION.md` — direção do produto;
+2. `DOMAIN.md` — linguagem e invariantes de domínio;
+3. `ARCHITECTURE.md` — fronteiras e decisões técnicas;
+4. `DEVELOPMENT.md` — fluxo, comandos e qualidade;
+5. `AGENTS.md` — regras operacionais para agentes;
+6. `docs/CHECKLIST_DE_IMPLEMENTACAO.md` — estado, evidências e próximos incrementos.
 
-As ADRs registram as decisões e suas consequências. Documentos históricos em `docs/` não prevalecem sobre os documentos de autoridade.
+As ADRs em `docs/adr/` registram decisões arquiteturais. Documentos históricos e planos não prevalecem sobre os documentos de autoridade.
 
-## Próximo passo
+O workflow de desenvolvimento e o lifecycle de SPEC estão em
+`DEVELOPMENT.md` e `docs/specs/README.md`. O mapa factual das capacidades está em
+`docs/product/CAPABILITY_MAP.md`.
 
-Os Passos 1.4A a 4.8A estão concluídos e aprovados. O Passo 4.8B — Publisher da Outbox está implementado localmente e aguarda validação manual.
+## Desenvolvimento local
 
-## Executar a API
+Os comandos oficiais, pré-requisitos e regras de segurança estão em `DEVELOPMENT.md`. Em especial, use sempre `python -m uv` com `--locked`.
 
-```text
-python -m uv sync --locked
-python -m uv run --locked uvicorn apps.api.main:app --host 127.0.0.1 --port 8000
-```
-
-Em outro terminal:
-
-```text
-curl.exe --include http://127.0.0.1:8000/health
-curl.exe --include http://127.0.0.1:8000/rota-inexistente
-```
-
-Os comandos completos de teste estão no checklist e em `DEVELOPMENT.md`.
-
-## Executar PostgreSQL com PostGIS
-
-```text
-docker compose up --detach postgres
-docker compose ps
-docker compose exec --no-TTY postgres psql --username titan --dbname titan --command "SELECT postgis_full_version();"
-docker compose down
-```
-
-`docker compose down` preserva o volume. Não utilize `--volumes` na verificação ordinária.
-
-## Executar MongoDB
-
-```text
-docker compose up --detach mongo
-docker compose ps
-docker compose exec --no-TTY mongo mongosh --quiet --username titan_root --password titan_local_dev_password --authenticationDatabase admin --eval "db.version()"
-docker compose down
-```
-
-## Executar o OIDC Provider local
-
-```text
-docker compose up --detach --wait keycloak
-docker compose ps
-curl.exe http://localhost:8080/realms/titan/.well-known/openid-configuration
-```
-
-O realm `titan` contém clientes separados para API e Swagger. O Swagger usa Authorization Code com PKCE S256. Antes de iniciar a API protegida, configure `TITAN_OIDC_ISSUER=http://localhost:8080/realms/titan` e `TITAN_OIDC_AUDIENCE=titan-api`. O modo `start-dev` e as credenciais padrão do Compose são exclusivos do ambiente local.
-
-Os requisitos e separações previstos para um futuro servidor estão inventariados em `docs/REQUISITOS_DE_PRODUCAO.md`.
-
-## Executar o Message Broker local
-
-```text
-docker compose up --detach --wait rabbitmq
-docker compose ps
-docker compose exec --no-TTY rabbitmq rabbitmq-diagnostics server_version
-curl.exe --user titan:titan_rabbitmq_local_dev_password http://127.0.0.1:15672/api/overview
-docker compose down
-```
-
-A interface de administração e as credenciais padrão são exclusivamente locais. O publisher da Outbox publica mensagens confirmadas pelo broker, mas consumer, Inbox, filas funcionais de negócio e executor de workers continuam fora desta subtarefa.
-
-## Executar o cache efêmero local
-
-```text
-docker compose up --detach --wait valkey
-docker compose ps
-docker compose exec --no-TTY valkey sh -c 'VALKEYCLI_AUTH="$VALKEY_PASSWORD" valkey-cli ping'
-docker compose rm --stop --force valkey
-```
-
-Valkey não possui volume e usa RDB/AOF desativados. Recriar o container elimina todas as chaves por desenho; nenhum dado autoritativo pode depender delas.
-
-## Executar migrations PostgreSQL
+Para preparar o banco local:
 
 ```powershell
 docker compose up --detach --wait postgres
-$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+$env:TITAN_MIGRATION_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+$env:TITAN_RUNTIME_DATABASE_PASSWORD="titan_local_runtime_password"
+python -m uv run --locked python -m apps.provision_runtime_database_role
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
 python -m uv run --locked alembic upgrade head
-python -m uv run --locked alembic current
 ```
 
-A revisão inicial cria somente `alembic_version`, estrutura técnica global sem dado de domínio. SQLAlchemy nunca cria schema automaticamente.
+Para iniciar a API protegida, suba também o Keycloak, configure OIDC e o contexto da Organization conforme `DEVELOPMENT.md`. Os valores padrão do Compose são exclusivamente locais e nunca devem ser reutilizados fora do desenvolvimento.
 
-## Qualidade e CI
+## Qualidade
 
 O workflow `.github/workflows/quality.yml` executa em `push` e `pull_request`:
 
 ```text
-python -m uv lock --check
 python -m uv run --locked pytest
 python -m uv run --locked ruff check .
 python -m uv run --locked ruff format --check .
 python -m uv run --locked mypy
+python -m uv run --locked alembic check
 ```
 
-A validação remota depende de publicar ou conectar este repositório ao GitHub. Nenhum deploy ou publicação é executado pelo workflow.
+O frontend possui seus comandos e testes em `apps/web/`. Rotas e funcionalidades observáveis também devem possuir roteiro executável em `apps/validacao/`.
 
-O MongoDB permanece restrito à infraestrutura local; GridFS e integração com a API serão implementados somente em passos próprios.
+## Como evoluímos
+
+O Titan Technologies evolui por incrementos pequenos, auditáveis e orientados a problemas de produto. Código é consequência da necessidade: antes de uma mudança significativa, o problema, o usuário, o comportamento esperado, os riscos, a estratégia de teste e a documentação afetada precisam estar claros.
+
+Não altere arquitetura, domínio, tenancy, autenticação, autorização, criptografia, contratos públicos ou dados de forma incompatível sem decisão explícita e, quando aplicável, uma ADR.

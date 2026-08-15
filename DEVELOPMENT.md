@@ -12,29 +12,22 @@ Nunca implemente grandes funcionalidades.
 
 ---
 
-# Fluxo
+# Fluxo canônico
 
-Planejar
+`IDEA → DISCOVERY → DECISION → SPEC → PLAN → BUILD → VERIFY → ACCEPT`
 
-↓
+Discovery impede que toda ideia vire software. Ela é proporcional: uma ideia simples
+pode caber em poucas linhas; uma capacidade relevante investiga problema, usuário,
+processo atual, evidências, alternativas, capacidades existentes, dados, riscos,
+custo, dependências e perguntas abertas.
 
-Implementar
+Discovery termina em `REJECT`, `DEFER` ou `PROCEED`. Somente `PROCEED` segue para
+SPEC. Uma SPEC aprovada registra uma decisão e seus critérios, mas não transforma a
+mudança em prioridade imediata.
 
-↓
-
-Testar
-
-↓
-
-Corrigir
-
-↓
-
-Revisar
-
-↓
-
-Commit
+O lifecycle, os estados e o template estão em `docs/specs/README.md` e
+`docs/specs/_template.md`. `docs/CHECKLIST_DE_IMPLEMENTACAO.md` é exclusivamente o
+ledger do que foi implementado e validado; SPECs não devem duplicar esse registro.
 
 ---
 
@@ -78,16 +71,41 @@ Não alterar código fora do escopo.
 
 Explicar resumidamente mudanças não triviais.
 
-Mudanças rotineiras, reversíveis e pertencentes ao escopo aprovado podem prosseguir sem portão manual intermediário.
+Antes de iniciar BUILD, o agente deve conseguir responder proporcionalmente: qual
+problema resolve, para quem, por que pertence ao Titan, comportamento esperado,
+partes afetadas, riscos, como provar correção, testes, observabilidade e documentos
+afetados. Se a resposta material estiver ausente, retornar a DISCOVERY ou solicitar
+decisão.
 
-Exigem confirmação prévia:
+## Autonomia: GREEN / YELLOW / RED
 
-- ADR ou mudança de arquitetura, domínio ou escopo;
-- migration destrutiva ou alteração incompatível de dados;
-- autenticação, autorização, criptografia ou isolamento;
-- dependência, serviço externo ou custo recorrente novo;
-- API pública incompatível;
-- publicação, implantação, comunicação externa ou ação irreversível.
+### GREEN — executar autonomamente
+
+O agente pode executar decisões já aprovadas por Discovery/SPEC/plano dentro de seus
+limites, inclusive API, migration ou integração compatíveis. Inclui detalhes internos
+reversíveis, testes, documentação diretamente afetada e correções causadas pelo
+incremento.
+
+### YELLOW — apresentar a nova decisão e aguardar aprovação
+
+Usar quando Discovery, planejamento ou implementação revelar decisão relevante não
+coberta pela SPEC/plano aprovado: requisito material, regra de negócio, impacto
+transversal, UX relevante, risco ou alternativa com trade-off de produto. Apresentar
+problema, investigação, solução, arquivos afetados, testes e riscos.
+
+### RED — decisão humana explícita
+
+Sempre exigir decisão humana para arquitetura fundamental; domínio ou escopo;
+tenancy; autenticação; autorização; criptografia; auditoria; migration destrutiva ou
+incompatível; retenção; dependência estrutural ou custo recorrente; contrato público
+incompatível; remoção de funcionalidade; publicação, implantação, comunicação externa
+ou ação irreversível.
+
+Sugestão técnica não elimina o dever de crítica: antes de executar, o agente aponta
+conflito com a arquitetura, duplicação, overengineering, risco de segurança,
+violação de invariante ou alternativa significativamente mais simples. Para decisão
+relevante, usar: CONTEXTO, EVIDÊNCIA NO REPOSITÓRIO, OPÇÕES, TRADE-OFFS,
+RECOMENDAÇÃO e DECISÃO NECESSÁRIA.
 
 ---
 
@@ -126,17 +144,22 @@ Agentes podem trabalhar paralelamente em implementação, testes, pesquisa e rev
 
 # Depois
 
-Executar apenas os testes relacionados.
+Durante BUILD, executar e repetir os testes relacionados. Antes de VERIFY/ACCEPT e
+do commit, executar a suíte completa de verificações disponível:
 
-Rodar Ruff.
-
-Rodar Mypy.
+```text
+python -m uv run --locked pytest
+python -m uv run --locked ruff check .
+python -m uv run --locked ruff format --check .
+python -m uv run --locked mypy
+python -m uv run --locked alembic check
+```
 
 Revisar Diff.
 
 Falhas relacionadas ao incremento devem ser corrigidas e verificadas novamente de forma autônoma. Falhas preexistentes ou fora do escopo são registradas sem refatoração oportunista.
 
-**`docs/CHECKLIST_DE_IMPLEMENTACAO.md` é o único lugar de registro de progresso.** Se o incremento introduz ou conclui um Marco/Passo/etapa observável, atualizá-lo no mesmo commit — data, estado, evidência, portão. Não criar um documento de plano/status paralelo para o mesmo fim: essa prática já deixou dois meses de trabalho real invisíveis neste checklist até serem consolidados em agosto de 2026.
+**`docs/CHECKLIST_DE_IMPLEMENTACAO.md` é o ledger de progresso entregue.** Se o incremento introduz ou conclui um Marco/Passo/etapa observável, atualizá-lo no mesmo commit — data, estado, evidência, portão. Não criar documento paralelo de status de entrega. Discovery e SPEC são documentos anteriores à implementação e não substituem nem duplicam esse ledger.
 
 ---
 
@@ -166,8 +189,8 @@ Todos os comandos são executados a partir da raiz do repositório.
 | Core Audit — registro append-only de eventos | Passo 4.1 | Disponível e aprovado |
 | Core Integrity — cadeia de hashes de eventos | Passo 4.2 | Disponível e aprovado |
 | Core Integrity — checkpoint verificável | Passo 4.3 | Disponível e aprovado |
-| Interface técnica de validação | Passo próprio autorizado | Condicionada à necessidade de teste |
-| Frontend de produto | Marco próprio aprovado | Indisponível |
+| Interface técnica de validação | Marco 19 | Disponível |
+| Frontend de produto Livestock | Marco 19 | Disponível |
 
 Ausência de manifesto ou alvo produz indisponibilidade, não permissão para improvisar outro comando.
 
@@ -205,7 +228,7 @@ Teste específico:
 python -m uv run --locked pytest <arquivo>::<teste>
 ```
 
-Suíte completa, somente quando o passo ou portão exigir:
+Suíte completa, obrigatória antes de VERIFY/ACCEPT e do commit:
 
 ```text
 python -m uv run --locked pytest
@@ -439,7 +462,10 @@ O comando acima utiliza somente as credenciais fictícias padrão. Se `TITAN_MON
 
 ## Frontend
 
-Não existe frontend nem manifesto JavaScript.
+Existe frontend React em `apps/web/`, com manifesto JavaScript, build, lint e testes.
+Ele é o primeiro produto de frontend do Livestock e permanece sujeito às mesmas
+fronteiras: apresentação e integração, sem duplicar regra de negócio ou autorização
+no navegador.
 
 Uma interface técnica mínima pode ser criada em passo próprio autorizado quando API, Swagger, testes automatizados ou comandos não forem suficientes para validar adequadamente uma capacidade.
 
