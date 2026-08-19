@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
+from packages.core_application.policy_origin import resolve_policy_origin
 from packages.core_domain.rule import Rule, RuleCondition, SeverityLevel
 from packages.core_domain.rule_governance import (
     RuleAdoption,
@@ -58,6 +59,12 @@ class RuleVersionRepositoryPort(Protocol):
     ) -> Rule | None: ...
 
     def get_by_id(self, rule_id: TypedId) -> Rule | None: ...
+
+    def list_by_policy(
+        self,
+        organization_id: OrganizationId,
+        policy_id: TypedId,
+    ) -> list[Rule]: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +159,37 @@ class RuleGovernanceService:
             raise ValueError(
                 f"Ja existe uma versao publicada para a regra '{identity.code}' nesta Policy."
             )
+
+        # ADR-0064 Invariante 3 (BuyerPolicy): a origem de uma Policy e derivada das
+        # RuleIdentity de suas Rules, nunca um campo proprio. O invariante protege
+        # especificamente o reconhecimento como BuyerPolicy -- nao introduz
+        # restricao nova para Policies puramente regulatorias/contratuais que
+        # nunca pretenderam ser BuyerPolicy (ex.: LAW + REGULATION na mesma
+        # Policy continua permitido, exatamente como antes desta ADR). O gate so
+        # dispara quando INTERNAL_POLICY esta envolvido de algum dos lados -- ou
+        # a Policy ja e (potencialmente) uma BuyerPolicy homogenea, ou a nova
+        # Rule tentaria torna-la uma. Defesa em profundidade, junto da
+        # verificacao repetida na avaliacao (packages/core_application/policy_origin.py).
+        existing_rules = self.rules.list_by_policy(
+            organization_id=organization_id, policy_id=policy_id
+        )
+        if existing_rules:
+            existing_origin = resolve_policy_origin(
+                organization_id, existing_rules, self.identities
+            )
+            buyer_policy_involved = (
+                identity.source_type is RuleSourceType.INTERNAL_POLICY
+                or existing_origin.source_type is RuleSourceType.INTERNAL_POLICY
+            )
+            homogeneous_with_new_rule = (
+                existing_origin.homogeneous and existing_origin.source_type == identity.source_type
+            )
+            if buyer_policy_involved and not homogeneous_with_new_rule:
+                raise ValueError(
+                    f"A Policy {policy_id.value} ja possui Rules de origem diferente; "
+                    "RuleSourceType deve permanecer homogeneo quando INTERNAL_POLICY "
+                    "estiver envolvida nesta Policy (ADR-0064)."
+                )
 
         rule = Rule.create(
             policy_id=policy_id,

@@ -3905,3 +3905,68 @@ Usa o login Keycloak individual já existente do produto — nenhuma conta de se
 **Evidência:** `apps/web/src/api/policyGovernance.ts` (cliente HTTP para `/v1/rule-governance/policies` e `/v1/rule-governance/catalogs/livestock-market-rules/...`); `apps/web/src/pages/MarketRuleGovernance.tsx`; rota e link adicionados em `App.tsx` e `LivestockHome.tsx`. **Testes:** `policyGovernance.test.ts` (6 casos) e `MarketRuleGovernance.test.tsx` (3 casos, incluindo o fluxo completo pré-visualizar → confirmar). **Portão verificado:** 79 testes de frontend aprovados (18 arquivos), `npm run lint` e `npm run build` limpos; suíte de backend revalidada em 1351 testes aprovados sem regressão.
 
 Com isso a NR-5 está fechada: o "caminho barato" que ela previu (`RuleCondition` declarativa, sem sandbox Wasm) foi construído ponta a ponta, de API a tela.
+
+### NEXT-09 — BuyerPolicy Fase 1: avaliação de Policy interna do comprador (ADR-0064)
+
+**Data:** 19 de agosto de 2026 · **Estado:** CONCLUÍDO — Fase 1 (`INTERNAL_POLICY`/`INTERNAL_ONLY`), conforme design package.
+
+Fecha o ciclo Discovery → ADR-0064 → SPEC aprovada → PLAN
+(`docs/plans/BUYERPOLICY_FASE1_DESIGN_PACKAGE.md`) → BUILD. O PLAN já havia
+corrigido a premissa original da ADR: não existia rota genérica para acionar
+`PolicyEvaluationService`, e a publicação de `Policy` usa `POLICY.*`
+(`policy_governance.py`), não `RULE_GOVERNANCE_*`.
+
+**O que foi construído:**
+
+1. `packages/core_application/policy_origin.py` (novo): deriva de forma pura o
+   `RuleSourceType` homogêneo de uma Policy a partir das `RuleIdentity` de suas
+   `Rule`s publicadas — nunca um campo próprio, nunca "a mais recente".
+2. `RuleGovernanceService.publish_rule_version` (`rule_governance_service.py`)
+   passa a recusar, com `ValueError`, a publicação de uma `RuleVersion` cujo
+   `RuleSourceType` diverge das demais `Rule`s já publicadas na mesma `Policy`
+   — primeiro dos dois pontos de defesa em profundidade decididos no PLAN.
+3. `POST /v1/rule-governance/policies/{policy_id}/evaluate`
+   (`apps/api/policy_governance.py`), sob a `Permission` nova `POLICY.AVALIAR`:
+   segundo ponto de verificação (recusa `422` se a Policy carregada não for
+   homogeneamente `INTERNAL_POLICY`), monta o snapshot via o mesmo
+   `LivestockFactProvider` já usado pela elegibilidade regulatória
+   (`_eligibility_components`, reaproveitado por import direto — nenhuma
+   duplicação da fiação de repositórios), executa
+   `PolicyEvaluationService.evaluate_policy` e persiste a `Evaluation`. A
+   resposta expõe `origin`/`recognition_boundary` **derivados**, nunca
+   persistidos, e nunca compõe com `MarketEligibilityPurpose`/matriz da
+   ADR-0044.
+
+**Evidência:** `packages/core_application/policy_origin.py`;
+`packages/core_application/rule_governance_service.py`;
+`apps/api/policy_governance.py`;
+`packages/core_application/policy_authorization.py` (`POLICY_AVALIAR`);
+`apps/seed/__main__.py` e `tests/livestock_api_support.py` (permissão
+concedida ao operador). **Testes:** `tests/application/test_policy_origin.py`
+(6 casos, puro); `tests/application/test_rule_governance_service.py` (+2 casos
+de homogeneidade); `tests/integration/test_policy_governance_api.py` (+5
+casos: avaliação positiva isolada, origem heterogênea recusada com `422`,
+Policy de outra Organization com `404` uniforme — sem distinguir inexistente
+de invisível, `DOMAIN.md` P-198 —, auditor sem `POLICY.AVALIAR` com `403`,
+Policy revogada recusada com `409`); `tests/api/test_core_public_surface.py`
+atualizado com a rota nova.
+
+**Portão verificado:** 1394 testes aprovados, 1 pulado, 0 falhas; Ruff check,
+Ruff format e Mypy (634 arquivos) limpos; `alembic check` sem divergência
+(nenhuma migration — `origin`/`recognition_boundary` são calculados em
+memória, não persistidos, conforme ADR-0064 §21).
+
+**Nota de ambiente:** dois testes pré-existentes e não relacionados a este
+incremento (`test_rule_governance_postgresql.py::test_rule_governance_persistence_and_rls`,
+`test_policy_postgresql.py::test_policy_versioning_lifecycle_and_rls`) só
+passam sob a conexão de superusuário `titan` — o próprio fallback hardcoded de
+cada arquivo — porque inserem duas Organizations num único `INSERT` sem
+`set_local_organization_context` por linha, o que a RLS recusa sob o papel de
+runtime `titan_app`. Não é regressão deste incremento: reproduz-se em branch
+limpo. Registrado aqui para não ser redescoberto como falso positivo.
+
+**Fora deste incremento, por decisão do PLAN:** `RuleSourceType.CONTRACT`,
+qualquer travessia de Organization, `Decision`/`DecisionProposal` de
+BuyerPolicy, composição com a matriz regulatória e persistência de
+`recognition_boundary` como campo próprio — todos permanecem Fase 2/3 ou
+questão adiada (ADR-0064 §23).

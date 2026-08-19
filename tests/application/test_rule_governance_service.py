@@ -66,6 +66,17 @@ class InMemoryRuleVersionRepository:
     def get_by_id(self, rule_id: TypedId) -> Rule | None:
         return self.by_id.get(rule_id)
 
+    def list_by_policy(
+        self,
+        organization_id: OrganizationId,
+        policy_id: TypedId,
+    ) -> list[Rule]:
+        return [
+            rule
+            for (org, policy, _code, _version), rule in self.rules.items()
+            if org == organization_id and policy == policy_id
+        ]
+
 
 @dataclass
 class InMemoryRuleAdoptionRepository:
@@ -449,3 +460,184 @@ def test_replace_rule_adoption_supersedes_previous_and_records_timeline() -> Non
     )
     assert timeline.events[-1].event_type is RuleTimelineEventType.RULE_ADOPTION_CHANGED
     assert timeline.events[-1].rule_version_id == replacement.rule_id
+
+
+def test_publish_rule_version_accepts_homogeneous_source_type_in_same_policy() -> None:
+    org_id = OrganizationId.new()
+    service = RuleGovernanceService(
+        identities=InMemoryRuleIdentityRepository(),
+        timeline=InMemoryRuleTimelineRepository(),
+        rules=InMemoryRuleVersionRepository(),
+    )
+    actor = _actor(org_id)
+    policy_id = TypedId.new("policy")
+    primeira = service.create_identity(
+        organization_id=org_id,
+        code="rule-criterio-a",
+        purpose="COMPRA",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    segunda = service.create_identity(
+        organization_id=org_id,
+        code="rule-criterio-b",
+        purpose="COMPRA",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+
+    service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=primeira.rule_identity_id,
+        policy_id=policy_id,
+        name="Criterio A",
+        actor=actor,
+    )
+    rule_b = service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=segunda.rule_identity_id,
+        policy_id=policy_id,
+        name="Criterio B",
+        actor=actor,
+    )
+
+    assert rule_b.policy_id == policy_id
+
+
+def test_publish_rule_version_rejects_heterogeneous_source_type_in_same_policy() -> None:
+    org_id = OrganizationId.new()
+    service = RuleGovernanceService(
+        identities=InMemoryRuleIdentityRepository(),
+        timeline=InMemoryRuleTimelineRepository(),
+        rules=InMemoryRuleVersionRepository(),
+    )
+    actor = _actor(org_id)
+    policy_id = TypedId.new("policy")
+    interna = service.create_identity(
+        organization_id=org_id,
+        code="rule-interna",
+        purpose="COMPRA",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    contratual = service.create_identity(
+        organization_id=org_id,
+        code="rule-contratual",
+        purpose="COMPRA",
+        scope="livestock.animal",
+        source_type=RuleSourceType.CONTRACT,
+        actor=actor,
+    )
+    service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=interna.rule_identity_id,
+        policy_id=policy_id,
+        name="Criterio interno",
+        actor=actor,
+    )
+
+    with pytest.raises(ValueError, match="origem diferente"):
+        service.publish_rule_version(
+            organization_id=org_id,
+            rule_identity_id=contratual.rule_identity_id,
+            policy_id=policy_id,
+            name="Criterio contratual",
+            actor=actor,
+        )
+
+
+def test_publish_rule_version_allows_heterogeneous_non_internal_policy_source_types() -> None:
+    """O gate de homogeneidade (ADR-0064) protege o reconhecimento como
+    BuyerPolicy; nao restringe Policy puramente regulatoria/contratual que
+    nunca pretendeu ser BuyerPolicy -- LAW + REGULATION na mesma Policy
+    continua permitido, exatamente como antes desta ADR."""
+    org_id = OrganizationId.new()
+    service = RuleGovernanceService(
+        identities=InMemoryRuleIdentityRepository(),
+        timeline=InMemoryRuleTimelineRepository(),
+        rules=InMemoryRuleVersionRepository(),
+    )
+    actor = _actor(org_id)
+    policy_id = TypedId.new("policy")
+    lei = service.create_identity(
+        organization_id=org_id,
+        code="rule-lei",
+        purpose="CONFORMIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.LAW,
+        actor=actor,
+    )
+    regulamento = service.create_identity(
+        organization_id=org_id,
+        code="rule-regulamento",
+        purpose="CONFORMIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.REGULATION,
+        actor=actor,
+    )
+    service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=lei.rule_identity_id,
+        policy_id=policy_id,
+        name="Exigencia legal",
+        actor=actor,
+    )
+
+    regra_regulamento = service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=regulamento.rule_identity_id,
+        policy_id=policy_id,
+        name="Exigencia regulamentar",
+        actor=actor,
+    )
+
+    assert regra_regulamento.policy_id == policy_id
+
+
+def test_publish_rule_version_rejects_internal_policy_added_to_regulatory_policy() -> None:
+    """Protecao no sentido oposto: uma Policy ja regulatoria (nao-INTERNAL_POLICY)
+    nao pode receber uma Rule INTERNAL_POLICY -- do contrario uma Policy
+    regulatoria poderia ser transformada em BuyerPolicy por acrescimo."""
+    org_id = OrganizationId.new()
+    service = RuleGovernanceService(
+        identities=InMemoryRuleIdentityRepository(),
+        timeline=InMemoryRuleTimelineRepository(),
+        rules=InMemoryRuleVersionRepository(),
+    )
+    actor = _actor(org_id)
+    policy_id = TypedId.new("policy")
+    lei = service.create_identity(
+        organization_id=org_id,
+        code="rule-lei-2",
+        purpose="CONFORMIDADE",
+        scope="livestock.animal",
+        source_type=RuleSourceType.LAW,
+        actor=actor,
+    )
+    interna = service.create_identity(
+        organization_id=org_id,
+        code="rule-interna-2",
+        purpose="COMPRA",
+        scope="livestock.animal",
+        source_type=RuleSourceType.INTERNAL_POLICY,
+        actor=actor,
+    )
+    service.publish_rule_version(
+        organization_id=org_id,
+        rule_identity_id=lei.rule_identity_id,
+        policy_id=policy_id,
+        name="Exigencia legal",
+        actor=actor,
+    )
+
+    with pytest.raises(ValueError, match="origem diferente"):
+        service.publish_rule_version(
+            organization_id=org_id,
+            rule_identity_id=interna.rule_identity_id,
+            policy_id=policy_id,
+            name="Criterio interno indevido",
+            actor=actor,
+        )

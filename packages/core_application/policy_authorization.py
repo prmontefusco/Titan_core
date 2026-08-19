@@ -5,11 +5,13 @@ from typing import Final
 POLICY_CRIAR: Final = "POLICY.CRIAR"
 POLICY_PUBLICAR: Final = "POLICY.PUBLICAR"
 POLICY_LER: Final = "POLICY.LER"
+POLICY_AVALIAR: Final = "POLICY.AVALIAR"
 
 POLICY_PERMISSIONS: Final = frozenset(
     {
         POLICY_CRIAR,
         POLICY_PUBLICAR,
         POLICY_LER,
+        POLICY_AVALIAR,
     }
 )
