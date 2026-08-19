@@ -1,7 +1,8 @@
 # ADR-0064 - BuyerPolicy: elegibilidade especifica do comprador (Fase 1 interna)
 
 **Data:** 2026-08-19<br>
-**Status:** PROPOSTA<br>
+**Status:** ACEITA<br>
+**Aceita em:** 2026-08-19<br>
 **Base normativa:** `DOMAIN.md` v1.21, ADRs aceitas ate ADR-0063<br>
 **Escopo:** Titan Core e Titan Livestock<br>
 **Relacionadas:** ADR-0018, ADR-0038, ADR-0043, ADR-0044, ADR-0048, ADR-0049, ADR-0050, ADR-0053<br>

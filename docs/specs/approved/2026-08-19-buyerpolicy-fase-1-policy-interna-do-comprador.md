@@ -1,16 +1,15 @@
 # BuyerPolicy — Fase 1: Policy interna do comprador (`INTERNAL_ONLY`)
 
 - **Nível:** CRITICAL
-- **Estado:** proposta
-- **Decisão de Discovery:** PROCEED (para Fase 0), condicionado à aceitação da
-  ADR-0064
+- **Estado:** aprovada
+- **Decisão de Discovery:** PROCEED — ADR-0064 aceita em 2026-08-19
 - **Owner de produto:** Founder / Product Owner
 - **Data:** 2026-08-19
 
-> Esta SPEC **não autoriza implementação**. Ela registra os critérios de aceite da
-> Fase 1 para quando a ADR-0064 for formalmente aceita e a SPEC promovida a
-> `approved/`. Nenhuma API, migration, capability ou UI é criada por este
-> documento.
+> Esta SPEC aprovada autoriza um futuro PLAN/BUILD dentro dos limites aqui
+> descritos, mas não é, por si só, prioridade imediata nem implementação. Nenhuma
+> API, migration, capability ou UI é criada por este documento; isso permanece
+> para PLAN → BUILD → VERIFY → ACCEPT (`docs/specs/README.md`).
 
 ## Problema e usuário
 
@@ -148,7 +147,7 @@ A preencher no PLAN, após aprovação desta SPEC. Deve, no mínimo:
 
 ## Documentação afetada
 
-- ADR-0064 (esta SPEC depende da sua aceitação formal);
+- ADR-0064 (ACEITA em 2026-08-19; esta SPEC concretiza sua Fase 1);
 - `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, somente quando houver entrega
   efetivamente implementada e validada (não nesta etapa de Discovery/SPEC);
 - possível nota em `DOMAIN.md` apenas se o PLAN revelar necessidade de formalizar
@@ -168,5 +167,5 @@ Perguntas ainda abertas para o PLAN, não bloqueantes para aprovar esta SPEC:
    enum específico) — deve ser decidido no PLAN sem exigir migration de
    `DOMAIN.md`.
 
-Esta SPEC só pode ser promovida a `approved/` após a ADR-0064 mudar de `PROPOSTA`
-para `ACEITA`.
+Essas perguntas devem ser resolvidas no PLAN, antes do BUILD; nenhuma delas
+bloqueia a aprovação desta SPEC.
