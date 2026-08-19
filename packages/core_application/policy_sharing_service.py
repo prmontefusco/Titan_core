@@ -2,23 +2,17 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol
+from typing import Any
 from uuid import UUID, uuid4
 
-from packages.core_infrastructure.persistence.authorization_grant import (
-    AuthorizationGrant,
-    AuthorizationGrantRepositoryPort,
-)
-from packages.core_infrastructure.persistence.policy import PolicyRepositoryPort
 from packages.core_application.policy_origin import (
-    is_buyer_policy_origin,
     resolve_policy_origin,
 )
 from packages.core_domain.policy import PolicyStatus
 from packages.core_domain.rule_governance import RuleSourceType
-from packages.core_infrastructure.persistence.rule import RuleVersionRepositoryPort
-from packages.core_infrastructure.persistence.rule_governance import (
-    RuleIdentityRepositoryPort,
+from packages.core_infrastructure.persistence.authorization_grant import (
+    AuthorizationGrant,
+    AuthorizationGrantRepositoryPort,
 )
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -27,9 +21,9 @@ from packages.shared_kernel import OrganizationId, TypedId
 class PolicySharingService:
     """Orquestração de grants bilaterais para BuyerPolicy contratual."""
 
-    policies: PolicyRepositoryPort
-    rules: RuleVersionRepositoryPort
-    identities: RuleIdentityRepositoryPort
+    policies: Any
+    rules: Any
+    identities: Any
     grants: AuthorizationGrantRepositoryPort
 
     def create_grant(
@@ -128,9 +122,7 @@ class PolicySharingService:
             raise KeyError(f"Grant {grant_id} não encontrado")
 
         if grant.owner_organization_id != owner_organization_id:
-            raise ValueError(
-                f"Grant {grant_id} pertence a outro owner; revogação recusada"
-            )
+            raise ValueError(f"Grant {grant_id} pertence a outro owner; revogação recusada")
 
         if grant.status == "REVOGADO":
             raise ValueError(f"Grant {grant_id} já foi revogado")

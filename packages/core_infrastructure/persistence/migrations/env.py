@@ -11,6 +11,7 @@ from packages.core_infrastructure.persistence import (
     DatabaseSettings,
     create_database_engine,
 )
+from packages.core_infrastructure.persistence.authorization_grant import authorization_grants_table
 from packages.core_infrastructure.persistence.checkpoints import integrity_checkpoints_table
 from packages.core_infrastructure.persistence.crypto import key_registry_table
 from packages.core_infrastructure.persistence.database import (
@@ -114,6 +115,7 @@ assert evidence_verifications_table.metadata is target_metadata
 assert key_registry_table.metadata is target_metadata
 assert attachments_table.metadata is target_metadata
 assert policies_table.metadata is target_metadata
+assert authorization_grants_table.metadata is target_metadata
 assert rules_table.metadata is target_metadata
 assert rule_identities_table.metadata is target_metadata
 assert rule_timeline_events_table.metadata is target_metadata

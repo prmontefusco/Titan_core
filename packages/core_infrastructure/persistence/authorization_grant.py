@@ -5,9 +5,59 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from sqlalchemy import Connection, text
+from sqlalchemy import (
+    Column,
+    Connection,
+    DateTime,
+    ForeignKeyConstraint,
+    String,
+    Table,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
+from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
+from packages.core_infrastructure.persistence.organizations import organization_metadata
 from packages.shared_kernel import OrganizationId, TypedId
+
+authorization_grants_table = Table(
+    "authorization_grants",
+    organization_metadata,
+    Column("grant_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("beneficiary_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("policy_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("policy_version_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("access_purpose", String(100), nullable=False),
+    Column("field_scope_profile", String(100), nullable=False),
+    Column("valid_from", DateTime(timezone=True), nullable=False),
+    Column("valid_until", DateTime(timezone=True), nullable=False),
+    Column("status", String(20), nullable=False, default="ATIVO"),
+    Column("created_at", DateTime(timezone=True), nullable=False),
+    Column("created_by", String(255), nullable=False),
+    Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True), nullable=True),
+    Column("revoked_by", String(255), nullable=True),
+    Column("revocation_reason", Text, nullable=True),
+    ForeignKeyConstraint(
+        ["owner_organization_id"],
+        ["core_identity.organizations.organization_id"],
+        name="fk_authorization_grants_owner_org",
+    ),
+    ForeignKeyConstraint(
+        ["beneficiary_organization_id"],
+        ["core_identity.organizations.organization_id"],
+        name="fk_authorization_grants_beneficiary_org",
+    ),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id"],
+        ["core_identity.organizations.organization_id"],
+        name="fk_authorization_grants_record_owner_org",
+    ),
+    schema=CORE_AUDIT_SCHEMA,
+    comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
+)
 
 
 @dataclass(frozen=True, slots=True)

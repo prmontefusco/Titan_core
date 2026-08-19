@@ -26,6 +26,9 @@ from apps.api.authentication import require_authenticated_principal
 from apps.api.main import app
 from packages.core_application.policy_authorization import (
     POLICY_AVALIAR,
+    POLICY_AVALIAR_COMPARTILHADA,
+    POLICY_COMPARTILHAMENTO_LER,
+    POLICY_COMPARTILHAR,
     POLICY_CRIAR,
     POLICY_LER,
     POLICY_PERMISSIONS,
@@ -83,6 +86,9 @@ PERMISSOES_OPERADOR = ROLE_PERMISSIONS[OPERADOR_PECUARIO] | frozenset(
         POLICY_LER,
         POLICY_PUBLICAR,
         POLICY_AVALIAR,
+        POLICY_COMPARTILHAR,
+        POLICY_COMPARTILHAMENTO_LER,
+        POLICY_AVALIAR_COMPARTILHADA,
     }
 )
 PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER, POLICY_LER})
