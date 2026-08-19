@@ -1,6 +1,6 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 14 de agosto de 2026
+**Atualizado em:** 15 de agosto de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
 
@@ -3448,6 +3448,26 @@ Substitui o payload outbound específico de tratamento por um contrato de inten�
 
 Primeiro produto de frontend do Livestock: leitura do animal, registro de tratamento, elegibilidade e matriz de mercado do animal, operação comercial do lote e o workspace de revisão humana (S10, consumindo diretamente o LIV-C06 acima em `/review/:proposalId`). Mergeado em `main` via PRs #7 a #12, cada onda com portão de verificação próprio (`npm run build`/`lint`/`test` do frontend) e validação manual ponta a ponta contra API e PostgreSQL reais.
 
+### LIV-PROD-02 — Acesso e onboarding compreensíveis
+
+**Data:** 14 de agosto de 2026 · **Estado:** IMPLEMENTADO; validação manual pendente. O fluxo OIDC existente foi preservado sem alterar Keycloak, `OrganizationContext`, Membership, Role ou Permission: a entrada explica que o login ocorre no provider de identidade, oferece "Entrar ou criar conta", comunica a possível aprovação administrativa posterior e apresenta nova tentativa para falha de autenticação ou consulta do status. O pedido de tipo de entidade agora declara que é encaminhado à Organization piloto configurada no ambiente; não promete seleção de Organization que o produto ainda não possui. O tema real do Keycloak foi refinado para mobile, foco visível e erro, e passou a separar honestamente "Criar conta" de "solicitar acesso" — a conta autentica, mas a operação ainda exige autorização. **Evidência:** `apps/web/src/App.tsx`, `apps/web/src/components/EntityTypeSelectionForm.tsx`, `apps/web/src/components/PendingStatus.tsx`, `config/keycloak/themes/titan/login/` e teste de submissão no componente. **Portão verificado:** `npm run test` (21 arquivos, 88 testes), `npm run lint` e `npm run build` aprovados; tela real de login Keycloak local recarregada e inspecionada. **Limite preservado:** descoberta/seleção de Organizations, criação da primeira Organization, convite e concessão de Membership continuam decisões RED de tenancy/autorização e não foram implementados.
+
+### ADMIN-CUT-01 — Overview administrativo inicial
+
+**Data:** 15 de agosto de 2026 · **Estado:** IMPLEMENTADO; revisão humana pendente. Após o Discovery em `docs/plans/ADMIN_UI_CAPABILITY_MAP.md`, a área administrativa foi limitada às capacidades reais já suportadas pelo backend: a fila de solicitações de acesso por Organization. O `AdminDashboard` reutiliza `ApplicationShell`, `TopBar`, `Sidebar` e `UserAccountMenu`, apresenta o Overview como capacidades administrativas atualmente disponíveis e não renderiza módulos futuros sem contrato real. `403` permanece estado `UNAUTHORIZED`, erro de backend não vira lista vazia e a contagem exibida vem somente de `listPendingRequests`. **Evidência:** `apps/web/src/pages/AdminDashboard.tsx`, `apps/web/src/pages/AdminDashboard.test.tsx`, `apps/web/src/App.tsx` e `docs/plans/ADMIN_UI_CAPABILITY_MAP.md`. **Portão verificado:** testes focados do dashboard e shell, `npm run test`, `npm run lint` e `npm run build` do frontend aprovados. **Limite preservado:** não houve API nova, migration, mock, métrica fictícia, contrato de autorização, Odoo/ERP, Organization management, Roles/Capabilities UI, audit browser, operations dashboard ou módulos administrativos futuros.
+
+### UI-FOUNDATION-02 — Detail Page Pattern inicial
+
+**Data:** 15 de agosto de 2026 · **Estado:** IMPLEMENTADO; revisão humana pendente. O padrão composicional de página de detalhe foi materializado apenas onde já havia dois consumidores reais: `AnimalDetail` e `LotDetail`. Foram criados `DetailPageHeader`, `DetailSection` e `DetailDescriptionList` como componentes neutros de apresentação; eles não carregam semântica de vertical, não interpretam status de domínio e não criam base class rígida. `AnimalDetail` preserva a distinção entre propriedade de nascimento e localização atual não disponível; `LotDetail` preserva execução explícita da análise de mercado e revisão humana como fluxo separado. **Evidência:** `apps/web/src/components/DetailPage.tsx`, `apps/web/src/components/DetailPage.test.tsx`, `apps/web/src/pages/AnimalDetail.tsx`, `apps/web/src/pages/LotDetail.tsx` e `apps/web/src/index.css`. **Portão verificado:** testes focados de `DetailPage`, `AnimalDetail` e `LotDetail`, `npm run test`, `npm run lint` e `npm run build` do frontend aprovados. **Limite preservado:** `DecisionReview`, Dossier, Verification, Audit, Operations, capability navigation, Organization selector, `ContextBanner`, `SourceReference`, status/reason system e módulos futuros permanecem fora deste corte.
+
+### UI-CONTEXT-01 — Contexto operacional visível em telas sensíveis
+
+**Data:** 15 de agosto de 2026 · **Estado:** IMPLEMENTADO; revisão humana pendente. Sem criar seletor de Organization, manifesto de capabilities ou `ContextBanner` semântico, o frontend passou a explicitar melhor o escopo operacional já real em telas onde a Organization ativa muda o significado da leitura ou da ação. Foi criado o componente neutro `PageContext`, aplicado em `DecisionReview`, `TreatmentForm`, `AnimalTimeline` e `MarketRuleGovernance`, sempre mostrando apenas contexto já conhecido pelo cliente e já enviado ao backend. `DecisionReview` também adotou `LoadingState`, `ErrorState` e `NotFoundState`; `AnimalTimeline` passou a usar `LoadingState`, `EmptyState`, `ErrorState` e `UnauthorizedState`, preservando `403 != vazio`. **Evidência:** `apps/web/src/components/PageContext.tsx`, `apps/web/src/components/PageContext.test.tsx`, `apps/web/src/pages/DecisionReview.tsx`, `apps/web/src/pages/TreatmentForm.tsx`, `apps/web/src/pages/AnimalTimeline.tsx`, `apps/web/src/pages/MarketRuleGovernance.tsx` e `apps/web/src/index.css`. **Portão verificado:** testes focados dessas telas e do novo componente, `npm run lint` e `npm run build` do frontend aprovados. **Limite preservado:** não houve descoberta de memberships, troca de Organization, novo contrato de autorização, banner contextual dinâmico, purpose resolver, API nova ou expansão para módulos futuros sem backend correspondente.
+
+### UI-FOUNDATION-01 — Estados padrão iniciais
+
+**Data:** 15 de agosto de 2026 · **Estado:** IMPLEMENTADO; revisão humana pendente. Com múltiplos consumidores reais já presentes no frontend, foram extraídos os estados mínimos de leitura assíncrona: `LoadingState`, `EmptyState`, `ErrorState`, `UnauthorizedState` e `NotFoundState`, com apresentação `page` e `compact`. O corte foi aplicado primeiro a `AdminDashboard`, `AnimalDetail` e `LotDetail`, e em seguida estendido para `AnimalSearch`, `LotSearch`, `AdminQueue` e `MarketRuleGovernance`, todos com duplicação real já comprovada. `403` continua distinto de vazio, `404` continua distinto de erro genérico e o padrão não interpreta status de domínio nem introduz manifesto de capabilities. **Evidência:** `apps/web/src/components/AsyncStates.tsx`, `apps/web/src/components/AsyncStates.test.tsx`, `apps/web/src/pages/AdminDashboard.tsx`, `apps/web/src/pages/AnimalDetail.tsx`, `apps/web/src/pages/LotDetail.tsx`, `apps/web/src/pages/AnimalSearch.tsx`, `apps/web/src/pages/LotSearch.tsx`, `apps/web/src/components/AdminQueue.tsx`, `apps/web/src/pages/MarketRuleGovernance.tsx` e `apps/web/src/index.css`. **Portão verificado:** testes focados dos componentes e páginas afetadas, `npm run test`, `npm run lint` e `npm run build` do frontend aprovados. **Limite preservado:** `DecisionReview`, `ContextBanner`, `SourceReference`, reason system, capability navigation e novos estados sem segundo consumidor permanecem fora deste corte.
+
 ### NEXT-01 — Coverage e admissibilidade sanitária explícitas
 
 **Data:** 12 de agosto de 2026 · **Estado:** PRIMEIRO CORTE INTERNO CONCLUÍDO. **Evidência:** `docs/plans/NEXT-01_COVERAGE_ADMISSIBILITY_DESIGN_PACKAGE.md` fixa `SANITARY_TEST_A_v1`; `packages/livestock_application/sanitary_test_coverage.py` deriva coverage/admissibilidade de `treatment_history` em 90 dias sem percentual ou persistência; `tests/livestock_application/test_sanitary_test_coverage.py` prova coverage completa com tratamento → `NAO_ATENDIDA`, completa sem tratamento → `ATENDIDA`, e parcial/ausente/inacessível/conflitante/não admissível → `INDETERMINADA`. **Portão verificado:** 1212 testes PostgreSQL incluídos passaram; Ruff, format check, Mypy e Alembic check verdes. **Limite preservado:** o artefato de transferência atual possui intervalo genérico; não foi promovido silenciosamente a coverage de tratamentos. Entrada operacional dimensional, API, persistência, mercado real e NEXT-02/03/05 exigem cortes próprios.
@@ -3885,3 +3905,68 @@ Usa o login Keycloak individual já existente do produto — nenhuma conta de se
 **Evidência:** `apps/web/src/api/policyGovernance.ts` (cliente HTTP para `/v1/rule-governance/policies` e `/v1/rule-governance/catalogs/livestock-market-rules/...`); `apps/web/src/pages/MarketRuleGovernance.tsx`; rota e link adicionados em `App.tsx` e `LivestockHome.tsx`. **Testes:** `policyGovernance.test.ts` (6 casos) e `MarketRuleGovernance.test.tsx` (3 casos, incluindo o fluxo completo pré-visualizar → confirmar). **Portão verificado:** 79 testes de frontend aprovados (18 arquivos), `npm run lint` e `npm run build` limpos; suíte de backend revalidada em 1351 testes aprovados sem regressão.
 
 Com isso a NR-5 está fechada: o "caminho barato" que ela previu (`RuleCondition` declarativa, sem sandbox Wasm) foi construído ponta a ponta, de API a tela.
+
+### NEXT-09 — BuyerPolicy Fase 1: avaliação de Policy interna do comprador (ADR-0064)
+
+**Data:** 19 de agosto de 2026 · **Estado:** CONCLUÍDO — Fase 1 (`INTERNAL_POLICY`/`INTERNAL_ONLY`), conforme design package.
+
+Fecha o ciclo Discovery → ADR-0064 → SPEC aprovada → PLAN
+(`docs/plans/BUYERPOLICY_FASE1_DESIGN_PACKAGE.md`) → BUILD. O PLAN já havia
+corrigido a premissa original da ADR: não existia rota genérica para acionar
+`PolicyEvaluationService`, e a publicação de `Policy` usa `POLICY.*`
+(`policy_governance.py`), não `RULE_GOVERNANCE_*`.
+
+**O que foi construído:**
+
+1. `packages/core_application/policy_origin.py` (novo): deriva de forma pura o
+   `RuleSourceType` homogêneo de uma Policy a partir das `RuleIdentity` de suas
+   `Rule`s publicadas — nunca um campo próprio, nunca "a mais recente".
+2. `RuleGovernanceService.publish_rule_version` (`rule_governance_service.py`)
+   passa a recusar, com `ValueError`, a publicação de uma `RuleVersion` cujo
+   `RuleSourceType` diverge das demais `Rule`s já publicadas na mesma `Policy`
+   — primeiro dos dois pontos de defesa em profundidade decididos no PLAN.
+3. `POST /v1/rule-governance/policies/{policy_id}/evaluate`
+   (`apps/api/policy_governance.py`), sob a `Permission` nova `POLICY.AVALIAR`:
+   segundo ponto de verificação (recusa `422` se a Policy carregada não for
+   homogeneamente `INTERNAL_POLICY`), monta o snapshot via o mesmo
+   `LivestockFactProvider` já usado pela elegibilidade regulatória
+   (`_eligibility_components`, reaproveitado por import direto — nenhuma
+   duplicação da fiação de repositórios), executa
+   `PolicyEvaluationService.evaluate_policy` e persiste a `Evaluation`. A
+   resposta expõe `origin`/`recognition_boundary` **derivados**, nunca
+   persistidos, e nunca compõe com `MarketEligibilityPurpose`/matriz da
+   ADR-0044.
+
+**Evidência:** `packages/core_application/policy_origin.py`;
+`packages/core_application/rule_governance_service.py`;
+`apps/api/policy_governance.py`;
+`packages/core_application/policy_authorization.py` (`POLICY_AVALIAR`);
+`apps/seed/__main__.py` e `tests/livestock_api_support.py` (permissão
+concedida ao operador). **Testes:** `tests/application/test_policy_origin.py`
+(6 casos, puro); `tests/application/test_rule_governance_service.py` (+2 casos
+de homogeneidade); `tests/integration/test_policy_governance_api.py` (+5
+casos: avaliação positiva isolada, origem heterogênea recusada com `422`,
+Policy de outra Organization com `404` uniforme — sem distinguir inexistente
+de invisível, `DOMAIN.md` P-198 —, auditor sem `POLICY.AVALIAR` com `403`,
+Policy revogada recusada com `409`); `tests/api/test_core_public_surface.py`
+atualizado com a rota nova.
+
+**Portão verificado:** 1394 testes aprovados, 1 pulado, 0 falhas; Ruff check,
+Ruff format e Mypy (634 arquivos) limpos; `alembic check` sem divergência
+(nenhuma migration — `origin`/`recognition_boundary` são calculados em
+memória, não persistidos, conforme ADR-0064 §21).
+
+**Nota de ambiente:** dois testes pré-existentes e não relacionados a este
+incremento (`test_rule_governance_postgresql.py::test_rule_governance_persistence_and_rls`,
+`test_policy_postgresql.py::test_policy_versioning_lifecycle_and_rls`) só
+passam sob a conexão de superusuário `titan` — o próprio fallback hardcoded de
+cada arquivo — porque inserem duas Organizations num único `INSERT` sem
+`set_local_organization_context` por linha, o que a RLS recusa sob o papel de
+runtime `titan_app`. Não é regressão deste incremento: reproduz-se em branch
+limpo. Registrado aqui para não ser redescoberto como falso positivo.
+
+**Fora deste incremento, por decisão do PLAN:** `RuleSourceType.CONTRACT`,
+qualquer travessia de Organization, `Decision`/`DecisionProposal` de
+BuyerPolicy, composição com a matriz regulatória e persistência de
+`recognition_boundary` como campo próprio — todos permanecem Fase 2/3 ou
+questão adiada (ADR-0064 §23).

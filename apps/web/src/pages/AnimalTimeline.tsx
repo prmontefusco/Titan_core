@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AnimalApiError, fetchAnimalTimeline, type LinhaDoTempoResponse } from '../api/animals'
+import { EmptyState, ErrorState, LoadingState, UnauthorizedState } from '../components/AsyncStates'
+import { PageContext } from '../components/PageContext'
 
 interface Options {
   baseUrl: string
@@ -47,14 +49,24 @@ export function AnimalTimeline(options: Options) {
         <Link to={animalId ? `/animals/${animalId}` : '/animals'}>&larr; Voltar para o animal</Link>
       </p>
       <h2>Timeline do animal {animalId}</h2>
+      <PageContext
+        description="A narrativa histórica exibida aqui pertence somente ao animal dentro da Organization ativa."
+        items={[
+          { label: 'Organization', value: options.organizationId },
+          { label: 'Animal', value: animalId ?? '—' },
+        ]}
+      />
 
       {semPermissao && (
-        <p role="alert">Você não tem permissão para ler a timeline nesta Organization.</p>
+        <UnauthorizedState
+          tone="compact"
+          message="Você não tem permissão para ler a timeline nesta Organization."
+        />
       )}
-      {erro && <p role="alert">{erro}</p>}
-      {!semPermissao && !erro && linha === null && <p>Carregando…</p>}
+      {erro && <ErrorState tone="compact" message={erro} />}
+      {!semPermissao && !erro && linha === null && <LoadingState tone="compact" message="Carregando..." />}
       {!semPermissao && !erro && linha !== null && linha.entries.length === 0 && (
-        <p>Nenhum evento registrado ainda.</p>
+        <EmptyState tone="compact" message="Nenhum evento registrado ainda." />
       )}
       {!semPermissao && !erro && linha !== null && linha.entries.length > 0 && (
         <ul>

@@ -10,6 +10,8 @@ import {
   type DossierResponse,
   type ReviewConclusion,
 } from '../api/decisionReview'
+import { ErrorState, LoadingState, NotFoundState } from '../components/AsyncStates'
+import { PageContext } from '../components/PageContext'
 
 interface Options {
   baseUrl: string
@@ -105,18 +107,26 @@ export function DecisionReview(options: Options) {
   }
 
   if (naoEncontrada) {
-    return <p role="alert">Proposta não encontrada nesta Organization.</p>
+    return <NotFoundState message="Proposta não encontrada nesta Organization." />
   }
   if (erroCarga) {
-    return <p role="alert">{erroCarga}</p>
+    return <ErrorState message={erroCarga} />
   }
   if (!proposta) {
-    return <p>Carregando…</p>
+    return <LoadingState message="Carregando..." />
   }
 
   return (
     <section>
       <h2>Revisão humana de decisão</h2>
+      <PageContext
+        description="A revisão atua somente sobre a proposta e a finalidade autorizadas dentro da Organization ativa."
+        items={[
+          { label: 'Organization', value: options.organizationId },
+          { label: 'Proposta', value: proposalId },
+          { label: 'Finalidade', value: proposta.purpose },
+        ]}
+      />
       <dl>
         <dt>Finalidade</dt>
         <dd>{proposta.purpose}</dd>

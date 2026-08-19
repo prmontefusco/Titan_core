@@ -7,6 +7,13 @@ import {
   type AnimalResumo,
   type PropriedadeResumo,
 } from '../api/animals'
+import {
+  ErrorState,
+  LoadingState,
+  NotFoundState,
+  UnauthorizedState,
+} from '../components/AsyncStates'
+import { DetailDescriptionList, DetailPageHeader, DetailSection } from '../components/DetailPage'
 
 interface Options {
   baseUrl: string
@@ -70,73 +77,90 @@ export function AnimalDetail(options: Options) {
   }, [options.baseUrl, options.accessToken, options.organizationId, animalId])
 
   if (semPermissao) {
-    return <p role="alert">Você não tem permissão para ler animais nesta Organization.</p>
+    return (
+      <UnauthorizedState
+        title="Acesso não autorizado"
+        message="Você não tem permissão para ler animais nesta Organization."
+      />
+    )
   }
   if (naoEncontrado) {
-    return <p role="alert">Animal não encontrado nesta Organization.</p>
+    return (
+      <NotFoundState
+        title="Animal não encontrado"
+        message="Animal não encontrado nesta Organization."
+      />
+    )
   }
   if (erro) {
-    return <p role="alert">{erro}</p>
+    return <ErrorState title="Falha ao carregar animal" message={erro} />
   }
   if (!animal) {
-    return <p>Carregando…</p>
+    return <LoadingState message="Carregando animal..." />
   }
 
   return (
-    <section>
-      <p>
-        <Link to="/animals">&larr; Voltar para a busca</Link>
-      </p>
-      <h2>Animal {animal.animal_id}</h2>
-      <dl>
-        <dt>Sexo</dt>
-        <dd>{animal.sex}</dd>
-        <dt>Raça</dt>
-        <dd>{animal.breed ?? '—'}</dd>
-        <dt>Data de nascimento</dt>
-        <dd>{animal.birth_date ?? 'desconhecida'}</dd>
-        <dt>Propriedade de nascimento</dt>
-        <dd>
-          {propriedade
-            ? `${propriedade.name} (${propriedade.municipality}/${propriedade.state_code})`
-            : (animal.birth_property_id ?? 'não determinável')}
-        </dd>
-        <dt>Localização atual</dt>
-        <dd>
-          <em>não disponível nesta versão</em>
-        </dd>
-        <dt>Identificadores</dt>
-        <dd>
-          {animal.identifiers.length === 0
-            ? 'nenhum'
-            : animal.identifiers.map((id) => `${id.type}: ${id.value} (${id.state})`).join(', ')}
-        </dd>
-        {animal.saida && (
-          <>
-            <dt>Saída do rebanho</dt>
-            <dd>
-              {animal.saida.exit_type} em{' '}
-              {new Date(animal.saida.occurred_at).toLocaleDateString('pt-BR')}
-            </dd>
-          </>
-        )}
-      </dl>
+    <article className="detail-page">
+      <DetailPageHeader
+        eyebrow="Livestock / Animal"
+        title={`Animal ${animal.animal_id}`}
+        subtitle="Identidade operacional do animal dentro da Organization ativa."
+        backTo="/animals"
+        backLabel="Voltar para a busca"
+      />
 
-      <h3>Ações</h3>
-      <ul>
-        <li>
+      <DetailSection
+        title="Resumo"
+        description="Dados que o backend já expõe para este animal."
+      >
+        <DetailDescriptionList>
+          <dt>Sexo</dt>
+          <dd>{animal.sex}</dd>
+          <dt>Raça</dt>
+          <dd>{animal.breed ?? '—'}</dd>
+          <dt>Data de nascimento</dt>
+          <dd>{animal.birth_date ?? 'desconhecida'}</dd>
+          <dt>Propriedade de nascimento</dt>
+          <dd>
+            {propriedade
+              ? `${propriedade.name} (${propriedade.municipality}/${propriedade.state_code})`
+              : (animal.birth_property_id ?? 'não determinável')}
+          </dd>
+          <dt>Localização atual</dt>
+          <dd>
+            <em>não disponível nesta versão</em>
+          </dd>
+          <dt>Identificadores</dt>
+          <dd>
+            {animal.identifiers.length === 0
+              ? 'nenhum'
+              : animal.identifiers.map((id) => `${id.type}: ${id.value} (${id.state})`).join(', ')}
+          </dd>
+          {animal.saida && (
+            <>
+              <dt>Saída do rebanho</dt>
+              <dd>
+                {animal.saida.exit_type} em{' '}
+                {new Date(animal.saida.occurred_at).toLocaleDateString('pt-BR')}
+              </dd>
+            </>
+          )}
+        </DetailDescriptionList>
+      </DetailSection>
+
+      <DetailSection
+        title="Ações disponíveis"
+        description="Atalhos para operações existentes sobre este animal."
+      >
+        <div className="detail-action-list">
           <Link to={`/animals/${animal.animal_id}/timeline`}>Ver timeline</Link>
-        </li>
-        <li>
           <Link to={`/animals/${animal.animal_id}/treatments/new`}>Registrar tratamento</Link>
-        </li>
-        <li>
           <Link to={`/animals/${animal.animal_id}/eligibility`}>Executar elegibilidade</Link>
-        </li>
-        <li>
-          <Link to={`/animals/${animal.animal_id}/market-matrix`}>Executar análise de mercado</Link>
-        </li>
-      </ul>
-    </section>
+          <Link to={`/animals/${animal.animal_id}/market-matrix`}>
+            Executar análise de mercado
+          </Link>
+        </div>
+      </DetailSection>
+    </article>
   )
 }

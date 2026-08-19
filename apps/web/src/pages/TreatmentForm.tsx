@@ -8,6 +8,7 @@ import {
   type LoteResumo,
   type MedicamentoResumo,
 } from '../api/treatments'
+import { PageContext } from '../components/PageContext'
 
 interface Options {
   baseUrl: string
@@ -101,6 +102,13 @@ export function TreatmentForm(options: Options) {
         <Link to={`/animals/${animalId}`}>&larr; Voltar para o animal</Link>
       </p>
       <h2>Registrar tratamento</h2>
+      <PageContext
+        description="O registro será feito apenas para o animal e a Organization atualmente em uso."
+        items={[
+          { label: 'Organization', value: options.organizationId },
+          { label: 'Animal', value: animalId },
+        ]}
+      />
 
       <form onSubmit={submeter}>
         <p>

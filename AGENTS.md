@@ -27,6 +27,32 @@ Não apenas escrever código.
 
 ---
 
+# Development OS
+
+O trabalho segue o fluxo canônico definido em `DEVELOPMENT.md`:
+
+`IDEA → DISCOVERY → DECISION → SPEC → PLAN → BUILD → VERIFY → ACCEPT`
+
+Uma ideia não é uma feature. Uma hipótese não é um requisito. Uma SPEC aprovada não
+significa prioridade imediata. Código é consequência de uma decisão de produto.
+
+Brainstorming, perguntas e hipóteses exploratórias iniciam em **DISCOVERY**, não em
+implementação. Uma Discovery termina em `REJECT`, `DEFER` ou `PROCEED`; somente
+`PROCEED` pode seguir para SPEC.
+
+`docs/specs/` guarda intenção, contexto, requisitos, decisões e critérios de aceite
+anteriores à implementação. `docs/CHECKLIST_DE_IMPLEMENTACAO.md` permanece o ledger
+do que foi efetivamente entregue e validado; não duplicar conteúdo entre os dois.
+
+Agentes devem apontar antes de executar uma sugestão que contradiga os documentos de
+autoridade, duplique capacidade existente, crie complexidade desnecessária, viole
+invariantes ou tenha alternativa materialmente mais simples. Para decisão relevante,
+apresentar: **CONTEXTO, EVIDÊNCIA NO REPOSITÓRIO, OPÇÕES, TRADE-OFFS, RECOMENDAÇÃO e
+DECISÃO NECESSÁRIA**. Discordância técnica fundamentada é desejável; a decisão final
+de produto permanece humana.
+
+---
+
 # Regras obrigatórias
 
 Nunca implemente mais de uma funcionalidade por vez.
@@ -59,14 +85,9 @@ Nunca exponha secrets, tokens, senhas, chaves privadas ou dados pessoais em cód
 
 4. Prosseguir autonomamente em mudanças rotineiras, reversíveis e dentro do escopo já aprovado.
 
-Confirmação prévia continua obrigatória para:
-
-- ADR ou mudança de arquitetura, domínio ou escopo;
-- migration destrutiva ou alteração incompatível de dados;
-- mudança de autenticação, autorização, criptografia ou isolamento;
-- dependência, serviço externo ou custo recorrente novo;
-- API pública incompatível;
-- publicação, implantação, comunicação externa ou ação irreversível.
+Aplicar a política GREEN / YELLOW / RED de `DEVELOPMENT.md`. Uma decisão já aprovada
+por SPEC e plano técnico pode ser executada autonomamente dentro dos limites
+aprovados, inclusive quando incluir API, migration ou integração compatíveis.
 
 ---
 
@@ -129,9 +150,12 @@ Executar a suíte completa de verificações e testes:
 
 Após os testes manuais e a aprovação da funcionalidade, realizar obrigatoriamente o commit no Git das alterações finalizadas.
 
-## O checklist é o único lugar de registro de progresso
+## O checklist é o ledger de entrega
 
 Se a mudança introduz ou conclui um Marco/Passo/etapa observável (novo endpoint, nova tela, nova regra, nova integração), atualizar `docs/CHECKLIST_DE_IMPLEMENTACAO.md` **no mesmo commit** — data, estado, evidência de implementação e portão de verificação, no mesmo padrão narrativo já usado nele. Não abrir um arquivo de plano ou status paralelo para registrar esse progresso: foi exatamente essa prática, sem nunca reconciliar de volta com o checklist, que deixou dois meses de trabalho real (a conformidade sanitária vitalícia e o primeiro produto de frontend do Livestock) invisíveis neste documento até agosto de 2026. Se o passo ainda não existe no checklist, criar a entrada — mesmo que provisória — em vez de deixá-la para depois.
+
+SPEC e Discovery não duplicam o ledger: registram a decisão e os critérios que
+precedem a entrega, conforme `docs/specs/README.md`.
 
 ## O roteiro de validação manual é executável
 

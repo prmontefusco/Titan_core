@@ -12,6 +12,12 @@ import {
   type PolicyResponse,
   type SuggestedGovernanceFlow,
 } from '../api/policyGovernance'
+import {
+  ErrorState,
+  LoadingState,
+  UnauthorizedState,
+} from '../components/AsyncStates'
+import { PageContext } from '../components/PageContext'
 
 interface Options {
   baseUrl: string
@@ -159,18 +165,26 @@ export function MarketRuleGovernance(options: Options) {
   }
 
   if (semPermissaoCatalogo) {
-    return <p>Você não tem permissão para administrar regras de mercado nesta Organization.</p>
+    return (
+      <UnauthorizedState
+        message="Você não tem permissão para administrar regras de mercado nesta Organization."
+      />
+    )
   }
   if (erroCatalogo) {
-    return <p role="alert">{erroCatalogo}</p>
+    return <ErrorState message={erroCatalogo} />
   }
   if (!catalogo) {
-    return <p>Carregando…</p>
+    return <LoadingState message="Carregando..." />
   }
 
   return (
     <section>
       <h2>Regras de mercado</h2>
+      <PageContext
+        description="Toda governança mostrada aqui permanece restrita à Organization ativa e às policies autorizadas pelo backend."
+        items={[{ label: 'Organization', value: options.organizationId }]}
+      />
       <p>
         Escolha ou publique a política, escolha um modelo de regra já classificado, pré-visualize
         o que seria criado e só então confirme.

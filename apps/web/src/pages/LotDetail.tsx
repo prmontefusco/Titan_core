@@ -9,6 +9,13 @@ import {
   type ContraparteExternaResumo,
   type LotMarketEntry,
 } from '../api/eligibility'
+import {
+  ErrorState,
+  LoadingState,
+  NotFoundState,
+  UnauthorizedState,
+} from '../components/AsyncStates'
+import { DetailDescriptionList, DetailPageHeader, DetailSection } from '../components/DetailPage'
 
 interface Options {
   baseUrl: string
@@ -125,133 +132,156 @@ export function LotDetail(options: Options) {
   }
 
   if (semPermissao) {
-    return <p role="alert">Você não tem permissão para ler lotes nesta Organization.</p>
+    return (
+      <UnauthorizedState
+        title="Acesso não autorizado"
+        message="Você não tem permissão para ler lotes nesta Organization."
+      />
+    )
   }
   if (naoEncontrado) {
-    return <p role="alert">Lote não encontrado nesta Organization.</p>
+    return (
+      <NotFoundState
+        title="Lote não encontrado"
+        message="Lote não encontrado nesta Organization."
+      />
+    )
   }
   if (erroCarga) {
-    return <p role="alert">{erroCarga}</p>
+    return <ErrorState title="Falha ao carregar lote" message={erroCarga} />
   }
   if (!lote) {
-    return <p>Carregando…</p>
+    return <LoadingState message="Carregando lote..." />
   }
 
   return (
-    <section>
-      <p>
-        <Link to="/lots">&larr; Voltar para a busca</Link>
-      </p>
-      <h2>Lote {lote.code}</h2>
-      <dl>
-        <dt>Nome</dt>
-        <dd>{lote.name}</dd>
-        <dt>Tipo</dt>
-        <dd>{lote.lot_type}</dd>
-        <dt>Situação</dt>
-        <dd>{lote.status}</dd>
-        <dt>Membros</dt>
-        <dd>
-          {membros === null ? (
-            'carregando…'
-          ) : membros.length === 0 ? (
-            'nenhum'
-          ) : (
-            <>
-              {membros.length} animal(is):{' '}
-              <ul>
-                {membros.map((membro) => (
-                  <li key={membro.membership_id}>
-                    <Link to={`/animals/${membro.animal_id}`}>{membro.animal_id}</Link>
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-        </dd>
-      </dl>
+    <article className="detail-page">
+      <DetailPageHeader
+        eyebrow="Livestock / Lote"
+        title={`Lote ${lote.code}`}
+        subtitle="Identidade do lote e operações reais disponíveis para seus membros."
+        backTo="/lots"
+        backLabel="Voltar para a busca"
+        meta={<span className="detail-status-chip">{lote.status}</span>}
+      />
 
-      <h3>Análise de mercado do lote</h3>
-      <button type="button" onClick={() => executar()} disabled={executando}>
-        {executando ? 'Executando…' : 'Executar análise de mercado do lote'}
-      </button>
-
-      {proposalId && (
-        <p role="alert">
-          Revisão humana necessária antes de emitir a decisão. Proposta: <code>{proposalId}</code>.{' '}
-          <Link to={`/review/${proposalId}`}>Abrir revisão humana</Link>
-        </p>
-      )}
-      {erroExecucao && <p role="alert">{erroExecucao}</p>}
-
-      {resultado && (
-        <>
-          <p>
-            <strong>{resultado.commercial_outlook}</strong> — {resultado.executive_summary} (
-            {resultado.member_count} membro(s) avaliado(s))
-          </p>
-
-          <ul>
-            {resultado.markets.map((entry) => (
-              <li key={entry.market}>
-                <strong>{entry.market}</strong>: {entry.status}
-                {entry.summary && <> — {entry.summary}</>}
+      <DetailSection title="Resumo" description="Dados básicos do lote nesta Organization.">
+        <DetailDescriptionList>
+          <dt>Nome</dt>
+          <dd>{lote.name}</dd>
+          <dt>Tipo</dt>
+          <dd>{lote.lot_type}</dd>
+          <dt>Situação</dt>
+          <dd>{lote.status}</dd>
+          <dt>Membros</dt>
+          <dd>
+            {membros === null ? (
+              'carregando…'
+            ) : membros.length === 0 ? (
+              'nenhum'
+            ) : (
+              <>
+                {membros.length} animal(is):{' '}
                 <ul>
-                  {GRUPOS_POR_STATUS.map(({ chave, rotulo }) => {
-                    const animalIds = entry[chave]
-                    if (!Array.isArray(animalIds) || animalIds.length === 0) return null
-                    return (
-                      <li key={chave}>
-                        {rotulo} ({animalIds.length}):{' '}
-                        {animalIds.map((id, indice) => (
-                          <span key={id}>
-                            {indice > 0 && ', '}
-                            <Link to={`/animals/${id}`}>{id}</Link>
-                          </span>
-                        ))}
-                      </li>
-                    )
-                  })}
+                  {membros.map((membro) => (
+                    <li key={membro.membership_id}>
+                      <Link to={`/animals/${membro.animal_id}`}>{membro.animal_id}</Link>
+                    </li>
+                  ))}
                 </ul>
-              </li>
-            ))}
-          </ul>
+              </>
+            )}
+          </dd>
+        </DetailDescriptionList>
+      </DetailSection>
 
-          {precisaDeSelecao && (
-            <p>
-              <label htmlFor="lote-contraparte">
-                Este mercado depende de um estabelecimento ainda não escolhido
-              </label>
-              <br />
-              <select
-                id="lote-contraparte"
-                value={contraparteSelecionada}
-                onChange={(evento) => setContraparteSelecionada(evento.target.value)}
-              >
-                <option value="">
-                  {contrapartes === null ? 'Carregando…' : 'Selecione um estabelecimento'}
-                </option>
-                {contrapartes?.map((contraparte) => (
-                  <option key={contraparte.counterparty_id} value={contraparte.counterparty_id}>
-                    {contraparte.name}
-                  </option>
-                ))}
-              </select>{' '}
-              <button
-                type="button"
-                onClick={() => executar(contraparteSelecionada)}
-                disabled={!contraparteSelecionada || executando}
-              >
-                Reavaliar com estabelecimento selecionado
-              </button>
-            </p>
-          )}
+      <DetailSection
+        title="Análise de mercado do lote"
+        description="Execução explícita sobre os membros do lote; não é disparada pela navegação."
+      >
+        <button type="button" onClick={() => executar()} disabled={executando}>
+          {executando ? 'Executando…' : 'Executar análise de mercado do lote'}
+        </button>
 
-          <p>
-            <Link to={`/lots/${lotId}/commercial-explanation`}>Ver explicação comercial do lote</Link>
+        {proposalId && (
+          <p role="alert">
+            Revisão humana necessária antes de emitir a decisão. Proposta:{' '}
+            <code>{proposalId}</code>. <Link to={`/review/${proposalId}`}>Abrir revisão humana</Link>
           </p>
-        </>
-      )}
-    </section>
+        )}
+        {erroExecucao && <p role="alert">{erroExecucao}</p>}
+
+        {resultado && (
+          <div className="detail-result-block">
+            <p>
+              <strong>{resultado.commercial_outlook}</strong> — {resultado.executive_summary} (
+              {resultado.member_count} membro(s) avaliado(s))
+            </p>
+
+            <ul>
+              {resultado.markets.map((entry) => (
+                <li key={entry.market}>
+                  <strong>{entry.market}</strong>: {entry.status}
+                  {entry.summary && <> — {entry.summary}</>}
+                  <ul>
+                    {GRUPOS_POR_STATUS.map(({ chave, rotulo }) => {
+                      const animalIds = entry[chave]
+                      if (!Array.isArray(animalIds) || animalIds.length === 0) return null
+                      return (
+                        <li key={chave}>
+                          {rotulo} ({animalIds.length}):{' '}
+                          {animalIds.map((id, indice) => (
+                            <span key={id}>
+                              {indice > 0 && ', '}
+                              <Link to={`/animals/${id}`}>{id}</Link>
+                            </span>
+                          ))}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </li>
+              ))}
+            </ul>
+
+            {precisaDeSelecao && (
+              <p>
+                <label htmlFor="lote-contraparte">
+                  Este mercado depende de um estabelecimento ainda não escolhido
+                </label>
+                <br />
+                <select
+                  id="lote-contraparte"
+                  value={contraparteSelecionada}
+                  onChange={(evento) => setContraparteSelecionada(evento.target.value)}
+                >
+                  <option value="">
+                    {contrapartes === null ? 'Carregando…' : 'Selecione um estabelecimento'}
+                  </option>
+                  {contrapartes?.map((contraparte) => (
+                    <option key={contraparte.counterparty_id} value={contraparte.counterparty_id}>
+                      {contraparte.name}
+                    </option>
+                  ))}
+                </select>{' '}
+                <button
+                  type="button"
+                  onClick={() => executar(contraparteSelecionada)}
+                  disabled={!contraparteSelecionada || executando}
+                >
+                  Reavaliar com estabelecimento selecionado
+                </button>
+              </p>
+            )}
+
+            <p>
+              <Link to={`/lots/${lotId}/commercial-explanation`}>
+                Ver explicação comercial do lote
+              </Link>
+            </p>
+          </div>
+        )}
+      </DetailSection>
+    </article>
   )
 }

@@ -25,6 +25,7 @@ from sqlalchemy import Connection, text
 from apps.api.authentication import require_authenticated_principal
 from apps.api.main import app
 from packages.core_application.policy_authorization import (
+    POLICY_AVALIAR,
     POLICY_CRIAR,
     POLICY_LER,
     POLICY_PERMISSIONS,
@@ -81,6 +82,7 @@ PERMISSOES_OPERADOR = ROLE_PERMISSIONS[OPERADOR_PECUARIO] | frozenset(
         POLICY_CRIAR,
         POLICY_LER,
         POLICY_PUBLICAR,
+        POLICY_AVALIAR,
     }
 )
 PERMISSOES_AUDITOR = ROLE_PERMISSIONS[AUDITOR] | frozenset({RULE_GOVERNANCE_LER, POLICY_LER})

@@ -52,6 +52,9 @@ SUPERFICIE_ESPERADA = {
     ("/v1/rule-governance/policies", "get"),
     ("/v1/rule-governance/policies/{policy_id}", "get"),
     ("/v1/rule-governance/policies/{policy_id}/publish", "post"),
+    # BuyerPolicy Fase 1 (ADR-0064): avalia somente Policy homogeneamente
+    # INTERNAL_POLICY sobre Animal ja visivel a propria Organization.
+    ("/v1/rule-governance/policies/{policy_id}/evaluate", "post"),
     (
         "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/execute",
         "post",

@@ -6,6 +6,12 @@ import {
   listPendingRequests,
   type EntityTypeRequestSummary,
 } from '../api/entityTypeRequests'
+import {
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  UnauthorizedState,
+} from './AsyncStates'
 import { ENTITY_KIND_LABELS } from '../entityKinds'
 
 interface Options {
@@ -41,16 +47,20 @@ export function AdminQueue({ baseUrl, accessToken, organizationId }: Options) {
   useEffect(recarregar, [organizationId, accessToken])
 
   if (semPermissao) {
-    return <p>Você não tem permissão para administrar pedidos nesta Organization.</p>
+    return (
+      <UnauthorizedState
+        message="Você não tem permissão para administrar pedidos nesta Organization."
+      />
+    )
   }
   if (erro) {
-    return <p role="alert">{erro}</p>
+    return <ErrorState message={erro} />
   }
   if (pendentes === null) {
-    return <p>Carregando…</p>
+    return <LoadingState message="Carregando..." />
   }
   if (pendentes.length === 0) {
-    return <p>Nenhum pedido pendente.</p>
+    return <EmptyState message="Nenhum pedido pendente." />
   }
 
   return (
