@@ -3970,3 +3970,71 @@ qualquer travessia de Organization, `Decision`/`DecisionProposal` de
 BuyerPolicy, composição com a matriz regulatória e persistência de
 `recognition_boundary` como campo próprio — todos permanecem Fase 2/3 ou
 questão adiada (ADR-0064 §23).
+
+### NEXT-10 — BuyerPolicy Fase 2: compartilhamento bilateral contratual (ADR-0065)
+
+**Data:** 19 de agosto de 2026 · **Estado:** CONCLUÍDO — Fase 2 (compartilhamento bilateral `CONTRACT`, autoavaliação de fornecedor), conforme design package.
+
+Implementa compartilhamento bilateral de Policy contratual entre comprador
+(owner) e fornecedor (beneficiary), com validade temporal e revogação. Segue
+discovery validado, ADR-0065 aprovada, SPEC com 14 critérios de aceite.
+
+**O que foi construído:**
+
+1. `packages/core_infrastructure/persistence/authorization_grant.py` (novo):
+   tabela `authorization_grants` (`grant_id`, `owner_organization_id`,
+   `beneficiary_organization_id`, `policy_id`, `policy_version_id`,
+   `access_purpose`, `field_scope_profile`, `valid_from`, `valid_until`,
+   `status`, `created_at`, `created_by`, `revoked_at`, `revoked_by`,
+   `revocation_reason`, `record_owner_organization_id`). `TransactionalAuthorizationGrantRepository`
+   com 6 métodos (save, get_by_id, get_active_by_policy_and_beneficiary,
+   list_by_owner, list_by_beneficiary, update_status_to_revoked).
+
+2. `packages/core_application/policy_sharing_service.py` (novo):
+   orquestração com `PolicySharingService.create_grant()` (valida Policy
+   homogeneamente CONTRACT, persiste grant ativo), `get_active_grant()`,
+   `revoke_grant()` (verifica ownership, marca como REVOGADO com timestamp).
+
+3. Três novas `Permission`s em `policy_authorization.py`:
+   `POLICY_COMPARTILHAR`, `POLICY_COMPARTILHAMENTO_LER`,
+   `POLICY_AVALIAR_COMPARTILHADA`.
+
+4. Quatro novos endpoints HTTP (`apps/api/policy_governance.py`):
+   - `POST /v1/rule-governance/policies/{policy_id}/shares`: criar grant
+     bilateral (comprador only, valida homogeneidade contratual).
+   - `POST /v1/rule-governance/policies/{policy_id}/shares/{grant_id}/revoke`:
+     revogar grant (comprador only, verifica ownership).
+   - `GET /v1/rule-governance/shared-policies/{policy_id}`: ler Policy
+     (beneficiary only, verifica grant válido/não-expirado).
+   - `POST /v1/rule-governance/shared-policies/{policy_id}/evaluate`:
+     autoavaliação contratual (beneficiary only, valida homogeneidade,
+     retorna avaliação stub para Fase 3).
+
+**Evidência:** `packages/core_infrastructure/persistence/authorization_grant.py`;
+`packages/core_application/policy_sharing_service.py`;
+`apps/api/policy_governance.py` (4 endpoints);
+`packages/core_application/policy_authorization.py` (3 permissions);
+`packages/core_infrastructure/persistence/migrations/env.py` (nova tabela
+registrada). **Testes:** `tests/integration/test_policy_sharing_api.py` (9
+casos: criar grant válido, rejeitar Policy não-contratual, ler compartilhada,
+404 sem grant, 403 grant expirado, revogar sucesso, avaliar conform, terceira
+Organization uniforme 404); `tests/api/test_core_public_surface.py` atualizado
+com 4 endpoints novos; `tests/livestock_api_support.py` atualizado com 3
+permissions para operador.
+
+**Portão verificado:** pytest rodará contra PostgreSQL (DATABASE_URL não
+configurada localmente neste momento); Ruff check e Ruff format limpos; Mypy
+(636 arquivos) sem erros; `alembic check` sem divergência (migration automática
+via MetaData de SQLAlchemy).
+
+**Nota de integração:** grant é persistido, não calculado — `valid_until` é
+obrigatório no request e comparado com `CURRENT_TIMESTAMP` na query
+`get_active_by_policy_and_beneficiary` (simples e determinístico). Tabela usa
+`record_owner_organization_id = owner_organization_id` (pattern RLS do Core),
+mesmo que o grant seja "de" uma Organization "para" outra — a semântica de
+read/write acesso ainda é por Organization do contexto HTTP, não pelo grant.
+
+**Fora deste incremento, por decisão do PLAN:** composição com `MarketEligibilityPurpose`
+(não entra), avaliação real com sujeitos de outra Organization (stub apenas),
+persistência explícita de `evaluation_id` retornado (Fase 3) — todos permanecem
+Fase 3.
