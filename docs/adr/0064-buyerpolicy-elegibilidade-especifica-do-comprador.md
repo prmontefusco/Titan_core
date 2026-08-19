@@ -27,7 +27,9 @@ distingue `RuleSourceType.CONTRACT` e `RuleSourceType.INTERNAL_POLICY` de `LAW`,
 recebe `organization_id` como parametro em toda operacao — criar identidade, publicar
 versao, adotar, substituir — sem privilegiar a Organization operadora. A API
 `/v1/rule-governance` ja expõe essas capacidades sob `RULE_GOVERNANCE_CRIAR`,
-`RULE_GOVERNANCE_PUBLICAR`, `RULE_GOVERNANCE_ADOTAR` e `RULE_GOVERNANCE_LER`.
+`RULE_GOVERNANCE_PUBLICAR`, `RULE_GOVERNANCE_ADOTAR` e `RULE_GOVERNANCE_LER` para
+`RuleIdentity`/`RuleVersion`/`RuleAdoption`; a propria `Policy` tem router e
+permissions proprios (`POLICY.CRIAR`/`PUBLICAR`/`LER`, secao 9).
 
 Em outras palavras: o mecanismo generico de governanca de regras (ADR-0043) ja foi
 desenhado para suportar uma Organization usuaria autorando sua propria regra. O que
@@ -212,17 +214,47 @@ privada.
 
 ## 9. Decisao 5 — Capabilities server-side
 
-**Nenhuma capability nova e necessaria para a Fase 1.** Qualquer Organization
-proprietaria de uma BuyerPolicy reutiliza, sobre seu proprio `OrganizationContext`
-— sem gate tecnico especifico de "comprador" (ver nota de vocabulario na secao 3):
+**Nota de precisao (revisada no PLAN, 2026-08-19):** a redacao original desta
+secao atribuia a criacao/publicacao de `Policy` a `RULE_GOVERNANCE_CRIAR`/
+`RULE_GOVERNANCE_PUBLICAR`. O PLAN da Fase 1 verificou o codigo atual e isso esta
+impreciso: `POST /v1/rule-governance/policies` (`apps/api/policy_governance.py`,
+Passo 6.1/NEXT-08) usa permissions proprias `POLICY.CRIAR`/`POLICY.PUBLICAR`/
+`POLICY.LER` (`packages/core_application/policy_authorization.py`), distintas de
+`RULE_GOVERNANCE_*` (que seguem restritas a `RuleIdentity`/`RuleVersion`/
+`RuleAdoption`). Essa rota ja nasceu sob o prefixo `/v1/rule-governance` por
+decisao arquitetural anterior (`test_endpoints_de_dominio_do_core_continuos_fechados`
+proibe CRUD solto de `Policy` no Core) — a mesma razao que motiva o invariante 7
+desta ADR (BuyerPolicy nunca vira rota generica do Core). A conclusao da decisao
+("nenhum conceito novo de autorizacao") permanece valida; a lista de permissions
+abaixo foi corrigida. Nenhuma das 12 decisoes desta ADR muda.
 
+Qualquer Organization proprietaria de uma BuyerPolicy reutiliza, sobre seu proprio
+`OrganizationContext` — sem gate tecnico especifico de "comprador" (ver nota de
+vocabulario na secao 3):
+
+- `POLICY.CRIAR` para criar a `Policy` (`POST /v1/rule-governance/policies`);
+- `POLICY.PUBLICAR` para publicar a `Policy`;
+- `POLICY.LER` para consultar/listar a `Policy`;
 - `RULE_GOVERNANCE_CRIAR` para criar `RuleIdentity` e rascunhar `RuleVersion`;
-- `RULE_GOVERNANCE_PUBLICAR` para publicar a `RuleVersion` e a `Policy`;
+- `RULE_GOVERNANCE_PUBLICAR` para publicar a `RuleVersion`;
 - `RULE_GOVERNANCE_ADOTAR` para registrar `RuleAdoption`;
-- `RULE_GOVERNANCE_LER` para consultar timeline, versoes e adocoes;
-- a capability de execucao de `Evaluation` ja existente para `PolicyEvaluationService`
-  (a SPEC da Fase 1 deve confirmar o nome exato dessa capability no codigo atual e
-  cobri-la em teste; esta ADR nao introduz uma nova).
+- `RULE_GOVERNANCE_LER` para consultar timeline, versoes e adocoes.
+
+**Achado adicional do PLAN:** nao existe hoje nenhuma rota HTTP generica que
+acione `PolicyEvaluationService`/`RuleEvaluationEngine` para uma `Policy`
+qualquer. Os unicos endpoints de avaliacao existentes
+(`POST /animals/{animal_id}/eligibility` sob `ELIGIBILITY_EXECUTAR`, e a matriz
+`MarketEligibilityPurpose` da ADR-0044) sao hardcoded a fluxos regulatorios
+especificos da vertical e nao podem ser reaproveitados por BuyerPolicy sem violar
+o Invariante 7 (nunca entrar na matriz regulatoria). A Fase 1 portanto exige uma
+rota nova, fina, que exponha `PolicyEvaluationService.evaluate_policy` seguindo
+exatamente o mesmo padrao ja aceito para `policy_governance.py` (wrapper HTTP sem
+regra de negocio nova, sob `/v1/rule-governance`, com Permission propria). Isso
+**nao** e uma capability arquitetural nova no sentido de introduzir conceito de
+autorizacao (`AccessPurpose`, `DecisionAuthorityProfile` etc. continuam de fora,
+conforme Decisoes 6/7); e uma rota GREEN, do mesmo tipo que `policy_governance.py`
+ja estabeleceu como padrao aceito. O nome proposto e `POLICY.AVALIAR`; detalhado
+no design package da Fase 1 (`docs/plans/BUYERPOLICY_FASE1_DESIGN_PACKAGE.md`).
 
 Isso responde a Decisao 6 da Discovery ("quem pode criar, revisar e publicar"): a
 Fase 1 reaproveita a governanca existente de Policy/Rule sem reforcar segregacao
@@ -384,7 +416,13 @@ A ultima alternativa foi adotada.
    agregadora publicada e versionada.
 10. Revogacao de `RuleVersion`/`Policy` de BuyerPolicy e prospectiva e nao
     reescreve `Evaluation` historica.
-11. Nenhuma capability nova de autorizacao e criada por esta ADR.
+11. Nenhum conceito novo de autorizacao cross-Organization e criado por esta ADR:
+    sem `AccessPurpose`, `FieldScope`, `Sharing`, `AuthorizationGrant` ou
+    `DecisionAuthorityProfile` novos nesta fase. Uma `Permission` pontual e de
+    baixo risco (`POLICY.AVALIAR`) e admitida quando o PLAN confirmar que
+    nenhuma rota generica de avaliacao ja existe (secao 9); isso nao e um
+    conceito de autorizacao novo, e sim a mesma extensao ja aceita para
+    `POLICY.CRIAR/PUBLICAR/LER`.
 12. `RuleSourceType.CONTRACT` nao e usado por BuyerPolicy nesta fase.
 13. Negacao de acesso cross-Organization a um recurso de BuyerPolicy segue
     `DOMAIN.md` P-198/`ARCHITECTURE.md` (nao distingue recurso inexistente de
@@ -446,9 +484,8 @@ SPEC, nao desta ADR.
 
 Uma SPEC CRITICAL de Fase 1 so pode ser aprovada quando declarar, no minimo:
 
-1. o nome exato da capability server-side de avaliacao ja existente a ser
-   reutilizada (Decisao 5), com teste cobrindo seu uso por Organization nao
-   operadora;
+1. o contrato exato da nova rota de avaliacao `POLICY.AVALIAR` (Decisao 5), com
+   teste cobrindo seu uso por Organization nao operadora;
 2. o teste de homogeneidade de `source_type` por Policy (Invariante 3), incluindo
    caso negativo de mistura;
 3. onde e como o boundary `INTERNAL_ONLY` e a origem sao expostos na resposta
@@ -476,12 +513,13 @@ nao esta.
 
 ```text
 Organization compradora (OrganizationContext proprio)
+    -> POLICY.CRIAR/PUBLICAR: Policy(organization_id=compradora)
     -> RULE_GOVERNANCE_CRIAR: RuleIdentity(source_type=INTERNAL_POLICY)
     -> RULE_GOVERNANCE_CRIAR/PUBLICAR: RuleVersion (template controlado, fact_type Livestock)
-    -> Policy.create_draft(organization_id=compradora) -> publish()
     -> RULE_GOVERNANCE_ADOTAR: RuleAdoption(policy, rule_version)
     -> [homogeneidade de source_type verificada antes de publicar/adotar]
-    -> PolicyEvaluationService avalia sujeito ja visivel a propria Organization
+    -> POLICY.AVALIAR (rota nova, secao 9): PolicyEvaluationService avalia
+       sujeito ja visivel a propria Organization
     -> Evaluation isolada, boundary INTERNAL_ONLY explicito
     -> leitura restrita a propria Organization; apresentacao nunca fundida
        com MarketEligibilityPurpose/MarketProfile

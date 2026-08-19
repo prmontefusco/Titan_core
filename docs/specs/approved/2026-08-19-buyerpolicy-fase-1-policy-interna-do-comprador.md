@@ -58,21 +58,26 @@ BuyerPolicy é questão de produto adiada (ADR-0064 §23), fora do escopo desta 
 
 ## Comportamento e regras de negócio
 
-1. Uma Organization compradora cria uma `RuleIdentity` própria com
-   `source_type=INTERNAL_POLICY`, usando `RULE_GOVERNANCE_CRIAR` sob seu próprio
-   `OrganizationContext` — caminho já existente em `/v1/rule-governance`.
-2. Publica uma `RuleVersion` usando apenas templates/fact types Livestock já
+1. Uma Organization compradora cria e publica sua própria `Policy`
+   (`organization_id` = compradora) via `POST /v1/rule-governance/policies`
+   (`policy_governance.py`), sob `POLICY.CRIAR`/`POLICY.PUBLICAR` já existentes.
+2. Cria uma `RuleIdentity` própria com `source_type=INTERNAL_POLICY`, usando
+   `RULE_GOVERNANCE_CRIAR` sob seu próprio `OrganizationContext` — caminho já
+   existente em `/v1/rule-governance`.
+3. Publica uma `RuleVersion` usando apenas templates/fact types Livestock já
    autorizados (reaproveita `RuleCondition` existente) via
-   `RULE_GOVERNANCE_PUBLICAR`.
-3. Cria e publica sua própria `Policy` (`organization_id` = compradora) e registra
-   `RuleAdoption` via `RULE_GOVERNANCE_ADOTAR`.
+   `RULE_GOVERNANCE_PUBLICAR`, e registra `RuleAdoption` via
+   `RULE_GOVERNANCE_ADOTAR`.
 4. **Antes de aceitar publicação/adoção**, o sistema verifica que todas as
    `RuleIdentity`s referenciadas pelas `RuleVersion`s adotadas por aquela `Policy`
    declaram `source_type=INTERNAL_POLICY`. Mistura de origem é rejeitada com
    motivo explícito, não silenciosamente aceita.
 5. A Organization compradora aciona avaliação da sua Policy sobre um sujeito já
-   autorizadamente visível a ela (mesma Organization proprietária dos Facts).
-   Produz uma `Evaluation` isolada da matriz regulatória.
+   autorizadamente visível a ela (mesma Organization proprietária dos Facts),
+   através de uma rota nova, fina, sob permissão `POLICY.AVALIAR` (não existe
+   hoje nenhuma rota genérica para `PolicyEvaluationService`; os endpoints atuais
+   de avaliação são hardcoded a fluxos regulatórios — ver Plano técnico). Produz
+   uma `Evaluation` isolada da matriz regulatória.
 6. A resposta técnica da `Evaluation` de BuyerPolicy inclui, de forma explícita:
    origem (`INTERNAL_POLICY`), boundary (`INTERNAL_ONLY`), Organization
    proprietária da Policy e Organization ativa no pedido.
@@ -90,9 +95,13 @@ BuyerPolicy é questão de produto adiada (ADR-0064 §23), fora do escopo desta 
    técnica, com origem e boundary legíveis (ADR-0064 Decisão 2 e 4).
 2. Publicação/adoção de `Policy` com `RuleIdentity`s de `source_type` heterogêneo
    é rejeitada com motivo estruturado (ADR-0064 Invariante 3).
-3. Nenhuma capability nova de autorização é introduzida; apenas
-   `RULE_GOVERNANCE_CRIAR/PUBLICAR/ADOTAR/LER` e a capability de avaliação já
-   existente (nomeada explicitamente nesta SPEC durante o PLAN).
+3. Nenhum conceito novo de autorização é introduzido (sem `AccessPurpose`,
+   `FieldScope` ou `DecisionAuthorityProfile` novos). A Fase 1 reutiliza
+   `POLICY.CRIAR/PUBLICAR/LER` e `RULE_GOVERNANCE_CRIAR/PUBLICAR/ADOTAR/LER` já
+   existentes, e introduz uma única `Permission` nova e de baixo risco,
+   `POLICY.AVALIAR`, para uma rota fina que expõe `PolicyEvaluationService` —
+   pelo mesmo padrão já aceito para `policy_governance.py` (ver ADR-0064 §9 e
+   Plano técnico abaixo). Nenhum endpoint de avaliação genérico existe hoje.
 4. Nova versão ou revogação de `RuleVersion`/`Policy` não reescreve `Evaluation`
    histórica.
 5. Uma Organization não consegue criar, listar, avaliar ou inferir dado da Policy
@@ -119,10 +128,12 @@ BuyerPolicy é questão de produto adiada (ADR-0064 §23), fora do escopo desta 
 
 ## Plano técnico
 
-A preencher no PLAN, após aprovação desta SPEC. Deve, no mínimo:
+Detalhado em `docs/plans/BUYERPOLICY_FASE1_DESIGN_PACKAGE.md`. Resumo:
 
-- nomear a capability de avaliação reaproveitada (ADR-0064 §9/§21.1) e confirmar
-  que já aceita `organization_id` não-operador;
+- nova rota `POST /v1/rule-governance/policies/{policy_id}/evaluate` sob
+  `POLICY.AVALIAR`, wrapper fino de `PolicyEvaluationService.evaluate_policy`
+  (mesmo padrão de `policy_governance.py`), scoped por `organization_id` do
+  `OrganizationContext` do solicitante;
 - desenhar o teste de homogeneidade de `source_type` por Policy adotada — local
   mais provável: `rule_governance_service.py` (validação antes de
   publicar/adotar) ou `market_eligibility`/serviço de avaliação equivalente;
@@ -147,7 +158,9 @@ A preencher no PLAN, após aprovação desta SPEC. Deve, no mínimo:
 
 ## Documentação afetada
 
-- ADR-0064 (ACEITA em 2026-08-19; esta SPEC concretiza sua Fase 1);
+- ADR-0064 (ACEITA em 2026-08-19; esta SPEC concretiza sua Fase 1; corrigida
+  pontualmente no PLAN quanto a capabilities server-side, ver §9);
+- `docs/plans/BUYERPOLICY_FASE1_DESIGN_PACKAGE.md` (PLAN técnico desta SPEC);
 - `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, somente quando houver entrega
   efetivamente implementada e validada (não nesta etapa de Discovery/SPEC);
 - possível nota em `DOMAIN.md` apenas se o PLAN revelar necessidade de formalizar
@@ -158,14 +171,16 @@ A preencher no PLAN, após aprovação desta SPEC. Deve, no mínimo:
 Riscos herdados da Discovery (mistura semântica, autoria sem governança) são
 mitigados pelos invariantes da ADR-0064 e pelos critérios de aceite 1–2 acima.
 
-Perguntas ainda abertas para o PLAN, não bloqueantes para aprovar esta SPEC:
+Perguntas resolvidas pelo PLAN (`docs/plans/BUYERPOLICY_FASE1_DESIGN_PACKAGE.md`):
 
-1. Nome exato da capability de avaliação a reaproveitar (ADR-0064 §9).
+1. ~~Nome exato da capability de avaliação a reaproveitar~~ — resolvido: não
+   existe capability a reaproveitar; o PLAN introduz `POLICY.AVALIAR` como rota
+   nova, fina, sobre `PolicyEvaluationService` já existente (ADR-0064 §9).
 2. Se a verificação de homogeneidade de origem deve ocorrer na publicação da
-   `RuleVersion`, na adoção pela `Policy`, ou em ambas (defesa em profundidade).
+   `RuleVersion`, na adoção pela `Policy`, ou em ambas (defesa em profundidade)
+   — ver design package.
 3. Formato exato do campo de boundary na resposta técnica (string controlada vs.
-   enum específico) — deve ser decidido no PLAN sem exigir migration de
-   `DOMAIN.md`.
+   enum específico) — ver design package; não exige migration de `DOMAIN.md`.
 
-Essas perguntas devem ser resolvidas no PLAN, antes do BUILD; nenhuma delas
-bloqueia a aprovação desta SPEC.
+Essas definições foram consolidadas no design package e devem ser respeitadas
+no BUILD; nenhuma delas bloqueou a aprovação desta SPEC.
