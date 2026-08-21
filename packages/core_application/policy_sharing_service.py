@@ -76,13 +76,14 @@ class PolicySharingService:
 
         # Cria grant
         grant_id = uuid4()
-        now = datetime.now()
+        from datetime import UTC
+        now = datetime.now(UTC)
         grant = AuthorizationGrant(
             grant_id=grant_id,
             owner_organization_id=owner_organization_id,
             beneficiary_organization_id=beneficiary_organization_id,
             policy_id=policy_id,
-            policy_version_id=TypedId("policy_version", policy.current_version_id.value),
+            policy_version_id=TypedId("rule", policy_id.value),
             access_purpose=access_purpose,
             field_scope_profile=field_scope_profile,
             valid_from=now,

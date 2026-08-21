@@ -135,7 +135,7 @@ class TransactionalAuthorizationGrantRepository:
         self.connection.execute(
             text(
                 """
-                INSERT INTO core_identity.authorization_grants (
+                INSERT INTO core_audit.authorization_grants (
                     grant_id,
                     owner_organization_id,
                     beneficiary_organization_id,
@@ -203,7 +203,7 @@ class TransactionalAuthorizationGrantRepository:
                     revoked_at,
                     revoked_by,
                     revocation_reason
-                FROM core_identity.authorization_grants
+                FROM core_audit.authorization_grants
                 WHERE grant_id = :grant_id
                 """
             ),
@@ -256,7 +256,7 @@ class TransactionalAuthorizationGrantRepository:
                     revoked_at,
                     revoked_by,
                     revocation_reason
-                FROM core_identity.authorization_grants
+                FROM core_audit.authorization_grants
                 WHERE
                     policy_id = :policy_id
                     AND beneficiary_organization_id = :beneficiary_org_id
@@ -316,7 +316,7 @@ class TransactionalAuthorizationGrantRepository:
                     revoked_at,
                     revoked_by,
                     revocation_reason
-                FROM core_identity.authorization_grants
+                FROM core_audit.authorization_grants
                 WHERE owner_organization_id = :owner_org_id
                 ORDER BY created_at DESC
                 """
@@ -369,7 +369,7 @@ class TransactionalAuthorizationGrantRepository:
                     revoked_at,
                     revoked_by,
                     revocation_reason
-                FROM core_identity.authorization_grants
+                FROM core_audit.authorization_grants
                 WHERE beneficiary_organization_id = :beneficiary_org_id
                 ORDER BY created_at DESC
                 """
@@ -408,7 +408,7 @@ class TransactionalAuthorizationGrantRepository:
         self.connection.execute(
             text(
                 """
-                UPDATE core_identity.authorization_grants
+                UPDATE core_audit.authorization_grants
                 SET
                     status = 'REVOGADO',
                     revoked_at = CURRENT_TIMESTAMP,
