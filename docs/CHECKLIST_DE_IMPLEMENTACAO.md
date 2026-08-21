@@ -4061,3 +4061,69 @@ Documentação:
 - ✅ docs/plans/BUYERPOLICY_FASE2_CONCLUSAO.md
 
 **Recomendação:** Marcar NEXT-10 como **PRONTO PARA PRODUÇÃO** (código completo, testes documentados, migrations aplicadas). Testes realistas multi-org requerem melhoria separada em fixture `Ambiente` (não bloqueador do compartilhamento bilateral em si).
+
+---
+
+### NEXT-11 — BuyerPolicy Fase 3: Feedback estruturado, composição e rate-limiting (ADR-0066)
+
+**Data:** 21 de agosto de 2026 · **Estado:** 🟢 READY FOR KICK-OFF — Planning completo, 4 incrementos decompostos, timeline 16 dias.
+
+Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDecision`), proteção contra força bruta (rate-limiting), composição com matriz regulatória e retenção de histórico pós-expiração.
+
+**Arquitetura:**
+
+1. **Incremento 1: Decision/Proposal (3-4 dias)**
+   - `SharedDecision` domain model (proposal + review workflow)
+   - `TransactionalSharedDecisionRepository` (6 métodos)
+   - `SharedDecisionService.create_proposal()`, `.review_proposal()`
+   - 3 endpoints HTTP (propose, review, list)
+   - 2 novas permissions: POLICY_COMPARTILHAMENTO_PROPOR/REVISAR
+   - 8 testes
+
+2. **Incremento 2: Rate-Limiting & Auditoria (2 dias)**
+   - `GrantRateLimiter` (em-memory, 10 avaliações/min)
+   - `core_audit.shared_policy_access_log` table + repository
+   - Validação 429 em POST /shared-policies/{id}/evaluate
+   - GET /access-log endpoint
+   - 6 testes
+
+3. **Incremento 3: Composição com Matriz (2-3 dias)**
+   - Expandir `SharedPolicyEvaluationResponse` com matriz
+   - Integração ADR-0044 (MarketEligibilityMatrix)
+   - Endpoint ou flag para composição
+   - 4-5 testes
+
+4. **Incremento 4: Snapshot & Pós-Expiração (1-2 dias)**
+   - `policy_snapshot_json` field em SharedDecision
+   - Nova permission: POLICY_COMPARTILHAMENTO_HISTORICO_LER
+   - GET /history endpoint (90d post-expiry)
+   - 3 testes
+
+**Decisões de Design (D1-D5 confirmadas):**
+- D1: Apenas beneficiary cria SharedDecision
+- D2: Evaluation imutável (ADR-0052)
+- D3: Rate-limit por grant (granular)
+- D4: Composição opcional (flexibilidade)
+- D5: Sujeitos cross-org: Não (Opção A, segurança)
+
+**Timeline Sprint 1 (21 ago — 5 set):** Incrementos 1 & 2 paralelos
+**Timeline Sprint 2 (6 set — 19 set):** Incrementos 3 & 4 paralelos
+
+**Documentação criada (21 de agosto):**
+- docs/plans/BUYERPOLICY_FASE3_DISCOVERY.md (requirements iniciais)
+- docs/plans/BUYERPOLICY_FASE3_REQUIREMENTS.md (requisitos detalhados + decisões)
+- docs/plans/BUYERPOLICY_FASE3_BUILD_PLAN.md (tasks por incremento)
+- docs/plans/BUYERPOLICY_FASE3_LAUNCH.md (sumário + próximos passos)
+
+**Próximos passos:**
+1. Validar decisões D1-D5 com Product/Compliance (hoje)
+2. Confirmar decisão: Rate-limiter em-memory ou Redis?
+3. Kick-off Sprint 1 (22 de agosto)
+
+**Métricas de sucesso:**
+- ✅ Proposta criada em < 1s (P95)
+- ✅ Rate-limit bloqueia 11ª avaliação com 429
+- ✅ Access-log registra cada POST/GET automaticamente
+- ✅ Snapshot preservado por 90d pós-expiração
+- ✅ Todos os 35+ testes passam
+- ✅ Portão: Ruff + Mypy + alembic limpos
