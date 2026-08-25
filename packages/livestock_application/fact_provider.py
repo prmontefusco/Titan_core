@@ -27,6 +27,9 @@ from packages.livestock_application.movement_service import (
     PropertyStayRepositoryPort,
 )
 from packages.livestock_application.property_service import RuralPropertyRepositoryPort
+from packages.livestock_application.protected_area_stay_service import (
+    AnimalProtectedAreaStayAssessment,
+)
 from packages.livestock_application.sanitary_campaign_service import (
     SanitaryCampaignRepositoryPort,
 )
@@ -89,6 +92,11 @@ ENVIRONMENTAL_EMBARGO_IBAMA_FACT_TYPE = "livestock.environmental_embargo.ibama"
 TERRITORIAL_PRODES_FACT_TYPE = "livestock.territorial.prodes"
 TERRITORIAL_DETER_FACT_TYPE = "livestock.territorial.deter"
 TERRITORIAL_FUNAI_FACT_TYPE = "livestock.territorial.funai"
+# Área protegida declarada no CAR dos imóveis onde o animal permaneceu (Passo 17.5).
+# Diferente dos três acima, este fato é por animal: ele já percorre a linha de
+# permanências. Ele afirma sobre o imóvel, nunca sobre a posição do animal dentro
+# dele — a limitação viaja no payload.
+TERRITORIAL_PROTECTED_AREA_STAY_FACT_TYPE = "livestock.territorial.protected_area_stay"
 MOVEMENT_DERIVED_PROPERTY_STAY_FACT_TYPE = "livestock.property_stay_from_movement"
 # Sem limite de paginação real na leitura para fatos: uma campanha sanitária
 # que exista e não seja lida aqui produziria uma matriz que finge que aquela
@@ -154,6 +162,14 @@ class TerritorialOverlapReaderPort(Protocol):
     ) -> PropertyTerritorialOverlapAssessment: ...
 
 
+class ProtectedAreaStayReaderPort(Protocol):
+    def assess_animal(
+        self,
+        organization_id: OrganizationId,
+        animal_id: TypedId,
+    ) -> AnimalProtectedAreaStayAssessment: ...
+
+
 @dataclass(frozen=True, slots=True)
 class LivestockFactProvider(FactProviderPort):
     property_repository: RuralPropertyRepositoryPort
@@ -170,6 +186,7 @@ class LivestockFactProvider(FactProviderPort):
     ) = None
     territorial_timeline_service: TerritorialTimelineReaderPort | None = None
     territorial_overlap_service: TerritorialOverlapReaderPort | None = None
+    protected_area_stay_service: ProtectedAreaStayReaderPort | None = None
     withdrawal_calculator: WithdrawalCalculator | None = None
     membership_repository: LotMembershipRepositoryPort | None = None
     imported_fact_repository: ImportedFactReaderPort | None = None
@@ -750,6 +767,20 @@ class LivestockFactProvider(FactProviderPort):
                             observed_at=at_time,
                         )
                     )
+                if self.protected_area_stay_service is not None:
+                    # Não depende de `property_id`: o serviço percorre a linha de
+                    # permanências inteira, e o imóvel atual é só o último ponto dela.
+                    protected_area = self.protected_area_stay_service.assess_animal(
+                        organization_id,
+                        target_id,
+                    )
+                    fact_list.append(
+                        Fact.create(
+                            fact_type=TERRITORIAL_PROTECTED_AREA_STAY_FACT_TYPE,
+                            payload=_protected_area_stay_payload(protected_area),
+                            observed_at=at_time,
+                        )
+                    )
 
                 if self.withdrawal_calculator is not None:
                     status = self.withdrawal_calculator.assess_animal(organization_id, target_id)
@@ -1258,6 +1289,35 @@ def _territorial_overlap_payload(
         "source_area_hectares": assessment.source_area_hectares,
         "version_ids": list(assessment.version_ids),
         "response_digest": assessment.response_digest,
+        "gaps": [gap.to_dict() for gap in assessment.gaps],
+    }
+
+
+def _protected_area_stay_payload(
+    assessment: AnimalProtectedAreaStayAssessment,
+) -> dict[str, Any]:
+    """O fato precisa carregar a lacuna e o limite junto da conclusão.
+
+    ``has_declared_protected_area`` é a chave que uma Rule consumiria, e ela só é
+    ``true`` quando alguma camada foi de fato declarada. Em ``INDETERMINADA`` ela é
+    ``false`` **e** ``gaps`` não está vazio: sem ler os dois, uma regra leria lacuna
+    como ausência de área protegida. ``limitations`` preserva que o resultado é
+    sobre o imóvel, nunca sobre a posição do animal dentro dele.
+    """
+    declared_layers = sorted(
+        {layer.layer for stay in assessment.stays for layer in stay.declared_layers}
+    )
+    return {
+        "animal_id": assessment.animal_id.value.hex,
+        "status": assessment.status.value,
+        "has_declared_protected_area": len(declared_layers) > 0,
+        "declared_layers": declared_layers,
+        "stay_count": len(assessment.stays),
+        "properties_with_declared_area": [
+            property_id.value.hex for property_id in assessment.properties_with_declared_area
+        ],
+        "stays": [stay.to_dict() for stay in assessment.stays],
+        "limitations": list(assessment.limitations),
         "gaps": [gap.to_dict() for gap in assessment.gaps],
     }
 
