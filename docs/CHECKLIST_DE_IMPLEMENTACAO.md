@@ -1,8 +1,42 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 15 de agosto de 2026
+**Atualizado em:** 27 de agosto de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
-**Próximo passo planejado:** adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
+**Próximo passo planejado:** ver o **ponto de parada de 27 de agosto de 2026** logo abaixo — é onde a sessão corrente parou e o que a próxima retoma. Continua pendente, de frente distinta: adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
+
+> **PONTO DE PARADA — 27 de agosto de 2026, fim do dia.** Trabalho interrompido por decisão do
+> responsável, com a árvore limpa e `main` em `c6ca7a3`. Três commits entraram hoje, nesta ordem:
+>
+> 1. `21b520f` — **NEXT-11 Incremento 2**: rate-limit por grant (10 avaliações/min, reusando o
+>    `InMemoryRateLimiter` da ADR-0039) e trilha append-only `core_audit.shared_policy_access_log`
+>    (migration `20260827_0077`), com `GET /v1/rule-governance/policies/{policy_id}/access-log`
+>    exclusivo da Organization dona.
+> 2. `d1b9587` — **ADR-0068**: registro do bloqueador descoberto ao preparar o Incremento 3 — a
+>    autoavaliação de fornecedor da Fase 2 era um stub — e retificação do estado de NEXT-10, que
+>    afirmava capacidade inexistente desde 21 de agosto.
+> 3. `c6ca7a3` — **autoavaliação compartilhada real**, decisão da ADR-0068 (Alternativa 1: a
+>    `Evaluation` pertence ao fornecedor). Fase 2 e Fase 3 passaram a se conectar pela API pública.
+>
+> **O que a próxima sessão retoma, em ordem de precedência:**
+>
+> 1. **Validação manual dos três roteiros de BuyerPolicy — nenhum foi executado.** Exige Keycloak e
+>    API no ar; nesta sessão só o PostgreSQL estava de pé. O roteiro do Incremento 1
+>    (`buyerpolicy_shared_decision`) nunca rodou de fato: até hoje apontava para um prefixo de rota
+>    inexistente. Como a autoavaliação passou a ter comportamento observável novo, validar antes de
+>    seguir para o Incremento 3.
+> 2. **NEXT-11 Incremento 3 — composição com a matriz regulatória.** Desbloqueado: existe resultado
+>    contratual real para compor, e o fluxo está decidido (**Fluxo B, composição explícita por
+>    endpoint separado**, registrado no `BUYERPOLICY_FASE3_BUILD_PLAN.md`). Incremento 4 (snapshot e
+>    acesso pós-expiração) segue depois.
+> 3. **Dívidas conhecidas, deliberadamente não tocadas** — não são regressões desta sessão e foram
+>    conferidas antes e depois: três testes realistas da Fase 2
+>    (`test_policy_sharing_api_realistic.py`, `test_policy_sharing_realistic_v2.py`) falham com
+>    `CONTEXTO_ORGANIZACIONAL_NEGADO` porque nunca criam principal na `org_b`; treze apontamentos de
+>    `ruff check .` e quatro de `ruff format --check .` nesses mesmos arquivos e na migration
+>    autogerada `5e402311b352`; e dois erros de `mypy` em `apps/api/policy_governance.py`
+>    (`PolicySharingService` × `revoke`). A suíte de integração fecha em **280 passed, 3 failed**.
+> 4. **`captura_territorial_sintetica` está no índice de roteiros, mas fora da suíte de fumaça.**
+>    Omissão antiga; não foi incluída porque não se verificou se a exclusão era deliberada.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
