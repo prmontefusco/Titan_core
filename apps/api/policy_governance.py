@@ -95,6 +95,10 @@ router = APIRouter(prefix="/v1/rule-governance/policies", tags=["rule-governance
 # ADR-0064 (BuyerPolicy Fase 1): origem e boundary sao derivados, nao persistidos.
 _ORIGIN_NAO_CLASSIFICADO = "NAO_CLASSIFICADO_COMO_BUYERPOLICY"
 
+# ADR-0065: a Fase 2 restringe a autoavaliacao compartilhada aos sujeitos que a
+# vertical Livestock ja reconhece. Ampliar exige decisao propria.
+_SUBJECT_TYPE_ANIMAL = "ANIMAL"
+
 
 class CriarPolicyRequest(BaseModel):
     code: str = Field(min_length=1, max_length=100)
@@ -879,9 +883,62 @@ def avaliar_shared_policy(
             detail="Apenas Policies contratuais homogeneas podem ser compartilhadas",
         )
 
-    # TODO: Implementar avaliacao compartilhada com sujeitos de outra Organization
-    # Por enquanto, criar uma avaliacao stub que passe nos testes
-    evaluation_id = str(UUID(int=0))
+    # ADR-0065/0068: daqui para a frente tudo corre sob a Organization
+    # beneficiaria. A Policy e as Rules ja foram lidas sob a do owner acima; o
+    # sujeito, os facts e a Evaluation resultante sao do fornecedor, e e isso que
+    # impede o snapshot dele de atravessar para dentro da RLS do comprador.
+    set_local_organization_context(connection, contexto.organization_id)
+
+    if corpo.subject_type.strip().upper() != _SUBJECT_TYPE_ANIMAL:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason_code="SUJEITO_NAO_SUPORTADO",
+            title="Sujeito nao suportado",
+            detail=(
+                f"A autoavaliacao contratual compartilhada avalia somente "
+                f"{_SUBJECT_TYPE_ANIMAL} (ADR-0065)."
+            ),
+        )
+
+    animal_id = typed_id_or_problem(corpo.subject_id, entity_type="animal", campo="subject_id")
+    animal_repository = TransactionalAnimalRepository(connection=connection)
+    if animal_repository.get_by_id(animal_id) is None:
+        # A resposta nao distingue sujeito inexistente de sujeito de outra
+        # Organization: quem avalia so pode avaliar o que ja lhe pertence (D5).
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Sujeito nao encontrado nesta organizacao.",
+        )
+
+    # Import local pelo mesmo motivo de `avaliar_policy`: nao acoplar o modulo de
+    # Policy do Core a toda a superficie de `livestock_queries.py`.
+    from apps.api.livestock_queries import _eligibility_components
+
+    _aplicacoes, _avaliacoes, _decisoes, fact_provider = _eligibility_components(
+        connection, animal_repository
+    )
+    reference_time = corpo.reference_time or datetime.now(UTC)
+    snapshot = fact_provider.get_snapshot(contexto.organization_id, animal_id, reference_time)
+
+    try:
+        evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
+            policy=policy,
+            rules=rules,
+            snapshot=snapshot,
+            purpose=corpo.purpose,
+            evaluating_organization_id=contexto.organization_id,
+        )
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+
+    TransactionalEvaluationRepository(connection=connection).save(evaluation)
 
     _registrar_acesso_compartilhado(
         connection,
@@ -896,13 +953,31 @@ def avaliar_shared_policy(
     )
 
     return SharedPolicyEvaluationResponse(
-        evaluation_id=evaluation_id,
+        evaluation_id=str(evaluation.evaluation_id.value),
         policy_id=str(policy.policy_id.value),
         origin="CONTRACT",
-        outcome="CONFORM",
-        rule_results=[],
-        missing_facts=[],
-        evaluation_hash="",
+        outcome=evaluation.outcome.value,
+        rule_results=[
+            RuleResultResponse(
+                rule_id=str(resultado.rule_id.value),
+                rule_code=resultado.rule_code,
+                rule_version=resultado.rule_version,
+                status=resultado.status.value,
+                severity=resultado.severity.value,
+                reason=resultado.reason,
+                corrective_action=resultado.corrective_action,
+                missing_evidence_types=list(resultado.missing_evidence_types),
+            )
+            for resultado in evaluation.rule_results
+        ],
+        missing_facts=sorted(
+            {
+                tipo
+                for resultado in evaluation.rule_results
+                for tipo in resultado.missing_evidence_types
+            }
+        ),
+        evaluation_hash=evaluation.evaluation_hash,
     )
 
 

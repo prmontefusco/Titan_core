@@ -18,6 +18,7 @@ from packages.core_infrastructure.rate_limiter import (
 )
 from packages.livestock_application.authorization import OPERADOR_PECUARIO
 from tests.integration.test_policy_sharing_api import (
+    _animal_do_fornecedor,
     _contract_policy,
     _headers,
     _share_policy,
@@ -79,9 +80,17 @@ def _avaliar(
     )
 
 
-def _esgotar_cota(fornecedor: ClienteAutenticado, ambiente: Ambiente, policy_id: str) -> None:
-    for tentativa in range(SHARED_POLICY_EVALUATIONS_PER_MINUTE):
-        resposta = _avaliar(fornecedor, ambiente, policy_id, f"sujeito-{tentativa}")
+def _esgotar_cota(
+    fornecedor: ClienteAutenticado, ambiente: Ambiente, policy_id: str, animal_id: str
+) -> None:
+    """Consome a cota do minuto reavaliando o mesmo sujeito.
+
+    Repetir a avaliacao do mesmo animal e exatamente o que a cota existe para
+    conter: e assim que se reconstroi, por tentativa e erro, o criterio
+    contratual que a Policy nao expoe.
+    """
+    for _ in range(SHARED_POLICY_EVALUATIONS_PER_MINUTE):
+        resposta = _avaliar(fornecedor, ambiente, policy_id, animal_id)
         assert resposta.status_code == 201, resposta.text
 
 
@@ -90,8 +99,9 @@ def test_avaliacao_dentro_do_limite_permanece_201(
 ) -> None:
     policy_id = _contract_policy(operador, ambiente)
     _share_policy(operador, ambiente, policy_id)
+    animal_id = _animal_do_fornecedor(ambiente, fornecedor)
 
-    _esgotar_cota(fornecedor, ambiente, policy_id)
+    _esgotar_cota(fornecedor, ambiente, policy_id, animal_id)
 
 
 def test_avaliacao_acima_do_limite_recebe_429_com_retry_after(
@@ -99,9 +109,10 @@ def test_avaliacao_acima_do_limite_recebe_429_com_retry_after(
 ) -> None:
     policy_id = _contract_policy(operador, ambiente)
     _share_policy(operador, ambiente, policy_id)
-    _esgotar_cota(fornecedor, ambiente, policy_id)
+    animal_id = _animal_do_fornecedor(ambiente, fornecedor)
+    _esgotar_cota(fornecedor, ambiente, policy_id, animal_id)
 
-    excedida = _avaliar(fornecedor, ambiente, policy_id, "sujeito-excedente")
+    excedida = _avaliar(fornecedor, ambiente, policy_id, animal_id)
 
     assert excedida.status_code == 429, excedida.text
     corpo = excedida.json()
@@ -118,12 +129,14 @@ def test_cota_e_por_grant_e_nao_por_organization(
     _share_policy(operador, ambiente, exaurida)
     vizinha = _contract_policy(operador, ambiente)
     _share_policy(operador, ambiente, vizinha)
+    animal_id = _animal_do_fornecedor(ambiente, fornecedor)
 
-    _esgotar_cota(fornecedor, ambiente, exaurida)
-    assert _avaliar(fornecedor, ambiente, exaurida, "sujeito-excedente").status_code == 429
+    _esgotar_cota(fornecedor, ambiente, exaurida, animal_id)
+    assert _avaliar(fornecedor, ambiente, exaurida, animal_id).status_code == 429
 
-    # Mesma Organization, outro contrato: a cota exaurida nao contamina o vizinho.
-    assert _avaliar(fornecedor, ambiente, vizinha, "sujeito-vizinho").status_code == 201
+    # Mesma Organization, mesmo sujeito, outro contrato: a cota exaurida nao
+    # contamina o vizinho.
+    assert _avaliar(fornecedor, ambiente, vizinha, animal_id).status_code == 201
 
 
 def test_access_log_registra_leitura_e_avaliacao_da_beneficiaria(
@@ -137,7 +150,8 @@ def test_access_log_registra_leitura_e_avaliacao_da_beneficiaria(
         headers=_headers(str(ambiente.org_b.organization_id.value)),
     )
     assert leitura.status_code == 200, leitura.text
-    assert _avaliar(fornecedor, ambiente, policy_id, "sujeito-auditado").status_code == 201
+    animal_id = _animal_do_fornecedor(ambiente, fornecedor)
+    assert _avaliar(fornecedor, ambiente, policy_id, animal_id).status_code == 201
 
     trilha = operador.get(
         f"/v1/rule-governance/policies/{policy_id}/access-log",
@@ -153,7 +167,7 @@ def test_access_log_registra_leitura_e_avaliacao_da_beneficiaria(
     }
     avaliacao = next(item for item in itens if item["action"] == "EVALUATE")
     assert avaliacao["subject_type"] == "ANIMAL"
-    assert avaliacao["subject_id"] == "sujeito-auditado"
+    assert avaliacao["subject_id"] == animal_id
 
 
 def test_access_log_preserva_a_recusa_por_limite(
@@ -161,8 +175,9 @@ def test_access_log_preserva_a_recusa_por_limite(
 ) -> None:
     policy_id = _contract_policy(operador, ambiente)
     _share_policy(operador, ambiente, policy_id)
-    _esgotar_cota(fornecedor, ambiente, policy_id)
-    assert _avaliar(fornecedor, ambiente, policy_id, "sujeito-excedente").status_code == 429
+    animal_id = _animal_do_fornecedor(ambiente, fornecedor)
+    _esgotar_cota(fornecedor, ambiente, policy_id, animal_id)
+    assert _avaliar(fornecedor, ambiente, policy_id, animal_id).status_code == 429
 
     recusas = operador.get(
         f"/v1/rule-governance/policies/{policy_id}/access-log",
@@ -172,7 +187,8 @@ def test_access_log_preserva_a_recusa_por_limite(
     assert recusas.status_code == 200, recusas.text
     itens = recusas.json()["items"]
     assert len(itens) == 1
-    assert itens[0]["subject_id"] == "sujeito-excedente"
+    assert itens[0]["subject_id"] == animal_id
+    assert itens[0]["action"] == "EVALUATE"
 
     concedidas = operador.get(
         f"/v1/rule-governance/policies/{policy_id}/access-log",
@@ -187,7 +203,8 @@ def test_access_log_e_invisivel_para_quem_nao_e_dono_da_policy(
 ) -> None:
     policy_id = _contract_policy(operador, ambiente)
     _share_policy(operador, ambiente, policy_id)
-    assert _avaliar(fornecedor, ambiente, policy_id, "sujeito-visivel").status_code == 201
+    animal_id = _animal_do_fornecedor(ambiente, fornecedor)
+    assert _avaliar(fornecedor, ambiente, policy_id, animal_id).status_code == 201
 
     # A beneficiaria enxerga a Policy compartilhada, mas nao a trilha de acesso:
     # a resposta e a mesma de Policy inexistente, para nao virar oraculo.

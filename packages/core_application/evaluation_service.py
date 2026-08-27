@@ -331,14 +331,32 @@ class PolicyEvaluationService:
         executor_reference: UniversalReference | None = None,
         evaluated_at: datetime | None = None,
         normative_basis_snapshot: NormativeBasisSnapshot | None = None,
+        evaluating_organization_id: OrganizationId | None = None,
     ) -> Evaluation:
+        """Executa a Policy sobre o snapshot e devolve a Evaluation resultante.
+
+        `evaluating_organization_id` existe para um caso e só um: a autoavaliação
+        contratual compartilhada da ADR-0065, em que o fornecedor avalia os
+        próprios sujeitos contra a Policy publicada pelo comprador. Ali as duas
+        Organizations são deliberadamente distintas, e a ADR-0068 decidiu que a
+        Evaluation nasce sob a do **fornecedor** — quem avaliou —, e não sob a
+        dona da Policy. É o que impede o `FactSnapshot` do fornecedor de passar
+        para dentro da RLS do comprador, que a ADR-0065 bloqueia expressamente.
+
+        Sem esse parâmetro nada muda: Policy e snapshot continuam obrigados à
+        mesma Organization, como a ADR-0002 exige de todo o resto do Core. O
+        cruzamento é explícito no ponto de chamada ou não acontece.
+        """
         if policy.status not in _EVALUABLE_POLICY_STATUSES:
             raise ValueError(
                 f"Política em '{policy.status.value}' não pode ser avaliada: "
                 "apenas políticas publicadas ou substituídas são executáveis."
             )
-        if policy.organization_id != snapshot.organization_id:
-            raise ValueError("A política e o snapshot devem pertencer à mesma Organization.")
+        owner_organization_id = evaluating_organization_id or policy.organization_id
+        if owner_organization_id != snapshot.organization_id:
+            raise ValueError(
+                "A Organization avaliadora e o snapshot devem pertencer à mesma Organization."
+            )
 
         foreign = [r for r in rules if r.policy_id != policy.policy_id]
         if foreign:
@@ -393,7 +411,7 @@ class PolicyEvaluationService:
 
         return Evaluation(
             evaluation_id=TypedId.new("evaluation"),
-            organization_id=policy.organization_id,
+            organization_id=owner_organization_id,
             subject_id=snapshot.target_id,
             purpose=purpose.strip(),
             policy_id=policy.policy_id,

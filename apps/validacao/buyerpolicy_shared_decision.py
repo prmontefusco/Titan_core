@@ -8,9 +8,7 @@ import argparse
 import os
 import sys
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
-
-from sqlalchemy import create_engine
+from uuid import UUID, uuid4
 
 from apps.seed.__main__ import SENHA_DEMONSTRACAO
 from apps.seed.keycloak import AdminKeycloak
@@ -18,6 +16,7 @@ from apps.validacao.__main__ import (
     CLIENTE_DE_VALIDACAO,
     _ambiente,
     _descobrir_organizacao,
+    _propriedade,
 )
 from apps.validacao.runner import (
     AMARELO,
@@ -26,64 +25,11 @@ from apps.validacao.runner import (
     NEGRITO,
     Cliente,
     Requisicao,
-    Resposta,
     Roteiro,
 )
-from packages.core_application.evaluation_service import (
-    PolicyEvaluationService,
-    RuleEvaluationEngine,
-)
-from packages.core_domain.facts import Fact, FactSnapshot
-from packages.core_infrastructure.persistence import set_local_organization_context
-from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
-from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
-from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
-from packages.shared_kernel import OrganizationId, TypedId
 
 
-def _criar_evaluation_de_apoio(database_url: str, organizacao: str, policy_id: str) -> str:
-    engine = create_engine(database_url)
-    try:
-        with engine.connect() as conexao, conexao.begin():
-            organization_id = OrganizationId.parse(organizacao)
-            set_local_organization_context(conexao, organization_id)
-            policy = TransactionalPolicyRepository(conexao).get_by_id(
-                TypedId.parse("policy", policy_id)
-            )
-            if policy is None:
-                raise SystemExit("Policy de apoio nao encontrada para criar Evaluation.")
-            rules = TransactionalRuleRepository(conexao).list_by_policy(
-                organization_id=organization_id,
-                policy_id=policy.policy_id,
-            )
-            if not rules:
-                raise SystemExit("Policy de apoio nao possui Rule publicada.")
-            agora = datetime.now(UTC)
-            snapshot = FactSnapshot.create(
-                organization_id=organization_id,
-                target_id=TypedId.new("animal"),
-                as_of=agora,
-                facts=[
-                    Fact.create(
-                        fact_type="test.fact",
-                        payload={"value": "test"},
-                        observed_at=agora,
-                    )
-                ],
-            )
-            evaluation = PolicyEvaluationService(engine=RuleEvaluationEngine()).evaluate_policy(
-                policy=policy,
-                rules=rules,
-                snapshot=snapshot,
-                purpose="AUTOAVALIACAO_CONTRATUAL_FORNECEDOR",
-            )
-            TransactionalEvaluationRepository(conexao).save(evaluation)
-            return str(evaluation.evaluation_id.value)
-    finally:
-        engine.dispose()
-
-
-def _montar_roteiro(cliente: Cliente, database_url: str, organizacao: str) -> Roteiro:
+def _montar_roteiro(cliente: Cliente, organizacao: str) -> Roteiro:
     ids: dict[str, str] = {}
     roteiro = Roteiro("BuyerPolicy Fase 3 - SharedDecision", diario=cliente.diario)
 
@@ -181,18 +127,37 @@ def _montar_roteiro(cliente: Cliente, database_url: str, organizacao: str) -> Ro
         porque="O grant delimita finalidade, validade e Organization beneficiaria.",
     )
     roteiro.passo(
-        "6",
-        "Criar Evaluation de apoio sem copiar identificadores",
-        lambda: _resposta_local(
-            {
-                "evaluation_id": _criar_evaluation_de_apoio(
-                    database_url, organizacao, ids["policy_id"]
-                )
-            }
+        "6a",
+        "Descobrir a propriedade e cadastrar o sujeito a avaliar",
+        lambda: cliente.post(
+            "/v1/livestock/animals",
+            {"birth_property_id": _propriedade(cliente), "sex": "FEMALE"},
         ),
-        200,
+        201,
+        guardar=lambda r: ids.update(animal_id=str(r["animal_id"])),
+        porque="A autoavaliacao compartilhada avalia sujeito do proprio fornecedor (ADR-0065).",
+    )
+    roteiro.passo(
+        "6b",
+        "Autoavaliar o sujeito contra a Policy compartilhada",
+        lambda: cliente.post(
+            f"/v1/rule-governance/policies/shared-policies/{ids['policy_id']}/evaluate",
+            {
+                "subject_type": "ANIMAL",
+                "subject_id": ids["animal_id"],
+                "purpose": "AUTOAVALIACAO_CONTRATUAL_FORNECEDOR",
+            },
+        ),
+        201,
+        conferir=lambda r: (
+            None
+            if r["evaluation_id"] != str(UUID(int=0)) and r["evaluation_hash"]
+            else "a rota devolveu avaliacao sem identidade -- o stub da Fase 2 voltou"
+        ),
         guardar=lambda r: ids.update(evaluation_id=str(r["evaluation_id"])),
-        porque="A Fase 3 referencia uma Evaluation imutavel; o roteiro a cria diretamente.",
+        porque=(
+            "Ate 27/08/2026 esta rota era um stub; a proposta seguinte depende do que ela grava."
+        ),
     )
     roteiro.passo(
         "7",
@@ -241,10 +206,6 @@ def _montar_roteiro(cliente: Cliente, database_url: str, organizacao: str) -> Ro
     return roteiro
 
 
-def _resposta_local(corpo: dict[str, str]) -> Resposta:
-    return Resposta(200, corpo)
-
-
 def main() -> int:
     argumentos = argparse.ArgumentParser(description="Roteiro de SharedDecision BuyerPolicy.")
     argumentos.add_argument("--pausar", action="store_true")
@@ -259,8 +220,10 @@ def main() -> int:
     keycloak_url = _ambiente("TITAN_OIDC_BASE_URL", "http://localhost:8080").rstrip("/")
     realm = _ambiente("TITAN_OIDC_REALM", "titan")
     database_url = os.environ.get("TITAN_DATABASE_URL", "").strip()
-    if not database_url:
-        raise SystemExit("Defina TITAN_DATABASE_URL para criar a Evaluation de apoio.")
+    if not database_url and not opcoes.organizacao:
+        raise SystemExit(
+            "Defina TITAN_DATABASE_URL (para descobrir a Organization) ou passe --organizacao."
+        )
     organizacao = opcoes.organizacao or _descobrir_organizacao(database_url)
 
     admin = AdminKeycloak.autenticar(
@@ -289,7 +252,7 @@ def main() -> int:
     print(f"  Organization : {organizacao}")
     print(f"{CINZA}  Rode seed/bootstrap novamente se vier 403 por permissao ausente.{FIM}")
 
-    codigo = _montar_roteiro(cliente, database_url, organizacao).executar(pausar=opcoes.pausar)
+    codigo = _montar_roteiro(cliente, organizacao).executar(pausar=opcoes.pausar)
     if codigo == 0:
         print(f"{AMARELO}O script confere forma e status; a leitura de negocio segue humana.{FIM}")
     return codigo

@@ -65,10 +65,17 @@ class SharedDecisionService:
         if grant.status != "ATIVO" or grant.valid_until <= datetime.now(UTC):
             raise ValueError("Grant inativo, revogado ou expirado.")
 
-        self.set_organization_context(grant.owner_organization_id)
+        # ADR-0068: a Evaluation da autoavaliacao compartilhada pertence a
+        # Organization que avaliou -- a beneficiaria --, e nao a dona da Policy.
+        # E sob o contexto dela que a proposta confere a avaliacao que contesta;
+        # o comprador revisa a alegacao sem receber o snapshot de facts junto,
+        # que e o que a ADR-0065 bloqueia.
+        self.set_organization_context(proposer_organization_id)
         evaluation = self.evaluations.get_by_id(evaluation_id)
         if evaluation is None or evaluation.policy_id != policy_id:
             raise KeyError("Evaluation nao encontrada ou nao acessivel.")
+        if evaluation.organization_id != proposer_organization_id:
+            raise PermissionError("So a propria avaliacao pode ser contestada.")
 
         now = datetime.now(UTC)
         decision = SharedDecision(

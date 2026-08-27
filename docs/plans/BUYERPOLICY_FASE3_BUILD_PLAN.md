@@ -544,8 +544,9 @@ Cada incremento deve passar:
      tabela de riscos ("Composição expõe matriz → endpoint separado"); o §2.2 do REQUIREMENTS,
      que marcava o Fluxo A como recomendado, fica superado. O fornecedor não vê o efeito da
      matriz do comprador.
-   - Bloqueio (27 ago 2026): o Incremento 3 não começa antes da ADR-0068 — a autoavaliação
-     compartilhada da Fase 2 é um stub e não há resultado contratual real para compor.
+   - Bloqueio resolvido (27 ago 2026): o Incremento 3 dependia da ADR-0068 — a autoavaliação
+     compartilhada da Fase 2 era um stub e não havia resultado contratual real para compor. A
+     ADR-0068 foi aceita e a autoavaliação implementada no mesmo dia; o Incremento 3 está livre.
 3. **Access-log retention:** Limpar após 90 dias?
    - Decision: SIM, adicionar job de limpeza em Fase 3.1
 

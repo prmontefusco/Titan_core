@@ -1,16 +1,18 @@
 # ADR-0068 — Autoavaliação compartilhada: de quem é a Evaluation
 
-**Data:** 27 de agosto de 2026 · **Estado:** PROPOSTA (aguarda decisão humana)
+**Data:** 27 de agosto de 2026 · **Estado:** ACEITA em 27 de agosto de 2026 — **Alternativa 1**, a `Evaluation` pertence ao fornecedor. Implementada no mesmo dia.
 
-**Contexto:** BuyerPolicy Fase 2 (ADR-0065) e Fase 3 (ADR-0066). Bloqueia o Incremento 3
+**Contexto:** BuyerPolicy Fase 2 (ADR-0065) e Fase 3 (ADR-0066). Bloqueava o Incremento 3
 (composição com a matriz regulatória) e a conexão entre a Fase 2 e o Incremento 1 já entregue.
 
 ---
 
 ## Contexto
 
-`POST /v1/rule-governance/policies/shared-policies/{policy_id}/evaluate` está publicado desde a
-Fase 2 e **não avalia nada**. O corpo da rota, em `apps/api/policy_governance.py`, termina em:
+*As seções a seguir descrevem o estado que motivou a decisão, antes da correção.*
+
+`POST /v1/rule-governance/policies/shared-policies/{policy_id}/evaluate` estava publicado desde a
+Fase 2 e **não avaliava nada**. O corpo da rota, em `apps/api/policy_governance.py`, terminava em:
 
 ```python
 # TODO: Implementar avaliacao compartilhada com sujeitos de outra Organization
@@ -129,16 +131,29 @@ A Alternativa 2 é mais barata hoje e mais cara depois: transforma uma decisão 
 documentada em efeito colateral de RLS, num sistema cuja ordem de prioridade é
 Corretude → Segurança → Auditoria.
 
-## Decisão necessária
+## Decisão
 
-1. De quem é a `Evaluation` produzida pela autoavaliação compartilhada?
-2. Se Alternativa 1: o que o comprador enxerga ao revisar uma `SharedDecision` — apenas a alegação e
-   o hash, ou também o `outcome` agregado?
+**Alternativa 1**, aceita em 27 de agosto de 2026. A `Evaluation` da autoavaliação compartilhada
+pertence à Organization que avaliou — a beneficiária do grant.
 
-Enquanto isso não for decidido, o Incremento 3 (composição com a matriz regulatória) não deve ser
-construído: compor um `composite_verdict` sobre um `CONFORM` constante produziria veredito com
-metade contratual fabricada, e a trilha de acesso da ADR-0066 passaria a registrar composições sem
-lastro.
+Sobre a segunda pergunta (o que o comprador enxerga ao revisar): ele enxerga a **alegação** do
+fornecedor e a referência à `Evaluation` (`evaluation_id`), não o conteúdo dela. É a leitura mínima
+compatível com a Nota da ADR-0065; ampliar exige decisão própria.
+
+### Como ficou implementado
+
+1. `PolicyEvaluationService.evaluate_policy` recebe `evaluating_organization_id`, opcional e
+   explícito. Sem ele, Policy e snapshot continuam obrigados à mesma Organization, como em todo o
+   resto do Core — o cruzamento acontece no ponto de chamada ou não acontece. Com ele, o snapshot
+   deve pertencer à Organization avaliadora, e a `Evaluation` nasce sob ela.
+2. `POST /shared-policies/{policy_id}/evaluate` lê Policy e Rules sob o contexto do comprador,
+   troca para o contexto do fornecedor, resolve o sujeito, monta o `FactSnapshot`, executa as Rules
+   e persiste a `Evaluation`. Sujeito inexistente responde `404` — antes respondia `201 CONFORM`.
+3. `SharedDecisionService.create_proposal` passou a procurar a `Evaluation` sob o contexto do
+   proponente, e recusa proposta sobre avaliação que não seja dele.
+
+O isolamento é verificado por teste sob a role de runtime `titan_app`, e não pela conexão
+administrativa — que ignora RLS e faria a asserção passar mesmo sem isolamento nenhum.
 
 ## Referências
 
