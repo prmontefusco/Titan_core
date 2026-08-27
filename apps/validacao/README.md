@@ -7,7 +7,7 @@ de que precisa, mostra requisição e resposta lado a lado, e diz por que cada
 passo existe. Nenhum deles decide sozinho se o comportamento está correto —
 isso continua sendo julgamento de quem valida.
 
-Este índice existe porque nenhum outro documento lista os 28 roteiros. Sem
+Este índice existe porque nenhum outro documento lista os 31 roteiros. Sem
 ele, descobrir que um roteiro existe depende de vasculhar este diretório ou o
 histórico de commits — o que esta lista resolve para quem audita o sistema de
 fora.
@@ -80,6 +80,7 @@ provedor, não com sintoma genérico.
 | `artefato_transferencia` | Artefato recebido e lacuna de cobertura (ADR-0042) |
 | `fato_importado` | Fato importado com autoria preservada (ADR-0042) |
 | `captura_externa_sisbov_simulada` | Leitura e revisão de captura SISBOV simulada (Corte 2B) |
+| `captura_territorial_sintetica` | Captura territorial sintética via API (T-05D, Corte 4) |
 
 ### Transformação industrial (abate)
 | Roteiro | Valida |
@@ -95,6 +96,8 @@ provedor, não com sintoma genérico.
 | `liv_c09_integracao_operacional` | Limite assíncrono do outbox/inbox de ERP (LIV-C09) |
 | `post_liv_01_operational_summary` | Suporte operacional derivado (POST-LIV-01) |
 | `post_liv_02a_neutral_contract` | Contrato outbound neutro de ERP (POST-LIV-02A) |
+| `buyerpolicy_shared_decision` | Proposta e revisão sobre Evaluation compartilhada (ADR-0066, Incremento 1) |
+| `buyerpolicy_rate_limit_auditoria` | Cota por grant e trilha de acesso da BuyerPolicy compartilhada (ADR-0066, Incremento 2) |
 
 ## Rodar todos de uma vez (roteiro de fumaça)
 
@@ -102,13 +105,14 @@ provedor, não com sintoma genérico.
 python -m uv run --locked python -m apps.validacao.fumaca
 ```
 
-Roda os 28 roteiros em sequência (cada um como processo separado, sem
-mudar nenhum deles) e devolve um resumo: quantos passaram, quais falharam
-e as últimas linhas da saída de cada um que falhou. É uma primeira leitura
-de saúde do sistema em minutos — não substitui abrir o roteiro individual
-para entender *por que* algo falhou, nem decide se a falha é defeito de
-código ou ambiente fora do lugar (provider HTTP real não configurado,
-semeadura desatualizada). Continua sendo julgamento de quem valida.
+Roda em sequência os 30 roteiros listados em `fumaca.py` (cada um como
+processo separado, sem mudar nenhum deles) e devolve um resumo: quantos
+passaram, quais falharam e as últimas linhas da saída de cada um que
+falhou. É uma primeira leitura de saúde do sistema em minutos — não
+substitui abrir o roteiro individual para entender *por que* algo falhou,
+nem decide se a falha é defeito de código ou ambiente fora do lugar
+(provider HTTP real não configurado, semeadura desatualizada). Continua
+sendo julgamento de quem valida.
 
 ## O que este índice não faz
 

@@ -72,6 +72,14 @@ ROTEIROS: tuple[tuple[str, list[str]], ...] = (
         ["apps.validacao.post_liv_01_operational_summary"],
     ),
     ("POST-LIV-02A — contrato outbound neutro", ["apps.validacao.post_liv_02a_neutral_contract"]),
+    (
+        "ADR-0066 — SharedDecision de BuyerPolicy compartilhada",
+        ["apps.validacao.buyerpolicy_shared_decision"],
+    ),
+    (
+        "ADR-0066 — cota por grant e trilha de acesso compartilhado",
+        ["apps.validacao.buyerpolicy_rate_limit_auditoria"],
+    ),
     ("IBAMA — embargo ambiental (HTTP real)", ["apps.validacao.embargo_ibama"]),
     ("FUNAI — terra indígena (HTTP real)", ["apps.validacao.funai"]),
     (

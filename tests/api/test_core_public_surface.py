@@ -69,6 +69,9 @@ SUPERFICIE_ESPERADA = {
         "/v1/rule-governance/policies/shared-policies/{policy_id}/decisions/{decision_id}/review",
         "post",
     ),
+    # BuyerPolicy Fase 3 Incremento 2: trilha de acesso a Policy compartilhada,
+    # legivel apenas pela Organization que compartilhou.
+    ("/v1/rule-governance/policies/{policy_id}/access-log", "get"),
     (
         "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/execute",
         "post",

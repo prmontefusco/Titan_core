@@ -198,7 +198,7 @@ def _montar_roteiro(cliente: Cliente, database_url: str, organizacao: str) -> Ro
         "7",
         "Fornecedor cria proposta estruturada",
         lambda: cliente.post(
-            f"/v1/rule-governance/shared-policies/{ids['policy_id']}/decisions",
+            f"/v1/rule-governance/policies/shared-policies/{ids['policy_id']}/decisions",
             {
                 "grant_id": ids["grant_id"],
                 "evaluation_id": ids["evaluation_id"],
@@ -216,7 +216,7 @@ def _montar_roteiro(cliente: Cliente, database_url: str, organizacao: str) -> Ro
         "Comprador revisa a proposta",
         lambda: cliente.post(
             (
-                f"/v1/rule-governance/shared-policies/{ids['policy_id']}"
+                f"/v1/rule-governance/policies/shared-policies/{ids['policy_id']}"
                 f"/decisions/{ids['decision_id']}/review"
             ),
             {
@@ -231,7 +231,9 @@ def _montar_roteiro(cliente: Cliente, database_url: str, organizacao: str) -> Ro
     roteiro.passo(
         "9",
         "Listar historico da Policy compartilhada",
-        lambda: cliente.get(f"/v1/rule-governance/shared-policies/{ids['policy_id']}/decisions"),
+        lambda: cliente.get(
+            f"/v1/rule-governance/policies/shared-policies/{ids['policy_id']}/decisions"
+        ),
         200,
         conferir=lambda r: None if len(r.corpo) == 1 else "historico inesperado",
         porque="As partes conseguem reconstruir proposta e revisao pelo endpoint de leitura.",

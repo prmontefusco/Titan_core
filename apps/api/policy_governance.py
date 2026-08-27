@@ -22,7 +22,8 @@ from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection
 from sqlalchemy.exc import IntegrityError
@@ -33,7 +34,7 @@ from apps.api.livestock_dependencies import (
     typed_id_or_problem,
 )
 from apps.api.pagination import Pagina, PaginacaoDependency, montar_pagina
-from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
+from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem, problem_response
 from packages.core_application.evaluation_service import (
     PolicyEvaluationService,
     RuleEvaluationEngine,
@@ -55,7 +56,13 @@ from packages.core_application.policy_sharing_service import PolicySharingServic
 from packages.core_application.shared_decision_service import SharedDecisionService
 from packages.core_domain import OrganizationContext
 from packages.core_domain.policy import Policy
-from packages.core_domain.policy_sharing import SharedDecision
+from packages.core_domain.policy_sharing import (
+    SHARED_POLICY_ACCESS_ACTION_EVALUATE,
+    SHARED_POLICY_ACCESS_ACTION_READ,
+    SHARED_POLICY_ACCESS_ENTITY_TYPE,
+    SharedDecision,
+    SharedPolicyAccessLogEntry,
+)
 from packages.core_domain.rule_governance import RuleSourceType
 from packages.core_infrastructure.persistence.authorization_grant import (
     TransactionalAuthorizationGrantRepository,
@@ -70,10 +77,18 @@ from packages.core_infrastructure.persistence.rule_governance import (
 from packages.core_infrastructure.persistence.shared_decision import (
     TransactionalSharedDecisionRepository,
 )
+from packages.core_infrastructure.persistence.shared_policy_access_log import (
+    TransactionalSharedPolicyAccessLogRepository,
+)
+from packages.core_infrastructure.rate_limiter import (
+    shared_policy_evaluation_key,
+    shared_policy_evaluation_rate_limiter,
+)
 from packages.livestock_application.requirement_authority import RecognitionBoundary
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
 )
+from packages.shared_kernel import OrganizationId, TypedId
 
 router = APIRouter(prefix="/v1/rule-governance/policies", tags=["rule-governance"])
 
@@ -228,6 +243,18 @@ class SharedDecisionResponse(BaseModel):
     reviewed_by: str | None
 
 
+class AccessLogResponse(BaseModel):
+    access_id: str
+    grant_id: str
+    policy_id: str
+    organization_id: str
+    action: str
+    http_status_code: int
+    accessed_at: datetime
+    subject_type: str | None
+    subject_id: str | None
+
+
 def _servico(connection: Connection) -> PolicyService:
     return PolicyService(TransactionalPolicyRepository(connection))
 
@@ -276,6 +303,56 @@ def _shared_decision_response(decision: SharedDecision) -> SharedDecisionRespons
         review_content=decision.review_content,
         reviewed_at=decision.reviewed_at,
         reviewed_by=decision.reviewed_by,
+    )
+
+
+def _registrar_acesso_compartilhado(
+    connection: Connection,
+    *,
+    grant_id: UUID,
+    policy_id: TypedId,
+    organization_id: OrganizationId,
+    owner_organization_id: OrganizationId,
+    action: str,
+    http_status_code: int,
+    subject_type: str | None = None,
+    subject_id: str | None = None,
+) -> None:
+    """Grava um acesso consumado a Policy compartilhada.
+
+    A gravacao vive na mesma transacao da requisicao, entao ela acompanha o
+    destino do que registrou: acesso que nao se completou nao deixa trilha de
+    acesso concedido. Por isso a recusa por limite de taxa e devolvida como
+    resposta -- e nao levantada como excecao: o 429 e justamente o evento que a
+    trilha precisa preservar.
+    """
+    TransactionalSharedPolicyAccessLogRepository(connection).log_access(
+        SharedPolicyAccessLogEntry(
+            access_id=TypedId.new(SHARED_POLICY_ACCESS_ENTITY_TYPE),
+            grant_id=grant_id,
+            policy_id=policy_id,
+            organization_id=organization_id,
+            action=action,
+            http_status_code=http_status_code,
+            accessed_at=datetime.now(UTC),
+            record_owner_organization_id=owner_organization_id,
+            subject_type=subject_type,
+            subject_id=subject_id,
+        )
+    )
+
+
+def _resposta_access_log(entrada: SharedPolicyAccessLogEntry) -> AccessLogResponse:
+    return AccessLogResponse(
+        access_id=str(entrada.access_id.value),
+        grant_id=str(entrada.grant_id),
+        policy_id=str(entrada.policy_id.value),
+        organization_id=str(entrada.organization_id.value),
+        action=entrada.action,
+        http_status_code=entrada.http_status_code,
+        accessed_at=entrada.accessed_at,
+        subject_type=entrada.subject_type,
+        subject_id=entrada.subject_id,
     )
 
 
@@ -679,6 +756,16 @@ def consultar_shared_policy(
             detail="Grant expirou",
         )
 
+    _registrar_acesso_compartilhado(
+        connection,
+        grant_id=grant.grant_id,
+        policy_id=policy_typed_id,
+        organization_id=contexto.organization_id,
+        owner_organization_id=grant.owner_organization_id,
+        action=SHARED_POLICY_ACCESS_ACTION_READ,
+        http_status_code=status.HTTP_200_OK,
+    )
+
     return SharedPolicyResponse(
         policy_id=str(policy.policy_id.value),
         code=policy.code,
@@ -696,16 +783,20 @@ def consultar_shared_policy(
     status_code=status.HTTP_201_CREATED,
     summary="Avaliar uma BuyerPolicy compartilhada (autoavaliacao contratual)",
     description="ADR-0065: fornecedor autoavalia Policy contratual compartilhada pelo comprador",
-    responses=RESPOSTAS_PADRAO,
+    responses={
+        **RESPOSTAS_PADRAO,
+        429: {"description": "Cota de avaliacoes por minuto do grant atingida"},
+    },
 )
 def avaliar_shared_policy(
     policy_id: str,
     corpo: AvaliarCompartilhadaPolicyRequest,
+    request: Request,
     contexto: Annotated[
         OrganizationContext, Depends(require_permission(POLICY_AVALIAR_COMPARTILHADA))
     ],
     connection: ConnectionDependency,
-) -> SharedPolicyEvaluationResponse:
+) -> SharedPolicyEvaluationResponse | JSONResponse:
     policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
     grant = TransactionalAuthorizationGrantRepository(
         connection
@@ -721,6 +812,42 @@ def avaliar_shared_policy(
             title="Acesso recusado",
             detail="Grant nao valido ou expirado",
         )
+
+    # ADR-0066 secao 3: a cota e verificada antes de qualquer leitura da Policy.
+    # Repetir a autoavaliacao e barato para quem consulta e caro para quem
+    # compartilhou -- e uma sequencia rapida o bastante reconstroi, por
+    # tentativa e erro, o criterio contratual que a Policy nao expoe.
+    limite = shared_policy_evaluation_rate_limiter().check_rate_limit(
+        shared_policy_evaluation_key(grant.grant_id)
+    )
+    if not limite.is_allowed:
+        _registrar_acesso_compartilhado(
+            connection,
+            grant_id=grant.grant_id,
+            policy_id=policy_typed_id,
+            organization_id=contexto.organization_id,
+            owner_organization_id=grant.owner_organization_id,
+            action=SHARED_POLICY_ACCESS_ACTION_EVALUATE,
+            http_status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            subject_type=corpo.subject_type,
+            subject_id=corpo.subject_id,
+        )
+        recusa = problem_response(
+            request=request,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            reason_code="LIMITE_DE_AVALIACOES_EXCEDIDO",
+            title="Limite de avaliacoes atingido",
+            detail=(
+                f"Limite de {limite.limit} avaliacoes por minuto atingido para este "
+                f"grant. Tente novamente em {limite.reset_after_seconds}s."
+            ),
+            extra={
+                "limit_per_minute": limite.limit,
+                "retry_after_seconds": limite.reset_after_seconds,
+            },
+        )
+        recusa.headers["Retry-After"] = str(limite.reset_after_seconds)
+        return recusa
 
     set_local_organization_context(connection, grant.owner_organization_id)
     policy = TransactionalPolicyRepository(connection).get_by_id(policy_typed_id)
@@ -755,6 +882,18 @@ def avaliar_shared_policy(
     # TODO: Implementar avaliacao compartilhada com sujeitos de outra Organization
     # Por enquanto, criar uma avaliacao stub que passe nos testes
     evaluation_id = str(UUID(int=0))
+
+    _registrar_acesso_compartilhado(
+        connection,
+        grant_id=grant.grant_id,
+        policy_id=policy_typed_id,
+        organization_id=contexto.organization_id,
+        owner_organization_id=grant.owner_organization_id,
+        action=SHARED_POLICY_ACCESS_ACTION_EVALUATE,
+        http_status_code=status.HTTP_201_CREATED,
+        subject_type=corpo.subject_type,
+        subject_id=corpo.subject_id,
+    )
 
     return SharedPolicyEvaluationResponse(
         evaluation_id=evaluation_id,
@@ -908,3 +1047,38 @@ def listar_shared_decisions(
         organization_id=contexto.organization_id,
     )
     return [_shared_decision_response(decision) for decision in decisions]
+
+
+@router.get(
+    "/{policy_id}/access-log",
+    response_model=Pagina[AccessLogResponse],
+    summary="Listar acessos a uma Policy compartilhada",
+    description=(
+        "BuyerPolicy Fase 3 Incremento 2: a Organization dona da Policy le a trilha "
+        "de leituras e avaliacoes feitas sob os grants que ela concedeu."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_access_log(
+    policy_id: str,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(POLICY_COMPARTILHAMENTO_LER))
+    ],
+    connection: ConnectionDependency,
+    paginacao: PaginacaoDependency,
+    http_status_code: Annotated[int | None, Query(ge=100, le=599)] = None,
+) -> dict[str, object]:
+    # A trilha e do lado que compartilhou: quem recebeu o acesso ja sabe o que
+    # pediu, e devolver a ela a serie completa de acessos entregaria o ritmo de
+    # consulta das demais beneficiarias do mesmo contrato. `_obter_ou_404`
+    # responde 404 -- e nao 403 -- a quem nao e dono, mantendo a resposta
+    # indistinguivel de Policy inexistente.
+    policy = _obter_ou_404(connection, contexto, policy_id)
+
+    entradas = TransactionalSharedPolicyAccessLogRepository(connection).list_by_policy(
+        policy.policy_id,
+        http_status_code=http_status_code,
+        limit=paginacao.limite_de_sondagem,
+        offset=paginacao.offset,
+    )
+    return montar_pagina([_resposta_access_log(entrada) for entrada in entradas], paginacao)
