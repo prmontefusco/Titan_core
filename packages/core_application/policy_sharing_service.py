@@ -2,19 +2,38 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from packages.core_application.policy_origin import (
     resolve_policy_origin,
 )
 from packages.core_domain.policy import PolicyStatus
+from packages.core_domain.policy_sharing import AuthorizationGrant
 from packages.core_domain.rule_governance import RuleSourceType
-from packages.core_infrastructure.persistence.authorization_grant import (
-    AuthorizationGrant,
-    AuthorizationGrantRepositoryPort,
-)
 from packages.shared_kernel import OrganizationId, TypedId
+
+
+class AuthorizationGrantRepositoryPort(Protocol):
+    def save(self, grant: Any) -> None: ...
+
+    def get_active_by_policy_and_beneficiary(
+        self,
+        policy_id: TypedId,
+        beneficiary_organization_id: OrganizationId,
+    ) -> Any | None: ...
+
+    def get_by_id(self, grant_id: UUID) -> Any | None: ...
+
+    def revoke(self, grant_id: UUID, *, revoked_at: datetime, revoked_by: str) -> None: ...
+
+    def update_status_to_revoked(
+        self,
+        grant_id: UUID,
+        *,
+        revoked_by: str,
+        revocation_reason: str | None,
+    ) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +54,7 @@ class PolicySharingService:
         field_scope_profile: str,
         valid_until: datetime,
         created_by: str,
-    ) -> AuthorizationGrant:
+    ) -> Any:
         """Cria grant bilateral para compartilhamento de Policy contratual.
 
         Precondições (não é responsabilidade deste service validar):
@@ -77,6 +96,7 @@ class PolicySharingService:
         # Cria grant
         grant_id = uuid4()
         from datetime import UTC
+
         now = datetime.now(UTC)
         grant = AuthorizationGrant(
             grant_id=grant_id,
@@ -100,7 +120,7 @@ class PolicySharingService:
         self,
         policy_id: TypedId,
         beneficiary_organization_id: OrganizationId,
-    ) -> AuthorizationGrant | None:
+    ) -> Any | None:
         """Obtém grant ativo para uma Policy e beneficiário específicos."""
         return self.grants.get_active_by_policy_and_beneficiary(
             policy_id=policy_id,

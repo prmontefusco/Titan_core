@@ -1,7 +1,6 @@
 """Persistência de grants bilaterais para compartilhamento de BuyerPolicy (ADR-0065)."""
 
 from dataclasses import dataclass
-from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -17,6 +16,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
+from packages.core_domain.policy_sharing import AuthorizationGrant
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.core_infrastructure.persistence.organizations import organization_metadata
 from packages.shared_kernel import OrganizationId, TypedId
@@ -58,27 +58,6 @@ authorization_grants_table = Table(
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
 )
-
-
-@dataclass(frozen=True, slots=True)
-class AuthorizationGrant:
-    """Grant bilateral entre Organization owner (comprador) e beneficiary (fornecedor)."""
-
-    grant_id: UUID
-    owner_organization_id: OrganizationId
-    beneficiary_organization_id: OrganizationId
-    policy_id: TypedId
-    policy_version_id: TypedId
-    access_purpose: str  # ex: AUTOAVALIACAO_CONTRATUAL_FORNECEDOR
-    field_scope_profile: str  # ex: CONTRATO_MINIMO
-    valid_from: datetime
-    valid_until: datetime
-    status: str  # ATIVO, REVOGADO, EXPIRADO
-    created_at: datetime
-    created_by: str
-    revoked_at: datetime | None = None
-    revoked_by: str | None = None
-    revocation_reason: str | None = None
 
 
 class AuthorizationGrantRepositoryPort(Protocol):

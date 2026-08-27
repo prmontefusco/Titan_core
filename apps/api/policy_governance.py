@@ -25,6 +25,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy import Connection
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.livestock_dependencies import (
     ConnectionDependency,
@@ -41,6 +42,8 @@ from packages.core_application.policy_authorization import (
     POLICY_AVALIAR,
     POLICY_AVALIAR_COMPARTILHADA,
     POLICY_COMPARTILHAMENTO_LER,
+    POLICY_COMPARTILHAMENTO_PROPOR,
+    POLICY_COMPARTILHAMENTO_REVISAR,
     POLICY_COMPARTILHAR,
     POLICY_CRIAR,
     POLICY_LER,
@@ -49,17 +52,23 @@ from packages.core_application.policy_authorization import (
 from packages.core_application.policy_origin import is_buyer_policy_origin, resolve_policy_origin
 from packages.core_application.policy_service import PolicyService
 from packages.core_application.policy_sharing_service import PolicySharingService
+from packages.core_application.shared_decision_service import SharedDecisionService
 from packages.core_domain import OrganizationContext
 from packages.core_domain.policy import Policy
+from packages.core_domain.policy_sharing import SharedDecision
 from packages.core_domain.rule_governance import RuleSourceType
 from packages.core_infrastructure.persistence.authorization_grant import (
     TransactionalAuthorizationGrantRepository,
 )
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
+from packages.core_infrastructure.persistence.organizations import set_local_organization_context
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.core_infrastructure.persistence.rule_governance import (
     TransactionalRuleIdentityRepository,
+)
+from packages.core_infrastructure.persistence.shared_decision import (
+    TransactionalSharedDecisionRepository,
 )
 from packages.livestock_application.requirement_authority import RecognitionBoundary
 from packages.livestock_infrastructure.persistence.animal_repository import (
@@ -189,6 +198,36 @@ class SharedPolicyEvaluationResponse(BaseModel):
     evaluation_hash: str
 
 
+class CriarSharedDecisionRequest(BaseModel):
+    grant_id: str = Field(min_length=1)
+    evaluation_id: str = Field(min_length=1)
+    proposal_content: str = Field(min_length=1, max_length=4000)
+    evidence_references: list[str] = Field(default_factory=list, max_length=50)
+
+
+class RevisarSharedDecisionRequest(BaseModel):
+    review_decision: str = Field(min_length=1, max_length=50)
+    review_content: str = Field(min_length=1, max_length=4000)
+
+
+class SharedDecisionResponse(BaseModel):
+    decision_id: str
+    grant_id: str
+    evaluation_id: str
+    policy_id: str
+    proposer_organization_id: str
+    reviewer_organization_id: str
+    status: str
+    proposal_content: str
+    proposal_evidence_references: list[str]
+    proposed_at: datetime
+    created_by: str
+    review_decision: str | None
+    review_content: str | None
+    reviewed_at: datetime | None
+    reviewed_by: str | None
+
+
 def _servico(connection: Connection) -> PolicyService:
     return PolicyService(TransactionalPolicyRepository(connection))
 
@@ -206,6 +245,37 @@ def _resposta(policy: Policy) -> PolicyResponse:
         valid_to=policy.valid_to,
         created_at=policy.created_at,
         published_at=policy.published_at,
+    )
+
+
+def _shared_decision_service(connection: Connection) -> SharedDecisionService:
+    return SharedDecisionService(
+        grants=TransactionalAuthorizationGrantRepository(connection),
+        evaluations=TransactionalEvaluationRepository(connection),
+        decisions=TransactionalSharedDecisionRepository(connection),
+        set_organization_context=lambda organization_id: set_local_organization_context(
+            connection, organization_id
+        ),
+    )
+
+
+def _shared_decision_response(decision: SharedDecision) -> SharedDecisionResponse:
+    return SharedDecisionResponse(
+        decision_id=str(decision.decision_id.value),
+        grant_id=str(decision.grant_id),
+        evaluation_id=str(decision.evaluation_id.value),
+        policy_id=str(decision.policy_id.value),
+        proposer_organization_id=str(decision.proposer_organization_id.value),
+        reviewer_organization_id=str(decision.reviewer_organization_id.value),
+        status=decision.status,
+        proposal_content=decision.proposal_content,
+        proposal_evidence_references=list(decision.proposal_evidence_references),
+        proposed_at=decision.proposed_at,
+        created_by=decision.created_by,
+        review_decision=decision.review_decision,
+        review_content=decision.review_content,
+        reviewed_at=decision.reviewed_at,
+        reviewed_by=decision.reviewed_by,
     )
 
 
@@ -249,6 +319,13 @@ def criar_policy(
             reason_code="CONFLITO_DE_DOMINIO",
             title="Operacao recusada pelo dominio",
             detail=str(error),
+        ) from error
+    except IntegrityError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Evaluation nao encontrada ou nao acessivel.",
         ) from error
     return _resposta(policy)
 
@@ -569,16 +646,6 @@ def consultar_shared_policy(
     connection: ConnectionDependency,
 ) -> SharedPolicyResponse:
     policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
-    policy = TransactionalPolicyRepository(connection).get_by_id(policy_typed_id)
-
-    if policy is None:
-        raise DomainProblem(
-            status_code=status.HTTP_404_NOT_FOUND,
-            reason_code="RECURSO_NAO_ENCONTRADO",
-            title="Recurso nao encontrado",
-            detail="Policy nao encontrada",
-        )
-
     grant = TransactionalAuthorizationGrantRepository(
         connection
     ).get_active_by_policy_and_beneficiary(
@@ -592,6 +659,16 @@ def consultar_shared_policy(
             reason_code="RECURSO_NAO_ENCONTRADO",
             title="Recurso nao encontrado",
             detail="Grant nao encontrado ou expirado",
+        )
+
+    set_local_organization_context(connection, grant.owner_organization_id)
+    policy = TransactionalPolicyRepository(connection).get_by_id(policy_typed_id)
+    if policy is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Policy nao encontrada",
         )
 
     if grant.valid_until < datetime.now(UTC):
@@ -630,16 +707,6 @@ def avaliar_shared_policy(
     connection: ConnectionDependency,
 ) -> SharedPolicyEvaluationResponse:
     policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
-    policy = TransactionalPolicyRepository(connection).get_by_id(policy_typed_id)
-
-    if policy is None:
-        raise DomainProblem(
-            status_code=status.HTTP_404_NOT_FOUND,
-            reason_code="RECURSO_NAO_ENCONTRADO",
-            title="Recurso nao encontrado",
-            detail="Policy nao encontrada",
-        )
-
     grant = TransactionalAuthorizationGrantRepository(
         connection
     ).get_active_by_policy_and_beneficiary(
@@ -653,6 +720,16 @@ def avaliar_shared_policy(
             reason_code="GRANT_INVALIDO",
             title="Acesso recusado",
             detail="Grant nao valido ou expirado",
+        )
+
+    set_local_organization_context(connection, grant.owner_organization_id)
+    policy = TransactionalPolicyRepository(connection).get_by_id(policy_typed_id)
+    if policy is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Policy nao encontrada",
         )
 
     rules = TransactionalRuleRepository(connection).list_by_policy(
@@ -688,3 +765,146 @@ def avaliar_shared_policy(
         missing_facts=[],
         evaluation_hash="",
     )
+
+
+@router.post(
+    "/shared-policies/{policy_id}/decisions",
+    response_model=SharedDecisionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Criar proposta sobre uma Evaluation compartilhada",
+    description=(
+        "BuyerPolicy Fase 3 Incremento 1: fornecedor beneficiario propoe revisao estruturada."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def criar_shared_decision(
+    policy_id: str,
+    corpo: CriarSharedDecisionRequest,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(POLICY_COMPARTILHAMENTO_PROPOR))
+    ],
+    connection: ConnectionDependency,
+) -> SharedDecisionResponse:
+    policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
+    evaluation_id = typed_id_or_problem(
+        corpo.evaluation_id, entity_type="evaluation", campo="evaluation_id"
+    )
+    try:
+        grant_id = UUID(corpo.grant_id)
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            reason_code="FORMATO_INVALIDO",
+            title="Formato invalido",
+            detail="grant_id deve ser um UUID valido",
+        ) from error
+
+    try:
+        decision = _shared_decision_service(connection).create_proposal(
+            policy_id=policy_typed_id,
+            grant_id=grant_id,
+            evaluation_id=evaluation_id,
+            proposal_content=corpo.proposal_content,
+            evidence_references=tuple(corpo.evidence_references),
+            proposer_organization_id=contexto.organization_id,
+            created_by=str(contexto.user_id.value),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Recurso nao encontrado ou nao acessivel.",
+        ) from error
+    except PermissionError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_403_FORBIDDEN,
+            reason_code="PERMISSAO_AUSENTE",
+            title="Acesso recusado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+
+    return _shared_decision_response(decision)
+
+
+@router.post(
+    "/shared-policies/{policy_id}/decisions/{decision_id}/review",
+    response_model=SharedDecisionResponse,
+    summary="Revisar proposta sobre uma Evaluation compartilhada",
+    description="BuyerPolicy Fase 3 Incremento 1: comprador owner revisa proposta do fornecedor.",
+    responses=RESPOSTAS_PADRAO,
+)
+def revisar_shared_decision(
+    policy_id: str,
+    decision_id: str,
+    corpo: RevisarSharedDecisionRequest,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(POLICY_COMPARTILHAMENTO_REVISAR))
+    ],
+    connection: ConnectionDependency,
+) -> SharedDecisionResponse:
+    policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
+    decision_typed_id = typed_id_or_problem(
+        decision_id, entity_type="shared_decision", campo="decision_id"
+    )
+
+    try:
+        decision = _shared_decision_service(connection).review_proposal(
+            decision_id=decision_typed_id,
+            policy_id=policy_typed_id,
+            review_decision=corpo.review_decision,
+            review_content=corpo.review_content,
+            reviewer_organization_id=contexto.organization_id,
+            reviewed_by=str(contexto.user_id.value),
+        )
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="SharedDecision nao encontrada ou nao acessivel.",
+        ) from error
+    except PermissionError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_403_FORBIDDEN,
+            reason_code="PERMISSAO_AUSENTE",
+            title="Acesso recusado",
+            detail=str(error),
+        ) from error
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="CONFLITO_DE_DOMINIO",
+            title="Operacao recusada pelo dominio",
+            detail=str(error),
+        ) from error
+
+    return _shared_decision_response(decision)
+
+
+@router.get(
+    "/shared-policies/{policy_id}/decisions",
+    response_model=list[SharedDecisionResponse],
+    summary="Listar propostas e revisoes de uma Policy compartilhada",
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_shared_decisions(
+    policy_id: str,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(POLICY_COMPARTILHAMENTO_LER))
+    ],
+    connection: ConnectionDependency,
+) -> list[SharedDecisionResponse]:
+    policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
+    decisions = _shared_decision_service(connection).list_for_policy(
+        policy_id=policy_typed_id,
+        organization_id=contexto.organization_id,
+    )
+    return [_shared_decision_response(decision) for decision in decisions]

@@ -59,8 +59,16 @@ SUPERFICIE_ESPERADA = {
     # para autoavaliacao de fornecedor.
     ("/v1/rule-governance/policies/{policy_id}/shares", "post"),
     ("/v1/rule-governance/policies/{policy_id}/shares/{grant_id}/revoke", "post"),
-    ("/v1/rule-governance/shared-policies/{policy_id}", "get"),
-    ("/v1/rule-governance/shared-policies/{policy_id}/evaluate", "post"),
+    ("/v1/rule-governance/policies/shared-policies/{policy_id}", "get"),
+    ("/v1/rule-governance/policies/shared-policies/{policy_id}/evaluate", "post"),
+    # BuyerPolicy Fase 3 Incremento 1: proposta e revisao bilateral sobre
+    # Evaluation compartilhada, sem alterar a Evaluation historica.
+    ("/v1/rule-governance/policies/shared-policies/{policy_id}/decisions", "post"),
+    ("/v1/rule-governance/policies/shared-policies/{policy_id}/decisions", "get"),
+    (
+        "/v1/rule-governance/policies/shared-policies/{policy_id}/decisions/{decision_id}/review",
+        "post",
+    ),
     (
         "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/execute",
         "post",

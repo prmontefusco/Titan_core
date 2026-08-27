@@ -58,6 +58,7 @@ from packages.core_infrastructure.persistence.rule_governance import (
     rule_identities_table,
     rule_timeline_events_table,
 )
+from packages.core_infrastructure.persistence.shared_decision import shared_decisions_table
 from packages.core_infrastructure.persistence.synchronization import (
     offline_operations_table,
     synchronization_batches_table,
@@ -135,6 +136,7 @@ assert dossiers_table.metadata is target_metadata
 assert offline_operations_table.metadata is target_metadata
 assert synchronization_results_table.metadata is target_metadata
 assert synchronization_batches_table.metadata is target_metadata
+assert shared_decisions_table.metadata is target_metadata
 
 # A vertical Livestock reusa a MetaData do Core (ver livestock .../metadata.py):
 # suas tabelas têm FK para core_identity.organizations, e o SQLAlchemy só resolve
