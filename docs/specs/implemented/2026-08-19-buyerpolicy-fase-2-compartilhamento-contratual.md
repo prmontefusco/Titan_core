@@ -1,7 +1,7 @@
 # SPEC: BuyerPolicy Fase 2 — Compartilhamento Contratual para Autoavaliação do Fornecedor
 
 **Data:** 2026-08-19  
-**Estado:** APROVADA  
+**Estado:** IMPLEMENTADA  
 **Nível de Criticidade:** CRÍTICA (novo contrato público, autorização, compartilhamento cross-Organization)  
 **Aprovada em:** 2026-08-19
 
@@ -477,7 +477,7 @@ Response: 403 Forbidden
 
 ## 7. Aceitação
 
-Esta SPEC proposta está pronta para revisão e aprovação. Após aprovação, ela ativa o BUILD de BuyerPolicy Fase 2 conforme ADR-0065 (ACEITA).
+Esta SPEC foi implementada na Fase 2 conforme ADR-0065 (ACEITA) e registrada no checklist como NEXT-10.
 
 **Decisões já fechadas em ADR-0065:**
 - ✅ Permissions novas
@@ -489,4 +489,3 @@ Esta SPEC proposta está pronta para revisão e aprovação. Após aprovação, 
 - ✅ FieldScope
 
 **Esta SPEC detalha entrega, cenários e critérios de aceite.**
-
