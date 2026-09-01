@@ -3,7 +3,8 @@
 - **Status:** RELEASE GATE PACKAGE / NO API IMPLEMENTATION
 - **Date:** 2026-08-31
 - **Scope:** first future buyer-facing aggregate Market Supply API surface
-- **Decision basis:** ADR-0069, ADR-0070, ADR-0071, approved F3 SPEC and F3 build plan
+- **Decision basis:** ADR-0069, ADR-0070, ADR-0071, proposed ADR-0072,
+  approved F3 SPEC and F3 build plan
 
 ## 1. Purpose
 
@@ -246,6 +247,12 @@ Before release, F3.5 must have tests for:
 - no forecast fields in F3.5;
 - no `CommercialDemand` row or lifecycle is created;
 - no Animal eligibility/readiness field is written.
+- buyer/requester cannot read raw owner-owned `MarketSupplyQueryAuditRecord`
+  rows;
+- differencing history is evaluated through the approved audit-history
+  visibility model from ADR-0072;
+- missing or unreadable required query history fails closed rather than
+  releasing an aggregate.
 
 ## 10. Validation Script Requirement
 
@@ -364,6 +371,45 @@ Work that can continue:
 - resolver interface tests with in-memory subjects;
 - audit/idempotency/privacy composition.
 
+### POLICY_GATE: F3.5 audit-history visibility for differencing
+
+Why required:
+
+F3.5 needs persisted query history to detect semantic differencing, but raw
+Market Supply audit rows can reveal protected membership, revocation and
+suppression information. Owner-only RLS protects raw audit, while buyer-only API
+execution would make differencing history invisible.
+
+Existing evidence:
+
+- ADR-0071 requires historical query relationship assessment;
+- migration `20260831_0078` implements owner-only RLS for
+  `core_audit.market_supply_query_audit_records`;
+- audit F-09 closed arbitrary `audit_owner_organization_id` at application
+  boundary, but left buyer/owner history visibility as a release policy choice;
+- proposed ADR-0072 recommends owner-only raw audit plus application-mediated
+  owner-scoped differencing.
+
+Recommended:
+
+- accept ADR-0072 alternative B for F3.5;
+- keep raw audit rows owner-only by default;
+- evaluate differencing through owner/contributor scoped application contexts
+  or an explicitly approved equivalent internal service;
+- return only uniform public projection to the buyer.
+
+Implementation blocked:
+
+- production F3.5 orchestration against real persisted query history;
+- endpoint release tests proving differencing works without buyer raw-audit
+  visibility.
+
+Work that can continue:
+
+- disabled-route guard;
+- application-level pipeline tests with synthetic repositories;
+- documentation and release-gate review.
+
 ### POLICY_GATE: initial production privacy profile
 
 Why required:
@@ -413,6 +459,9 @@ Approved population source:
 Approved privacy profile:
 <profile id/version or config reference>
 
+Approved audit-history visibility:
+<ADR-0072 option / operational model>
+
 Required feature flag state:
 <enabled/disabled/default>
 
@@ -434,4 +483,3 @@ This cut would add tests/spec fixtures proving the route is absent or disabled
 until the release gate is approved, plus application-level contract tests for the
 public payload mapper and idempotency behavior. It should still avoid creating a
 buyer-facing route.
-
