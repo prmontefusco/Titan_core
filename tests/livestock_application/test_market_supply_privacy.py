@@ -9,9 +9,11 @@ from packages.livestock_application.market_supply_privacy import (
     AggregationPrivacyDecision,
     AggregationPrivacyInput,
     AggregationPrivacyPolicy,
+    AggregationPrivacyProfile,
     AggregationPrivacyReason,
     AggregationQueryFingerprint,
     DisclosureDecisionState,
+    load_aggregation_privacy_profile,
 )
 from packages.shared_kernel import OrganizationId
 
@@ -261,3 +263,49 @@ def test_disclosure_decision_requires_population_digest_and_utc_evaluation_time(
             candidate_population_digest="population:sha256:abc",
             evaluated_at=datetime(2026, 8, 28, 12, 0),
         )
+
+
+def test_privacy_profile_loader_requires_explicit_configuration_without_defaults() -> None:
+    with pytest.raises(ValueError, match="TITAN_MARKET_SUPPLY_PRIVACY_PROFILE_ID"):
+        load_aggregation_privacy_profile({})
+
+
+def test_privacy_profile_loader_builds_versioned_profile_from_explicit_values() -> None:
+    profile = load_aggregation_privacy_profile(
+        {
+            "TITAN_MARKET_SUPPLY_PRIVACY_PROFILE_ID": "market-supply-aggregate-v1",
+            "TITAN_MARKET_SUPPLY_PRIVACY_POLICY_VERSION": "7",
+            "TITAN_MARKET_SUPPLY_PRIVACY_MINIMUM_ORGANIZATIONS": "4",
+            "TITAN_MARKET_SUPPLY_PRIVACY_MINIMUM_PROPERTIES": "8",
+            "TITAN_MARKET_SUPPLY_PRIVACY_MINIMUM_SUBJECTS": "40",
+            "TITAN_MARKET_SUPPLY_PRIVACY_MAX_FILTER_COUNT_WITHOUT_REVIEW": "3",
+            "TITAN_MARKET_SUPPLY_PRIVACY_REPEATED_QUERY_WINDOW_SECONDS": "21600",
+        },
+    )
+
+    assert profile == AggregationPrivacyProfile(
+        profile_id="market-supply-aggregate-v1",
+        policy=AggregationPrivacyPolicy(
+            policy_version=7,
+            minimum_organizations=4,
+            minimum_properties=8,
+            minimum_subjects=40,
+            max_filter_count_without_review=3,
+            repeated_query_window=timedelta(hours=6),
+        ),
+    )
+
+
+def test_privacy_profile_loader_rejects_invalid_numeric_values() -> None:
+    values = {
+        "TITAN_MARKET_SUPPLY_PRIVACY_PROFILE_ID": "market-supply-aggregate-v1",
+        "TITAN_MARKET_SUPPLY_PRIVACY_POLICY_VERSION": "7",
+        "TITAN_MARKET_SUPPLY_PRIVACY_MINIMUM_ORGANIZATIONS": "0",
+        "TITAN_MARKET_SUPPLY_PRIVACY_MINIMUM_PROPERTIES": "8",
+        "TITAN_MARKET_SUPPLY_PRIVACY_MINIMUM_SUBJECTS": "40",
+        "TITAN_MARKET_SUPPLY_PRIVACY_MAX_FILTER_COUNT_WITHOUT_REVIEW": "3",
+        "TITAN_MARKET_SUPPLY_PRIVACY_REPEATED_QUERY_WINDOW_SECONDS": "21600",
+    }
+
+    with pytest.raises(ValueError, match="MINIMUM_ORGANIZATIONS"):
+        load_aggregation_privacy_profile(values)

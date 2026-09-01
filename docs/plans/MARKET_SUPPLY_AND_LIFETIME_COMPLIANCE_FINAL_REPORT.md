@@ -415,6 +415,10 @@ adding immutable no-store headers to the Market Supply public response mapper.
 The endpoint remains absent, but future route code can reuse the executable
 contract for `Cache-Control: no-store` and `Pragma: no-cache`.
 
+F3.5D added an explicit `AggregationPrivacyProfile` loader that refuses missing
+or invalid configuration instead of shipping production defaults. Concrete
+profile values remain a deployment/Product/Security decision before release.
+
 ## Tenant Isolation Impact
 
 No tenant boundary changed. MarketReadiness remains Organization-scoped. Producer-side analysis is single-Organization. Authorization and privacy modules do not perform data access. Progressive disclosure is accepted as architecture baseline only; no cross-tenant API exists. `authorization_grants` now has database-enforced bilateral read and owner-only write semantics, while other hardened `core_audit` tables remain owner-only.

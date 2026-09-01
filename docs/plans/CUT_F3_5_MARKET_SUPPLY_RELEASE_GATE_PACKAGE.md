@@ -453,6 +453,14 @@ Work that can continue:
 - tests using explicit synthetic/non-production profiles;
 - profile loading design.
 
+Implementation status on 2026-09-01:
+
+- `AggregationPrivacyProfile` and `load_aggregation_privacy_profile(...)` exist
+  as application-level contracts;
+- all profile values must be supplied explicitly by configuration;
+- missing or invalid configuration fails closed;
+- no production numeric threshold is hardcoded.
+
 ## 12. Release Decision Template
 
 ```text

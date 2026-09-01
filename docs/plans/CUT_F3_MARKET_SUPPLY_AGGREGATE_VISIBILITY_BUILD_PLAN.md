@@ -327,6 +327,14 @@ Implementation status on 2026-09-01 after HTTP behavior approval:
 - no route, endpoint, migration, production resolver, cross-tenant query or
   buyer-facing release was introduced.
 
+Implementation status on 2026-09-01 after privacy profile loader:
+
+- `AggregationPrivacyProfile` can be loaded only from explicit configuration;
+- absent or invalid profile configuration fails closed;
+- no production threshold values are embedded in code;
+- no route, endpoint, migration, production resolver, cross-tenant query or
+  buyer-facing release was introduced.
+
 Proposed route:
 
 ```text

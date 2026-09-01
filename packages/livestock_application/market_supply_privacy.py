@@ -5,6 +5,7 @@ not resolve cross-tenant populations, persist audit records, expose APIs, or
 define a production privacy profile.
 """
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -13,6 +14,15 @@ from packages.shared_kernel import OrganizationId
 from packages.shared_kernel.temporal import require_utc
 
 MARKET_SUPPLY_AGGREGATION_PRIVACY_POLICY_VERSION = 1
+MARKET_SUPPLY_PRIVACY_PROFILE_CONFIG_KEYS = (
+    "PROFILE_ID",
+    "POLICY_VERSION",
+    "MINIMUM_ORGANIZATIONS",
+    "MINIMUM_PROPERTIES",
+    "MINIMUM_SUBJECTS",
+    "MAX_FILTER_COUNT_WITHOUT_REVIEW",
+    "REPEATED_QUERY_WINDOW_SECONDS",
+)
 
 
 class AggregationGeographicPrecision(StrEnum):
@@ -74,6 +84,60 @@ class AggregationPrivacyPolicy:
                 raise ValueError(f"{field_name} deve ser maior ou igual a 1.")
         if self.repeated_query_window <= timedelta(0):
             raise ValueError("repeated_query_window deve ser positivo.")
+
+
+@dataclass(frozen=True, slots=True)
+class AggregationPrivacyProfile:
+    """Versioned privacy profile explicitly supplied by deployment/configuration."""
+
+    profile_id: str
+    policy: AggregationPrivacyPolicy
+
+    def __post_init__(self) -> None:
+        if not self.profile_id.strip():
+            raise ValueError("profile_id deve ser texto nao vazio.")
+
+
+def load_aggregation_privacy_profile(
+    values: Mapping[str, str],
+    *,
+    prefix: str = "TITAN_MARKET_SUPPLY_PRIVACY_",
+) -> AggregationPrivacyProfile:
+    """Builds a profile only from explicit configuration values.
+
+    This intentionally has no production defaults. Missing configuration keeps
+    F3.5 fail-closed instead of smuggling arbitrary thresholds into the domain.
+    """
+
+    raw = {
+        key: _required_config(values, f"{prefix}{key}")
+        for key in MARKET_SUPPLY_PRIVACY_PROFILE_CONFIG_KEYS
+    }
+    return AggregationPrivacyProfile(
+        profile_id=raw["PROFILE_ID"],
+        policy=AggregationPrivacyPolicy(
+            policy_version=_positive_int(raw["POLICY_VERSION"], field_name="POLICY_VERSION"),
+            minimum_organizations=_positive_int(
+                raw["MINIMUM_ORGANIZATIONS"],
+                field_name="MINIMUM_ORGANIZATIONS",
+            ),
+            minimum_properties=_positive_int(
+                raw["MINIMUM_PROPERTIES"],
+                field_name="MINIMUM_PROPERTIES",
+            ),
+            minimum_subjects=_positive_int(raw["MINIMUM_SUBJECTS"], field_name="MINIMUM_SUBJECTS"),
+            max_filter_count_without_review=_positive_int(
+                raw["MAX_FILTER_COUNT_WITHOUT_REVIEW"],
+                field_name="MAX_FILTER_COUNT_WITHOUT_REVIEW",
+            ),
+            repeated_query_window=timedelta(
+                seconds=_positive_int(
+                    raw["REPEATED_QUERY_WINDOW_SECONDS"],
+                    field_name="REPEATED_QUERY_WINDOW_SECONDS",
+                ),
+            ),
+        ),
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -262,3 +326,20 @@ def _same_context(
         and current.access_purpose == previous.access_purpose
         and current.policy_context_digest == previous.policy_context_digest
     )
+
+
+def _required_config(values: Mapping[str, str], name: str) -> str:
+    value = values.get(name, "").strip()
+    if not value:
+        raise ValueError(f"{name} deve ser configurado explicitamente.")
+    return value
+
+
+def _positive_int(value: str, *, field_name: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise ValueError(f"{field_name} deve ser inteiro positivo.") from error
+    if parsed < 1:
+        raise ValueError(f"{field_name} deve ser inteiro positivo.")
+    return parsed
