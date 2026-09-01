@@ -396,13 +396,14 @@ Audit F-13 required no additional code in this pass: CUT A already changed
 `[required_from, reference_time)`, and the focused coverage tests confirm the
 boundary.
 
-The remaining F-09 policy question is now captured as proposed ADR-0072:
+The remaining F-09 policy question is now closed by ADR-0072
+`ACCEPTED WITH CHANGES`:
 `docs/adr/0072-market-supply-audit-history-visibility-for-differencing.md`.
-The recommendation is to keep raw `MarketSupplyQueryAuditRecord` rows owner-only
-by RLS and perform semantic differencing through application-mediated
+The accepted direction keeps raw `MarketSupplyQueryAuditRecord` rows owner-only
+by RLS and performs semantic differencing through application-mediated
 owner/contributor-scoped contexts, returning only uniform public projections to
-the buyer. The F3.5 release gate package now depends on this ADR before any
-buyer-facing endpoint can be released.
+the buyer. ADR-0072 also makes required query-history completeness and
+multi-owner audit/disclosure correlation explicit release invariants.
 
 ## Tenant Isolation Impact
 
@@ -425,9 +426,6 @@ CUT A strengthens interval correctness. CUT C keeps context mismatch visible. CU
 - Approve `SupplyIntelligenceReport` storage/hash/export behavior.
 - Approve concrete schema/profile/source decisions before F3.2/F3.3 production
   persistence or resolver implementation.
-- Approve Market Supply audit-history visibility for F3.5 differencing under RLS
-  (recommended: accept ADR-0072 alternative B, owner-only raw audit plus
-  application-mediated owner/contributor-scoped differencing).
 - Approve the HUMAN RELEASE GATE before F3.5 creates any buyer-facing cross-Organization aggregate visibility.
 
 ## Product Owner Decisions Needed

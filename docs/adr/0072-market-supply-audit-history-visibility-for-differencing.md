@@ -1,7 +1,7 @@
 # ADR-0072 - Market Supply audit history visibility for differencing
 
 **Data:** 2026-09-01  
-**Estado:** PROPOSED  
+**Estado:** ACCEPTED WITH CHANGES
 **Escopo:** Titan Livestock Market Supply + Core audit/RLS usage
 
 ## Contexto
@@ -43,12 +43,13 @@ differencing.
 
 Manter `MarketSupplyQueryAuditRecord` com RLS runtime owner-only por padrao.
 
-F3.5 nao deve expor raw audit rows ao comprador. A avaliacao de differencing deve
-ser executada por um pipeline de aplicacao que resolve contribuicoes autorizadas
-por owner Organization e consulta o historico relacionado dentro do contexto RLS
-do owner/contribuinte correspondente, ou por um servico operacional interno
-equivalente explicitamente autorizado. O comprador recebe somente a projecao
-publica uniforme resultante.
+F3.5 nao deve expor raw audit rows ao comprador. A avaliacao de differencing MUST
+ser executada por pipeline de aplicacao mediado por contextos
+owner/contributor-scoped. Qualquer servico ou role capaz de ler historico de
+audit fora desses limites owner-scoped de RLS exige ADR separada e aprovacao
+explicita de seguranca.
+
+O comprador recebe somente a projecao publica uniforme resultante.
 
 Em termos de fronteira:
 
@@ -63,6 +64,9 @@ Per-owner auditable evaluation context
   |
   v
 Owner-scoped query history fingerprints
+  |
+  v
+History completeness assessment
   |
   v
 DisclosureDecision
@@ -95,6 +99,16 @@ Essa decisao preserva:
   `DisclosureDecision` e resposta uniforme.
 - Falha em obter historico requerido deve falhar fechado ou produzir
   `NOT_RELEASED`; nao deve liberar agregado como se nao houvesse historico.
+- Uma decisao `RELEASED` exige cobertura demonstravelmente completa do historico
+  de queries para o escopo requerido pelo privacy profile ativo.
+- Incapacidade de demonstrar completude do historico requerido MUST falhar
+  fechado, inclusive quando o historical reader executa sem erro mas retorna
+  historico incompleto.
+- Uma unica query buyer-facing pode envolver multiplas owner Organizations; cada
+  contribuicao usada na decisao deve estar coberta por contexto auditavel de sua
+  owner Organization e correlacionada a mesma assessment.
+- Differencing nao pode consultar apenas owners presentes na query atual quando
+  o privacy profile exigir historico semanticamente relacionado mais amplo.
 - Desabilitar a API de Market Supply nao remove a capacidade interna autorizada
   de auditar/verificar registros historicos.
 
@@ -124,7 +138,7 @@ buyer-facing.
 Risco: F3.5 precisa orquestrar multiplos contextos autorizados com cuidado,
 incluindo rechecagem de revogacao antes do release.
 
-Status: recomendada.
+Status: aceita para F3.5.
 
 ### C. Dedicated audit/security role with broad read
 
@@ -157,6 +171,9 @@ Status: rejeitada para F3.5.
   owner-scoped, nao como consulta global executada sob o buyer.
 - O repositório de audit pode continuar retornando apenas fingerprints para
   differencing, sem payload sensivel.
+- F3.5 deve correlacionar query global, contribuicoes owner-scoped,
+  `DisclosureDecision` e resposta publica por uma mesma assessment/correlation,
+  sem exigir nesta ADR que existam N registros fisicos duplicados.
 - API buyer-facing futura continua bloqueada ate existir orquestracao
   produtiva testada para contextos owner-scoped e grants aprovados.
 - Testes de F3.5 devem provar que historico de differencing e considerado mesmo
@@ -168,17 +185,29 @@ Status: rejeitada para F3.5.
 - owner consegue ler seu audit record;
 - workflow interno consegue alimentar `previous_queries` com fingerprints
   owner-scoped;
+- workflow interno demonstra completude do historico requerido pelo privacy
+  profile ativo antes de qualquer `RELEASED`;
 - query relacionada que passaria isoladamente e bloqueada por differencing;
-- falha/indisponibilidade do historical query reader gera `NOT_RELEASED` ou
-  erro interno fail-closed, nunca `RELEASED`;
+- falha, indisponibilidade ou incompletude do historical query reader gera
+  `NOT_RELEASED` ou erro interno fail-closed, nunca `RELEASED`;
+- query multi-owner nao pode produzir resultado publicavel quando qualquer
+  contribuicao usada pela assessment nao possui cobertura auditavel owner-scoped;
 - audit record de non-release e persistido antes da resposta publica;
 - resposta publica nao revela se o bloqueio veio de RLS, historico,
   differencing, revogacao ou ausencia.
 
+## Mudancas Exigidas no Aceite
+
+1. Alternativa B aceita para F3.5.
+2. Nenhuma role/servico com leitura ampla de audit e autorizado por esta ADR.
+3. Completude do historico requerido vira invariante explicito de release.
+4. Correlacao multi-owner entre query, contribuicoes, audit context,
+   `DisclosureDecision` e resultado publico deve ser verificavel.
+5. Historico requerido ausente ou incompleto produz `NOT_RELEASED` ou falha
+   fechada, nunca `RELEASED`.
+
 ## Decisoes Humanas Necessarias
 
-Esta ADR ainda requer aceite humano porque decide a politica de visibilidade do
-historico de audit para a primeira superficie buyer-facing F3.5.
-
-Recomendacao: **ACCEPT** alternativa B para F3.5.
-
+Nenhuma decisao humana adicional permanece nesta ADR. F3.5 ainda possui gates
+proprios no release package, incluindo permission, fonte produtiva da Candidate
+Population, privacy profile e contrato HTTP.

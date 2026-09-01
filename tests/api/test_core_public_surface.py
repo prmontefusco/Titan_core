@@ -263,6 +263,30 @@ def test_market_supply_f3_5_permanece_sem_rota_publica_antes_do_release_gate() -
     )
 
 
+def test_market_supply_f3_5_chamada_http_recebe_404_uniforme_antes_do_release_gate() -> None:
+    """F3.5A: contrato de rota desabilitada sem oracle especifico de Market Supply."""
+    resposta = client.post(
+        "/v1/livestock/market-supply/aggregate-assessments",
+        json={
+            "purpose": "MARKET_SUPPLY_AGGREGATE_ASSESSMENT",
+            "policy_id": "policy:00000000-0000-0000-0000-000000000001",
+            "reference_time": "2026-08-31T00:00:00Z",
+            "knowledge_cutoff": "2026-08-31T00:00:00Z",
+        },
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.headers["content-type"].startswith("application/problem+json")
+    assert resposta.json() == {
+        "type": "urn:titan:problema:rota-nao-encontrada",
+        "title": "Rota não encontrada",
+        "status": 404,
+        "detail": "O recurso solicitado não existe.",
+        "instance": "/v1/livestock/market-supply/aggregate-assessments",
+        "reason_code": "ROTA_NAO_ENCONTRADA",
+    }
+
+
 class TestContratoPublicado:
     """O contrato precisa estar na documentação que o integrador consulta.
 

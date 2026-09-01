@@ -3,7 +3,7 @@
 - **Status:** RELEASE GATE PACKAGE / NO API IMPLEMENTATION
 - **Date:** 2026-08-31
 - **Scope:** first future buyer-facing aggregate Market Supply API surface
-- **Decision basis:** ADR-0069, ADR-0070, ADR-0071, proposed ADR-0072,
+- **Decision basis:** ADR-0069, ADR-0070, ADR-0071, ADR-0072,
   approved F3 SPEC and F3 build plan
 
 ## 1. Purpose
@@ -251,8 +251,12 @@ Before release, F3.5 must have tests for:
   rows;
 - differencing history is evaluated through the approved audit-history
   visibility model from ADR-0072;
-- missing or unreadable required query history fails closed rather than
+- required query-history completeness for the active privacy profile is
+  demonstrated before `RELEASED`;
+- missing, unreadable or incomplete required query history fails closed rather than
   releasing an aggregate.
+- multi-owner assessments correlate each owner-scoped contribution to the same
+  assessment/audit/disclosure context before any public aggregate is released.
 
 ## 10. Validation Script Requirement
 
@@ -371,7 +375,7 @@ Work that can continue:
 - resolver interface tests with in-memory subjects;
 - audit/idempotency/privacy composition.
 
-### POLICY_GATE: F3.5 audit-history visibility for differencing
+### CLOSED POLICY_GATE: F3.5 audit-history visibility for differencing
 
 Why required:
 
@@ -390,25 +394,34 @@ Existing evidence:
 - proposed ADR-0072 recommends owner-only raw audit plus application-mediated
   owner-scoped differencing.
 
-Recommended:
+Accepted decision:
 
-- accept ADR-0072 alternative B for F3.5;
+- ADR-0072 is `ACCEPTED WITH CHANGES`;
+- alternative B is accepted for F3.5;
 - keep raw audit rows owner-only by default;
-- evaluate differencing through owner/contributor scoped application contexts
-  or an explicitly approved equivalent internal service;
+- evaluate differencing through application-mediated owner/contributor-scoped
+  contexts;
+- do not introduce a broad audit/security role under ADR-0072;
+- require demonstrably complete query-history coverage for the active privacy
+  profile before any `RELEASED`;
+- treat missing, unreadable or incomplete required history as fail-closed or
+  `NOT_RELEASED`;
+- make multi-owner audit/disclosure correlation explicit and testable;
 - return only uniform public projection to the buyer.
 
 Implementation blocked:
 
-- production F3.5 orchestration against real persisted query history;
-- endpoint release tests proving differencing works without buyer raw-audit
-  visibility.
+- none by ADR-0072 itself.
 
 Work that can continue:
 
 - disabled-route guard;
 - application-level pipeline tests with synthetic repositories;
 - documentation and release-gate review.
+
+Remaining release blockers live in the other F3.5 gates below: HTTP behavior,
+production permission, production Candidate Population source and initial privacy
+profile.
 
 ### POLICY_GATE: initial production privacy profile
 
