@@ -335,6 +335,15 @@ Implementation status on 2026-09-01 after privacy profile loader:
 - no route, endpoint, migration, production resolver, cross-tenant query or
   buyer-facing release was introduced.
 
+Implementation status on 2026-09-01 after Candidate Population source contract:
+
+- `AuthorizedCandidatePopulationResolver` can compose owner-scoped
+  contributions only when backed by valid Market Supply aggregate grants;
+- rejected contributions preserve internal reason/count without producing
+  snapshots;
+- no database adapter, Animal lookup, endpoint, migration, cross-tenant query or
+  buyer-facing release was introduced.
+
 Proposed route:
 
 ```text

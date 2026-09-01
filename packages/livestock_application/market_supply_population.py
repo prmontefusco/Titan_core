@@ -8,6 +8,14 @@ import hashlib
 from dataclasses import dataclass
 from datetime import datetime
 
+from packages.core_domain.policy_sharing import AuthorizationGrant
+from packages.livestock_application.market_supply_authorization import (
+    MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+    MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+    MarketSupplyAuthorizationReason,
+    MarketSupplyAuthorizationRequest,
+    MarketSupplyAuthorizationService,
+)
 from packages.shared_kernel import (
     CanonicalSerializer,
     OrganizationId,
@@ -223,6 +231,40 @@ class CandidatePopulationSnapshot:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class AuthorizedCandidatePopulationContribution:
+    """Owner-scoped contribution already available to the application pipeline."""
+
+    criteria: CandidatePopulationCriteria
+    subjects: tuple[CandidatePopulationSubject, ...]
+    grant: AuthorizationGrant | None
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedCandidatePopulationRejection:
+    owner_organization_id: OrganizationId
+    reason: MarketSupplyAuthorizationReason
+    subject_count: int
+
+    def __post_init__(self) -> None:
+        if self.subject_count < 0:
+            raise ValueError("subject_count nao pode ser negativo.")
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedCandidatePopulationResult:
+    snapshots: tuple[CandidatePopulationSnapshot, ...]
+    rejected_contributions: tuple[AuthorizedCandidatePopulationRejection, ...]
+
+    @property
+    def included_count(self) -> int:
+        return sum(snapshot.included_count for snapshot in self.snapshots)
+
+    @property
+    def rejected_subject_count(self) -> int:
+        return sum(item.subject_count for item in self.rejected_contributions)
+
+
 class CandidatePopulationResolver:
     """Resolves a deterministic snapshot from caller-supplied candidate subjects."""
 
@@ -286,6 +328,70 @@ class CandidatePopulationResolver:
             excluded_summary=excluded_summary,
             criteria_digest=criteria_digest,
             snapshot_digest=snapshot_digest,
+        )
+
+
+class AuthorizedCandidatePopulationResolver:
+    """Composes owner-scoped Candidate Population snapshots from valid grants.
+
+    This resolver does not read Animals, databases or global tenant state. It
+    only authorizes and snapshots contributions supplied by a future orchestration
+    layer that has already obtained owner-scoped candidate subjects.
+    """
+
+    def __init__(
+        self,
+        *,
+        authorization_service: MarketSupplyAuthorizationService | None = None,
+        population_resolver: CandidatePopulationResolver | None = None,
+    ) -> None:
+        self._authorization_service = authorization_service or MarketSupplyAuthorizationService()
+        self._population_resolver = population_resolver or CandidatePopulationResolver()
+
+    def resolve_authorized(
+        self,
+        *,
+        buyer_organization_id: OrganizationId,
+        contributions: tuple[AuthorizedCandidatePopulationContribution, ...],
+        resolved_at: datetime,
+    ) -> AuthorizedCandidatePopulationResult:
+        require_utc(resolved_at, field_name="resolved_at")
+        snapshots: list[CandidatePopulationSnapshot] = []
+        rejected: list[AuthorizedCandidatePopulationRejection] = []
+
+        for contribution in contributions:
+            request = MarketSupplyAuthorizationRequest(
+                owner_organization_id=contribution.criteria.organization_id,
+                beneficiary_organization_id=buyer_organization_id,
+                policy_id=contribution.criteria.policy_id,
+                access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+                field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+                requested_at=resolved_at,
+            )
+            assessment = self._authorization_service.assess_aggregate_access(
+                request=request,
+                grant=contribution.grant,
+            )
+            if not assessment.permitted:
+                rejected.append(
+                    AuthorizedCandidatePopulationRejection(
+                        owner_organization_id=contribution.criteria.organization_id,
+                        reason=assessment.reason,
+                        subject_count=len(contribution.subjects),
+                    ),
+                )
+                continue
+            snapshots.append(
+                self._population_resolver.resolve(
+                    criteria=contribution.criteria,
+                    subjects=contribution.subjects,
+                    resolved_at=resolved_at,
+                )
+            )
+
+        return AuthorizedCandidatePopulationResult(
+            snapshots=tuple(snapshots),
+            rejected_contributions=tuple(rejected),
         )
 
 

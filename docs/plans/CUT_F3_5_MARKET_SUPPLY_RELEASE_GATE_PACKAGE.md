@@ -376,6 +376,16 @@ Work that can continue:
 - resolver interface tests with in-memory subjects;
 - audit/idempotency/privacy composition.
 
+Implementation status on 2026-09-01:
+
+- `AuthorizedCandidatePopulationResolver` composes explicitly supplied
+  owner-scoped contributions;
+- each contribution is assessed through existing `AuthorizationGrant` semantics
+  before snapshot;
+- missing, revoked or owner-mismatched grants produce internal rejected
+  contribution summaries, not snapshots;
+- no production Animal/property adapter or global lookup was created.
+
 ### CLOSED POLICY_GATE: F3.5 audit-history visibility for differencing
 
 Why required:

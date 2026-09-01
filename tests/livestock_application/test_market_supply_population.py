@@ -1,9 +1,19 @@
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 
+from packages.core_domain.policy_sharing import AuthorizationGrant
+from packages.livestock_application.market_supply_authorization import (
+    MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+    MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+    MarketSupplyAuthorizationReason,
+)
 from packages.livestock_application.market_supply_population import (
+    AuthorizedCandidatePopulationContribution,
+    AuthorizedCandidatePopulationRejection,
+    AuthorizedCandidatePopulationResolver,
     CandidatePopulationCriteria,
     CandidatePopulationResolver,
     CandidatePopulationSnapshot,
@@ -51,6 +61,31 @@ def _subject(
         tags=tags,
         accessible=accessible,
         known_at=known_at,
+    )
+
+
+def _grant(
+    *,
+    criteria: CandidatePopulationCriteria,
+    buyer_organization_id: OrganizationId,
+    status: str = "ATIVO",
+    revoked_at: datetime | None = None,
+    owner_organization_id: OrganizationId | None = None,
+) -> AuthorizationGrant:
+    return AuthorizationGrant(
+        grant_id=uuid4(),
+        owner_organization_id=owner_organization_id or criteria.organization_id,
+        beneficiary_organization_id=buyer_organization_id,
+        policy_id=criteria.policy_id,
+        policy_version_id=TypedId.new("policy_version"),
+        access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+        field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+        valid_from=NOW - timedelta(days=1),
+        valid_until=NOW + timedelta(days=1),
+        status=status,
+        created_at=NOW - timedelta(days=2),
+        created_by="test",
+        revoked_at=revoked_at,
     )
 
 
@@ -251,3 +286,91 @@ def test_criteria_validates_temporal_and_policy_semantics() -> None:
             commercial_window_start=NOW + timedelta(days=2),
             commercial_window_end=NOW + timedelta(days=1),
         )
+
+
+def test_authorized_population_resolver_snapshots_only_grant_authorized_contributions() -> None:
+    buyer = OrganizationId.new()
+    authorized_criteria = _criteria()
+    unauthorized_criteria = _criteria()
+    authorized_subject = _subject(authorized_criteria)
+    unauthorized_subject = _subject(unauthorized_criteria)
+
+    result = AuthorizedCandidatePopulationResolver().resolve_authorized(
+        buyer_organization_id=buyer,
+        contributions=(
+            AuthorizedCandidatePopulationContribution(
+                criteria=authorized_criteria,
+                subjects=(authorized_subject,),
+                grant=_grant(criteria=authorized_criteria, buyer_organization_id=buyer),
+            ),
+            AuthorizedCandidatePopulationContribution(
+                criteria=unauthorized_criteria,
+                subjects=(unauthorized_subject,),
+                grant=None,
+            ),
+        ),
+        resolved_at=NOW,
+    )
+
+    assert result.included_count == 1
+    assert result.rejected_subject_count == 1
+    assert len(result.snapshots) == 1
+    assert result.snapshots[0].criteria.organization_id == authorized_criteria.organization_id
+    assert result.rejected_contributions == (
+        AuthorizedCandidatePopulationRejection(
+            owner_organization_id=unauthorized_criteria.organization_id,
+            reason=MarketSupplyAuthorizationReason.MISSING_GRANT,
+            subject_count=1,
+        ),
+    )
+
+
+def test_authorized_population_resolver_rejects_revoked_contribution_without_snapshot() -> None:
+    buyer = OrganizationId.new()
+    criteria = _criteria()
+
+    result = AuthorizedCandidatePopulationResolver().resolve_authorized(
+        buyer_organization_id=buyer,
+        contributions=(
+            AuthorizedCandidatePopulationContribution(
+                criteria=criteria,
+                subjects=(_subject(criteria),),
+                grant=_grant(
+                    criteria=criteria,
+                    buyer_organization_id=buyer,
+                    revoked_at=NOW - timedelta(minutes=1),
+                ),
+            ),
+        ),
+        resolved_at=NOW,
+    )
+
+    assert result.snapshots == ()
+    assert result.rejected_contributions[0].reason is MarketSupplyAuthorizationReason.REVOKED_GRANT
+    assert result.rejected_subject_count == 1
+
+
+def test_authorized_population_resolver_rejects_owner_mismatch_before_snapshot() -> None:
+    buyer = OrganizationId.new()
+    criteria = _criteria()
+
+    result = AuthorizedCandidatePopulationResolver().resolve_authorized(
+        buyer_organization_id=buyer,
+        contributions=(
+            AuthorizedCandidatePopulationContribution(
+                criteria=criteria,
+                subjects=(_subject(criteria),),
+                grant=_grant(
+                    criteria=criteria,
+                    buyer_organization_id=buyer,
+                    owner_organization_id=OrganizationId.new(),
+                ),
+            ),
+        ),
+        resolved_at=NOW,
+    )
+
+    assert result.snapshots == ()
+    assert result.rejected_contributions[0].reason is (
+        MarketSupplyAuthorizationReason.OWNER_ORGANIZATION_MISMATCH
+    )

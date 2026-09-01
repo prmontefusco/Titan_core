@@ -419,6 +419,11 @@ F3.5D added an explicit `AggregationPrivacyProfile` loader that refuses missing
 or invalid configuration instead of shipping production defaults. Concrete
 profile values remain a deployment/Product/Security decision before release.
 
+F3.5E added `AuthorizedCandidatePopulationResolver`, an application-level
+composition contract that snapshots only explicitly supplied owner-scoped
+contributions backed by valid Market Supply aggregate grants. It does not create
+a production adapter or global livestock lookup.
+
 ## Tenant Isolation Impact
 
 No tenant boundary changed. MarketReadiness remains Organization-scoped. Producer-side analysis is single-Organization. Authorization and privacy modules do not perform data access. Progressive disclosure is accepted as architecture baseline only; no cross-tenant API exists. `authorization_grants` now has database-enforced bilateral read and owner-only write semantics, while other hardened `core_audit` tables remain owner-only.
