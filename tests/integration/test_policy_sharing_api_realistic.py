@@ -8,12 +8,22 @@ Implementa fluxos completos com Policies de tipo CONTRACT, incluindo:
 """
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
-from tests.livestock_api_support import DATABASE_URL, Ambiente, ClienteAutenticado, _cliente
+from packages.livestock_application.authorization import OPERADOR_PECUARIO
+from packages.shared_kernel import TypedId
+from tests.livestock_api_support import (
+    DATABASE_URL,
+    PERMISSOES_OPERADOR,
+    Ambiente,
+    ClienteAutenticado,
+    _cliente,
+)
 
 pytestmark = pytest.mark.skipif(not DATABASE_URL, reason="TITAN_DATABASE_URL não configurada.")
 
@@ -32,21 +42,41 @@ def _headers(org_id_value: str) -> dict[str, str]:
     return {ORGANIZATION_HEADER: org_id_value}
 
 
-def _animal(
-    ambiente: Ambiente, cliente: ClienteAutenticado, organizacao: object
-) -> str:
+def _animal(ambiente: Ambiente, cliente: ClienteAutenticado, organizacao: Any) -> str:
     """Cria um Animal em uma Organization via HTTP."""
+    property_id = ambiente.property_id
+    if organizacao.organization_id != ambiente.org_a.organization_id:
+        property_id = TypedId.new("rural_property")
+        ambiente.connection.execute(
+            text("SELECT set_config('titan.organization_id', :organization_id, true)"),
+            {"organization_id": str(organizacao.organization_id.value)},
+        )
+        ambiente.connection.execute(
+            text(
+                "INSERT INTO core_audit.rural_properties ("
+                "property_id, record_owner_organization_id, code, name, "
+                "municipality, state_code, created_at) "
+                "VALUES (:id, :org, :code, 'Fazenda do fornecedor', 'Uberaba', 'MG', NOW())"
+            ),
+            {
+                "id": property_id.value,
+                "org": organizacao.organization_id.value,
+                "code": f"FAZ-B-{uuid4().hex[:8]}",
+            },
+        )
     resposta = cliente.post(
         "/v1/livestock/animals",
-        json={"birth_property_id": str(ambiente.property_id.value), "sex": "FEMALE"},
-        headers=_headers(str(getattr(organizacao, "organization_id").value)),
+        json={"birth_property_id": str(property_id.value), "sex": "FEMALE"},
+        headers=_headers(str(organizacao.organization_id.value)),
     )
     assert resposta.status_code == 201, resposta.text
     return str(resposta.json()["animal_id"])
 
 
 def _contract_policy_real(
-    cliente: ClienteAutenticado, ambiente: Ambiente, conditions: list[dict] | None = None
+    cliente: ClienteAutenticado,
+    ambiente: Ambiente,
+    conditions: list[dict[str, object]] | None = None,
 ) -> str:
     """Cria uma Policy homogeneamente CONTRACT (tipo compartilhável).
 
@@ -106,7 +136,11 @@ def _contract_policy_real(
     assert response.status_code == 201, f"Failed to create rule version: {response.text}"
 
     # 4. Publicar Policy
-    response = cliente.post(f"/v1/rule-governance/policies/{policy_id}/publish", headers=headers, json={})
+    response = cliente.post(
+        f"/v1/rule-governance/policies/{policy_id}/publish",
+        headers=headers,
+        json={},
+    )
     assert response.status_code == 200, f"Failed to publish policy: {response.text}"
     return policy_id
 
@@ -117,15 +151,23 @@ def operador(ambiente: Ambiente) -> ClienteAutenticado:
     return _cliente(ambiente, ambiente.operador)
 
 
+@pytest.fixture
+def fornecedor(ambiente: Ambiente) -> ClienteAutenticado:
+    principal = ambiente._principal_com_papel(
+        subject=f"fornecedor-{uuid4().hex}",
+        organizacao=ambiente.org_b,
+        nome_papel=f"{OPERADOR_PECUARIO}_{uuid4().hex[:8]}",
+        permissoes=tuple(sorted(PERMISSOES_OPERADOR)),
+        agora=datetime.now(UTC),
+    )
+    return _cliente(ambiente, principal)
+
+
 def test_compartilhamento_create_grant_simples(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:
     """Teste simples: criar um grant com Policy existente."""
     from uuid import uuid4
-    from packages.core_application.policy_service import PolicyService
-    from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
-    from packages.shared_kernel import OrganizationId, TypedId
-    from packages.core_domain.policy import Policy
 
     headers = _headers(str(ambiente.org_a.organization_id.value))
 
@@ -158,7 +200,9 @@ def test_compartilhamento_create_grant_simples(
 
 
 def test_compartilhamento_fluxo_completo(
-    ambiente: Ambiente, operador: ClienteAutenticado
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    fornecedor: ClienteAutenticado,
 ) -> None:
     """Fluxo completo: Comprador compartilha → Fornecedor lê → avalia → Comprador revoga."""
 
@@ -181,7 +225,7 @@ def test_compartilhamento_fluxo_completo(
     assert response.json()["status"] == "ATIVO"
 
     # Passo 3: Fornecedor (org_b) lê a Policy compartilhada
-    response = operador.get(
+    response = fornecedor.get(
         f"/v1/rule-governance/policies/shared-policies/{policy_id}",
         headers=_headers(str(ambiente.org_b.organization_id.value)),
     )
@@ -191,10 +235,10 @@ def test_compartilhamento_fluxo_completo(
     assert "rules" in shared_policy
 
     # Passo 4: Fornecedor (org_b) cria um Animal para autoavaliar
-    animal_id = _animal(ambiente, operador, ambiente.org_b)
+    animal_id = _animal(ambiente, fornecedor, ambiente.org_b)
 
     # Passo 5: Fornecedor avalia seu Animal contra Policy compartilhada
-    response = operador.post(
+    response = fornecedor.post(
         f"/v1/rule-governance/policies/shared-policies/{policy_id}/evaluate",
         json={
             "subject_type": "animal",
@@ -206,7 +250,7 @@ def test_compartilhamento_fluxo_completo(
     assert response.status_code == 201, response.text
     evaluation = response.json()
     assert evaluation["policy_id"] == policy_id
-    assert "result" in evaluation
+    assert "outcome" in evaluation
 
     # Passo 6: Comprador revoga compartilhamento
     response = operador.post(
@@ -218,7 +262,7 @@ def test_compartilhamento_fluxo_completo(
     assert response.json()["status"] == "REVOGADO"
 
     # Passo 7: Fornecedor não consegue mais ler a Policy (404 ou 403)
-    response = operador.get(
+    response = fornecedor.get(
         f"/v1/rule-governance/policies/shared-policies/{policy_id}",
         headers=_headers(str(ambiente.org_b.organization_id.value)),
     )
@@ -226,7 +270,9 @@ def test_compartilhamento_fluxo_completo(
 
 
 def test_compartilhamento_negacao_sem_grant(
-    ambiente: Ambiente, operador: ClienteAutenticado
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    fornecedor: ClienteAutenticado,
 ) -> None:
     """Fornecedor não consegue ler Policy compartilhada sem grant ativo."""
 
@@ -234,15 +280,15 @@ def test_compartilhamento_negacao_sem_grant(
     policy_id = _contract_policy_real(operador, ambiente)
 
     # Fornecedor (org_b) tenta ler sem grant
-    response = operador.get(
+    response = fornecedor.get(
         f"/v1/rule-governance/policies/shared-policies/{policy_id}",
         headers=_headers(str(ambiente.org_b.organization_id.value)),
     )
     assert response.status_code in (403, 404)
 
     # Fornecedor tenta avaliar sem grant
-    animal_id = _animal(ambiente, operador, ambiente.org_b)
-    response = operador.post(
+    animal_id = _animal(ambiente, fornecedor, ambiente.org_b)
+    response = fornecedor.post(
         f"/v1/rule-governance/policies/shared-policies/{policy_id}/evaluate",
         json={
             "subject_type": "animal",
@@ -255,7 +301,9 @@ def test_compartilhamento_negacao_sem_grant(
 
 
 def test_compartilhamento_expirado_bloqueia_acesso(
-    ambiente: Ambiente, operador: ClienteAutenticado
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    fornecedor: ClienteAutenticado,
 ) -> None:
     """Grant expirado (valid_until no passado) bloqueia acesso ao Fornecedor."""
 
@@ -277,7 +325,7 @@ def test_compartilhamento_expirado_bloqueia_acesso(
     assert response.status_code == 201, response.text
 
     # Fornecedor tenta ler Policy com grant expirado
-    response = operador.get(
+    response = fornecedor.get(
         f"/v1/rule-governance/policies/shared-policies/{policy_id}",
         headers=_headers(str(ambiente.org_b.organization_id.value)),
     )
@@ -286,7 +334,9 @@ def test_compartilhamento_expirado_bloqueia_acesso(
 
 
 def test_compartilhamento_nao_cria_grant_sem_permissao(
-    ambiente: Ambiente, operador: ClienteAutenticado
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    fornecedor: ClienteAutenticado,
 ) -> None:
     """Fornecedor não consegue compartilhar Policy do Comprador."""
 
@@ -295,7 +345,7 @@ def test_compartilhamento_nao_cria_grant_sem_permissao(
 
     # Fornecedor (org_b) tenta compartilhar com terceira Organization
     # (se tivéssemos org_c)
-    response = operador.post(
+    response = fornecedor.post(
         f"/v1/rule-governance/policies/{policy_id}/shares",
         json={
             "beneficiary_organization_id": str(uuid4()),

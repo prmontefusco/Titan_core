@@ -1,6 +1,7 @@
 """Persistência de grants bilaterais para compartilhamento de BuyerPolicy (ADR-0065)."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -158,6 +159,35 @@ class TransactionalAuthorizationGrantRepository:
                 "status": grant.status,
                 "created_at": grant.created_at,
                 "created_by": grant.created_by,
+            },
+        )
+
+    def revoke(
+        self,
+        grant_id: UUID,
+        *,
+        revoked_at: datetime,
+        revoked_by: str,
+        revocation_reason: str | None = None,
+    ) -> None:
+        """Marca grant como REVOGADO preservando o instante de revogação informado."""
+        self.connection.execute(
+            text(
+                """
+                UPDATE core_audit.authorization_grants
+                SET
+                    status = 'REVOGADO',
+                    revoked_at = :revoked_at,
+                    revoked_by = :revoked_by,
+                    revocation_reason = :revocation_reason
+                WHERE grant_id = :grant_id
+                """
+            ),
+            {
+                "grant_id": grant_id,
+                "revoked_at": revoked_at,
+                "revoked_by": revoked_by,
+                "revocation_reason": revocation_reason,
             },
         )
 

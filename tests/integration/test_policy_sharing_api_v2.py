@@ -26,9 +26,7 @@ def _headers(org_id_value: str) -> dict[str, str]:
     return {ORGANIZATION_HEADER: org_id_value}
 
 
-def test_policy_sharing_endpoints_existem(
-    ambiente: Ambiente, operador: ClienteAutenticado
-) -> None:
+def test_policy_sharing_endpoints_existem(ambiente: Ambiente, operador: ClienteAutenticado) -> None:
     """Valida que os 4 endpoints de compartilhamento estão registrados."""
     from uuid import uuid4
 
@@ -87,7 +85,6 @@ def test_grant_endpoints_respond_with_valid_status(
     from uuid import uuid4
 
     fake_policy_id = str(uuid4())
-    fake_grant_id = str(uuid4())
 
     # POST /shares com dados inválidos
     response = operador.post(

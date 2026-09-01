@@ -14,33 +14,47 @@ O progresso por passo é registrado em `docs/CHECKLIST_DE_IMPLEMENTACAO.md` — 
 
 Subir o ambiente e aplicar as migrations antes de rodar testes de integração:
 
-```bash
-docker compose up -d
+```powershell
+docker compose up -d postgres
 ```
 
-```bash
-python -m uv run --locked alembic upgrade head
+```powershell
+$env:TITAN_MIGRATION_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+$env:TITAN_RUNTIME_DATABASE_PASSWORD="titan_local_runtime_password"
+python -m uv run --locked python -m apps.provision_runtime_database_role
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
+python -m uv run --locked python -m alembic upgrade head
 ```
 
 Portão de verificação completo:
 
-```bash
+```powershell
+$env:TITAN_REQUIRE_INTEGRATION_DB="1"
 python -m uv run --locked pytest
 ```
 
-```bash
+```powershell
 python -m uv run --locked ruff check .
 ```
 
-```bash
+```powershell
+python -m uv run --locked ruff format --check .
+```
+
+```powershell
 python -m uv run --locked mypy
 ```
 
-```bash
-python -m uv run --locked alembic check
+```powershell
+$env:TITAN_MIGRATION_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
+python -m uv run --locked python -m alembic check
 ```
 
-Os testes de integração leem `TITAN_DATABASE_URL`; sem ela, usam o PostgreSQL local do `compose.yaml` por padrão.
+Os testes de integração leem `TITAN_DATABASE_URL`. Sem ela, os testes de integração
+são pulados para permitir execução local sem Docker; não existe fallback silencioso
+para o PostgreSQL do `compose.yaml`. Em gate completo/release, defina
+`TITAN_REQUIRE_INTEGRATION_DB=1` para transformar ausência de banco em erro de
+configuração.
 
 ## Armadilhas do ambiente
 

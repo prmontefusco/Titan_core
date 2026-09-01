@@ -80,6 +80,7 @@ from packages.livestock_infrastructure.persistence import (
     external_source_capture_association_reviews_table,
     livestock_lots_table,
     lot_memberships_table,
+    market_supply_query_audit_records_table,
     medication_batches_table,
     medication_classification_assertions_table,
     medications_table,
@@ -157,6 +158,7 @@ assert animal_movement_items_table.metadata is target_metadata
 assert property_stays_table.metadata is target_metadata
 assert livestock_lots_table.metadata is target_metadata
 assert lot_memberships_table.metadata is target_metadata
+assert market_supply_query_audit_records_table.metadata is target_metadata
 assert veterinarians_table.metadata is target_metadata
 assert medications_table.metadata is target_metadata
 assert medication_classification_assertions_table.metadata is target_metadata

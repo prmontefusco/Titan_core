@@ -216,6 +216,8 @@ class MarketReadinessService:
                 item.subject_id,
                 MarketReadinessStatus.REASSESSMENT_REQUIRED,
                 ("CONTEXT_MISMATCH_REASSESSMENT_REQUIRED",),
+                decision=decision,
+                evaluation=evaluation,
             )
 
         limitations = evaluation.normative_limitations
@@ -405,13 +407,35 @@ class MarketReadinessPopulationReader:
             decision, evaluation = candidates[0]
             return MarketReadinessInput(animal_id, decision, evaluation)
 
+        divergent_candidates: list[tuple[Decision, Evaluation]] = []
+        for decision in decisions:
+            evaluation = self.evaluation_repository.get_by_id(decision.evaluation_id)
+            if evaluation is not None:
+                divergent_candidates.append((decision, evaluation))
+        if divergent_candidates:
+            decision, evaluation = _select_divergent_candidate(divergent_candidates)
+            return MarketReadinessInput(animal_id, decision, evaluation)
+
         if not decisions:
             return MarketReadinessInput(animal_id)
-        decision = decisions[0]
-        evaluation = self.evaluation_repository.get_by_id(decision.evaluation_id)
-        if evaluation is None:
-            return MarketReadinessInput(animal_id)
-        return MarketReadinessInput(animal_id, decision, evaluation)
+        return MarketReadinessInput(animal_id)
+
+
+def _select_divergent_candidate(
+    candidates: list[tuple[Decision, Evaluation]],
+) -> tuple[Decision, Evaluation]:
+    latest_issued_at = max(decision.issued_at for decision, _ in candidates)
+    latest_candidates = tuple(
+        (decision, evaluation)
+        for decision, evaluation in candidates
+        if decision.issued_at == latest_issued_at
+    )
+    if len(latest_candidates) > 1:
+        raise ValueError(
+            "Mais de uma Decision divergente possui o mesmo issued_at; "
+            "readiness exige reavaliação explícita."
+        )
+    return latest_candidates[0]
 
 
 def _matches_exact_context(

@@ -93,6 +93,24 @@ def test_complete_coverage_with_prohibited_fact_is_not_satisfied(
     assert _evaluate(fact, reference_time) is RuleResultStatus.NAO_ATENDIDA
 
 
+def test_treatment_at_required_until_stays_outside_half_open_coverage_window(
+    reference_time: datetime,
+) -> None:
+    fact = SanitaryTestACoverageService().build_fact(
+        reference_time=reference_time,
+        declaration=_complete(reference_time),
+        treatments=(
+            AntimicrobialTreatmentRecord(
+                occurred_at=reference_time,
+                source=TreatmentMaterialSource.LOCAL_TREATMENT_APPLICATION,
+            ),
+        ),
+    )
+
+    assert fact.payload["has_antimicrobial_treatment"] is False
+    assert _evaluate(fact, reference_time) is RuleResultStatus.ATENDIDA
+
+
 def test_complete_coverage_without_prohibited_fact_is_satisfied(
     reference_time: datetime,
 ) -> None:
@@ -248,3 +266,49 @@ def test_known_antimicrobial_is_not_satisfied(reference_time: datetime) -> None:
     )
     assert fact.payload["medication_classification_coverage_status"] == "COMPLETE"
     assert _evaluate(fact, reference_time) is RuleResultStatus.NAO_ATENDIDA
+
+
+def test_classified_treatment_at_required_until_is_not_selected(
+    reference_time: datetime,
+) -> None:
+    organization_id = OrganizationId.new()
+    medication_id = TypedId.new("medication")
+    assertion = MedicationSanitaryClassificationAssertion(
+        TypedId.new("medication_classification_assertion"),
+        organization_id,
+        medication_id,
+        MedicationSanitaryCategory.ANTIMICROBIAL,
+        MedicationClassificationStatus.APPLIES,
+        None,
+        None,
+        reference_time,
+        UniversalReference(TypedId.new("manual_source"), organization_id, 1),
+        MedicationClassificationValidation.STRUCTURALLY_VALIDATED,
+        ConfidenceTier.DOCUMENTED,
+        known_at=reference_time,
+    )
+
+    fact = SanitaryTestACoverageService().build_fact_from_classified_material(
+        reference_time=reference_time,
+        knowledge_cutoff=reference_time,
+        contributions=(
+            CoverageContribution(
+                "treatment_history",
+                reference_time - timedelta(days=90),
+                reference_time,
+                CoverageContributionValidation.VALIDATED,
+                CoverageContributionAdmissibility.ADMISSIBLE,
+            ),
+        ),
+        treatments=(
+            MedicationTreatmentRecord(
+                medication_id,
+                reference_time,
+                TreatmentMaterialSource.LOCAL_TREATMENT_APPLICATION,
+            ),
+        ),
+        classifications=(assertion,),
+    )
+
+    assert fact.payload["medication_classification_coverage_status"] == "NOT_APPLICABLE"
+    assert fact.payload["has_antimicrobial_treatment"] is False

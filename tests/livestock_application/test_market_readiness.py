@@ -1,7 +1,7 @@
 """Corte 1 do NEXT-06: readiness pura e seleção sem efeitos colaterais."""
 
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -49,6 +49,7 @@ def _artifacts(
     knowledge_cutoff: datetime = NOW,
     normative: bool = True,
     boundary: str = "INTERNAL_ONLY",
+    issued_at: datetime = NOW,
 ) -> tuple[Decision, Evaluation, Policy]:
     organization_id = organization_id or OrganizationId.new()
     subject_id = subject_id or TypedId.new("animal")
@@ -150,7 +151,7 @@ def _artifacts(
         result=result,
         reasons=(reason,),
         snapshot_hash=snapshot.snapshot_hash,
-        issued_at=NOW,
+        issued_at=issued_at,
         engine_version=1,
         decision_hash=compute_decision_hash(
             evaluation_hash=evaluation.evaluation_hash,
@@ -386,6 +387,91 @@ def test_population_reader_refuses_ambiguous_exact_context() -> None:
     )
 
     with pytest.raises(ValueError, match="Mais de uma Decision"):
+        reader.build_for_animals(
+            context=_context(policy),
+            animal_ids=(decision.subject_id,),
+        )
+
+
+def test_population_reader_prefers_divergent_evaluation_over_orphan_decision() -> None:
+    decision, evaluation, policy = _artifacts()
+    orphan = replace(
+        decision,
+        decision_id=TypedId("decision", decision.decision_id.value),
+        evaluation_id=TypedId.new("evaluation"),
+    )
+    divergent, divergent_evaluation, _ = _artifacts(
+        subject_id=decision.subject_id,
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+        purpose="market-test-b",
+    )
+    reader = MarketReadinessPopulationReader(
+        decision_repository=_DecisionRepository([orphan, divergent]),
+        evaluation_repository=_EvaluationRepository([divergent_evaluation]),
+        readiness_service=MarketReadinessService(),
+    )
+
+    report = reader.build_for_animals(
+        context=_context(policy),
+        animal_ids=(decision.subject_id,),
+    )
+
+    assert report.entries[0].status is MarketReadinessStatus.REASSESSMENT_REQUIRED
+
+
+def test_population_reader_selects_latest_issued_divergent_decision() -> None:
+    decision, _evaluation, policy = _artifacts()
+    older, older_evaluation, _ = _artifacts(
+        subject_id=decision.subject_id,
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+        purpose="market-test-b",
+        issued_at=NOW - timedelta(days=2),
+    )
+    newer, newer_evaluation, _ = _artifacts(
+        subject_id=decision.subject_id,
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+        purpose="market-test-c",
+        issued_at=NOW - timedelta(days=1),
+    )
+    reader = MarketReadinessPopulationReader(
+        decision_repository=_DecisionRepository([older, newer]),
+        evaluation_repository=_EvaluationRepository([older_evaluation, newer_evaluation]),
+        readiness_service=MarketReadinessService(),
+    )
+
+    report = reader.build_for_animals(
+        context=_context(policy),
+        animal_ids=(decision.subject_id,),
+    )
+
+    assert report.entries[0].status is MarketReadinessStatus.REASSESSMENT_REQUIRED
+    assert report.entries[0].decision_id == newer.decision_id
+
+
+def test_population_reader_refuses_temporally_ambiguous_divergent_decisions() -> None:
+    decision, _evaluation, policy = _artifacts()
+    first, first_evaluation, _ = _artifacts(
+        subject_id=decision.subject_id,
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+        purpose="market-test-b",
+    )
+    second, second_evaluation, _ = _artifacts(
+        subject_id=decision.subject_id,
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+        purpose="market-test-c",
+    )
+    reader = MarketReadinessPopulationReader(
+        decision_repository=_DecisionRepository([first, second]),
+        evaluation_repository=_EvaluationRepository([first_evaluation, second_evaluation]),
+        readiness_service=MarketReadinessService(),
+    )
+
+    with pytest.raises(ValueError, match="Decision divergente"):
         reader.build_for_animals(
             context=_context(policy),
             animal_ids=(decision.subject_id,),

@@ -141,7 +141,7 @@ class SanitaryTestACoverageService:
             admissibility is TreatmentMaterialAdmissibility.ADMISSIBLE
         ):
             payload["has_antimicrobial_treatment"] = any(
-                required_from <= item.occurred_at <= reference_time
+                required_from <= item.occurred_at < reference_time
                 and self._record_is_admissible(item)
                 for item in treatments
             )
@@ -189,7 +189,7 @@ class SanitaryTestACoverageService:
         }
         if assessment.status is DimensionalCoverageStatus.COMPLETE:
             payload["has_antimicrobial_treatment"] = any(
-                required_from <= item.occurred_at <= reference_time
+                required_from <= item.occurred_at < reference_time
                 and self._record_is_admissible(item)
                 for item in treatments
             )
@@ -212,7 +212,7 @@ class SanitaryTestACoverageService:
         require_utc(knowledge_cutoff, field_name="knowledge_cutoff")
         required_from = reference_time - timedelta(days=TREATMENT_HISTORY_WINDOW_DAYS)
         material = tuple(
-            item for item in treatments if required_from <= item.occurred_at <= reference_time
+            item for item in treatments if required_from <= item.occurred_at < reference_time
         )
         antimicrobial: list[AntimicrobialTreatmentRecord] = []
         gaps: list[str] = []

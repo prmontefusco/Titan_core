@@ -233,6 +233,10 @@ SUPERFICIE_ESPERADA = {
     ("/v1/livestock/properties/{property_id}/territorial-captures", "get"),
 }
 
+MARKET_SUPPLY_F3_5_ROTAS_BLOQUEADAS = {
+    ("/v1/livestock/market-supply/aggregate-assessments", "post"),
+}
+
 
 def _esquema() -> dict[str, Any]:
     esquema: dict[str, Any] = client.get("/openapi.json").json()
@@ -248,6 +252,15 @@ def _operacoes() -> set[tuple[str, str]]:
 
 def test_superficie_publica_do_core_esta_congelada() -> None:
     assert _operacoes() == SUPERFICIE_ESPERADA
+
+
+def test_market_supply_f3_5_permanece_sem_rota_publica_antes_do_release_gate() -> None:
+    """ADR-0071 exige release gate antes de qualquer aggregate API buyer-facing."""
+    expostas = MARKET_SUPPLY_F3_5_ROTAS_BLOQUEADAS & _operacoes()
+
+    assert not expostas, "F3.5 Market Supply exposto antes do release gate: " + ", ".join(
+        f"{metodo.upper()} {caminho}" for caminho, metodo in sorted(expostas)
+    )
 
 
 class TestContratoPublicado:

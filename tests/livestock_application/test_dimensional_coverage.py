@@ -209,6 +209,23 @@ def test_composed_complete_coverage_with_treatment_is_not_satisfied() -> None:
     assert _evaluate(fact) is RuleResultStatus.NAO_ATENDIDA
 
 
+def test_composed_coverage_uses_required_until_as_exclusive_boundary() -> None:
+    fact = SanitaryTestACoverageService().build_fact_from_contributions(
+        reference_time=REFERENCE_TIME,
+        contributions=(_contribution(REQUIRED_FROM, REFERENCE_TIME),),
+        treatments=(
+            AntimicrobialTreatmentRecord(
+                occurred_at=REFERENCE_TIME,
+                source=TreatmentMaterialSource.IMPORTED_DOCUMENTED,
+                source_artifact_id="artifact-1",
+            ),
+        ),
+    )
+
+    assert fact.payload["has_antimicrobial_treatment"] is False
+    assert _evaluate(fact) is RuleResultStatus.ATENDIDA
+
+
 def test_partial_composed_coverage_is_indeterminate() -> None:
     fact = SanitaryTestACoverageService().build_fact_from_contributions(
         reference_time=REFERENCE_TIME,

@@ -25,7 +25,14 @@ class AuthorizationGrantRepositoryPort(Protocol):
 
     def get_by_id(self, grant_id: UUID) -> Any | None: ...
 
-    def revoke(self, grant_id: UUID, *, revoked_at: datetime, revoked_by: str) -> None: ...
+    def revoke(
+        self,
+        grant_id: UUID,
+        *,
+        revoked_at: datetime,
+        revoked_by: str,
+        revocation_reason: str | None = None,
+    ) -> None: ...
 
     def update_status_to_revoked(
         self,

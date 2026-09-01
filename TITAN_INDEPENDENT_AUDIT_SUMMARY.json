@@ -1,0 +1,167 @@
+{
+  "audit_date": "2026-08-31",
+  "auditor": "claude-independent-verifier",
+  "commit": "1e47f7691a85cc9454a6d71120e096173167f17d",
+  "branch": "main",
+  "working_tree_clean": false,
+  "uncommitted_modified": 14,
+  "uncommitted_untracked": 59,
+  "migration_head": "20260831_0078",
+  "overall_status": "ORANGE",
+  "verdict": "HOLD_EXPOSURE",
+  "critical": 2,
+  "high": 3,
+  "medium": 5,
+  "low": 3,
+  "info": 3,
+  "architecture_compliance": "PARTIAL",
+  "tenant_isolation": "FAIL",
+  "security": "FAIL",
+  "audit_integrity": "PARTIAL",
+  "market_supply": "PARTIAL",
+  "test_reliability": "MEDIUM",
+  "codex_implementation_confidence": "MEDIUM",
+  "human_decision_required": true,
+  "human_decisions": [
+    "Precedence between idempotent replay and grant revocation (ADR-0070/0071 vs CUT_F3_5 gate list)",
+    "Ownership model for MarketSupplyQueryAuditRecord (producer / buyer / dual RLS policy)"
+  ],
+  "static_analysis": {
+    "ruff": "PASS",
+    "mypy": "PASS",
+    "alembic_check": "PASS"
+  },
+  "tests": {
+    "without_database_url": { "passed": 1277, "skipped": 286, "failed": 0 },
+    "with_database_url": { "passed": 1562, "skipped": 1, "failed": 0 },
+    "independent_audit_tests_written": 6,
+    "independent_audit_tests_failing_against_current_state": 6
+  },
+  "findings": [
+    {
+      "id": "F-01",
+      "severity": "CRITICAL",
+      "title": "Semantic differencing and repeated-query controls are structurally inert in the composed workflow",
+      "requirement": "ADR-0071 s6; ADR-0070 (reidentification/differencing); SPEC F3 acceptance criteria",
+      "verified": "empirical",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-02",
+      "severity": "CRITICAL",
+      "title": "core_audit.authorization_grants and 5 other tenant-scoped tables have no RLS; runtime role reads, revokes and deletes other Organizations' grants",
+      "requirement": "ADR-0070 tenant boundary; ARCHITECTURE.md RLS guarantee",
+      "verified": "empirical",
+      "confidence": "HIGH",
+      "pre_existing": true
+    },
+    {
+      "id": "F-03",
+      "severity": "HIGH",
+      "title": "Revocation does not block idempotent re-execution; previously released aggregate is replayed with no audit record",
+      "requirement": "ADR-0070 revocation; ADR-0071 s8; SPEC F3 acceptance criteria",
+      "verified": "empirical",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-04",
+      "severity": "HIGH",
+      "title": "Aggregate released with no durable audit record when workflow is constructed without a repository (constructor default)",
+      "requirement": "SPEC F3 releasable-result invariant; CUT_F3_5 s4",
+      "verified": "empirical",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-05",
+      "severity": "HIGH",
+      "title": "Pre-release revocation recheck is a timestamp recheck over a stale in-memory grant; no grant re-read port exists",
+      "requirement": "SPEC F3 (recheck before release); ADR-0071 s8",
+      "verified": "code",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-06",
+      "severity": "MEDIUM",
+      "title": "Privacy cohort counts (organizations/properties) are caller assertions, not derived from the CandidatePopulationSnapshot",
+      "requirement": "ADR-0070 AggregationPrivacyPolicy; ADR-0071 s1",
+      "verified": "empirical",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-07",
+      "severity": "MEDIUM",
+      "title": "Audit reference_time/knowledge_cutoff are not bound to the resolved population criteria",
+      "requirement": "ADR-0071 s1/s5",
+      "verified": "empirical",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-08",
+      "severity": "MEDIUM",
+      "title": "aggregate_payload has no schema or allow-list; 'no individual IDs in buyer-facing payload' has no enforcement",
+      "requirement": "SPEC F3 acceptance criteria",
+      "verified": "code",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-09",
+      "severity": "MEDIUM",
+      "title": "audit_owner_organization_id is caller-supplied and unvalidated; under buyer Organization context RLS makes differencing history unreadable",
+      "requirement": "ADR-0071 s2 (audit visibility); ADR-0071 s6",
+      "verified": "code+integration-test-evidence",
+      "confidence": "MEDIUM"
+    },
+    {
+      "id": "F-10",
+      "severity": "MEDIUM",
+      "title": "Default pytest run silently skips 285 tests including every multi-tenant isolation proof; CLAUDE.md documents a fallback that does not exist",
+      "requirement": "CLAUDE.md verification gate",
+      "verified": "empirical",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-11",
+      "severity": "LOW",
+      "title": "AuthorizationGrant revoke() unconditionally nulls revocation_reason",
+      "verified": "code",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-12",
+      "severity": "LOW",
+      "title": "Divergent Decision tie-break by UUID string is semantically arbitrary (CUT C)",
+      "verified": "code",
+      "confidence": "HIGH"
+    },
+    {
+      "id": "F-13",
+      "severity": "LOW",
+      "title": "Half-open boundary change hides an antimicrobial treatment occurring exactly at reference_time (permissive direction)",
+      "verified": "code",
+      "confidence": "MEDIUM"
+    }
+  ],
+  "codex_claims": {
+    "confirmed": 6,
+    "partially_confirmed": 4,
+    "not_confirmed": 1,
+    "contradicted": 1
+  },
+  "capability_readiness": {
+    "producer_side_analysis": "INTEGRATED",
+    "candidate_population_resolver": "IMPLEMENTED_IN_MEMORY",
+    "authorization": "PROTOTYPE",
+    "disclosure_decision": "IMPLEMENTED_IN_MEMORY",
+    "aggregation_privacy": "PROTOTYPE",
+    "semantic_differencing": "DESIGN_ONLY",
+    "query_audit_persistence": "VERIFIED",
+    "audit_coverage": "PROTOTYPE",
+    "idempotency": "INTEGRATED",
+    "revocation": "PROTOTYPE",
+    "uniform_public_behavior": "IMPLEMENTED_IN_MEMORY",
+    "cross_tenant_aggregate_api": "NOT_STARTED",
+    "dossier_verification_bundle": "PRODUCTION_READY"
+  },
+  "scope_drift": "NONE_VIOLATING",
+  "production_code_modified_by_audit": false
+}
