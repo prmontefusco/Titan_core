@@ -6,6 +6,7 @@ result must still come from the audited Market Supply application pipeline.
 """
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Request, status
 from fastapi.responses import JSONResponse
@@ -17,13 +18,14 @@ from packages.livestock_application.authorization import MARKET_SUPPLY_AGGREGATE
 from packages.livestock_application.market_supply_response import MARKET_SUPPLY_NO_STORE_HEADERS
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
+require_market_supply_aggregate_assess = require_permission(MARKET_SUPPLY_AGGREGATE_ASSESS)
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
 
 
 class MarketSupplyCommercialWindowRequest(BaseModel):
-    from_: str = Field(alias="from")
-    until: str
+    from_: str = Field(alias="from", min_length=1)
+    until: str = Field(min_length=1)
 
 
 class MarketSupplyCandidateCriteriaRequest(BaseModel):
@@ -32,13 +34,13 @@ class MarketSupplyCandidateCriteriaRequest(BaseModel):
 
 
 class MarketSupplyAggregateAssessmentRequest(BaseModel):
-    policy_id: str
-    policy_version: int
-    purpose: str
-    quantity: int
+    policy_id: UUID
+    policy_version: int = Field(ge=1)
+    purpose: str = Field(min_length=1)
+    quantity: int = Field(ge=1)
     commercial_window: MarketSupplyCommercialWindowRequest
-    reference_time: str
-    knowledge_cutoff: str
+    reference_time: str = Field(min_length=1)
+    knowledge_cutoff: str = Field(min_length=1)
     candidate_criteria: MarketSupplyCandidateCriteriaRequest
 
 
@@ -49,13 +51,14 @@ class MarketSupplyAggregateAssessmentRequest(BaseModel):
         200: {"description": "Resultado agregado liberado ou resposta uniforme não liberada"},
         401: {"description": "Token ausente, inválido ou expirado"},
         403: {"description": "Sem vínculo com a organização, ou sem a permissão exigida"},
+        503: {"description": "Pipeline auditável ainda não habilitado"},
         422: {"description": "Entrada inválida"},
     },
 )
 def assess_market_supply_aggregate(
     request: Request,
     _: MarketSupplyAggregateAssessmentRequest,
-    __: Annotated[OrganizationContext, Depends(require_permission(MARKET_SUPPLY_AGGREGATE_ASSESS))],
+    __: Annotated[OrganizationContext, Depends(require_market_supply_aggregate_assess)],
     ___: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
 ) -> JSONResponse:
     """Fail closed until the audited orchestration is wired into the API.
