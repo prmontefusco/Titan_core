@@ -344,7 +344,7 @@ Work that can continue:
 - application pipeline and audit verification.
 - future endpoint implementation may require this permission explicitly.
 
-### POLICY_GATE: production Candidate Population source
+### CLOSED POLICY_GATE: production Candidate Population source
 
 Why required:
 
@@ -365,16 +365,24 @@ Recommended:
 - no implicit access from Policy sharing alone;
 - no global Animal lookup.
 
+Accepted decision:
+
+- use existing bilateral `AuthorizationGrant` records for
+  `MARKET_SUPPLY_AGGREGATE_ASSESSMENT`;
+- require owner-scoped contribution contexts;
+- do not infer participation from network membership, Policy sharing or herd
+  visibility;
+- do not perform global Animal lookup.
+
 Implementation blocked:
 
-- production resolver that reads real Livestock data;
-- F3.5 endpoint returning real aggregate counts.
+- none by the production Candidate Population source decision itself.
 
 Work that can continue:
 
-- synthetic validation artifacts;
-- resolver interface tests with in-memory subjects;
-- audit/idempotency/privacy composition.
+- endpoint orchestration may compose owner-scoped candidate readers with existing
+  grants and the audit/privacy workflow;
+- validation artifacts and API tests may use synthetic producer Organizations.
 
 Implementation status on 2026-09-01:
 
@@ -384,7 +392,11 @@ Implementation status on 2026-09-01:
   before snapshot;
 - missing, revoked or owner-mismatched grants produce internal rejected
   contribution summaries, not snapshots;
-- no production Animal/property adapter or global lookup was created.
+- `TransactionalOwnerScopedCandidateAnimalReader` reads real animal candidate
+  subjects only under the owner Organization RLS context;
+- the reader preserves `reference_time`, `knowledge_cutoff` via `known_at`, and
+  rural property counts without exposing individual IDs;
+- no global lookup was created.
 
 ### CLOSED POLICY_GATE: F3.5 audit-history visibility for differencing
 

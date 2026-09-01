@@ -124,8 +124,11 @@ class CandidatePopulationSubject:
     known_at: datetime | None = None
 
     def __post_init__(self) -> None:
-        if self.property_id is not None and self.property_id.entity_type != "property":
-            raise ValueError("property_id deve ter entity_type 'property'.")
+        if self.property_id is not None and self.property_id.entity_type not in {
+            "property",
+            "rural_property",
+        }:
+            raise ValueError("property_id deve ter entity_type 'property' ou 'rural_property'.")
         if self.known_at is not None:
             require_utc(self.known_at, field_name="known_at")
 

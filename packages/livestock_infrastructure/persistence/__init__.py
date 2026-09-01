@@ -49,6 +49,9 @@ from packages.livestock_infrastructure.persistence.market_supply_query_audit_rep
     TransactionalMarketSupplyQueryAuditRepository,
     market_supply_query_audit_records_table,
 )
+from packages.livestock_infrastructure.persistence.market_supply_population_reader import (
+    TransactionalOwnerScopedCandidateAnimalReader,
+)
 from packages.livestock_infrastructure.persistence.medication_classification_repository import (
     TransactionalMedicationClassificationRepository,
     medication_classification_assertions_table,
@@ -132,6 +135,7 @@ __all__ = [
     "TransactionalMedicationBatchRepository",
     "TransactionalMedicationRepository",
     "TransactionalMarketSupplyQueryAuditRepository",
+    "TransactionalOwnerScopedCandidateAnimalReader",
     "TransactionalMedicationClassificationRepository",
     "TransactionalPrescriptionRepository",
     "TransactionalPropertyStayRepository",
