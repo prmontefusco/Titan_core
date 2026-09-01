@@ -21,6 +21,12 @@ MARKET_SUPPLY_PUBLIC_AGGREGATE_RESPONSE_SCHEMA = "market_supply.public_aggregate
 MARKET_SUPPLY_PUBLIC_AGGREGATE_RESPONSE_VERSION = 1
 MARKET_SUPPLY_PUBLIC_AGGREGATE_PAYLOAD_SCHEMA = "market_supply.public_aggregate_payload"
 MARKET_SUPPLY_PUBLIC_AGGREGATE_PAYLOAD_VERSION = 1
+MARKET_SUPPLY_NO_STORE_HEADERS = MappingProxyType(
+    {
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache",
+    },
+)
 
 _ALLOWED_TOP_LEVEL_KEYS = frozenset(
     {
@@ -119,6 +125,10 @@ class MarketSupplyPublicResponseMapper:
             status=MarketSupplyPublicResponseStatus.RELEASED,
             aggregate=public_payload,
         )
+
+    def sensitive_response_headers(self) -> Mapping[str, str]:
+        """Headers required for every future buyer-facing Market Supply response."""
+        return MARKET_SUPPLY_NO_STORE_HEADERS
 
 
 def _sanitize_public_aggregate_payload(

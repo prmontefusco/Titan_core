@@ -281,7 +281,7 @@ The script must:
 
 ## 11. Remaining Policy Gates
 
-### POLICY_GATE: F3.5 HTTP/public behavior
+### CLOSED POLICY_GATE: F3.5 HTTP/public behavior
 
 Why required:
 
@@ -295,7 +295,7 @@ Existing evidence:
 - approved F3 SPEC public contract notes;
 - sensitive verification API precedent uses non-store cache headers.
 
-Recommended:
+Accepted decision:
 
 - use the external behavior proposal in section 6;
 - make protected non-release `200 OK` with `status=NOT_RELEASED`;
@@ -305,15 +305,15 @@ Recommended:
 
 Implementation blocked:
 
-- public route response mapping;
-- API contract tests;
-- validation script against the route.
+- none by the HTTP/public behavior decision itself.
 
 Work that can continue:
 
 - internal service composition;
 - persistence/RLS tests;
 - contract proposal and negative tests at application level.
+- future endpoint implementation may use the application response mapper and
+  no-store headers.
 
 ### CLOSED POLICY_GATE: F3.5 permission seeding
 

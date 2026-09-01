@@ -410,6 +410,11 @@ F3.5B closed the permission catalog gate by adding
 granting it to any default role. The future endpoint can require the capability,
 but no existing role gains buyer-facing aggregate visibility by default.
 
+F3.5C closed the HTTP/public behavior gate at application-contract level by
+adding immutable no-store headers to the Market Supply public response mapper.
+The endpoint remains absent, but future route code can reuse the executable
+contract for `Cache-Control: no-store` and `Pragma: no-cache`.
+
 ## Tenant Isolation Impact
 
 No tenant boundary changed. MarketReadiness remains Organization-scoped. Producer-side analysis is single-Organization. Authorization and privacy modules do not perform data access. Progressive disclosure is accepted as architecture baseline only; no cross-tenant API exists. `authorization_grants` now has database-enforced bilateral read and owner-only write semantics, while other hardened `core_audit` tables remain owner-only.
@@ -420,12 +425,11 @@ CUT A strengthens interval correctness. CUT C keeps context mismatch visible. CU
 
 ## HUMAN GATES Remaining
 
-- Approve concrete persistence/API contracts before production code.
+- Approve concrete persistence contracts before production code.
 - Approve concrete `CandidatePopulationSnapshot` digest representation.
 - Approve concrete production `AggregationPrivacyPolicy` profile values.
 - Approve query audit persistence, retention, rate limits and operational differencing controls.
 - Approve whether persistent Market Supply audit reuses/extends `shared_policy_access_log` or receives a dedicated model.
-- Approve public HTTP, timing, cache and pagination semantics for uniform non-release.
 - Approve producer opt-in/revocation UX and authority model.
 - Approve concrete FieldScope/GrantScope profiles.
 - Approve `SupplyIntelligenceReport` storage/hash/export behavior.

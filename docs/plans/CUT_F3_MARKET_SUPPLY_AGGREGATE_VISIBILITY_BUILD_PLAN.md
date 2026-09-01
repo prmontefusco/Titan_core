@@ -318,6 +318,15 @@ Implementation status on 2026-09-01 after permission approval:
 - no route, endpoint, migration, production resolver, cross-tenant query or
   buyer-facing release was introduced.
 
+Implementation status on 2026-09-01 after HTTP behavior approval:
+
+- `MarketSupplyPublicResponseMapper` exposes immutable no-store headers for the
+  future F3.5 route;
+- response payload shape remains the existing `RELEASED`/`NOT_RELEASED`
+  application contract;
+- no route, endpoint, migration, production resolver, cross-tenant query or
+  buyer-facing release was introduced.
+
 Proposed route:
 
 ```text

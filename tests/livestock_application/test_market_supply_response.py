@@ -14,6 +14,7 @@ from packages.livestock_application.market_supply_authorization import (
 )
 from packages.livestock_application.market_supply_privacy import AggregationQueryFingerprint
 from packages.livestock_application.market_supply_response import (
+    MARKET_SUPPLY_NO_STORE_HEADERS,
     MARKET_SUPPLY_PUBLIC_AGGREGATE_RESPONSE_SCHEMA,
     MARKET_SUPPLY_PUBLIC_AGGREGATE_RESPONSE_VERSION,
     MarketSupplyPublicResponseMapper,
@@ -211,3 +212,13 @@ def test_released_response_requires_aggregate_payload() -> None:
             envelope=_envelope(),
             aggregate_payload=None,
         )
+
+
+def test_market_supply_public_response_headers_are_no_store_for_release_and_non_release() -> None:
+    mapper = MarketSupplyPublicResponseMapper()
+
+    assert mapper.sensitive_response_headers() == MARKET_SUPPLY_NO_STORE_HEADERS
+    assert mapper.sensitive_response_headers() == {
+        "Cache-Control": "no-store",
+        "Pragma": "no-cache",
+    }
