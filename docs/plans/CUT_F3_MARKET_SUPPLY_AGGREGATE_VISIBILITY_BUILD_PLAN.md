@@ -300,13 +300,23 @@ Implementation status on 2026-08-31:
 
 - proposed route, headers, public payload shapes, cache posture, no-pagination
   constraint, feature flag and permission name are documented for review;
-- remaining policy gates are isolated: HTTP/public behavior, permission seeding,
+- remaining policy gates are isolated: HTTP/public behavior,
   production Candidate Population source and production privacy profile values;
 - `tests/api/test_core_public_surface.py` now explicitly fails if the proposed
   Market Supply aggregate route appears before the F3.5 release gate is
   accepted;
 - no route, endpoint, permission seed, migration, production resolver,
   cross-tenant query or buyer-facing release was introduced.
+
+Implementation status on 2026-09-01 after permission approval:
+
+- `MARKET_SUPPLY.AGGREGATE_ASSESS` is catalogued in
+  `packages/livestock_application/authorization.py`;
+- the permission is included in `LIVESTOCK_PERMISSIONS` for seed/catalog
+  creation;
+- no default role receives the permission automatically;
+- no route, endpoint, migration, production resolver, cross-tenant query or
+  buyer-facing release was introduced.
 
 Proposed route:
 

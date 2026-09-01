@@ -315,7 +315,7 @@ Work that can continue:
 - persistence/RLS tests;
 - contract proposal and negative tests at application level.
 
-### POLICY_GATE: F3.5 permission seeding
+### CLOSED POLICY_GATE: F3.5 permission seeding
 
 Why required:
 
@@ -327,21 +327,22 @@ Existing evidence:
 - ADR-0070 separates aggregate assessment from candidate disclosure;
 - ADR-0071 requires permission/capability approval before API.
 
-Recommended:
+Accepted decision:
 
 - create `MARKET_SUPPLY.AGGREGATE_ASSESS` for the aggregate endpoint only;
 - do not grant candidate disclosure permission in F3.5.
+- include the permission in the Livestock permission catalog;
+- do not grant it to default roles automatically.
 
 Implementation blocked:
 
-- permission seed/migration;
-- API authorization dependency;
-- validation script role setup.
+- none by the permission decision itself.
 
 Work that can continue:
 
 - documentation;
 - application pipeline and audit verification.
+- future endpoint implementation may require this permission explicitly.
 
 ### POLICY_GATE: production Candidate Population source
 

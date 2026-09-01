@@ -405,6 +405,11 @@ owner/contributor-scoped contexts, returning only uniform public projections to
 the buyer. ADR-0072 also makes required query-history completeness and
 multi-owner audit/disclosure correlation explicit release invariants.
 
+F3.5B closed the permission catalog gate by adding
+`MARKET_SUPPLY.AGGREGATE_ASSESS` to the Livestock permission catalog without
+granting it to any default role. The future endpoint can require the capability,
+but no existing role gains buyer-facing aggregate visibility by default.
+
 ## Tenant Isolation Impact
 
 No tenant boundary changed. MarketReadiness remains Organization-scoped. Producer-side analysis is single-Organization. Authorization and privacy modules do not perform data access. Progressive disclosure is accepted as architecture baseline only; no cross-tenant API exists. `authorization_grants` now has database-enforced bilateral read and owner-only write semantics, while other hardened `core_audit` tables remain owner-only.

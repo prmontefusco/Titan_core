@@ -87,6 +87,10 @@ EXTERNAL_SOURCE_CAPTURE_LER: Final = "LIVESTOCK_EXTERNAL_SOURCE_CAPTURE.LER"
 EXTERNAL_SOURCE_CAPTURE_REVIEW: Final = "LIVESTOCK_EXTERNAL_SOURCE_CAPTURE.REVIEW"
 TERRITORIAL_CAPTURE_SYNTHETIC_CREATE: Final = "LIVESTOCK_TERRITORIAL_CAPTURE.SYNTHETIC_CREATE"
 TERRITORIAL_CAPTURE_READ: Final = "LIVESTOCK_TERRITORIAL_CAPTURE.READ"
+# Market Supply aggregate assessment is buyer-facing derived knowledge, not herd
+# read access. It is catalogued for F3.5 but deliberately absent from default
+# roles until a deployment grants it explicitly.
+MARKET_SUPPLY_AGGREGATE_ASSESS: Final = "MARKET_SUPPLY.AGGREGATE_ASSESS"
 
 # A leitura é permissão própria por área, e não uma só para tudo. Papel de
 # consulta restrita — um comprador que só precisa ver o dossiê, um técnico que só
@@ -140,7 +144,9 @@ ESCRITA: Final = frozenset(
 # deliberadamente separada de LEITURA/ESCRITA, que qualquer operador ganha.
 ADMINISTRACAO: Final = frozenset({ENTITY_TYPE_REQUEST_LER, ENTITY_TYPE_REQUEST_DECIDIR})
 
-LIVESTOCK_PERMISSIONS: Final = LEITURA | ESCRITA | ADMINISTRACAO
+MARKET_SUPPLY: Final = frozenset({MARKET_SUPPLY_AGGREGATE_ASSESS})
+
+LIVESTOCK_PERMISSIONS: Final = LEITURA | ESCRITA | ADMINISTRACAO | MARKET_SUPPLY
 
 # -- Papéis ------------------------------------------------------------------
 
