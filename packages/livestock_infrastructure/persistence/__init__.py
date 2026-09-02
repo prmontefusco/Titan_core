@@ -45,12 +45,13 @@ from packages.livestock_infrastructure.persistence.lot_repository import (
     livestock_lots_table,
     lot_memberships_table,
 )
+from packages.livestock_infrastructure.persistence.market_supply_population_reader import (
+    TransactionalMarketSupplyOwnerScopedSubjectReader,
+    TransactionalOwnerScopedCandidateAnimalReader,
+)
 from packages.livestock_infrastructure.persistence.market_supply_query_audit_repository import (
     TransactionalMarketSupplyQueryAuditRepository,
     market_supply_query_audit_records_table,
-)
-from packages.livestock_infrastructure.persistence.market_supply_population_reader import (
-    TransactionalOwnerScopedCandidateAnimalReader,
 )
 from packages.livestock_infrastructure.persistence.medication_classification_repository import (
     TransactionalMedicationClassificationRepository,
@@ -135,6 +136,7 @@ __all__ = [
     "TransactionalMedicationBatchRepository",
     "TransactionalMedicationRepository",
     "TransactionalMarketSupplyQueryAuditRepository",
+    "TransactionalMarketSupplyOwnerScopedSubjectReader",
     "TransactionalOwnerScopedCandidateAnimalReader",
     "TransactionalMedicationClassificationRepository",
     "TransactionalPrescriptionRepository",
