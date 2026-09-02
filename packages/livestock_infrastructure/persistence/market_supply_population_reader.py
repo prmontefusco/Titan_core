@@ -10,6 +10,7 @@ from datetime import UTC
 
 from sqlalchemy import Connection, and_, exists, select, text
 
+from packages.core_infrastructure.persistence.organizations import set_local_organization_context
 from packages.livestock_application.market_supply_population import (
     CandidatePopulationCriteria,
     CandidatePopulationSubject,
@@ -86,3 +87,45 @@ class TransactionalOwnerScopedCandidateAnimalReader:
             raise RuntimeError(
                 "Market Supply candidate reader exige contexto RLS do owner Organization."
             )
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalMarketSupplyOwnerScopedSubjectReader:
+    """Application-mediated owner-scoped subject reader for Market Supply F3.5.
+
+    The buyer request may start under the buyer Organization context. Each
+    contribution read is temporarily scoped to the grant owner and the previous
+    context is restored before returning to the caller.
+    """
+
+    connection: Connection
+
+    def list_subjects(
+        self,
+        *,
+        criteria: CandidatePopulationCriteria,
+    ) -> tuple[CandidatePopulationSubject, ...]:
+        previous_organization_id = self._current_organization_id()
+        set_local_organization_context(self.connection, criteria.organization_id)
+        try:
+            return TransactionalOwnerScopedCandidateAnimalReader(self.connection).list_subjects(
+                criteria=criteria,
+            )
+        finally:
+            self._restore_organization_context(previous_organization_id)
+
+    def _current_organization_id(self) -> OrganizationId | None:
+        raw = self.connection.execute(
+            text("SELECT NULLIF(current_setting('titan.organization_id', true), '')::uuid"),
+        ).scalar_one_or_none()
+        if raw is None:
+            return None
+        return OrganizationId(raw)
+
+    def _restore_organization_context(self, organization_id: OrganizationId | None) -> None:
+        if organization_id is None:
+            self.connection.execute(
+                text("SELECT set_config('titan.organization_id', '', true)"),
+            )
+            return
+        set_local_organization_context(self.connection, organization_id)
