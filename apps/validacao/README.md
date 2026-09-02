@@ -98,6 +98,7 @@ provedor, não com sintoma genérico.
 | `post_liv_02a_neutral_contract` | Contrato outbound neutro de ERP (POST-LIV-02A) |
 | `buyerpolicy_shared_decision` | Proposta e revisão sobre Evaluation compartilhada (ADR-0066, Incremento 1) |
 | `buyerpolicy_rate_limit_auditoria` | Cota por grant e trilha de acesso da BuyerPolicy compartilhada (ADR-0066, Incremento 2) |
+| `market_supply_aggregate_api` | Superfície HTTP protegida de Market Supply F3.5: rota default-off ou autenticada quando feature-flagged |
 
 ## Rodar todos de uma vez (roteiro de fumaça)
 
