@@ -165,6 +165,25 @@ def test_market_supply_aggregate_route_requires_idempotency_key_after_auth(
     assert response.status_code == 422
 
 
+def test_market_supply_aggregate_route_validates_idempotency_key_format(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
+    importlib.reload(main_module)
+    main_module.app.dependency_overrides[
+        market_supply_api.require_market_supply_aggregate_assess
+    ] = _context
+
+    response = TestClient(main_module.app).post(
+        ROUTE,
+        headers={"Idempotency-Key": "bad"},
+        json=_valid_body(),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["reason_code"] == "MARKET_SUPPLY_REQUEST_INVALIDA"
+
+
 def test_market_supply_aggregate_route_requires_utc_temporal_coordinates(
     monkeypatch: MonkeyPatch,
 ) -> None:

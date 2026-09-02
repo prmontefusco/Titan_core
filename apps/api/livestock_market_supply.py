@@ -6,7 +6,7 @@ result must still come from the audited Market Supply application pipeline.
 """
 
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -22,7 +22,7 @@ from packages.livestock_application.market_supply_population import CandidatePop
 from packages.livestock_application.market_supply_privacy import load_aggregation_privacy_profile
 from packages.livestock_application.market_supply_request import CommercialDemandContext
 from packages.livestock_application.market_supply_response import MARKET_SUPPLY_NO_STORE_HEADERS
-from packages.shared_kernel import TypedId
+from packages.shared_kernel import TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
 
 IDEMPOTENCY_HEADER = "Idempotency-Key"
@@ -67,7 +67,7 @@ def assess_market_supply_aggregate(
     request: Request,
     body: MarketSupplyAggregateAssessmentRequest,
     context: Annotated[OrganizationContext, Depends(require_market_supply_aggregate_assess)],
-    ___: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
 ) -> JSONResponse:
     """Fail closed until the audited orchestration is wired into the API.
 
@@ -77,7 +77,17 @@ def assess_market_supply_aggregate(
     """
 
     try:
-        _build_request_contexts(body=body, context=context)
+        demand, criteria = _build_request_contexts(body=body, context=context)
+        identity = demand.to_request_identity(
+            candidate_criteria_digest=criteria.digest(),
+            reference_time=body.reference_time,
+            knowledge_cutoff=body.knowledge_cutoff,
+            idempotency_key=idempotency_key,
+        )
+        identity.to_idempotency_request(
+            principal_reference=_principal_reference(context),
+            requested_at=datetime.now(UTC),
+        )
     except DomainProblem:
         raise
     except ValueError as error:
@@ -100,6 +110,14 @@ def assess_market_supply_aggregate(
         request=request,
         reason_code="MARKET_SUPPLY_PIPELINE_NAO_HABILITADO",
         detail="A rota está protegida até a composição auditável ser habilitada.",
+    )
+
+
+def _principal_reference(context: OrganizationContext) -> UniversalReference:
+    return UniversalReference(
+        target_id=context.user_id,
+        organization_id=context.organization_id,
+        contract_version=1,
     )
 
 
