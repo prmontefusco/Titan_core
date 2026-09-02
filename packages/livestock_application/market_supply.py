@@ -5,10 +5,13 @@ Policies, emit Decisions, persist reports, expose buyer visibility, or perform
 cross-Organization access.
 """
 
+import hashlib
 from collections import Counter
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
+from packages.core_domain.policy_sharing import AuthorizationGrant
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MarketReadinessContext,
@@ -20,11 +23,42 @@ from packages.livestock_application.market_readiness import (
     MarketReadinessService,
     MarketReadinessStatus,
 )
-from packages.livestock_application.market_supply_population import (
-    AuthorizedCandidatePopulationResult,
+from packages.livestock_application.market_supply_audit import (
+    MarketSupplyRevocationState,
 )
+from packages.livestock_application.market_supply_authorization import (
+    MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+    MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+    MarketSupplyAuthorizationRequest,
+)
+from packages.livestock_application.market_supply_population import (
+    AuthorizedCandidatePopulationComposition,
+    AuthorizedCandidatePopulationCompositionService,
+    AuthorizedCandidatePopulationResult,
+    CandidatePopulationCriteria,
+)
+from packages.livestock_application.market_supply_privacy import (
+    AggregationGeographicPrecision,
+    AggregationPrivacyInput,
+    AggregationPrivacyProfile,
+    AggregationQueryFingerprint,
+)
+from packages.livestock_application.market_supply_workflow import (
+    MarketSupplyAggregateGateRequest,
+    MarketSupplyAggregateGateResult,
+    MarketSupplyAggregateGateWorkflow,
+    MarketSupplyAuditRecordContext,
+)
+from packages.shared_kernel import (
+    CanonicalSerializer,
+    OrganizationId,
+    TypedId,
+    canonicalize_for_hash,
+)
+from packages.shared_kernel.temporal import require_utc
 
 PRODUCER_SIDE_ANALYSIS_BOUNDARY = "PRODUCER_SIDE_SINGLE_ORGANIZATION_ANALYSIS"
+_SERIALIZER = CanonicalSerializer()
 
 
 @dataclass(frozen=True, slots=True)
@@ -277,3 +311,171 @@ class MarketSupplyReadinessCompositionService:
                 )
             )
         return tuple(reports)
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSupplyAggregateAssessmentCommand:
+    buyer_organization_id: OrganizationId
+    base_criteria: CandidatePopulationCriteria
+    requested_quantity: int | None
+    privacy_profile: AggregationPrivacyProfile
+    geographic_precision: AggregationGeographicPrecision
+    filter_count: int
+    requested_at: datetime
+    audit_id: TypedId
+    correlation_id: TypedId
+    idempotency_reference: str
+    semantic_request_digest: str
+    rare_attribute_filters: tuple[str, ...] = ()
+    previous_queries: tuple[AggregationQueryFingerprint, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.requested_quantity is not None and self.requested_quantity < 1:
+            raise ValueError("requested_quantity deve ser inteiro >= 1 quando informado.")
+        if self.base_criteria.organization_id != self.buyer_organization_id:
+            raise ValueError("base_criteria deve representar a Organization compradora.")
+        if self.filter_count < 0:
+            raise ValueError("filter_count nao pode ser negativo.")
+        if self.audit_id.entity_type != "market_supply_query_audit":
+            raise ValueError("audit_id deve ter entity_type 'market_supply_query_audit'.")
+        if self.correlation_id.entity_type != "correlation":
+            raise ValueError("correlation_id deve ter entity_type 'correlation'.")
+        for field_name in ("idempotency_reference", "semantic_request_digest"):
+            if not getattr(self, field_name).strip():
+                raise ValueError(f"{field_name} deve ser texto nao vazio.")
+        require_utc(self.requested_at, field_name="requested_at")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSupplyPreparedAggregateAssessment:
+    population: AuthorizedCandidatePopulationComposition
+    readiness_reports: tuple[MarketReadinessReport, ...]
+    aggregate_payload: dict[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSupplyAggregateAssessmentOrchestrator:
+    """Application orchestration for the auditable F3.5 aggregate pipeline."""
+
+    population_composer: AuthorizedCandidatePopulationCompositionService
+    readiness_composer: MarketSupplyReadinessCompositionService
+    payload_builder: MarketSupplyAggregatePayloadBuilder
+    gate_workflow: MarketSupplyAggregateGateWorkflow
+
+    def prepare(
+        self,
+        command: MarketSupplyAggregateAssessmentCommand,
+    ) -> MarketSupplyPreparedAggregateAssessment:
+        population = self.population_composer.compose(
+            buyer_organization_id=command.buyer_organization_id,
+            base_criteria=command.base_criteria,
+            requested_at=command.requested_at,
+        )
+        reports = self.readiness_composer.build_reports(population_result=population.result)
+        payload = self.payload_builder.build_from_readiness_reports(
+            reports=reports,
+            requested_quantity=command.requested_quantity,
+        )
+        return MarketSupplyPreparedAggregateAssessment(
+            population=population,
+            readiness_reports=reports,
+            aggregate_payload=payload,
+        )
+
+    def assess_single_owner(
+        self,
+        command: MarketSupplyAggregateAssessmentCommand,
+    ) -> tuple[MarketSupplyPreparedAggregateAssessment, MarketSupplyAggregateGateResult]:
+        prepared = self.prepare(command)
+        accepted = prepared.population.result.accepted_contributions
+        if len(accepted) != 1:
+            raise ValueError(
+                "release agregado multi-owner exige correlacao auditavel multi-owner.",
+            )
+        contribution = accepted[0]
+        snapshot = contribution.snapshot
+        universe = snapshot.internal_universe_summary()
+        query_fingerprint = AggregationQueryFingerprint(
+            requester_organization_id=command.buyer_organization_id,
+            beneficiary_organization_id=command.buyer_organization_id,
+            access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+            policy_context_digest=snapshot.criteria.policy_context_digest(),
+            filter_fingerprint=snapshot.criteria_digest,
+            result_subject_count=snapshot.included_count,
+            requested_at=command.requested_at,
+        )
+        privacy_input = AggregationPrivacyInput(
+            privacy_policy=command.privacy_profile.policy,
+            organization_count=universe.organization_count,
+            property_count=0 if universe.property_count is None else universe.property_count,
+            subject_count=universe.subject_count,
+            geographic_precision=command.geographic_precision,
+            filter_count=command.filter_count,
+            rare_attribute_filters=command.rare_attribute_filters,
+            current_query=query_fingerprint,
+            previous_queries=command.previous_queries,
+        )
+        authorization_request = MarketSupplyAuthorizationRequest(
+            owner_organization_id=contribution.owner_organization_id,
+            beneficiary_organization_id=command.buyer_organization_id,
+            policy_id=snapshot.criteria.policy_id,
+            access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+            field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+            requested_at=command.requested_at,
+        )
+        audit_context = MarketSupplyAuditRecordContext(
+            audit_id=command.audit_id,
+            policy_version=snapshot.criteria.policy_version,
+            privacy_profile_id=command.privacy_profile.profile_id,
+            authorization_context_digest=_authorization_context_digest(contribution.grant),
+            candidate_population_digest=snapshot.snapshot_digest,
+            reference_time=snapshot.criteria.reference_time,
+            knowledge_cutoff=snapshot.criteria.knowledge_cutoff,
+            requested_at=command.requested_at,
+            revocation_state=MarketSupplyRevocationState.NOT_REVOKED,
+            correlation_id=command.correlation_id,
+            idempotency_reference=command.idempotency_reference,
+            semantic_request_digest=command.semantic_request_digest,
+            population_digest=universe.population_digest,
+        )
+        result = self.gate_workflow.assess_aggregate_access(
+            MarketSupplyAggregateGateRequest(
+                audit_owner_organization_id=contribution.owner_organization_id,
+                authorization_request=authorization_request,
+                query_policy_id=snapshot.criteria.policy_id,
+                query_fingerprint=query_fingerprint,
+                recorded_at=command.requested_at,
+                grant=contribution.grant,
+                population_snapshot=snapshot,
+                privacy_input=privacy_input,
+                aggregate_payload=prepared.aggregate_payload,
+                audit_record_context=audit_context,
+            )
+        )
+        return prepared, result
+
+
+def _authorization_context_digest(grant: AuthorizationGrant) -> str:
+    return hashlib.sha256(
+        _SERIALIZER.serialize(
+            canonicalize_for_hash(
+                {
+                    "schema": "titan.market_supply.authorization_context",
+                    "version": 1,
+                    "grant_id": str(grant.grant_id),
+                    "owner_organization_id": str(grant.owner_organization_id.value),
+                    "beneficiary_organization_id": str(
+                        grant.beneficiary_organization_id.value,
+                    ),
+                    "policy_id": str(grant.policy_id.value),
+                    "policy_version_id": str(grant.policy_version_id.value),
+                    "access_purpose": grant.access_purpose,
+                    "field_scope_profile": grant.field_scope_profile,
+                    "valid_from": grant.valid_from,
+                    "valid_until": grant.valid_until,
+                    "status": grant.status,
+                    "revoked_at": grant.revoked_at,
+                }
+            ),
+        ),
+    ).hexdigest()

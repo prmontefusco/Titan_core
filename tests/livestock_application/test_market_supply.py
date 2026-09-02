@@ -1,7 +1,11 @@
+from datetime import datetime, timedelta
+from uuid import UUID, uuid4
+
 import pytest
 
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation
+from packages.core_domain.policy_sharing import AuthorizationGrant
 from packages.livestock_application.market_readiness import (
     MarketReadinessInput,
     MarketReadinessService,
@@ -9,20 +13,38 @@ from packages.livestock_application.market_readiness import (
 )
 from packages.livestock_application.market_supply import (
     PRODUCER_SIDE_ANALYSIS_BOUNDARY,
+    MarketSupplyAggregateAssessmentCommand,
+    MarketSupplyAggregateAssessmentOrchestrator,
     MarketSupplyAggregatePayloadBuilder,
     MarketSupplyReadinessCompositionService,
     ProducerMarketSupplyAnalysisService,
     ProducerMarketSupplyQuestion,
 )
+from packages.livestock_application.market_supply_audit import (
+    InMemoryMarketSupplyQueryAuditRepository,
+)
+from packages.livestock_application.market_supply_authorization import (
+    MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+    MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+)
 from packages.livestock_application.market_supply_population import (
+    AuthorizedCandidatePopulationCompositionService,
     AuthorizedCandidatePopulationResult,
     CandidatePopulationCriteria,
     CandidatePopulationResolver,
     CandidatePopulationSubject,
 )
+from packages.livestock_application.market_supply_privacy import (
+    AggregationGeographicPrecision,
+    AggregationPrivacyPolicy,
+    AggregationPrivacyProfile,
+)
 from packages.livestock_application.market_supply_response import (
     MarketSupplyPublicResponseMapper,
     MarketSupplyPublicResponseStatus,
+)
+from packages.livestock_application.market_supply_workflow import (
+    MarketSupplyAggregateGateWorkflow,
 )
 from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.test_market_readiness import _artifacts, _context
@@ -262,3 +284,241 @@ def test_market_supply_readiness_composition_builds_owner_scoped_reports_from_sn
     assert reports[0].context.organization_id == policy.organization_id
     assert reports[0].context.policy_id == policy.policy_id
     assert reports[0].counts[MarketReadinessStatus.NOT_EVALUATED] == 1
+
+
+class RecordingGrantReader:
+    def __init__(self, grants: list[AuthorizationGrant]) -> None:
+        self.grants = grants
+
+    def list_active_by_policy_beneficiary_purpose_scope_at(
+        self,
+        *,
+        policy_id: TypedId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        field_scope_profile: str,
+        requested_at: datetime,
+    ) -> list[AuthorizationGrant]:
+        return [
+            grant
+            for grant in self.grants
+            if grant.policy_id == policy_id
+            and grant.beneficiary_organization_id == beneficiary_organization_id
+            and grant.access_purpose == access_purpose
+            and grant.field_scope_profile == field_scope_profile
+            and grant.valid_from <= requested_at < grant.valid_until
+        ]
+
+
+class RecordingSubjectReader:
+    def __init__(
+        self,
+        subjects_by_owner: dict[OrganizationId, tuple[CandidatePopulationSubject, ...]],
+    ) -> None:
+        self.subjects_by_owner = subjects_by_owner
+
+    def list_subjects(
+        self,
+        *,
+        criteria: CandidatePopulationCriteria,
+    ) -> tuple[CandidatePopulationSubject, ...]:
+        return self.subjects_by_owner.get(criteria.organization_id, ())
+
+
+class StaticGrantReader:
+    def __init__(self, grant: AuthorizationGrant) -> None:
+        self.grant = grant
+
+    def get_by_id(self, grant_id: UUID) -> AuthorizationGrant | None:
+        return self.grant if grant_id == self.grant.grant_id else None
+
+
+def _grant(
+    *,
+    criteria: CandidatePopulationCriteria,
+    buyer_organization_id: OrganizationId,
+) -> AuthorizationGrant:
+    return AuthorizationGrant(
+        grant_id=uuid4(),
+        owner_organization_id=criteria.organization_id,
+        beneficiary_organization_id=buyer_organization_id,
+        policy_id=criteria.policy_id,
+        policy_version_id=TypedId.new("policy_version"),
+        access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+        field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+        valid_from=criteria.reference_time - timedelta(days=1),
+        valid_until=criteria.reference_time + timedelta(days=1),
+        status="ATIVO",
+        created_at=criteria.reference_time - timedelta(days=2),
+        created_by="test",
+    )
+
+
+def _privacy_profile() -> AggregationPrivacyProfile:
+    return AggregationPrivacyProfile(
+        profile_id="market-supply-aggregate-test",
+        policy=AggregationPrivacyPolicy(
+            policy_version=1,
+            minimum_organizations=1,
+            minimum_properties=1,
+            minimum_subjects=1,
+            max_filter_count_without_review=4,
+            repeated_query_window=timedelta(minutes=10),
+        ),
+    )
+
+
+def test_market_supply_orchestrator_releases_single_owner_after_snapshot_and_audit() -> None:
+    buyer = OrganizationId.new()
+    _, _, policy = _artifacts()
+    owner = policy.organization_id
+    base_criteria = CandidatePopulationCriteria(
+        organization_id=buyer,
+        purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=_context(policy).reference_time,
+        knowledge_cutoff=_context(policy).knowledge_cutoff,
+    )
+    owner_criteria = CandidatePopulationCriteria(
+        organization_id=owner,
+        purpose=base_criteria.purpose,
+        policy_id=base_criteria.policy_id,
+        policy_version=base_criteria.policy_version,
+        reference_time=base_criteria.reference_time,
+        knowledge_cutoff=base_criteria.knowledge_cutoff,
+    )
+    subject = CandidatePopulationSubject(
+        subject_id=TypedId.new("animal"),
+        organization_id=owner,
+        property_id=TypedId.new("rural_property"),
+        known_at=base_criteria.knowledge_cutoff,
+    )
+    grant = _grant(criteria=owner_criteria, buyer_organization_id=buyer)
+    audit_repository = InMemoryMarketSupplyQueryAuditRepository()
+    orchestrator = MarketSupplyAggregateAssessmentOrchestrator(
+        population_composer=AuthorizedCandidatePopulationCompositionService(
+            grant_reader=RecordingGrantReader([grant]),
+            subject_reader=RecordingSubjectReader({owner: (subject,)}),
+        ),
+        readiness_composer=MarketSupplyReadinessCompositionService(
+            decision_reader=EmptyDecisionReader(),
+            evaluation_reader=EmptyEvaluationReader(),
+            readiness_service=MarketReadinessService(),
+        ),
+        payload_builder=MarketSupplyAggregatePayloadBuilder(),
+        gate_workflow=MarketSupplyAggregateGateWorkflow(
+            audit_repository=audit_repository,
+            grant_reader=StaticGrantReader(grant),
+        ),
+    )
+
+    prepared, gate_result = orchestrator.assess_single_owner(
+        MarketSupplyAggregateAssessmentCommand(
+            buyer_organization_id=buyer,
+            base_criteria=base_criteria,
+            requested_quantity=2,
+            privacy_profile=_privacy_profile(),
+            geographic_precision=AggregationGeographicPrecision.REGION,
+            filter_count=1,
+            requested_at=base_criteria.reference_time,
+            audit_id=TypedId.new("market_supply_query_audit"),
+            correlation_id=TypedId.new("correlation"),
+            idempotency_reference="idem-key-1",
+            semantic_request_digest="request:sha256:single-owner",
+        )
+    )
+
+    assert prepared.population.result.included_count == 1
+    assert gate_result.public_response.status is MarketSupplyPublicResponseStatus.RELEASED
+    assert gate_result.aggregate_result is not None
+    assert gate_result.audit_record is not None
+    assert gate_result.audit_record.audit_owner_organization_id == owner
+    assert gate_result.audit_record.candidate_population_digest == (
+        prepared.population.result.snapshots[0].snapshot_digest
+    )
+    assert gate_result.aggregate_result.aggregate_payload["not_evaluated"] == 1
+
+
+def test_market_supply_orchestrator_blocks_multi_owner_release_without_audit_correlation() -> None:
+    buyer = OrganizationId.new()
+    _, _, policy = _artifacts()
+    owner_a = OrganizationId.new()
+    owner_b = OrganizationId.new()
+    base_criteria = CandidatePopulationCriteria(
+        organization_id=buyer,
+        purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=_context(policy).reference_time,
+        knowledge_cutoff=_context(policy).knowledge_cutoff,
+    )
+    criteria_a = CandidatePopulationCriteria(
+        organization_id=owner_a,
+        purpose=base_criteria.purpose,
+        policy_id=base_criteria.policy_id,
+        policy_version=base_criteria.policy_version,
+        reference_time=base_criteria.reference_time,
+        knowledge_cutoff=base_criteria.knowledge_cutoff,
+    )
+    criteria_b = CandidatePopulationCriteria(
+        organization_id=owner_b,
+        purpose=base_criteria.purpose,
+        policy_id=base_criteria.policy_id,
+        policy_version=base_criteria.policy_version,
+        reference_time=base_criteria.reference_time,
+        knowledge_cutoff=base_criteria.knowledge_cutoff,
+    )
+    grants = [
+        _grant(criteria=criteria_a, buyer_organization_id=buyer),
+        _grant(criteria=criteria_b, buyer_organization_id=buyer),
+    ]
+    orchestrator = MarketSupplyAggregateAssessmentOrchestrator(
+        population_composer=AuthorizedCandidatePopulationCompositionService(
+            grant_reader=RecordingGrantReader(grants),
+            subject_reader=RecordingSubjectReader(
+                {
+                    owner_a: (
+                        CandidatePopulationSubject(
+                            subject_id=TypedId.new("animal"),
+                            organization_id=owner_a,
+                            property_id=TypedId.new("rural_property"),
+                            known_at=base_criteria.knowledge_cutoff,
+                        ),
+                    ),
+                    owner_b: (
+                        CandidatePopulationSubject(
+                            subject_id=TypedId.new("animal"),
+                            organization_id=owner_b,
+                            property_id=TypedId.new("rural_property"),
+                            known_at=base_criteria.knowledge_cutoff,
+                        ),
+                    ),
+                }
+            ),
+        ),
+        readiness_composer=MarketSupplyReadinessCompositionService(
+            decision_reader=EmptyDecisionReader(),
+            evaluation_reader=EmptyEvaluationReader(),
+            readiness_service=MarketReadinessService(),
+        ),
+        payload_builder=MarketSupplyAggregatePayloadBuilder(),
+        gate_workflow=MarketSupplyAggregateGateWorkflow(),
+    )
+
+    with pytest.raises(ValueError, match="correlacao auditavel multi-owner"):
+        orchestrator.assess_single_owner(
+            MarketSupplyAggregateAssessmentCommand(
+                buyer_organization_id=buyer,
+                base_criteria=base_criteria,
+                requested_quantity=None,
+                privacy_profile=_privacy_profile(),
+                geographic_precision=AggregationGeographicPrecision.REGION,
+                filter_count=1,
+                requested_at=base_criteria.reference_time,
+                audit_id=TypedId.new("market_supply_query_audit"),
+                correlation_id=TypedId.new("correlation"),
+                idempotency_reference="idem-key-2",
+                semantic_request_digest="request:sha256:multi-owner",
+            )
+        )
