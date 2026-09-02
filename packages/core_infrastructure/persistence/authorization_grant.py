@@ -94,6 +94,18 @@ class AuthorizationGrantRepositoryPort(Protocol):
         """Lista todos os grants recebidos por um beneficiário."""
         ...
 
+    def list_active_by_policy_beneficiary_purpose_scope_at(
+        self,
+        *,
+        policy_id: TypedId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        field_scope_profile: str,
+        requested_at: datetime,
+    ) -> list[AuthorizationGrant]:
+        """Lista grants ativos para uma intenção autorizável específica."""
+        ...
+
     def update_status_to_revoked(
         self,
         grant_id: UUID,
@@ -384,6 +396,76 @@ class TransactionalAuthorizationGrantRepository:
                 """
             ),
             {"beneficiary_org_id": str(beneficiary_organization_id.value)},
+        ).fetchall()
+
+        return [
+            AuthorizationGrant(
+                grant_id=row[0],
+                owner_organization_id=OrganizationId(row[1]),
+                beneficiary_organization_id=OrganizationId(row[2]),
+                policy_id=TypedId("policy", row[3]),
+                policy_version_id=TypedId("policy_version", row[4]),
+                access_purpose=row[5],
+                field_scope_profile=row[6],
+                valid_from=row[7],
+                valid_until=row[8],
+                status=row[9],
+                created_at=row[10],
+                created_by=row[11],
+                revoked_at=row[12],
+                revoked_by=row[13],
+                revocation_reason=row[14],
+            )
+            for row in rows
+        ]
+
+    def list_active_by_policy_beneficiary_purpose_scope_at(
+        self,
+        *,
+        policy_id: TypedId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        field_scope_profile: str,
+        requested_at: datetime,
+    ) -> list[AuthorizationGrant]:
+        rows = self.connection.execute(
+            text(
+                """
+                SELECT
+                    grant_id,
+                    owner_organization_id,
+                    beneficiary_organization_id,
+                    policy_id,
+                    policy_version_id,
+                    access_purpose,
+                    field_scope_profile,
+                    valid_from,
+                    valid_until,
+                    status,
+                    created_at,
+                    created_by,
+                    revoked_at,
+                    revoked_by,
+                    revocation_reason
+                FROM core_audit.authorization_grants
+                WHERE
+                    policy_id = :policy_id
+                    AND beneficiary_organization_id = :beneficiary_org_id
+                    AND access_purpose = :access_purpose
+                    AND field_scope_profile = :field_scope_profile
+                    AND status = 'ATIVO'
+                    AND valid_from <= :requested_at
+                    AND valid_until > :requested_at
+                ORDER BY owner_organization_id, grant_id
+                """
+            ),
+            {
+                "policy_id": str(policy_id.value),
+                "beneficiary_org_id": str(beneficiary_organization_id.value),
+                "access_purpose": access_purpose,
+                "field_scope_profile": field_scope_profile,
+                "requested_at": requested_at,
+            },
         ).fetchall()
 
         return [
