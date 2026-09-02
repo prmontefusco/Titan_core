@@ -8,10 +8,16 @@ from packages.livestock_application.market_readiness import (
 )
 from packages.livestock_application.market_supply import (
     PRODUCER_SIDE_ANALYSIS_BOUNDARY,
+    MarketSupplyAggregatePayloadBuilder,
     ProducerMarketSupplyAnalysisService,
     ProducerMarketSupplyQuestion,
 )
+from packages.livestock_application.market_supply_response import (
+    MarketSupplyPublicResponseMapper,
+    MarketSupplyPublicResponseStatus,
+)
 from tests.livestock_application.test_market_readiness import _artifacts, _context
+from tests.livestock_application.test_market_supply_response import _envelope
 
 
 def test_producer_market_supply_aggregates_readiness_without_new_decision() -> None:
@@ -114,3 +120,84 @@ def test_producer_market_supply_marks_unknown_and_reassessment_limitations() -> 
 def test_producer_market_supply_rejects_invalid_quantity() -> None:
     with pytest.raises(ValueError, match="requested_quantity"):
         ProducerMarketSupplyQuestion(requested_quantity=0)
+
+
+def test_market_supply_aggregate_payload_sums_canonical_readiness_reports() -> None:
+    ready, ready_evaluation, policy = _artifacts()
+    not_ready, not_ready_evaluation, _ = _artifacts(
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+        result=DecisionResult.REJEITADA,
+    )
+    report_a = MarketReadinessService().build_report(
+        context=_context(policy),
+        inputs=(MarketReadinessInput(ready.subject_id, ready, ready_evaluation),),
+    )
+    report_b = MarketReadinessService().build_report(
+        context=_context(policy),
+        inputs=(MarketReadinessInput(not_ready.subject_id, not_ready, not_ready_evaluation),),
+    )
+
+    payload = MarketSupplyAggregatePayloadBuilder().build_from_readiness_reports(
+        reports=(report_a, report_b),
+        requested_quantity=3,
+    )
+
+    assert payload["population_count"] == 2
+    assert payload["ready_now"] == 1
+    assert payload["not_ready"] == 1
+    assert payload["current_capacity"] == 1
+    assert payload["requested_quantity"] == 3
+    assert payload["estimated_shortage_now"] == 2
+    assert payload["readiness_counts"][MarketReadinessStatus.READY.value] == 1
+    assert payload["readiness_counts"][MarketReadinessStatus.NOT_READY.value] == 1
+    assert "derived from MarketReadiness; not a Decision" in payload["limitations"]
+    response = MarketSupplyPublicResponseMapper().map_aggregate(
+        envelope=_envelope(),
+        aggregate_payload=payload,
+    )
+    assert response.status is MarketSupplyPublicResponseStatus.RELEASED
+
+
+def test_market_supply_aggregate_payload_rejects_mixed_temporal_or_policy_context() -> None:
+    decision, evaluation, policy = _artifacts()
+    other_decision, other_evaluation, other_policy = _artifacts()
+    report = MarketReadinessService().build_report(
+        context=_context(policy),
+        inputs=(MarketReadinessInput(decision.subject_id, decision, evaluation),),
+    )
+    other_report = MarketReadinessService().build_report(
+        context=_context(other_policy),
+        inputs=(
+            MarketReadinessInput(
+                other_decision.subject_id,
+                other_decision,
+                other_evaluation,
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="contexto homogeneo"):
+        MarketSupplyAggregatePayloadBuilder().build_from_readiness_reports(
+            reports=(report, other_report),
+            requested_quantity=1,
+        )
+
+
+def test_market_supply_aggregate_payload_keeps_gaps_aggregate_only() -> None:
+    not_ready, not_ready_evaluation, policy = _artifacts(result=DecisionResult.REJEITADA)
+    report = MarketReadinessService().build_report(
+        context=_context(policy),
+        inputs=(MarketReadinessInput(not_ready.subject_id, not_ready, not_ready_evaluation),),
+    )
+
+    payload = MarketSupplyAggregatePayloadBuilder().build_from_readiness_reports(
+        reports=(report,),
+        requested_quantity=None,
+    )
+
+    assert payload["gap_summary"]
+    assert all(set(gap) == {"code", "count"} for gap in payload["gap_summary"])
+    assert {"code": "GENERAL_GAP", "count": 1} in payload["gap_summary"]
+    assert "some gap codes use a public general category" in payload["limitations"]
+    assert str(not_ready.subject_id.value) not in repr(payload["gap_summary"])

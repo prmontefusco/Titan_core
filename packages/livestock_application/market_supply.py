@@ -5,7 +5,9 @@ Policies, emit Decisions, persist reports, expose buyer visibility, or perform
 cross-Organization access.
 """
 
+from collections import Counter
 from dataclasses import dataclass
+from typing import Any
 
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
@@ -115,3 +117,118 @@ def _limitations_from_report(report: MarketReadinessReport) -> tuple[str, ...]:
     if any(entry.status is MarketReadinessStatus.REASSESSMENT_REQUIRED for entry in report.entries):
         limitations.add("population contains subjects requiring reassessment")
     return tuple(sorted(limitations))
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSupplyAggregatePayloadBuilder:
+    """Builds the public aggregate payload from canonical MarketReadiness reports.
+
+    This is not a disclosure decision and not a Policy/Evaluation engine. The
+    returned mapping is still subject to privacy, audit and public response
+    mapping before it can be released externally.
+    """
+
+    def build_from_readiness_reports(
+        self,
+        *,
+        reports: tuple[MarketReadinessReport, ...],
+        requested_quantity: int | None,
+    ) -> dict[str, Any]:
+        if requested_quantity is not None and requested_quantity < 1:
+            raise ValueError("requested_quantity deve ser inteiro >= 1 quando informado.")
+        if not reports:
+            readiness_counts = {status.value: 0 for status in MarketReadinessStatus}
+            return _aggregate_payload(
+                readiness_counts=readiness_counts,
+                requested_quantity=requested_quantity,
+                gap_summary=(),
+                limitations=("no authorized candidate population",),
+            )
+        _assert_homogeneous_context(reports)
+        readiness_counts = {
+            status.value: sum(report.counts.get(status, 0) for report in reports)
+            for status in MarketReadinessStatus
+        }
+        gap_counts: Counter[str] = Counter()
+        limitations = {
+            "derived from MarketReadiness; not a Decision",
+            "not export authorization",
+            "not external authority recognition",
+            "no forecast included",
+            "aggregate summary only",
+        }
+        for report in reports:
+            for gap in report.gap_summary:
+                public_gap_code = _public_gap_code(gap.code)
+                if public_gap_code != gap.code:
+                    limitations.add("some gap codes use a public general category")
+                gap_counts[public_gap_code] += gap.count
+            if any(entry.status is MarketReadinessStatus.NOT_EVALUATED for entry in report.entries):
+                limitations.add("population contains not evaluated subjects")
+            if any(entry.status is MarketReadinessStatus.INDETERMINATE for entry in report.entries):
+                limitations.add("population contains indeterminate subjects")
+            if any(
+                entry.status is MarketReadinessStatus.REASSESSMENT_REQUIRED
+                for entry in report.entries
+            ):
+                limitations.add("population contains subjects requiring reassessment")
+        return _aggregate_payload(
+            readiness_counts=readiness_counts,
+            requested_quantity=requested_quantity,
+            gap_summary=tuple(
+                ProducerMarketSupplyGap(code=code, count=count)
+                for code, count in sorted(gap_counts.items())
+            ),
+            limitations=tuple(sorted(limitations)),
+        )
+
+
+def _assert_homogeneous_context(reports: tuple[MarketReadinessReport, ...]) -> None:
+    first = reports[0].context
+    for report in reports[1:]:
+        context = report.context
+        if (
+            context.purpose != first.purpose
+            or context.policy_id != first.policy_id
+            or context.policy_version != first.policy_version
+            or context.reference_time != first.reference_time
+            or context.knowledge_cutoff != first.knowledge_cutoff
+        ):
+            raise ValueError("Market Supply aggregate exige reports com contexto homogeneo.")
+
+
+def _aggregate_payload(
+    *,
+    readiness_counts: dict[str, int],
+    requested_quantity: int | None,
+    gap_summary: tuple[ProducerMarketSupplyGap, ...],
+    limitations: tuple[str, ...],
+) -> dict[str, Any]:
+    ready_now = readiness_counts[MarketReadinessStatus.READY.value]
+    return {
+        "population_count": sum(readiness_counts.values()),
+        "readiness_counts": readiness_counts,
+        "ready_now": ready_now,
+        "conditioned": readiness_counts[MarketReadinessStatus.CONDITIONED.value],
+        "indeterminate": readiness_counts[MarketReadinessStatus.INDETERMINATE.value],
+        "not_ready": readiness_counts[MarketReadinessStatus.NOT_READY.value],
+        "not_evaluated": readiness_counts[MarketReadinessStatus.NOT_EVALUATED.value],
+        "reassessment_required": readiness_counts[
+            MarketReadinessStatus.REASSESSMENT_REQUIRED.value
+        ],
+        "current_capacity": ready_now,
+        "requested_quantity": requested_quantity,
+        "estimated_shortage_now": (
+            None if requested_quantity is None else max(requested_quantity - ready_now, 0)
+        ),
+        "gap_summary": tuple({"code": gap.code, "count": gap.count} for gap in gap_summary),
+        "limitations": limitations,
+    }
+
+
+def _public_gap_code(code: str) -> str:
+    normalized = code.casefold()
+    blocked_fragments = ("id", "identifier", "producer", "property", "animal")
+    if any(fragment in normalized for fragment in blocked_fragments):
+        return "GENERAL_GAP"
+    return code
