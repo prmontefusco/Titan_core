@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from packages.core_application.idempotency import IdempotencyExecution
 from packages.core_domain.policy_sharing import AuthorizationGrant
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
@@ -43,16 +44,19 @@ from packages.livestock_application.market_supply_privacy import (
     AggregationPrivacyProfile,
     AggregationQueryFingerprint,
 )
+from packages.livestock_application.market_supply_request import MarketSupplyRequestIdentity
 from packages.livestock_application.market_supply_workflow import (
     MarketSupplyAggregateGateRequest,
     MarketSupplyAggregateGateResult,
     MarketSupplyAggregateGateWorkflow,
     MarketSupplyAuditRecordContext,
+    MarketSupplyIdempotentAggregateGateWorkflow,
 )
 from packages.shared_kernel import (
     CanonicalSerializer,
     OrganizationId,
     TypedId,
+    UniversalReference,
     canonicalize_for_hash,
 )
 from packages.shared_kernel.temporal import require_utc
@@ -354,6 +358,12 @@ class MarketSupplyPreparedAggregateAssessment:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketSupplyPreparedAggregateGateRequest:
+    assessment: MarketSupplyPreparedAggregateAssessment
+    request: MarketSupplyAggregateGateRequest
+
+
+@dataclass(frozen=True, slots=True)
 class MarketSupplyAggregateAssessmentOrchestrator:
     """Application orchestration for the auditable F3.5 aggregate pipeline."""
 
@@ -361,6 +371,7 @@ class MarketSupplyAggregateAssessmentOrchestrator:
     readiness_composer: MarketSupplyReadinessCompositionService
     payload_builder: MarketSupplyAggregatePayloadBuilder
     gate_workflow: MarketSupplyAggregateGateWorkflow
+    idempotent_gate_workflow: MarketSupplyIdempotentAggregateGateWorkflow | None = None
 
     def prepare(
         self,
@@ -386,6 +397,32 @@ class MarketSupplyAggregateAssessmentOrchestrator:
         self,
         command: MarketSupplyAggregateAssessmentCommand,
     ) -> tuple[MarketSupplyPreparedAggregateAssessment, MarketSupplyAggregateGateResult]:
+        prepared_gate = self.build_single_owner_gate_request(command)
+        result = self.gate_workflow.assess_aggregate_access(prepared_gate.request)
+        return prepared_gate.assessment, result
+
+    def execute_idempotent_single_owner(
+        self,
+        *,
+        command: MarketSupplyAggregateAssessmentCommand,
+        identity: MarketSupplyRequestIdentity,
+        principal_reference: UniversalReference,
+    ) -> tuple[MarketSupplyPreparedAggregateAssessment, IdempotencyExecution]:
+        if self.idempotent_gate_workflow is None:
+            raise ValueError("idempotent_gate_workflow e obrigatorio para execucao idempotente.")
+        prepared_gate = self.build_single_owner_gate_request(command)
+        execution = self.idempotent_gate_workflow.execute(
+            identity=identity,
+            principal_reference=principal_reference,
+            requested_at=command.requested_at,
+            request=prepared_gate.request,
+        )
+        return prepared_gate.assessment, execution
+
+    def build_single_owner_gate_request(
+        self,
+        command: MarketSupplyAggregateAssessmentCommand,
+    ) -> MarketSupplyPreparedAggregateGateRequest:
         prepared = self.prepare(command)
         accepted = prepared.population.result.accepted_contributions
         if len(accepted) != 1:
@@ -438,8 +475,9 @@ class MarketSupplyAggregateAssessmentOrchestrator:
             semantic_request_digest=command.semantic_request_digest,
             population_digest=universe.population_digest,
         )
-        result = self.gate_workflow.assess_aggregate_access(
-            MarketSupplyAggregateGateRequest(
+        return MarketSupplyPreparedAggregateGateRequest(
+            assessment=prepared,
+            request=MarketSupplyAggregateGateRequest(
                 audit_owner_organization_id=contribution.owner_organization_id,
                 authorization_request=authorization_request,
                 query_policy_id=snapshot.criteria.policy_id,
@@ -450,9 +488,9 @@ class MarketSupplyAggregateAssessmentOrchestrator:
                 privacy_input=privacy_input,
                 aggregate_payload=prepared.aggregate_payload,
                 audit_record_context=audit_context,
-            )
+                request_candidate_criteria_digest=command.base_criteria.digest(),
+            ),
         )
-        return prepared, result
 
 
 def _authorization_context_digest(grant: AuthorizationGrant) -> str:

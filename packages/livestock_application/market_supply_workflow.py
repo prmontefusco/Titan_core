@@ -117,6 +117,7 @@ class MarketSupplyAggregateGateRequest:
     privacy_input: AggregationPrivacyInput | None = None
     aggregate_payload: Mapping[str, Any] | None = None
     audit_record_context: MarketSupplyAuditRecordContext | None = None
+    request_candidate_criteria_digest: str | None = None
 
     def __post_init__(self) -> None:
         if self.audit_owner_organization_id != self.authorization_request.owner_organization_id:
@@ -159,6 +160,11 @@ class MarketSupplyAggregateGateRequest:
                 query_fingerprint=self.query_fingerprint,
                 population_snapshot=self.population_snapshot,
             )
+        if (
+            self.request_candidate_criteria_digest is not None
+            and not self.request_candidate_criteria_digest.strip()
+        ):
+            raise ValueError("request_candidate_criteria_digest deve ser texto nao vazio.")
         require_utc(self.recorded_at, field_name="recorded_at")
 
 
@@ -521,7 +527,10 @@ def _validate_idempotent_workflow_identity(
     if request.population_snapshot is not None:
         if identity.policy_version != request.population_snapshot.criteria.policy_version:
             raise ValueError("MarketSupplyRequestIdentity policy_version diverge da snapshot.")
-        if identity.candidate_criteria_digest != request.population_snapshot.criteria_digest:
+        expected_criteria_digest = (
+            request.request_candidate_criteria_digest or request.population_snapshot.criteria_digest
+        )
+        if identity.candidate_criteria_digest != expected_criteria_digest:
             raise ValueError("MarketSupplyRequestIdentity criteria digest diverge da snapshot.")
     if request.audit_record_context is not None:
         if identity.policy_version != request.audit_record_context.policy_version:

@@ -3,6 +3,9 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from packages.core_application import IdempotencyService
+from packages.core_application.idempotency import IdempotencyRequest, StoredIdempotencyResult
+from packages.core_domain import CanonicalPayload
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.policy_sharing import AuthorizationGrant
@@ -39,14 +42,19 @@ from packages.livestock_application.market_supply_privacy import (
     AggregationPrivacyPolicy,
     AggregationPrivacyProfile,
 )
+from packages.livestock_application.market_supply_request import (
+    CommercialDemandContext,
+    MarketSupplyIdempotencyGate,
+)
 from packages.livestock_application.market_supply_response import (
     MarketSupplyPublicResponseMapper,
     MarketSupplyPublicResponseStatus,
 )
 from packages.livestock_application.market_supply_workflow import (
     MarketSupplyAggregateGateWorkflow,
+    MarketSupplyIdempotentAggregateGateWorkflow,
 )
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from tests.livestock_application.test_market_readiness import _artifacts, _context
 from tests.livestock_application.test_market_supply_response import _envelope
 
@@ -333,6 +341,31 @@ class StaticGrantReader:
         return self.grant if grant_id == self.grant.grant_id else None
 
 
+class InMemoryIdempotencyStore:
+    def __init__(self) -> None:
+        self.records: dict[tuple[str, str, str], StoredIdempotencyResult] = {}
+
+    def acquire(self, request: IdempotencyRequest) -> StoredIdempotencyResult | None:
+        scope = (request.key, request.purpose, request.operation)
+        existing = self.records.get(scope)
+        if existing is None:
+            self.records[scope] = StoredIdempotencyResult(
+                request.intent_digest,
+                None,
+                None,
+                None,
+            )
+        return existing
+
+    def complete(self, request: IdempotencyRequest, result: CanonicalPayload) -> None:
+        self.records[(request.key, request.purpose, request.operation)] = StoredIdempotencyResult(
+            request.intent_digest,
+            result.schema,
+            result.version,
+            result.canonical_bytes,
+        )
+
+
 def _grant(
     *,
     criteria: CandidatePopulationCriteria,
@@ -365,6 +398,14 @@ def _privacy_profile() -> AggregationPrivacyProfile:
             max_filter_count_without_review=4,
             repeated_query_window=timedelta(minutes=10),
         ),
+    )
+
+
+def _principal(organization_id: OrganizationId) -> UniversalReference:
+    return UniversalReference(
+        target_id=TypedId.new("user"),
+        organization_id=organization_id,
+        contract_version=1,
     )
 
 
@@ -438,6 +479,119 @@ def test_market_supply_orchestrator_releases_single_owner_after_snapshot_and_aud
         prepared.population.result.snapshots[0].snapshot_digest
     )
     assert gate_result.aggregate_result.aggregate_payload["not_evaluated"] == 1
+
+
+def test_market_supply_orchestrator_replays_idempotent_single_owner_without_new_audit() -> None:
+    buyer = OrganizationId.new()
+    _, _, policy = _artifacts()
+    owner = policy.organization_id
+    context = _context(policy)
+    base_criteria = CandidatePopulationCriteria(
+        organization_id=buyer,
+        purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=context.reference_time,
+        knowledge_cutoff=context.knowledge_cutoff,
+    )
+    owner_criteria = CandidatePopulationCriteria(
+        organization_id=owner,
+        purpose=base_criteria.purpose,
+        policy_id=base_criteria.policy_id,
+        policy_version=base_criteria.policy_version,
+        reference_time=base_criteria.reference_time,
+        knowledge_cutoff=base_criteria.knowledge_cutoff,
+    )
+    grant = _grant(criteria=owner_criteria, buyer_organization_id=buyer)
+    audit_repository = InMemoryMarketSupplyQueryAuditRepository()
+    gate_workflow = MarketSupplyAggregateGateWorkflow(
+        audit_repository=audit_repository,
+        grant_reader=StaticGrantReader(grant),
+    )
+    orchestrator = MarketSupplyAggregateAssessmentOrchestrator(
+        population_composer=AuthorizedCandidatePopulationCompositionService(
+            grant_reader=RecordingGrantReader([grant]),
+            subject_reader=RecordingSubjectReader(
+                {
+                    owner: (
+                        CandidatePopulationSubject(
+                            subject_id=TypedId.new("animal"),
+                            organization_id=owner,
+                            property_id=TypedId.new("rural_property"),
+                            known_at=base_criteria.knowledge_cutoff,
+                        ),
+                    )
+                }
+            ),
+        ),
+        readiness_composer=MarketSupplyReadinessCompositionService(
+            decision_reader=EmptyDecisionReader(),
+            evaluation_reader=EmptyEvaluationReader(),
+            readiness_service=MarketReadinessService(),
+        ),
+        payload_builder=MarketSupplyAggregatePayloadBuilder(),
+        gate_workflow=gate_workflow,
+        idempotent_gate_workflow=MarketSupplyIdempotentAggregateGateWorkflow(
+            workflow=gate_workflow,
+            idempotency_gate=MarketSupplyIdempotencyGate(
+                IdempotencyService(InMemoryIdempotencyStore())
+            ),
+        ),
+    )
+    demand = CommercialDemandContext(
+        buyer_organization_id=buyer,
+        purpose=base_criteria.purpose,
+        policy_id=base_criteria.policy_id,
+        policy_version=base_criteria.policy_version,
+        requested_quantity=2,
+        commercial_window_from=context.reference_time,
+        commercial_window_until=context.reference_time + timedelta(days=7),
+    )
+    identity = demand.to_request_identity(
+        candidate_criteria_digest=base_criteria.digest(),
+        reference_time=base_criteria.reference_time,
+        knowledge_cutoff=base_criteria.knowledge_cutoff,
+        idempotency_key="idem-key-replay",
+    )
+    command = MarketSupplyAggregateAssessmentCommand(
+        buyer_organization_id=buyer,
+        base_criteria=base_criteria,
+        requested_quantity=2,
+        privacy_profile=_privacy_profile(),
+        geographic_precision=AggregationGeographicPrecision.REGION,
+        filter_count=1,
+        requested_at=base_criteria.reference_time,
+        audit_id=TypedId.new("market_supply_query_audit"),
+        correlation_id=TypedId.new("correlation"),
+        idempotency_reference=identity.idempotency_key,
+        semantic_request_digest=identity.semantic_digest(),
+    )
+
+    _, first = orchestrator.execute_idempotent_single_owner(
+        command=command,
+        identity=identity,
+        principal_reference=_principal(buyer),
+    )
+    _, replay = orchestrator.execute_idempotent_single_owner(
+        command=command,
+        identity=identity,
+        principal_reference=_principal(buyer),
+    )
+
+    assert first.replayed is False
+    assert replay.replayed is True
+    assert replay.result_canonical_bytes == first.result_canonical_bytes
+    assert (
+        len(
+            audit_repository.find_related_query_fingerprints(
+                requester_organization_id=buyer,
+                beneficiary_organization_id=buyer,
+                access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+                policy_context_digest=owner_criteria.policy_context_digest(),
+            )
+        )
+        == 1
+    )
 
 
 def test_market_supply_orchestrator_blocks_multi_owner_release_without_audit_correlation() -> None:
