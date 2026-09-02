@@ -1,6 +1,7 @@
 import pytest
 
-from packages.core_domain.decision import DecisionResult
+from packages.core_domain.decision import Decision, DecisionResult
+from packages.core_domain.evaluation import Evaluation
 from packages.livestock_application.market_readiness import (
     MarketReadinessInput,
     MarketReadinessService,
@@ -9,13 +10,21 @@ from packages.livestock_application.market_readiness import (
 from packages.livestock_application.market_supply import (
     PRODUCER_SIDE_ANALYSIS_BOUNDARY,
     MarketSupplyAggregatePayloadBuilder,
+    MarketSupplyReadinessCompositionService,
     ProducerMarketSupplyAnalysisService,
     ProducerMarketSupplyQuestion,
+)
+from packages.livestock_application.market_supply_population import (
+    AuthorizedCandidatePopulationResult,
+    CandidatePopulationCriteria,
+    CandidatePopulationResolver,
+    CandidatePopulationSubject,
 )
 from packages.livestock_application.market_supply_response import (
     MarketSupplyPublicResponseMapper,
     MarketSupplyPublicResponseStatus,
 )
+from packages.shared_kernel import OrganizationId, TypedId
 from tests.livestock_application.test_market_readiness import _artifacts, _context
 from tests.livestock_application.test_market_supply_response import _envelope
 
@@ -201,3 +210,55 @@ def test_market_supply_aggregate_payload_keeps_gaps_aggregate_only() -> None:
     assert {"code": "GENERAL_GAP", "count": 1} in payload["gap_summary"]
     assert "some gap codes use a public general category" in payload["limitations"]
     assert str(not_ready.subject_id.value) not in repr(payload["gap_summary"])
+
+
+class EmptyDecisionReader:
+    def list_by_subject(
+        self,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+    ) -> list[Decision]:
+        return []
+
+
+class EmptyEvaluationReader:
+    def get_by_id(self, evaluation_id: TypedId) -> Evaluation | None:
+        return None
+
+
+def test_market_supply_readiness_composition_builds_owner_scoped_reports_from_snapshots() -> None:
+    _, _, policy = _artifacts()
+    criteria = CandidatePopulationCriteria(
+        organization_id=policy.organization_id,
+        purpose="MARKET_SUPPLY_AGGREGATE_ASSESSMENT",
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=_context(policy).reference_time,
+        knowledge_cutoff=_context(policy).knowledge_cutoff,
+    )
+    subject = CandidatePopulationSubject(
+        subject_id=_artifacts(organization_id=policy.organization_id)[0].subject_id,
+        organization_id=policy.organization_id,
+        known_at=_context(policy).knowledge_cutoff,
+    )
+    snapshot = CandidatePopulationResolver().resolve(
+        criteria=criteria,
+        subjects=(subject,),
+        resolved_at=_context(policy).knowledge_cutoff,
+    )
+
+    reports = MarketSupplyReadinessCompositionService(
+        decision_reader=EmptyDecisionReader(),
+        evaluation_reader=EmptyEvaluationReader(),
+        readiness_service=MarketReadinessService(),
+    ).build_reports(
+        population_result=AuthorizedCandidatePopulationResult(
+            snapshots=(snapshot,),
+            rejected_contributions=(),
+        ),
+    )
+
+    assert len(reports) == 1
+    assert reports[0].context.organization_id == policy.organization_id
+    assert reports[0].context.policy_id == policy.policy_id
+    assert reports[0].counts[MarketReadinessStatus.NOT_EVALUATED] == 1

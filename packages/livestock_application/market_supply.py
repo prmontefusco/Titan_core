@@ -11,9 +11,17 @@ from typing import Any
 
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
+    MarketReadinessContext,
+    MarketReadinessDecisionReaderPort,
+    MarketReadinessEvaluationReaderPort,
     MarketReadinessGapSummary,
+    MarketReadinessPopulationReader,
     MarketReadinessReport,
+    MarketReadinessService,
     MarketReadinessStatus,
+)
+from packages.livestock_application.market_supply_population import (
+    AuthorizedCandidatePopulationResult,
 )
 
 PRODUCER_SIDE_ANALYSIS_BOUNDARY = "PRODUCER_SIDE_SINGLE_ORGANIZATION_ANALYSIS"
@@ -232,3 +240,40 @@ def _public_gap_code(code: str) -> str:
     if any(fragment in normalized for fragment in blocked_fragments):
         return "GENERAL_GAP"
     return code
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSupplyReadinessCompositionService:
+    """Builds MarketReadiness reports for authorized owner-scoped snapshots."""
+
+    decision_reader: MarketReadinessDecisionReaderPort
+    evaluation_reader: MarketReadinessEvaluationReaderPort
+    readiness_service: MarketReadinessService
+
+    def build_reports(
+        self,
+        *,
+        population_result: AuthorizedCandidatePopulationResult,
+    ) -> tuple[MarketReadinessReport, ...]:
+        reports: list[MarketReadinessReport] = []
+        for snapshot in population_result.snapshots:
+            criteria = snapshot.criteria
+            context = MarketReadinessContext(
+                organization_id=criteria.organization_id,
+                purpose=criteria.purpose,
+                policy_id=criteria.policy_id,
+                policy_version=criteria.policy_version,
+                reference_time=criteria.reference_time,
+                knowledge_cutoff=criteria.knowledge_cutoff,
+            )
+            reports.append(
+                MarketReadinessPopulationReader(
+                    decision_repository=self.decision_reader,
+                    evaluation_repository=self.evaluation_reader,
+                    readiness_service=self.readiness_service,
+                ).build_for_animals(
+                    context=context,
+                    animal_ids=snapshot.included_subject_ids,
+                )
+            )
+        return tuple(reports)
