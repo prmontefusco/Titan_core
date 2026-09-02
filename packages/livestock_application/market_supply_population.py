@@ -4,9 +4,12 @@ The resolver is intentionally in-memory. It receives candidate subjects already
 available to the caller and never reads herd data, databases or other tenants.
 """
 
+from __future__ import annotations
+
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
+from typing import Protocol
 
 from packages.core_domain.policy_sharing import AuthorizationGrant
 from packages.livestock_application.market_supply_authorization import (
@@ -266,6 +269,87 @@ class AuthorizedCandidatePopulationResult:
     @property
     def rejected_subject_count(self) -> int:
         return sum(item.subject_count for item in self.rejected_contributions)
+
+
+class ActiveAuthorizationGrantReaderPort(Protocol):
+    def list_active_by_policy_beneficiary_purpose_scope_at(
+        self,
+        *,
+        policy_id: TypedId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        field_scope_profile: str,
+        requested_at: datetime,
+    ) -> list[AuthorizationGrant]: ...
+
+
+class OwnerScopedCandidateSubjectReaderPort(Protocol):
+    def list_subjects(
+        self,
+        *,
+        criteria: CandidatePopulationCriteria,
+    ) -> tuple[CandidatePopulationSubject, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class AuthorizedCandidatePopulationComposition:
+    grants_considered: int
+    result: AuthorizedCandidatePopulationResult
+
+
+class AuthorizedCandidatePopulationCompositionService:
+    """Builds owner-scoped candidate contributions from existing grants.
+
+    The service does not perform global Animal lookup and does not make a
+    disclosure decision. Subject access remains delegated to an owner-scoped
+    reader, so RLS/context handling stays explicit at the adapter boundary.
+    """
+
+    def __init__(
+        self,
+        *,
+        grant_reader: ActiveAuthorizationGrantReaderPort,
+        subject_reader: OwnerScopedCandidateSubjectReaderPort,
+        population_resolver: AuthorizedCandidatePopulationResolver | None = None,
+    ) -> None:
+        self._grant_reader = grant_reader
+        self._subject_reader = subject_reader
+        self._population_resolver = population_resolver or AuthorizedCandidatePopulationResolver()
+
+    def compose(
+        self,
+        *,
+        buyer_organization_id: OrganizationId,
+        base_criteria: CandidatePopulationCriteria,
+        requested_at: datetime,
+    ) -> AuthorizedCandidatePopulationComposition:
+        require_utc(requested_at, field_name="requested_at")
+        grants = self._grant_reader.list_active_by_policy_beneficiary_purpose_scope_at(
+            policy_id=base_criteria.policy_id,
+            beneficiary_organization_id=buyer_organization_id,
+            access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+            field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+            requested_at=requested_at,
+        )
+        contributions: list[AuthorizedCandidatePopulationContribution] = []
+        for grant in grants:
+            owner_criteria = replace(base_criteria, organization_id=grant.owner_organization_id)
+            contributions.append(
+                AuthorizedCandidatePopulationContribution(
+                    criteria=owner_criteria,
+                    subjects=self._subject_reader.list_subjects(criteria=owner_criteria),
+                    grant=grant,
+                )
+            )
+
+        return AuthorizedCandidatePopulationComposition(
+            grants_considered=len(grants),
+            result=self._population_resolver.resolve_authorized(
+                buyer_organization_id=buyer_organization_id,
+                contributions=tuple(contributions),
+                resolved_at=requested_at,
+            ),
+        )
 
 
 class CandidatePopulationResolver:

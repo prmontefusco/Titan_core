@@ -11,6 +11,7 @@ from packages.livestock_application.market_supply_authorization import (
     MarketSupplyAuthorizationReason,
 )
 from packages.livestock_application.market_supply_population import (
+    AuthorizedCandidatePopulationCompositionService,
     AuthorizedCandidatePopulationContribution,
     AuthorizedCandidatePopulationRejection,
     AuthorizedCandidatePopulationResolver,
@@ -374,3 +375,125 @@ def test_authorized_population_resolver_rejects_owner_mismatch_before_snapshot()
     assert result.rejected_contributions[0].reason is (
         MarketSupplyAuthorizationReason.OWNER_ORGANIZATION_MISMATCH
     )
+
+
+class RecordingGrantReader:
+    def __init__(self, grants: list[AuthorizationGrant]) -> None:
+        self.grants = grants
+        self.calls: list[dict[str, object]] = []
+
+    def list_active_by_policy_beneficiary_purpose_scope_at(
+        self,
+        *,
+        policy_id: TypedId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        field_scope_profile: str,
+        requested_at: datetime,
+    ) -> list[AuthorizationGrant]:
+        self.calls.append(
+            {
+                "policy_id": policy_id,
+                "beneficiary_organization_id": beneficiary_organization_id,
+                "access_purpose": access_purpose,
+                "field_scope_profile": field_scope_profile,
+                "requested_at": requested_at,
+            }
+        )
+        return self.grants
+
+
+class RecordingSubjectReader:
+    def __init__(
+        self,
+        subjects_by_owner: dict[OrganizationId, tuple[CandidatePopulationSubject, ...]],
+    ) -> None:
+        self.subjects_by_owner = subjects_by_owner
+        self.criteria_seen: list[CandidatePopulationCriteria] = []
+
+    def list_subjects(
+        self,
+        *,
+        criteria: CandidatePopulationCriteria,
+    ) -> tuple[CandidatePopulationSubject, ...]:
+        self.criteria_seen.append(criteria)
+        return self.subjects_by_owner.get(criteria.organization_id, ())
+
+
+def test_authorized_population_composition_reads_owner_scoped_subjects_from_active_grants() -> None:
+    buyer = OrganizationId.new()
+    base_criteria = _criteria(organization_id=buyer)
+    owner_a = OrganizationId.new()
+    owner_b = OrganizationId.new()
+    criteria_a = replace(base_criteria, organization_id=owner_a)
+    criteria_b = replace(base_criteria, organization_id=owner_b)
+    grants = [
+        _grant(criteria=criteria_a, buyer_organization_id=buyer),
+        _grant(criteria=criteria_b, buyer_organization_id=buyer),
+    ]
+    subject_reader = RecordingSubjectReader(
+        {
+            owner_a: (_subject(criteria_a),),
+            owner_b: (_subject(criteria_b),),
+        }
+    )
+    grant_reader = RecordingGrantReader(grants)
+
+    composition = AuthorizedCandidatePopulationCompositionService(
+        grant_reader=grant_reader,
+        subject_reader=subject_reader,
+    ).compose(
+        buyer_organization_id=buyer,
+        base_criteria=base_criteria,
+        requested_at=NOW,
+    )
+
+    assert composition.grants_considered == 2
+    assert composition.result.included_count == 2
+    assert composition.result.rejected_contributions == ()
+    assert grant_reader.calls == [
+        {
+            "policy_id": base_criteria.policy_id,
+            "beneficiary_organization_id": buyer,
+            "access_purpose": MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+            "field_scope_profile": MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+            "requested_at": NOW,
+        }
+    ]
+    assert [criteria.organization_id for criteria in subject_reader.criteria_seen] == [
+        owner_a,
+        owner_b,
+    ]
+    assert all(
+        criteria.policy_id == base_criteria.policy_id for criteria in subject_reader.criteria_seen
+    )
+    assert all(
+        criteria.reference_time == base_criteria.reference_time
+        for criteria in subject_reader.criteria_seen
+    )
+    assert all(
+        criteria.knowledge_cutoff == base_criteria.knowledge_cutoff
+        for criteria in subject_reader.criteria_seen
+    )
+    assert all(
+        criteria.commercial_window_start == base_criteria.commercial_window_start
+        for criteria in subject_reader.criteria_seen
+    )
+
+
+def test_authorized_population_composition_without_active_grants_returns_empty_result() -> None:
+    buyer = OrganizationId.new()
+    base_criteria = _criteria(organization_id=buyer)
+
+    composition = AuthorizedCandidatePopulationCompositionService(
+        grant_reader=RecordingGrantReader([]),
+        subject_reader=RecordingSubjectReader({}),
+    ).compose(
+        buyer_organization_id=buyer,
+        base_criteria=base_criteria,
+        requested_at=NOW,
+    )
+
+    assert composition.grants_considered == 0
+    assert composition.result.snapshots == ()
+    assert composition.result.rejected_contributions == ()
