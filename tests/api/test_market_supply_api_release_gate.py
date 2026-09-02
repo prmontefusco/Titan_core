@@ -10,7 +10,14 @@ from pytest import MonkeyPatch
 
 import apps.api.main as main_module
 from apps.api import livestock_market_supply as market_supply_api
-from packages.core_domain import AuthenticatedPrincipal, OrganizationContext, PrincipalType
+from apps.api.livestock_dependencies import request_connection
+from packages.core_application.idempotency import IdempotencyExecution
+from packages.core_domain import (
+    AuthenticatedPrincipal,
+    CanonicalPayload,
+    OrganizationContext,
+    PrincipalType,
+)
 from packages.livestock_application.authorization import MARKET_SUPPLY_AGGREGATE_ASSESS
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -80,6 +87,17 @@ def _configure_privacy_profile(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setenv("TITAN_MARKET_SUPPLY_PRIVACY_REPEATED_QUERY_WINDOW_SECONDS", "60")
 
 
+def _fake_connection() -> object:
+    return object()
+
+
+def _override_context_and_connection() -> None:
+    main_module.app.dependency_overrides[
+        market_supply_api.require_market_supply_aggregate_assess
+    ] = _context
+    main_module.app.dependency_overrides[request_connection] = _fake_connection
+
+
 def test_market_supply_aggregate_route_is_absent_by_default(
     monkeypatch: MonkeyPatch,
 ) -> None:
@@ -111,9 +129,7 @@ def test_market_supply_aggregate_route_fails_closed_without_privacy_profile(
 ) -> None:
     monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
     importlib.reload(main_module)
-    main_module.app.dependency_overrides[
-        market_supply_api.require_market_supply_aggregate_assess
-    ] = _context
+    _override_context_and_connection()
 
     response = TestClient(main_module.app).post(
         ROUTE,
@@ -134,9 +150,7 @@ def test_market_supply_aggregate_route_fails_closed_until_pipeline_is_enabled(
     monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
     _configure_privacy_profile(monkeypatch)
     importlib.reload(main_module)
-    main_module.app.dependency_overrides[
-        market_supply_api.require_market_supply_aggregate_assess
-    ] = _context
+    _override_context_and_connection()
 
     response = TestClient(main_module.app).post(
         ROUTE,
@@ -156,9 +170,7 @@ def test_market_supply_aggregate_route_requires_idempotency_key_after_auth(
 ) -> None:
     monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
     importlib.reload(main_module)
-    main_module.app.dependency_overrides[
-        market_supply_api.require_market_supply_aggregate_assess
-    ] = _context
+    _override_context_and_connection()
 
     response = TestClient(main_module.app).post(ROUTE, json=_valid_body())
 
@@ -170,9 +182,7 @@ def test_market_supply_aggregate_route_validates_idempotency_key_format(
 ) -> None:
     monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
     importlib.reload(main_module)
-    main_module.app.dependency_overrides[
-        market_supply_api.require_market_supply_aggregate_assess
-    ] = _context
+    _override_context_and_connection()
 
     response = TestClient(main_module.app).post(
         ROUTE,
@@ -189,9 +199,7 @@ def test_market_supply_aggregate_route_requires_utc_temporal_coordinates(
 ) -> None:
     monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
     importlib.reload(main_module)
-    main_module.app.dependency_overrides[
-        market_supply_api.require_market_supply_aggregate_assess
-    ] = _context
+    _override_context_and_connection()
     body = _valid_body()
     body["reference_time"] = "2026-08-31T00:00:00-04:00"
 
@@ -210,9 +218,7 @@ def test_market_supply_aggregate_route_rejects_invalid_request_context(
 ) -> None:
     monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
     importlib.reload(main_module)
-    main_module.app.dependency_overrides[
-        market_supply_api.require_market_supply_aggregate_assess
-    ] = _context
+    _override_context_and_connection()
     body = _valid_body()
     body["commercial_window"] = {
         "from": "2026-10-15T00:00:00Z",
@@ -227,3 +233,70 @@ def test_market_supply_aggregate_route_rejects_invalid_request_context(
 
     assert response.status_code == 422
     assert response.json()["reason_code"] == "MARKET_SUPPLY_REQUEST_INVALIDA"
+
+
+def test_market_supply_aggregate_route_executes_feature_flagged_pipeline(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    class FakeOrchestrator:
+        def execute_idempotent_single_owner(
+            self,
+            **kwargs: object,
+        ) -> tuple[None, IdempotencyExecution]:
+            payload = CanonicalPayload.from_mapping(
+                schema="market_supply.public_aggregate_response",
+                version=1,
+                value={
+                    "status": "RELEASED",
+                    "aggregate": {
+                        "population_count": 1,
+                        "readiness_counts": {
+                            "READY": 1,
+                            "CONDITIONED": 0,
+                            "INDETERMINATE": 0,
+                            "NOT_READY": 0,
+                            "NOT_EVALUATED": 0,
+                            "REASSESSMENT_REQUIRED": 0,
+                        },
+                        "ready_now": 1,
+                        "conditioned": 0,
+                        "indeterminate": 0,
+                        "not_ready": 0,
+                        "not_evaluated": 0,
+                        "reassessment_required": 0,
+                        "current_capacity": 1,
+                        "requested_quantity": 8000,
+                        "estimated_shortage_now": 7999,
+                        "gap_summary": (),
+                        "limitations": ("aggregate summary only",),
+                    },
+                },
+            )
+            return None, IdempotencyExecution(
+                payload.schema,
+                payload.version,
+                payload.canonical_bytes,
+                False,
+            )
+
+    monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
+    monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_PIPELINE_ENABLED", "true")
+    _configure_privacy_profile(monkeypatch)
+    importlib.reload(main_module)
+    _override_context_and_connection()
+    monkeypatch.setattr(
+        market_supply_api,
+        "_build_orchestrator",
+        lambda connection: FakeOrchestrator(),
+    )
+
+    response = TestClient(main_module.app).post(
+        ROUTE,
+        headers={"Idempotency-Key": "market-supply-test-key"},
+        json=_valid_body(),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json()["status"] == "RELEASED"
+    assert response.json()["aggregate"]["ready_now"] == 1
