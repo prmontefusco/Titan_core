@@ -317,6 +317,14 @@ def test_authorized_population_resolver_snapshots_only_grant_authorized_contribu
     assert result.rejected_subject_count == 1
     assert len(result.snapshots) == 1
     assert result.snapshots[0].criteria.organization_id == authorized_criteria.organization_id
+    assert len(result.accepted_contributions) == 1
+    assert result.accepted_contributions[0].owner_organization_id == (
+        authorized_criteria.organization_id
+    )
+    assert result.accepted_contributions[0].grant.owner_organization_id == (
+        authorized_criteria.organization_id
+    )
+    assert result.accepted_contributions[0].snapshot == result.snapshots[0]
     assert result.rejected_contributions == (
         AuthorizedCandidatePopulationRejection(
             owner_organization_id=unauthorized_criteria.organization_id,
@@ -451,6 +459,14 @@ def test_authorized_population_composition_reads_owner_scoped_subjects_from_acti
     assert composition.grants_considered == 2
     assert composition.result.included_count == 2
     assert composition.result.rejected_contributions == ()
+    assert [
+        contribution.owner_organization_id
+        for contribution in composition.result.accepted_contributions
+    ] == [owner_a, owner_b]
+    assert [
+        contribution.snapshot.criteria.organization_id
+        for contribution in composition.result.accepted_contributions
+    ] == [owner_a, owner_b]
     assert grant_reader.calls == [
         {
             "policy_id": base_criteria.policy_id,
@@ -497,3 +513,4 @@ def test_authorized_population_composition_without_active_grants_returns_empty_r
     assert composition.grants_considered == 0
     assert composition.result.snapshots == ()
     assert composition.result.rejected_contributions == ()
+    assert composition.result.accepted_contributions == ()

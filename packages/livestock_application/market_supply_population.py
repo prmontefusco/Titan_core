@@ -258,9 +258,17 @@ class AuthorizedCandidatePopulationRejection:
 
 
 @dataclass(frozen=True, slots=True)
+class AuthorizedCandidatePopulationAcceptedContribution:
+    owner_organization_id: OrganizationId
+    grant: AuthorizationGrant
+    snapshot: CandidatePopulationSnapshot
+
+
+@dataclass(frozen=True, slots=True)
 class AuthorizedCandidatePopulationResult:
     snapshots: tuple[CandidatePopulationSnapshot, ...]
     rejected_contributions: tuple[AuthorizedCandidatePopulationRejection, ...]
+    accepted_contributions: tuple[AuthorizedCandidatePopulationAcceptedContribution, ...] = ()
 
     @property
     def included_count(self) -> int:
@@ -445,6 +453,7 @@ class AuthorizedCandidatePopulationResolver:
         require_utc(resolved_at, field_name="resolved_at")
         snapshots: list[CandidatePopulationSnapshot] = []
         rejected: list[AuthorizedCandidatePopulationRejection] = []
+        accepted: list[AuthorizedCandidatePopulationAcceptedContribution] = []
 
         for contribution in contributions:
             request = MarketSupplyAuthorizationRequest(
@@ -468,17 +477,26 @@ class AuthorizedCandidatePopulationResolver:
                     ),
                 )
                 continue
-            snapshots.append(
-                self._population_resolver.resolve(
-                    criteria=contribution.criteria,
-                    subjects=contribution.subjects,
-                    resolved_at=resolved_at,
-                )
+            snapshot = self._population_resolver.resolve(
+                criteria=contribution.criteria,
+                subjects=contribution.subjects,
+                resolved_at=resolved_at,
+            )
+            snapshots.append(snapshot)
+            if contribution.grant is None:
+                raise RuntimeError("contribuicao autorizada sem grant nao deveria ocorrer.")
+            accepted.append(
+                AuthorizedCandidatePopulationAcceptedContribution(
+                    owner_organization_id=contribution.criteria.organization_id,
+                    grant=contribution.grant,
+                    snapshot=snapshot,
+                ),
             )
 
         return AuthorizedCandidatePopulationResult(
             snapshots=tuple(snapshots),
             rejected_contributions=tuple(rejected),
+            accepted_contributions=tuple(accepted),
         )
 
 
