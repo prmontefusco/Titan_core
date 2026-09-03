@@ -22,6 +22,7 @@ import { AnimalTimeline } from './pages/AnimalTimeline'
 import { TreatmentForm } from './pages/TreatmentForm'
 import { AnimalEligibility } from './pages/AnimalEligibility'
 import { MarketMatrix } from './pages/MarketMatrix'
+import { MarketSupplyAggregate } from './pages/MarketSupplyAggregate'
 import { CommercialExplanation } from './pages/CommercialExplanation'
 import { LotSearch } from './pages/LotSearch'
 import { LotDetail } from './pages/LotDetail'
@@ -113,6 +114,7 @@ function StatusConteudo({
       { path: '/', label: 'Dashboard', icon: '📊' },
       { path: '/animals', label: 'Animais', icon: '🐄' },
       { path: '/lots', label: 'Lotes', icon: '📦' },
+      { path: '/market-supply', label: 'Market Supply', icon: '📈' },
       { path: '/admin', label: 'Fila de aprovação', icon: '📋' },
       { path: '/rule-governance', label: 'Regras de mercado', icon: '⚖️' },
       { path: '/territorial-capture-qa', label: 'QA territorial', icon: '🗺️' },
@@ -153,6 +155,7 @@ function StatusConteudo({
           />
           <Route path="/lots" element={<LotSearch {...options} />} />
           <Route path="/lots/:lotId" element={<LotDetail {...options} />} />
+          <Route path="/market-supply" element={<MarketSupplyAggregate {...options} />} />
           <Route
             path="/lots/:lotId/commercial-explanation"
             element={<CommercialExplanation {...options} />}
