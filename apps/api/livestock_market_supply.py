@@ -52,8 +52,8 @@ from packages.livestock_application.market_supply_workflow import (
     MarketSupplyIdempotentAggregateGateWorkflow,
 )
 from packages.livestock_infrastructure.persistence import (
+    TransactionalMarketSupplyOwnerScopedQueryAuditRepository,
     TransactionalMarketSupplyOwnerScopedSubjectReader,
-    TransactionalMarketSupplyQueryAuditRepository,
 )
 from packages.shared_kernel import TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
@@ -182,7 +182,7 @@ def assess_market_supply_aggregate(
 
 def _build_orchestrator(connection: Connection) -> MarketSupplyAggregateAssessmentOrchestrator:
     grant_repository = TransactionalAuthorizationGrantRepository(connection)
-    audit_repository = TransactionalMarketSupplyQueryAuditRepository(connection)
+    audit_repository = TransactionalMarketSupplyOwnerScopedQueryAuditRepository(connection)
     gate_workflow = MarketSupplyAggregateGateWorkflow(
         audit_repository=audit_repository,
         grant_reader=grant_repository,

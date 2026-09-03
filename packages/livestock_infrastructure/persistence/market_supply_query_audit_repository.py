@@ -28,7 +28,10 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
-from packages.core_infrastructure.persistence.organizations import organization_metadata
+from packages.core_infrastructure.persistence.organizations import (
+    organization_metadata,
+    set_local_organization_context,
+)
 from packages.livestock_application.market_supply_audit import (
     MarketSupplyAuditExternalDisposition,
     MarketSupplyAuditOutcome,
@@ -385,6 +388,101 @@ class TransactionalMarketSupplyQueryAuditRepository:
                 policy_context_digest=policy_context_digest,
             )
         )
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalMarketSupplyOwnerScopedQueryAuditRepository:
+    """Application-mediated owner-scoped audit repository for Market Supply F3.5.
+
+    Raw audit remains owner-only by RLS. The buyer request can start under buyer
+    context, but audit writes and related-history reads are executed in the
+    contributor owner context and then restore the previous context.
+    """
+
+    connection: Connection
+
+    def append(self, record: MarketSupplyQueryAuditRecord) -> None:
+        previous_organization_id = self._current_organization_id()
+        set_local_organization_context(self.connection, record.audit_owner_organization_id)
+        try:
+            TransactionalMarketSupplyQueryAuditRepository(self.connection).append(record)
+        finally:
+            self._restore_organization_context(previous_organization_id)
+
+    def get(self, audit_id: TypedId) -> MarketSupplyQueryAuditRecord | None:
+        return TransactionalMarketSupplyQueryAuditRepository(self.connection).get(audit_id)
+
+    def find_related(
+        self,
+        *,
+        requester_organization_id: OrganizationId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        policy_context_digest: str,
+    ) -> tuple[MarketSupplyQueryAuditRecord, ...]:
+        return TransactionalMarketSupplyQueryAuditRepository(self.connection).find_related(
+            requester_organization_id=requester_organization_id,
+            beneficiary_organization_id=beneficiary_organization_id,
+            access_purpose=access_purpose,
+            policy_context_digest=policy_context_digest,
+        )
+
+    def find_related_query_fingerprints(
+        self,
+        *,
+        requester_organization_id: OrganizationId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        policy_context_digest: str,
+    ) -> tuple[AggregationQueryFingerprint, ...]:
+        return TransactionalMarketSupplyQueryAuditRepository(
+            self.connection,
+        ).find_related_query_fingerprints(
+            requester_organization_id=requester_organization_id,
+            beneficiary_organization_id=beneficiary_organization_id,
+            access_purpose=access_purpose,
+            policy_context_digest=policy_context_digest,
+        )
+
+    def find_related_query_fingerprints_for_owner(
+        self,
+        *,
+        owner_organization_id: OrganizationId,
+        requester_organization_id: OrganizationId,
+        beneficiary_organization_id: OrganizationId,
+        access_purpose: str,
+        policy_context_digest: str,
+    ) -> tuple[AggregationQueryFingerprint, ...]:
+        # Existing F3.5 single-owner orchestration evaluates one owner-scoped
+        # contribution at a time. Multi-owner history completeness still requires
+        # an explicit correlation layer before aggregate release.
+        previous_organization_id = self._current_organization_id()
+        set_local_organization_context(self.connection, owner_organization_id)
+        try:
+            return self.find_related_query_fingerprints(
+                requester_organization_id=requester_organization_id,
+                beneficiary_organization_id=beneficiary_organization_id,
+                access_purpose=access_purpose,
+                policy_context_digest=policy_context_digest,
+            )
+        finally:
+            self._restore_organization_context(previous_organization_id)
+
+    def _current_organization_id(self) -> OrganizationId | None:
+        raw = self.connection.execute(
+            text("SELECT NULLIF(current_setting('titan.organization_id', true), '')::uuid"),
+        ).scalar_one_or_none()
+        if raw is None:
+            return None
+        return OrganizationId(raw)
+
+    def _restore_organization_context(self, organization_id: OrganizationId | None) -> None:
+        if organization_id is None:
+            self.connection.execute(
+                text("SELECT set_config('titan.organization_id', '', true)"),
+            )
+            return
+        set_local_organization_context(self.connection, organization_id)
 
 
 def _query_fingerprint_digest(fingerprint: AggregationQueryFingerprint) -> str:

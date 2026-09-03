@@ -42,7 +42,7 @@ from packages.livestock_application.market_supply_workflow import (
     MarketSupplyAuditRecordContext,
 )
 from packages.livestock_infrastructure.persistence.market_supply_query_audit_repository import (
-    TransactionalMarketSupplyQueryAuditRepository,
+    TransactionalMarketSupplyOwnerScopedQueryAuditRepository,
 )
 from packages.shared_kernel import OrganizationId, TypedId
 
@@ -100,8 +100,8 @@ def test_market_supply_workflow_releases_only_after_durable_audit_append() -> No
                 )
                 connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
 
-                set_local_organization_context(connection, owner.organization_id)
-                repository = TransactionalMarketSupplyQueryAuditRepository(connection)
+                set_local_organization_context(connection, buyer.organization_id)
+                repository = TransactionalMarketSupplyOwnerScopedQueryAuditRepository(connection)
                 grant = AuthorizationGrant(
                     grant_id=grant_id,
                     owner_organization_id=owner.organization_id,
@@ -218,7 +218,9 @@ def test_market_supply_workflow_releases_only_after_durable_audit_append() -> No
                 assert result.aggregate_result.audit_record == result.audit_record
                 assert result.aggregate_result.population_snapshot == snapshot
                 assert result.aggregate_result.aggregate_payload == aggregate_payload
+                assert _current_organization_id(connection) == buyer.organization_id
 
+                set_local_organization_context(connection, owner.organization_id)
                 persisted = repository.get(audit_context.audit_id)
                 assert persisted == result.audit_record
                 assert persisted is not None
@@ -333,3 +335,10 @@ def _insert_grant(
         },
     )
     return grant_id
+
+
+def _current_organization_id(connection: object) -> OrganizationId:
+    raw = connection.execute(  # type: ignore[attr-defined]
+        text("SELECT NULLIF(current_setting('titan.organization_id', true), '')::uuid"),
+    ).scalar_one()
+    return OrganizationId(raw)

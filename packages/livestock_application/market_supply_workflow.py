@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from types import MappingProxyType
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from packages.core_application.idempotency import IdempotencyExecution
@@ -251,16 +251,7 @@ class MarketSupplyAggregateGateWorkflow:
                     privacy_input,
                     previous_queries=(
                         *privacy_input.previous_queries,
-                        *self._audit_repository.find_related_query_fingerprints(
-                            requester_organization_id=(
-                                request.query_fingerprint.requester_organization_id
-                            ),
-                            beneficiary_organization_id=(
-                                request.query_fingerprint.beneficiary_organization_id
-                            ),
-                            access_purpose=request.query_fingerprint.access_purpose,
-                            policy_context_digest=(request.query_fingerprint.policy_context_digest),
-                        ),
+                        *self._find_related_query_fingerprints(request),
                     ),
                 )
             privacy = self._privacy_service.assess(privacy_input)
@@ -407,6 +398,37 @@ class MarketSupplyAggregateGateWorkflow:
         if self._grant_reader is None:
             raise ValueError("grant_reader e obrigatorio para workflow auditavel.")
         return self._grant_reader.get_by_id(request.grant.grant_id)
+
+    def _find_related_query_fingerprints(
+        self,
+        request: MarketSupplyAggregateGateRequest,
+    ) -> tuple[AggregationQueryFingerprint, ...]:
+        if self._audit_repository is None:
+            return ()
+        owner_scoped_reader = getattr(
+            self._audit_repository,
+            "find_related_query_fingerprints_for_owner",
+            None,
+        )
+        if callable(owner_scoped_reader):
+            return cast(
+                tuple[AggregationQueryFingerprint, ...],
+                owner_scoped_reader(
+                    owner_organization_id=request.audit_owner_organization_id,
+                    requester_organization_id=request.query_fingerprint.requester_organization_id,
+                    beneficiary_organization_id=(
+                        request.query_fingerprint.beneficiary_organization_id
+                    ),
+                    access_purpose=request.query_fingerprint.access_purpose,
+                    policy_context_digest=request.query_fingerprint.policy_context_digest,
+                ),
+            )
+        return self._audit_repository.find_related_query_fingerprints(
+            requester_organization_id=request.query_fingerprint.requester_organization_id,
+            beneficiary_organization_id=request.query_fingerprint.beneficiary_organization_id,
+            access_purpose=request.query_fingerprint.access_purpose,
+            policy_context_digest=request.query_fingerprint.policy_context_digest,
+        )
 
 
 @dataclass(frozen=True, slots=True)
