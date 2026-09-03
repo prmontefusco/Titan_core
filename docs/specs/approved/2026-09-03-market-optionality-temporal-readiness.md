@@ -1,7 +1,7 @@
 # SPEC: Market Optionality, Temporal Compliance and Future Market Readiness
 
 - **Level:** CRITICAL
-- **Status:** DISCOVERY COMPLETE / SPEC PROPOSED FOR REVIEW
+- **Status:** F1 ACCEPTED AND IMPLEMENTED
 - **Decision:** PROCEED WITH CHANGES
 - **Owner:** Titan Livestock
 - **Date:** 2026-09-03
@@ -138,5 +138,4 @@ Plan tests for:
 
 **PROCEED WITH CHANGES.**
 
-Proceed only after ADR-0073 is reviewed. The first BUILD should be F1: pure optionality projection over existing canonical objects and synthetic policies, no persistence, no API, no UI and no Market Supply forecast.
-
+ADR-0073 was accepted for F1 only. The first BUILD is limited to pure optionality projection over existing canonical objects and synthetic policies, no persistence, no API, no UI and no Market Supply forecast.

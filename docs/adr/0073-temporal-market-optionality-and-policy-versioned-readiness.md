@@ -1,7 +1,7 @@
 # ADR-0073 - Temporal Market Optionality and Policy-Versioned Market Readiness
 
 **Date:** 2026-09-03  
-**Status:** PROPOSED  
+**Status:** ACCEPTED
 **Scope:** Titan Livestock; future interaction with Market Supply
 
 ## Context
@@ -148,3 +148,6 @@ This ADR can be accepted when:
 - Market Supply integration remains behind disclosure/audit/privacy gates;
 - AI is limited to explanation over canonical results.
 
+## Acceptance Note
+
+Accepted by Product Owner on 2026-09-03 for F1 only. This acceptance authorizes a pure, transient, application-only `MarketOptionAssessment` projection over existing canonical material. It does not authorize persistence, API, UI, worker, forecast, CommercialDemand persistence, official integrations, cross-tenant disclosure, new Dossier semantics or changes to Evaluation/Decision.
