@@ -87,6 +87,8 @@ F2 was completed on 2026-09-03 as an application-only transient `MultiMarketOpti
 
 F3 was completed on 2026-09-03 as an application-only transient `MarketOptionChangeImpactReport` over NEXT-07 `MarketChangeImpactAssessment` and supplied optionality assessments. It remains within the approved boundary: no persistence, API, UI, worker, notification, automatic re-evaluation, forecast or Dossier change.
 
+F4 was completed on 2026-09-03 as an application-only transient option-preservation warning over supplied before/after optionality assessments and synthetic event contexts. It remains within the approved boundary: no persistence, API, UI, worker, notification, operational blocking, clinical advice, forecast or Dossier change.
+
 ## Canonical Synthetic Scenario
 
 Use fully synthetic data:

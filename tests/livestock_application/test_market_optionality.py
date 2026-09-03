@@ -26,7 +26,11 @@ from packages.livestock_application.market_optionality import (
     MarketOptionChangeImpactService,
     MarketOptionChangeImpactState,
     MarketOptionContext,
+    MarketOptionEventContext,
+    MarketOptionEventKind,
     MarketOptionInput,
+    MarketOptionPreservationWarningService,
+    MarketOptionPreservationWarningState,
     MarketOptionReversibility,
     MarketOptionState,
     MultiMarketOptionReportService,
@@ -539,3 +543,141 @@ def test_policy_change_impact_keeps_unrelated_market_unchanged() -> None:
     assert report.entries[0].replacement_state is MarketOptionState.OPTION_OPEN
     assert report.entries[0].impact_state is MarketOptionChangeImpactState.UNCHANGED
     assert report.counts_by_state[MarketOptionChangeImpactState.UNCHANGED] == 1
+
+
+def _event_context(
+    *,
+    policy: Policy,
+    decision: Decision,
+    event_kind: MarketOptionEventKind = MarketOptionEventKind.TREATMENT,
+    welfare_or_legal_duty: bool = False,
+) -> MarketOptionEventContext:
+    return MarketOptionEventContext(
+        organization_id=policy.organization_id,
+        subject_id=decision.subject_id,
+        event_kind=event_kind,
+        event_reference="synthetic-event:001",
+        occurred_or_proposed_at=NOW,
+        knowledge_cutoff=NOW,
+        purpose=PURPOSE,
+        welfare_or_legal_duty=welfare_or_legal_duty,
+    )
+
+
+def test_preservation_warning_states_welfare_boundary_without_operational_command() -> None:
+    before_decision, before_evaluation, policy = _artifacts(purpose=PURPOSE)
+    after_decision, after_evaluation, _ = _artifacts(
+        organization_id=policy.organization_id,
+        subject_id=before_decision.subject_id,
+        purpose=PURPOSE,
+        policy_id=policy.policy_id,
+        result=DecisionResult.REJEITADA,
+    )
+    before = MarketOptionAssessmentService().assess(
+        context=_context_with_purpose(policy, before_decision, PURPOSE),
+        decision=before_decision,
+        evaluation=before_evaluation,
+    )
+    after = MarketOptionAssessmentService().assess(
+        context=_context_with_purpose(policy, after_decision, PURPOSE),
+        decision=after_decision,
+        evaluation=after_evaluation,
+    )
+
+    warning = MarketOptionPreservationWarningService().explain(
+        event_context=_event_context(
+            policy=policy,
+            decision=before_decision,
+            welfare_or_legal_duty=True,
+        ),
+        before=before,
+        after=after,
+    )
+
+    assert warning.warning_state is MarketOptionPreservationWarningState.OPTION_LOSS_INDICATED
+    assert warning.reversibility is MarketOptionReversibility.TEMPORARY
+    assert "ANIMAL_WELFARE_OR_LEGAL_DUTY_OVERRIDES_MARKET_OPTIONALITY" in warning.limitations
+    assert "DO_NOT_OMIT_OR_DELAY_REQUIRED_FACT_RECORDING" in warning.limitations
+
+
+def test_preservation_warning_distinguishes_reversible_risk_from_irreversible_loss() -> None:
+    before_decision, before_evaluation, policy = _artifacts(purpose=PURPOSE)
+    conditioned_decision, conditioned_evaluation, _ = _artifacts(
+        organization_id=policy.organization_id,
+        subject_id=before_decision.subject_id,
+        purpose=PURPOSE,
+        policy_id=policy.policy_id,
+        result=DecisionResult.APROVADA_COM_RESTRICOES,
+    )
+    irreversible_decision, irreversible_evaluation, _ = _artifacts(
+        organization_id=policy.organization_id,
+        subject_id=before_decision.subject_id,
+        purpose=PURPOSE,
+        policy_id=policy.policy_id,
+        result=DecisionResult.REJEITADA,
+    )
+    irreversible_decision = replace(
+        irreversible_decision,
+        reasons=(
+            replace(
+                irreversible_decision.reasons[0],
+                code=DecisionReasonCode.REGRA_NAO_ATENDIDA,
+                message="IRREVERSIBLE_SYNTHETIC_TRACEABILITY_LOSS",
+            ),
+        ),
+    )
+    service = MarketOptionAssessmentService()
+    before = service.assess(
+        context=_context_with_purpose(policy, before_decision, PURPOSE),
+        decision=before_decision,
+        evaluation=before_evaluation,
+    )
+    conditioned = service.assess(
+        context=_context_with_purpose(policy, conditioned_decision, PURPOSE),
+        decision=conditioned_decision,
+        evaluation=conditioned_evaluation,
+    )
+    irreversible = service.assess(
+        context=_context_with_purpose(policy, irreversible_decision, PURPOSE),
+        decision=irreversible_decision,
+        evaluation=irreversible_evaluation,
+    )
+
+    risk = MarketOptionPreservationWarningService().explain(
+        event_context=_event_context(policy=policy, decision=before_decision),
+        before=before,
+        after=conditioned,
+    )
+    loss = MarketOptionPreservationWarningService().explain(
+        event_context=_event_context(
+            policy=policy,
+            decision=before_decision,
+            event_kind=MarketOptionEventKind.MOVEMENT,
+        ),
+        before=before,
+        after=irreversible,
+    )
+
+    assert risk.warning_state is MarketOptionPreservationWarningState.OPTION_AT_RISK
+    assert risk.reversibility is MarketOptionReversibility.POTENTIALLY_RESOLVABLE
+    assert loss.warning_state is MarketOptionPreservationWarningState.OPTION_LOSS_INDICATED
+    assert loss.reversibility is MarketOptionReversibility.IRREVERSIBLE
+
+
+def test_preservation_warning_missing_material_does_not_recommend_omitting_facts() -> None:
+    decision, _, policy = _artifacts(purpose=PURPOSE)
+
+    warning = MarketOptionPreservationWarningService().explain(
+        event_context=_event_context(
+            policy=policy,
+            decision=decision,
+            event_kind=MarketOptionEventKind.DOCUMENTARY,
+        ),
+        before=None,
+        after=None,
+    )
+
+    assert warning.warning_state is MarketOptionPreservationWarningState.INSUFFICIENT_MATERIAL
+    assert warning.before_state is None
+    assert warning.after_state is None
+    assert "DO_NOT_OMIT_OR_DELAY_REQUIRED_FACT_RECORDING" in warning.limitations

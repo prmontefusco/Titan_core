@@ -154,6 +154,21 @@ class MarketOptionChangeImpactState(StrEnum):
     LIMITED = "LIMITED"
 
 
+class MarketOptionEventKind(StrEnum):
+    TREATMENT = "TREATMENT"
+    MOVEMENT = "MOVEMENT"
+    DOCUMENTARY = "DOCUMENTARY"
+    OTHER = "OTHER"
+
+
+class MarketOptionPreservationWarningState(StrEnum):
+    NO_KNOWN_OPTION_IMPACT = "NO_KNOWN_OPTION_IMPACT"
+    OPTION_AT_RISK = "OPTION_AT_RISK"
+    OPTION_LOSS_INDICATED = "OPTION_LOSS_INDICATED"
+    IMPACT_UNKNOWN = "IMPACT_UNKNOWN"
+    INSUFFICIENT_MATERIAL = "INSUFFICIENT_MATERIAL"
+
+
 @dataclass(frozen=True, slots=True)
 class MarketOptionChangeImpactEntry:
     subject_id: TypedId
@@ -171,6 +186,42 @@ class MarketOptionChangeImpactReport:
     impact_assessment: MarketChangeImpactAssessment
     entries: tuple[MarketOptionChangeImpactEntry, ...]
     counts_by_state: Mapping[MarketOptionChangeImpactState, int]
+    result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionEventContext:
+    organization_id: OrganizationId
+    subject_id: TypedId
+    event_kind: MarketOptionEventKind
+    event_reference: str
+    occurred_or_proposed_at: datetime
+    knowledge_cutoff: datetime
+    purpose: str
+    welfare_or_legal_duty: bool = False
+
+    def __post_init__(self) -> None:
+        if self.subject_id.entity_type != "animal":
+            raise ValueError("Market option warning aceita somente subject_id do tipo 'animal'.")
+        if not self.event_reference.strip():
+            raise ValueError("event_reference deve ser texto não vazio.")
+        if not self.purpose.strip():
+            raise ValueError("purpose deve ser texto não vazio.")
+        require_utc(self.occurred_or_proposed_at, field_name="occurred_or_proposed_at")
+        require_utc(self.knowledge_cutoff, field_name="knowledge_cutoff")
+        if self.knowledge_cutoff < self.occurred_or_proposed_at:
+            raise ValueError("knowledge_cutoff não pode ser anterior ao evento observado/proposto.")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionPreservationWarning:
+    event_context: MarketOptionEventContext
+    before_state: MarketOptionState | None
+    after_state: MarketOptionState | None
+    warning_state: MarketOptionPreservationWarningState
+    reversibility: MarketOptionReversibility
+    reason_codes: tuple[str, ...]
+    limitations: tuple[str, ...]
     result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
 
 
@@ -431,6 +482,55 @@ class MarketOptionChangeImpactService:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class MarketOptionPreservationWarningService:
+    """Explains supplied before/after option impact without operational advice."""
+
+    def explain(
+        self,
+        *,
+        event_context: MarketOptionEventContext,
+        before: MarketOptionAssessment | None,
+        after: MarketOptionAssessment | None,
+    ) -> MarketOptionPreservationWarning:
+        if before is not None:
+            _ensure_assessment_matches_event(before, event_context, "before")
+        if after is not None:
+            _ensure_assessment_matches_event(after, event_context, "after")
+
+        limitations = [
+            "MARKET_OPTION_WARNING_IS_EXPLANATORY_NOT_OPERATIONAL_COMMAND",
+            "DO_NOT_OMIT_OR_DELAY_REQUIRED_FACT_RECORDING",
+        ]
+        if event_context.welfare_or_legal_duty:
+            limitations.append("ANIMAL_WELFARE_OR_LEGAL_DUTY_OVERRIDES_MARKET_OPTIONALITY")
+
+        if before is None or after is None:
+            warning_state = MarketOptionPreservationWarningState.INSUFFICIENT_MATERIAL
+            reversibility = MarketOptionReversibility.UNKNOWN
+        else:
+            warning_state = _classify_preservation_warning(before.state, after.state)
+            reversibility = _warning_reversibility(warning_state, after.reversibility)
+            limitations.extend(before.limitations)
+            limitations.extend(after.limitations)
+
+        reason_codes: list[str] = []
+        if before is not None:
+            reason_codes.extend(before.reason_codes)
+        if after is not None:
+            reason_codes.extend(after.reason_codes)
+
+        return MarketOptionPreservationWarning(
+            event_context=event_context,
+            before_state=None if before is None else before.state,
+            after_state=None if after is None else after.state,
+            warning_state=warning_state,
+            reversibility=reversibility,
+            reason_codes=tuple(dict.fromkeys(reason_codes)),
+            limitations=tuple(dict.fromkeys(limitations)),
+        )
+
+
 def _assessment(
     *,
     context: MarketOptionContext,
@@ -525,3 +625,56 @@ def _classify_replacement_optionality(
     }:
         return MarketOptionChangeImpactState.OPTIONALITY_LOST
     return MarketOptionChangeImpactState.OPTIONALITY_UNKNOWN_UNDER_REPLACEMENT
+
+
+def _ensure_assessment_matches_event(
+    assessment: MarketOptionAssessment,
+    event_context: MarketOptionEventContext,
+    label: str,
+) -> None:
+    if assessment.context.organization_id != event_context.organization_id:
+        raise ValueError(f"{label} assessment deve usar a mesma Organization.")
+    if assessment.context.subject_id != event_context.subject_id:
+        raise ValueError(f"{label} assessment deve usar o mesmo subject_id.")
+    if assessment.context.market_purpose != event_context.purpose:
+        raise ValueError(f"{label} assessment deve usar o mesmo purpose.")
+    if assessment.context.knowledge_cutoff > event_context.knowledge_cutoff:
+        raise ValueError(f"{label} assessment não pode usar conhecimento posterior ao warning.")
+
+
+def _classify_preservation_warning(
+    before: MarketOptionState,
+    after: MarketOptionState,
+) -> MarketOptionPreservationWarningState:
+    if before is not MarketOptionState.OPTION_OPEN:
+        if after in {
+            MarketOptionState.UNKNOWN,
+            MarketOptionState.MISSING_EVIDENCE,
+            MarketOptionState.POLICY_UNAVAILABLE,
+            MarketOptionState.NOT_EVALUATED,
+        }:
+            return MarketOptionPreservationWarningState.IMPACT_UNKNOWN
+        return MarketOptionPreservationWarningState.NO_KNOWN_OPTION_IMPACT
+    if after is MarketOptionState.OPTION_OPEN:
+        return MarketOptionPreservationWarningState.NO_KNOWN_OPTION_IMPACT
+    if after is MarketOptionState.OPTION_AT_RISK:
+        return MarketOptionPreservationWarningState.OPTION_AT_RISK
+    if after in {
+        MarketOptionState.TEMPORARILY_INCOMPATIBLE,
+        MarketOptionState.IRREVERSIBLY_INCOMPATIBLE,
+    }:
+        return MarketOptionPreservationWarningState.OPTION_LOSS_INDICATED
+    return MarketOptionPreservationWarningState.IMPACT_UNKNOWN
+
+
+def _warning_reversibility(
+    warning_state: MarketOptionPreservationWarningState,
+    after_reversibility: MarketOptionReversibility,
+) -> MarketOptionReversibility:
+    if warning_state is MarketOptionPreservationWarningState.NO_KNOWN_OPTION_IMPACT:
+        return MarketOptionReversibility.NOT_APPLICABLE
+    if warning_state is MarketOptionPreservationWarningState.OPTION_LOSS_INDICATED:
+        return after_reversibility
+    if warning_state is MarketOptionPreservationWarningState.OPTION_AT_RISK:
+        return MarketOptionReversibility.POTENTIALLY_RESOLVABLE
+    return MarketOptionReversibility.UNKNOWN
