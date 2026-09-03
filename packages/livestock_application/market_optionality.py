@@ -14,6 +14,11 @@ from types import MappingProxyType
 
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation, RuleResultStatus
+from packages.livestock_application.market_change_impact import (
+    MarketChangeImpactAssessment,
+    MarketChangeImpactEntry,
+    MarketChangeImpactStatus,
+)
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MarketReadinessContext,
@@ -136,6 +141,36 @@ class MultiMarketOptionReport:
         "MULTI_MARKET_OPTIONALITY_IS_DERIVED_NON_DECISIONAL",
         "NO_FORECAST_OR_FUTURE_ELIGIBILITY_GUARANTEE",
     )
+    result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
+
+
+class MarketOptionChangeImpactState(StrEnum):
+    UNCHANGED = "UNCHANGED"
+    REASSESSMENT_NEEDED = "REASSESSMENT_NEEDED"
+    OPTIONALITY_UNKNOWN_UNDER_REPLACEMENT = "OPTIONALITY_UNKNOWN_UNDER_REPLACEMENT"
+    OPTIONALITY_PRESERVED = "OPTIONALITY_PRESERVED"
+    OPTIONALITY_AT_RISK = "OPTIONALITY_AT_RISK"
+    OPTIONALITY_LOST = "OPTIONALITY_LOST"
+    LIMITED = "LIMITED"
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionChangeImpactEntry:
+    subject_id: TypedId
+    decision_id: TypedId
+    evaluation_id: TypedId
+    impact_state: MarketOptionChangeImpactState
+    previous_state: MarketOptionState | None
+    replacement_state: MarketOptionState | None
+    reason_codes: tuple[str, ...]
+    limitations: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionChangeImpactReport:
+    impact_assessment: MarketChangeImpactAssessment
+    entries: tuple[MarketOptionChangeImpactEntry, ...]
+    counts_by_state: Mapping[MarketOptionChangeImpactState, int]
     result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
 
 
@@ -317,6 +352,85 @@ class MultiMarketOptionReportService:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class MarketOptionChangeImpactService:
+    """Composes NEXT-07 impact with optionality without running new Rules."""
+
+    def build_report(
+        self,
+        *,
+        impact_assessment: MarketChangeImpactAssessment,
+        previous_assessments: tuple[MarketOptionAssessment, ...],
+        replacement_assessments: tuple[MarketOptionAssessment, ...] = (),
+    ) -> MarketOptionChangeImpactReport:
+        previous_by_subject = _index_option_assessments(previous_assessments, "previous")
+        replacement_by_subject = _index_option_assessments(replacement_assessments, "replacement")
+        entries = tuple(
+            self._entry(
+                impact_entry=impact_entry,
+                previous=previous_by_subject.get(impact_entry.subject_id),
+                replacement=replacement_by_subject.get(impact_entry.subject_id),
+            )
+            for impact_entry in impact_assessment.entries
+        )
+        counts = {state: 0 for state in MarketOptionChangeImpactState}
+        for entry in entries:
+            counts[entry.impact_state] += 1
+        return MarketOptionChangeImpactReport(
+            impact_assessment=impact_assessment,
+            entries=entries,
+            counts_by_state=MappingProxyType(counts),
+        )
+
+    def _entry(
+        self,
+        *,
+        impact_entry: MarketChangeImpactEntry,
+        previous: MarketOptionAssessment | None,
+        replacement: MarketOptionAssessment | None,
+    ) -> MarketOptionChangeImpactEntry:
+        if previous is not None:
+            _ensure_assessment_matches_impact_entry(previous, impact_entry, "previous")
+        if replacement is not None and replacement.context.subject_id != impact_entry.subject_id:
+            raise ValueError("replacement assessment deve referenciar o mesmo subject_id.")
+
+        limitations: list[str] = []
+        reason_codes: list[str] = []
+        if impact_entry.limitation is not None:
+            limitations.append(impact_entry.limitation)
+        if previous is None:
+            limitations.append("PREVIOUS_OPTIONALITY_ASSESSMENT_UNAVAILABLE")
+        else:
+            reason_codes.extend(previous.reason_codes)
+
+        if impact_entry.status is MarketChangeImpactStatus.UNRELATED:
+            impact_state = MarketOptionChangeImpactState.UNCHANGED
+            replacement_state = previous.state if previous is not None else None
+        elif impact_entry.status is MarketChangeImpactStatus.LIMITED:
+            impact_state = MarketOptionChangeImpactState.LIMITED
+            replacement_state = None
+        elif replacement is None:
+            impact_state = MarketOptionChangeImpactState.REASSESSMENT_NEEDED
+            replacement_state = None
+            limitations.append("REPLACEMENT_OPTIONALITY_ASSESSMENT_UNAVAILABLE")
+        else:
+            replacement_state = replacement.state
+            reason_codes.extend(replacement.reason_codes)
+            limitations.extend(replacement.limitations)
+            impact_state = _classify_replacement_optionality(replacement.state)
+
+        return MarketOptionChangeImpactEntry(
+            subject_id=impact_entry.subject_id,
+            decision_id=impact_entry.decision_id,
+            evaluation_id=impact_entry.evaluation_id,
+            impact_state=impact_state,
+            previous_state=None if previous is None else previous.state,
+            replacement_state=replacement_state,
+            reason_codes=tuple(dict.fromkeys(reason_codes)),
+            limitations=tuple(dict.fromkeys(limitations)),
+        )
+
+
 def _assessment(
     *,
     context: MarketOptionContext,
@@ -370,3 +484,44 @@ def _ensure_same_report_coordinates(
         raise ValueError("todos os mercados devem usar a mesma target_window_until.")
     if candidate.result_boundary != first.result_boundary:
         raise ValueError("todos os mercados devem preservar o mesmo result_boundary.")
+
+
+def _index_option_assessments(
+    assessments: tuple[MarketOptionAssessment, ...],
+    label: str,
+) -> dict[TypedId, MarketOptionAssessment]:
+    indexed: dict[TypedId, MarketOptionAssessment] = {}
+    for assessment in assessments:
+        subject_id = assessment.context.subject_id
+        if subject_id in indexed:
+            raise ValueError(f"{label} assessments possuem subject_id duplicado.")
+        indexed[subject_id] = assessment
+    return indexed
+
+
+def _ensure_assessment_matches_impact_entry(
+    assessment: MarketOptionAssessment,
+    impact_entry: MarketChangeImpactEntry,
+    label: str,
+) -> None:
+    if assessment.context.subject_id != impact_entry.subject_id:
+        raise ValueError(f"{label} assessment deve referenciar o mesmo subject_id.")
+    if assessment.decision_id != impact_entry.decision_id:
+        raise ValueError(f"{label} assessment deve referenciar a mesma Decision.")
+    if assessment.evaluation_id != impact_entry.evaluation_id:
+        raise ValueError(f"{label} assessment deve referenciar a mesma Evaluation.")
+
+
+def _classify_replacement_optionality(
+    state: MarketOptionState,
+) -> MarketOptionChangeImpactState:
+    if state is MarketOptionState.OPTION_OPEN:
+        return MarketOptionChangeImpactState.OPTIONALITY_PRESERVED
+    if state is MarketOptionState.OPTION_AT_RISK:
+        return MarketOptionChangeImpactState.OPTIONALITY_AT_RISK
+    if state in {
+        MarketOptionState.TEMPORARILY_INCOMPATIBLE,
+        MarketOptionState.IRREVERSIBLY_INCOMPATIBLE,
+    }:
+        return MarketOptionChangeImpactState.OPTIONALITY_LOST
+    return MarketOptionChangeImpactState.OPTIONALITY_UNKNOWN_UNDER_REPLACEMENT

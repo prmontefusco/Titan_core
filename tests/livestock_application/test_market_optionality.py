@@ -15,9 +15,16 @@ from packages.core_domain.evaluation import (
 )
 from packages.core_domain.policy import Policy
 from packages.core_domain.rule import SeverityLevel
+from packages.livestock_application.market_change_impact import (
+    MarketChangeImpactContext,
+    MarketChangeImpactInput,
+    MarketChangeImpactService,
+)
 from packages.livestock_application.market_optionality import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MarketOptionAssessmentService,
+    MarketOptionChangeImpactService,
+    MarketOptionChangeImpactState,
     MarketOptionContext,
     MarketOptionInput,
     MarketOptionReversibility,
@@ -415,3 +422,120 @@ def test_multi_market_policy_version_change_affects_only_that_market() -> None:
     }
     assert report.counts_by_state[MarketOptionState.OPTION_OPEN] == 2
     assert report.counts_by_state[MarketOptionState.REASSESSMENT_REQUIRED] == 1
+
+
+def test_policy_change_impact_marks_open_option_as_reassessment_needed() -> None:
+    decision, evaluation, policy_v1 = _artifacts(purpose=PURPOSE)
+    replacement_policy_id = TypedId.new("policy")
+    previous_assessment = MarketOptionAssessmentService().assess(
+        context=_context_with_purpose(policy_v1, decision, PURPOSE),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    impact = MarketChangeImpactService().assess(
+        context=MarketChangeImpactContext(
+            organization_id=policy_v1.organization_id,
+            purpose=PURPOSE,
+            previous_policy_id=policy_v1.policy_id,
+            previous_policy_version=policy_v1.version,
+            replacement_policy_id=replacement_policy_id,
+            replacement_policy_version=2,
+            reference_time=NOW,
+            knowledge_cutoff=NOW,
+        ),
+        inputs=(MarketChangeImpactInput(decision, evaluation),),
+    )
+
+    report = MarketOptionChangeImpactService().build_report(
+        impact_assessment=impact,
+        previous_assessments=(previous_assessment,),
+    )
+
+    assert report.entries[0].previous_state is MarketOptionState.OPTION_OPEN
+    assert report.entries[0].replacement_state is None
+    assert report.entries[0].impact_state is MarketOptionChangeImpactState.REASSESSMENT_NEEDED
+    assert "REPLACEMENT_OPTIONALITY_ASSESSMENT_UNAVAILABLE" in report.entries[0].limitations
+    assert report.counts_by_state[MarketOptionChangeImpactState.REASSESSMENT_NEEDED] == 1
+
+
+def test_policy_change_impact_can_compose_supplied_replacement_incompatibility() -> None:
+    organization_id = OrganizationId.new()
+    subject_id = TypedId.new("animal")
+    previous_decision, previous_evaluation, policy_v1 = _artifacts(
+        organization_id=organization_id,
+        subject_id=subject_id,
+        purpose=PURPOSE,
+    )
+    replacement_decision, replacement_evaluation, policy_v3 = _artifacts(
+        organization_id=organization_id,
+        subject_id=subject_id,
+        purpose=PURPOSE,
+        policy_version=3,
+        result=DecisionResult.REJEITADA,
+    )
+    previous_assessment = MarketOptionAssessmentService().assess(
+        context=_context_with_purpose(policy_v1, previous_decision, PURPOSE),
+        decision=previous_decision,
+        evaluation=previous_evaluation,
+    )
+    replacement_assessment = MarketOptionAssessmentService().assess(
+        context=_context_with_purpose(policy_v3, replacement_decision, PURPOSE),
+        decision=replacement_decision,
+        evaluation=replacement_evaluation,
+    )
+    impact = MarketChangeImpactService().assess(
+        context=MarketChangeImpactContext(
+            organization_id=organization_id,
+            purpose=PURPOSE,
+            previous_policy_id=policy_v1.policy_id,
+            previous_policy_version=policy_v1.version,
+            replacement_policy_id=policy_v3.policy_id,
+            replacement_policy_version=3,
+            reference_time=NOW,
+            knowledge_cutoff=NOW,
+        ),
+        inputs=(MarketChangeImpactInput(previous_decision, previous_evaluation),),
+    )
+
+    report = MarketOptionChangeImpactService().build_report(
+        impact_assessment=impact,
+        previous_assessments=(previous_assessment,),
+        replacement_assessments=(replacement_assessment,),
+    )
+
+    assert report.entries[0].previous_state is MarketOptionState.OPTION_OPEN
+    assert report.entries[0].replacement_state is MarketOptionState.TEMPORARILY_INCOMPATIBLE
+    assert report.entries[0].impact_state is MarketOptionChangeImpactState.OPTIONALITY_LOST
+    assert report.counts_by_state[MarketOptionChangeImpactState.OPTIONALITY_LOST] == 1
+
+
+def test_policy_change_impact_keeps_unrelated_market_unchanged() -> None:
+    decision, evaluation, policy = _artifacts(purpose="unrelated-market")
+    previous_assessment = MarketOptionAssessmentService().assess(
+        context=_context_with_purpose(policy, decision, "unrelated-market"),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    impact = MarketChangeImpactService().assess(
+        context=MarketChangeImpactContext(
+            organization_id=policy.organization_id,
+            purpose=PURPOSE,
+            previous_policy_id=TypedId.new("policy"),
+            previous_policy_version=1,
+            replacement_policy_id=TypedId.new("policy"),
+            replacement_policy_version=2,
+            reference_time=NOW,
+            knowledge_cutoff=NOW,
+        ),
+        inputs=(MarketChangeImpactInput(decision, evaluation),),
+    )
+
+    report = MarketOptionChangeImpactService().build_report(
+        impact_assessment=impact,
+        previous_assessments=(previous_assessment,),
+    )
+
+    assert report.entries[0].previous_state is MarketOptionState.OPTION_OPEN
+    assert report.entries[0].replacement_state is MarketOptionState.OPTION_OPEN
+    assert report.entries[0].impact_state is MarketOptionChangeImpactState.UNCHANGED
+    assert report.counts_by_state[MarketOptionChangeImpactState.UNCHANGED] == 1

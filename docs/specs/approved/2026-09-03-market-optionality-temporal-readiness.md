@@ -85,6 +85,8 @@ Final state names require ADR acceptance. They must remain distinct from `Decisi
 
 F2 was completed on 2026-09-03 as an application-only transient `MultiMarketOptionReport` over explicit caller-provided market purposes. It remains within the approved boundary: no persistence, API, UI, worker, forecast, country-specific service, real market catalog or cross-tenant query.
 
+F3 was completed on 2026-09-03 as an application-only transient `MarketOptionChangeImpactReport` over NEXT-07 `MarketChangeImpactAssessment` and supplied optionality assessments. It remains within the approved boundary: no persistence, API, UI, worker, notification, automatic re-evaluation, forecast or Dossier change.
+
 ## Canonical Synthetic Scenario
 
 Use fully synthetic data:
