@@ -83,6 +83,8 @@ Final state names require ADR acceptance. They must remain distinct from `Decisi
 | F6 | Dossier/VerificationBundle section | Optionality section referencing canonical Evaluation/Decision inputs | New dossier type | Offline verification | Need external sharing semantics |
 | F7 | AI explanation layer | LLM summarizes canonical results only | LLM decisions/rules | Prompt/output guards | Need approved AI governance |
 
+F2 was completed on 2026-09-03 as an application-only transient `MultiMarketOptionReport` over explicit caller-provided market purposes. It remains within the approved boundary: no persistence, API, UI, worker, forecast, country-specific service, real market catalog or cross-tenant query.
+
 ## Canonical Synthetic Scenario
 
 Use fully synthetic data:

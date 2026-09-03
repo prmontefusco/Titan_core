@@ -151,3 +151,5 @@ This ADR can be accepted when:
 ## Acceptance Note
 
 Accepted by Product Owner on 2026-09-03 for F1 only. This acceptance authorizes a pure, transient, application-only `MarketOptionAssessment` projection over existing canonical material. It does not authorize persistence, API, UI, worker, forecast, CommercialDemand persistence, official integrations, cross-tenant disclosure, new Dossier semantics or changes to Evaluation/Decision.
+
+F2 was accepted by Product Owner on 2026-09-03 under the same application-only boundary. This authorizes a transient `MultiMarketOptionReport` over explicit market purposes supplied by the caller. It does not authorize a real market catalog, country-specific services, global Animal lookup, persistence, API, UI, worker, forecast, CommercialDemand persistence, official integrations, cross-tenant disclosure, Dossier changes or changes to Evaluation/Decision.

@@ -1,14 +1,16 @@
 """Market optionality projection for policy-versioned temporal readiness.
 
-F1 is intentionally application-only and transient. It derives an option state
-from canonical Evaluation/Decision material; it does not execute Rules, emit
-Decision, persist artifacts, forecast future eligibility, or mutate Animal.
+This module is intentionally application-only and transient. It derives option
+states and multi-market reports from canonical Evaluation/Decision material; it
+does not execute Rules, emit Decision, persist artifacts, forecast future
+eligibility, or mutate Animal.
 """
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from types import MappingProxyType
 
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation, RuleResultStatus
@@ -109,6 +111,32 @@ class MarketOptionAssessment:
     @property
     def preserves_option(self) -> bool:
         return self.state is MarketOptionState.OPTION_OPEN
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionInput:
+    context: MarketOptionContext
+    decision: Decision | None = None
+    evaluation: Evaluation | None = None
+    policy_available: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class MultiMarketOptionReport:
+    organization_id: OrganizationId
+    subject_id: TypedId
+    reference_time: datetime
+    knowledge_cutoff: datetime
+    assessments: tuple[MarketOptionAssessment, ...]
+    counts_by_state: Mapping[MarketOptionState, int]
+    market_purposes: tuple[str, ...]
+    target_window_from: datetime | None = None
+    target_window_until: datetime | None = None
+    limitations: tuple[str, ...] = (
+        "MULTI_MARKET_OPTIONALITY_IS_DERIVED_NON_DECISIONAL",
+        "NO_FORECAST_OR_FUTURE_ELIGIBILITY_GUARANTEE",
+    )
+    result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,6 +266,57 @@ class MarketOptionAssessmentService:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class MultiMarketOptionReportService:
+    """Builds deterministic transient reports across explicit market purposes."""
+
+    assessment_service: MarketOptionAssessmentService = MarketOptionAssessmentService()
+
+    def build_report(
+        self,
+        *,
+        inputs: tuple[MarketOptionInput, ...],
+    ) -> MultiMarketOptionReport:
+        if not inputs:
+            raise ValueError("inputs deve conter ao menos um mercado.")
+
+        first = inputs[0].context
+        seen_purposes: set[str] = set()
+        for item in inputs:
+            context = item.context
+            _ensure_same_report_coordinates(first, context)
+            if context.market_purpose in seen_purposes:
+                raise ValueError(
+                    "market_purpose duplicado torna a Policy ambígua para o relatório."
+                )
+            seen_purposes.add(context.market_purpose)
+
+        assessments = tuple(
+            self.assessment_service.assess(
+                context=item.context,
+                decision=item.decision,
+                evaluation=item.evaluation,
+                policy_available=item.policy_available,
+            )
+            for item in sorted(inputs, key=lambda candidate: candidate.context.market_purpose)
+        )
+        counts = {state: 0 for state in MarketOptionState}
+        for assessment in assessments:
+            counts[assessment.state] += 1
+
+        return MultiMarketOptionReport(
+            organization_id=first.organization_id,
+            subject_id=first.subject_id,
+            reference_time=first.reference_time,
+            knowledge_cutoff=first.knowledge_cutoff,
+            target_window_from=first.target_window_from,
+            target_window_until=first.target_window_until,
+            assessments=assessments,
+            counts_by_state=MappingProxyType(counts),
+            market_purposes=tuple(assessment.context.market_purpose for assessment in assessments),
+        )
+
+
 def _assessment(
     *,
     context: MarketOptionContext,
@@ -271,3 +350,23 @@ def _missing_evidence_types(evaluation: Evaluation) -> tuple[str, ...]:
 
 def _has_irreversible_marker(codes: Iterable[str]) -> bool:
     return any("IRREVERSIBLE" in code.upper() for code in codes)
+
+
+def _ensure_same_report_coordinates(
+    first: MarketOptionContext,
+    candidate: MarketOptionContext,
+) -> None:
+    if candidate.organization_id != first.organization_id:
+        raise ValueError("todos os mercados do relatório devem usar a mesma Organization.")
+    if candidate.subject_id != first.subject_id:
+        raise ValueError("todos os mercados do relatório devem usar o mesmo subject_id.")
+    if candidate.reference_time != first.reference_time:
+        raise ValueError("todos os mercados devem preservar o mesmo reference_time.")
+    if candidate.knowledge_cutoff != first.knowledge_cutoff:
+        raise ValueError("todos os mercados devem preservar o mesmo knowledge_cutoff.")
+    if candidate.target_window_from != first.target_window_from:
+        raise ValueError("todos os mercados devem usar a mesma target_window_from.")
+    if candidate.target_window_until != first.target_window_until:
+        raise ValueError("todos os mercados devem usar a mesma target_window_until.")
+    if candidate.result_boundary != first.result_boundary:
+        raise ValueError("todos os mercados devem preservar o mesmo result_boundary.")
