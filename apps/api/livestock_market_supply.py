@@ -53,6 +53,7 @@ from packages.livestock_application.market_supply_workflow import (
 )
 from packages.livestock_infrastructure.persistence import (
     TransactionalMarketSupplyOwnerScopedQueryAuditRepository,
+    TransactionalMarketSupplyOwnerScopedReadinessExecutor,
     TransactionalMarketSupplyOwnerScopedSubjectReader,
 )
 from packages.shared_kernel import TypedId, UniversalReference
@@ -196,6 +197,9 @@ def _build_orchestrator(connection: Connection) -> MarketSupplyAggregateAssessme
             decision_reader=TransactionalDecisionRepository(connection),
             evaluation_reader=TransactionalEvaluationRepository(connection),
             readiness_service=MarketReadinessService(),
+            owner_scoped_executor=TransactionalMarketSupplyOwnerScopedReadinessExecutor(
+                connection,
+            ),
         ),
         payload_builder=MarketSupplyAggregatePayloadBuilder(),
         gate_workflow=gate_workflow,

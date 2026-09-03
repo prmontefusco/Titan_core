@@ -5,12 +5,14 @@ candidate subject descriptors for the application resolver; it does not decide
 readiness, eligibility, disclosure or cross-tenant access.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC
 
 from sqlalchemy import Connection, and_, exists, select, text
 
 from packages.core_infrastructure.persistence.organizations import set_local_organization_context
+from packages.livestock_application.market_readiness import MarketReadinessReport
 from packages.livestock_application.market_supply_population import (
     CandidatePopulationCriteria,
     CandidatePopulationSubject,
@@ -111,6 +113,42 @@ class TransactionalMarketSupplyOwnerScopedSubjectReader:
             return TransactionalOwnerScopedCandidateAnimalReader(self.connection).list_subjects(
                 criteria=criteria,
             )
+        finally:
+            self._restore_organization_context(previous_organization_id)
+
+    def _current_organization_id(self) -> OrganizationId | None:
+        raw = self.connection.execute(
+            text("SELECT NULLIF(current_setting('titan.organization_id', true), '')::uuid"),
+        ).scalar_one_or_none()
+        if raw is None:
+            return None
+        return OrganizationId(raw)
+
+    def _restore_organization_context(self, organization_id: OrganizationId | None) -> None:
+        if organization_id is None:
+            self.connection.execute(
+                text("SELECT set_config('titan.organization_id', '', true)"),
+            )
+            return
+        set_local_organization_context(self.connection, organization_id)
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalMarketSupplyOwnerScopedReadinessExecutor:
+    """Runs MarketReadiness repository reads under the contributor's RLS context."""
+
+    connection: Connection
+
+    def run_for_owner(
+        self,
+        *,
+        organization_id: OrganizationId,
+        callback: Callable[[], MarketReadinessReport],
+    ) -> MarketReadinessReport:
+        previous_organization_id = self._current_organization_id()
+        set_local_organization_context(self.connection, organization_id)
+        try:
+            return callback()
         finally:
             self._restore_organization_context(previous_organization_id)
 

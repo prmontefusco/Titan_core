@@ -7,9 +7,10 @@ cross-Organization access.
 
 import hashlib
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any
+from typing import Any, Protocol
 
 from packages.core_application.idempotency import IdempotencyExecution
 from packages.core_domain.policy_sharing import AuthorizationGrant
@@ -287,6 +288,7 @@ class MarketSupplyReadinessCompositionService:
     decision_reader: MarketReadinessDecisionReaderPort
     evaluation_reader: MarketReadinessEvaluationReaderPort
     readiness_service: MarketReadinessService
+    owner_scoped_executor: "MarketSupplyOwnerScopedReadinessExecutorPort | None" = None
 
     def build_reports(
         self,
@@ -304,17 +306,44 @@ class MarketSupplyReadinessCompositionService:
                 reference_time=criteria.reference_time,
                 knowledge_cutoff=criteria.knowledge_cutoff,
             )
-            reports.append(
-                MarketReadinessPopulationReader(
-                    decision_repository=self.decision_reader,
-                    evaluation_repository=self.evaluation_reader,
-                    readiness_service=self.readiness_service,
-                ).build_for_animals(
+            reader = MarketReadinessPopulationReader(
+                decision_repository=self.decision_reader,
+                evaluation_repository=self.evaluation_reader,
+                readiness_service=self.readiness_service,
+            )
+
+            def build(
+                *,
+                context: MarketReadinessContext = context,
+                reader: MarketReadinessPopulationReader = reader,
+                snapshot: Any = snapshot,
+            ) -> MarketReadinessReport:
+                return reader.build_for_animals(
                     context=context,
                     animal_ids=snapshot.included_subject_ids,
                 )
-            )
+
+            if self.owner_scoped_executor is None:
+                reports.append(build())
+            else:
+                reports.append(
+                    self.owner_scoped_executor.run_for_owner(
+                        organization_id=criteria.organization_id,
+                        callback=build,
+                    )
+                )
         return tuple(reports)
+
+
+class MarketSupplyOwnerScopedReadinessExecutorPort(Protocol):
+    """Runs readiness reads under the contributor's own RLS context."""
+
+    def run_for_owner(
+        self,
+        *,
+        organization_id: OrganizationId,
+        callback: Callable[[], MarketReadinessReport],
+    ) -> MarketReadinessReport: ...
 
 
 @dataclass(frozen=True, slots=True)
