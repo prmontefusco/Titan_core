@@ -14,6 +14,10 @@ from typing import Any, Protocol
 
 from packages.core_application.idempotency import IdempotencyExecution
 from packages.core_domain.policy_sharing import AuthorizationGrant
+from packages.livestock_application.market_optionality import (
+    MarketOptionAssessment,
+    MarketOptionState,
+)
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MarketReadinessContext,
@@ -282,6 +286,78 @@ def _public_gap_code(code: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketSupplyOptionalityAggregation:
+    """Internal aggregate of readiness and optionality over authorized snapshots."""
+
+    population_count: int
+    excluded_count: int
+    rejected_contribution_subject_count: int
+    evaluated_optionality_count: int
+    missing_optionality_count: int
+    readiness_counts: dict[str, int]
+    option_counts: dict[str, int]
+    limitations: tuple[str, ...]
+    result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
+
+
+@dataclass(frozen=True, slots=True)
+class MarketSupplyOptionalityAggregationService:
+    """Aggregates supplied optionality assessments without resolving population."""
+
+    def build(
+        self,
+        *,
+        population_result: AuthorizedCandidatePopulationResult,
+        readiness_reports: tuple[MarketReadinessReport, ...],
+        optionality_assessments: tuple[MarketOptionAssessment, ...],
+    ) -> MarketSupplyOptionalityAggregation:
+        _assert_reports_match_population(population_result, readiness_reports)
+        included_subjects = frozenset(
+            subject_id
+            for snapshot in population_result.snapshots
+            for subject_id in snapshot.included_subject_ids
+        )
+        assessments_by_subject = _index_optionality_for_population(
+            population_result=population_result,
+            optionality_assessments=optionality_assessments,
+        )
+        readiness_counts = {
+            status.value: sum(report.counts.get(status, 0) for report in readiness_reports)
+            for status in MarketReadinessStatus
+        }
+        option_counts = {state.value: 0 for state in MarketOptionState}
+        for assessment in assessments_by_subject.values():
+            option_counts[assessment.state.value] += 1
+
+        missing_optionality_count = len(included_subjects) - len(assessments_by_subject)
+        limitations = {
+            "derived from authorized CandidatePopulationSnapshot and MarketReadiness",
+            "optionality is derived; not a Decision",
+            "no forecast included",
+            "aggregate summary only",
+        }
+        if missing_optionality_count:
+            limitations.add("population contains subjects without optionality assessment")
+        if any(snapshot.excluded_count for snapshot in population_result.snapshots):
+            limitations.add("candidate population contains explicit exclusions")
+        if population_result.rejected_contributions:
+            limitations.add("candidate population contains rejected contributions")
+
+        return MarketSupplyOptionalityAggregation(
+            population_count=len(included_subjects),
+            excluded_count=sum(snapshot.excluded_count for snapshot in population_result.snapshots),
+            rejected_contribution_subject_count=sum(
+                rejection.subject_count for rejection in population_result.rejected_contributions
+            ),
+            evaluated_optionality_count=len(assessments_by_subject),
+            missing_optionality_count=missing_optionality_count,
+            readiness_counts=readiness_counts,
+            option_counts=option_counts,
+            limitations=tuple(sorted(limitations)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class MarketSupplyReadinessCompositionService:
     """Builds MarketReadiness reports for authorized owner-scoped snapshots."""
 
@@ -546,3 +622,59 @@ def _authorization_context_digest(grant: AuthorizationGrant) -> str:
             ),
         ),
     ).hexdigest()
+
+
+def _assert_reports_match_population(
+    population_result: AuthorizedCandidatePopulationResult,
+    reports: tuple[MarketReadinessReport, ...],
+) -> None:
+    if len(population_result.snapshots) != len(reports):
+        raise ValueError("readiness reports devem corresponder aos snapshots autorizados.")
+    for snapshot, report in zip(population_result.snapshots, reports, strict=True):
+        criteria = snapshot.criteria
+        context = report.context
+        if (
+            context.organization_id != criteria.organization_id
+            or context.purpose != criteria.purpose
+            or context.policy_id != criteria.policy_id
+            or context.policy_version != criteria.policy_version
+            or context.reference_time != criteria.reference_time
+            or context.knowledge_cutoff != criteria.knowledge_cutoff
+        ):
+            raise ValueError("readiness report diverge do CandidatePopulationSnapshot.")
+        report_subjects = frozenset(entry.subject_id for entry in report.entries)
+        if report_subjects != frozenset(snapshot.included_subject_ids):
+            raise ValueError("readiness report deve cobrir exatamente os subjects do snapshot.")
+
+
+def _index_optionality_for_population(
+    *,
+    population_result: AuthorizedCandidatePopulationResult,
+    optionality_assessments: tuple[MarketOptionAssessment, ...],
+) -> dict[TypedId, MarketOptionAssessment]:
+    snapshots_by_subject: dict[TypedId, CandidatePopulationCriteria] = {}
+    for snapshot in population_result.snapshots:
+        for subject_id in snapshot.included_subject_ids:
+            if subject_id in snapshots_by_subject:
+                raise ValueError("subject duplicado em CandidatePopulationSnapshot.")
+            snapshots_by_subject[subject_id] = snapshot.criteria
+
+    indexed: dict[TypedId, MarketOptionAssessment] = {}
+    for assessment in optionality_assessments:
+        subject_id = assessment.context.subject_id
+        if subject_id in indexed:
+            raise ValueError("optionality assessment duplicado para subject.")
+        criteria = snapshots_by_subject.get(subject_id)
+        if criteria is None:
+            raise ValueError("optionality assessment fora da população candidata.")
+        if (
+            assessment.context.organization_id != criteria.organization_id
+            or assessment.context.market_purpose != criteria.purpose
+            or assessment.context.policy_id != criteria.policy_id
+            or assessment.context.policy_version != criteria.policy_version
+            or assessment.context.reference_time != criteria.reference_time
+            or assessment.context.knowledge_cutoff != criteria.knowledge_cutoff
+        ):
+            raise ValueError("optionality assessment diverge do CandidatePopulationSnapshot.")
+        indexed[subject_id] = assessment
+    return indexed

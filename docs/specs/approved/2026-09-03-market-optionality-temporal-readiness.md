@@ -89,6 +89,8 @@ F3 was completed on 2026-09-03 as an application-only transient `MarketOptionCha
 
 F4 was completed on 2026-09-03 as an application-only transient option-preservation warning over supplied before/after optionality assessments and synthetic event contexts. It remains within the approved boundary: no persistence, API, UI, worker, notification, operational blocking, clinical advice, forecast or Dossier change.
 
+F5 was completed on 2026-09-03 as an internal application aggregation over authorized `CandidatePopulationSnapshot`, canonical `MarketReadinessReport` and supplied `MarketOptionAssessment` material. It remains within the approved boundary: no public release, new privacy threshold, persistence, API, UI, worker, forecast, CommercialDemand persistence, detailed disclosure or Dossier change.
+
 ## Canonical Synthetic Scenario
 
 Use fully synthetic data:

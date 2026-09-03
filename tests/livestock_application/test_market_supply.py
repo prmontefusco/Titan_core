@@ -9,6 +9,11 @@ from packages.core_domain import CanonicalPayload
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation
 from packages.core_domain.policy_sharing import AuthorizationGrant
+from packages.livestock_application.market_optionality import (
+    MarketOptionAssessmentService,
+    MarketOptionContext,
+    MarketOptionState,
+)
 from packages.livestock_application.market_readiness import (
     MarketReadinessInput,
     MarketReadinessService,
@@ -19,6 +24,7 @@ from packages.livestock_application.market_supply import (
     MarketSupplyAggregateAssessmentCommand,
     MarketSupplyAggregateAssessmentOrchestrator,
     MarketSupplyAggregatePayloadBuilder,
+    MarketSupplyOptionalityAggregationService,
     MarketSupplyReadinessCompositionService,
     ProducerMarketSupplyAnalysisService,
     ProducerMarketSupplyQuestion,
@@ -240,6 +246,176 @@ def test_market_supply_aggregate_payload_keeps_gaps_aggregate_only() -> None:
     assert {"code": "GENERAL_GAP", "count": 1} in payload["gap_summary"]
     assert "some gap codes use a public general category" in payload["limitations"]
     assert str(not_ready.subject_id.value) not in repr(payload["gap_summary"])
+
+
+def test_market_supply_optionality_aggregation_counts_readiness_and_options() -> None:
+    ready, ready_evaluation, policy = _artifacts()
+    not_ready, not_ready_evaluation, _ = _artifacts(
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+        result=DecisionResult.REJEITADA,
+    )
+    criteria = CandidatePopulationCriteria(
+        organization_id=policy.organization_id,
+        purpose=ready.purpose,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=_context(policy).reference_time,
+        knowledge_cutoff=_context(policy).knowledge_cutoff,
+    )
+    snapshot = CandidatePopulationResolver().resolve(
+        criteria=criteria,
+        subjects=(
+            CandidatePopulationSubject(ready.subject_id, policy.organization_id),
+            CandidatePopulationSubject(not_ready.subject_id, policy.organization_id),
+        ),
+        resolved_at=_context(policy).knowledge_cutoff,
+    )
+    readiness = MarketReadinessService().build_report(
+        context=_context(policy),
+        inputs=(
+            MarketReadinessInput(ready.subject_id, ready, ready_evaluation),
+            MarketReadinessInput(not_ready.subject_id, not_ready, not_ready_evaluation),
+        ),
+    )
+    optionality_service = MarketOptionAssessmentService()
+    optionality = (
+        optionality_service.assess(
+            context=MarketOptionContext(
+                organization_id=policy.organization_id,
+                subject_id=ready.subject_id,
+                market_purpose=ready.purpose,
+                policy_id=policy.policy_id,
+                policy_version=policy.version,
+                reference_time=_context(policy).reference_time,
+                knowledge_cutoff=_context(policy).knowledge_cutoff,
+            ),
+            decision=ready,
+            evaluation=ready_evaluation,
+        ),
+        optionality_service.assess(
+            context=MarketOptionContext(
+                organization_id=policy.organization_id,
+                subject_id=not_ready.subject_id,
+                market_purpose=not_ready.purpose,
+                policy_id=policy.policy_id,
+                policy_version=policy.version,
+                reference_time=_context(policy).reference_time,
+                knowledge_cutoff=_context(policy).knowledge_cutoff,
+            ),
+            decision=not_ready,
+            evaluation=not_ready_evaluation,
+        ),
+    )
+
+    aggregation = MarketSupplyOptionalityAggregationService().build(
+        population_result=AuthorizedCandidatePopulationResult(
+            snapshots=(snapshot,),
+            rejected_contributions=(),
+        ),
+        readiness_reports=(readiness,),
+        optionality_assessments=optionality,
+    )
+
+    assert aggregation.population_count == 2
+    assert aggregation.evaluated_optionality_count == 2
+    assert aggregation.missing_optionality_count == 0
+    assert aggregation.readiness_counts[MarketReadinessStatus.READY.value] == 1
+    assert aggregation.readiness_counts[MarketReadinessStatus.NOT_READY.value] == 1
+    assert aggregation.option_counts[MarketOptionState.OPTION_OPEN.value] == 1
+    assert aggregation.option_counts[MarketOptionState.TEMPORARILY_INCOMPATIBLE.value] == 1
+    assert "optionality is derived; not a Decision" in aggregation.limitations
+
+
+def test_market_supply_optionality_aggregation_keeps_missing_and_excluded_explicit() -> None:
+    ready, ready_evaluation, policy = _artifacts()
+    excluded_subject_id = TypedId.new("animal")
+    criteria = CandidatePopulationCriteria(
+        organization_id=policy.organization_id,
+        purpose=ready.purpose,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=_context(policy).reference_time,
+        knowledge_cutoff=_context(policy).knowledge_cutoff,
+        excluded_subject_ids=(excluded_subject_id,),
+    )
+    snapshot = CandidatePopulationResolver().resolve(
+        criteria=criteria,
+        subjects=(
+            CandidatePopulationSubject(ready.subject_id, policy.organization_id),
+            CandidatePopulationSubject(excluded_subject_id, policy.organization_id),
+        ),
+        resolved_at=_context(policy).knowledge_cutoff,
+    )
+    readiness = MarketReadinessService().build_report(
+        context=_context(policy),
+        inputs=(MarketReadinessInput(ready.subject_id, ready, ready_evaluation),),
+    )
+
+    aggregation = MarketSupplyOptionalityAggregationService().build(
+        population_result=AuthorizedCandidatePopulationResult(
+            snapshots=(snapshot,),
+            rejected_contributions=(),
+        ),
+        readiness_reports=(readiness,),
+        optionality_assessments=(),
+    )
+
+    assert aggregation.population_count == 1
+    assert aggregation.excluded_count == 1
+    assert aggregation.evaluated_optionality_count == 0
+    assert aggregation.missing_optionality_count == 1
+    assert aggregation.option_counts[MarketOptionState.OPTION_OPEN.value] == 0
+    assert "candidate population contains explicit exclusions" in aggregation.limitations
+    assert "population contains subjects without optionality assessment" in aggregation.limitations
+
+
+def test_market_supply_optionality_aggregation_rejects_subject_outside_population() -> None:
+    ready, ready_evaluation, policy = _artifacts()
+    outsider, outsider_evaluation, _ = _artifacts(
+        organization_id=policy.organization_id,
+        policy_id=policy.policy_id,
+    )
+    criteria = CandidatePopulationCriteria(
+        organization_id=policy.organization_id,
+        purpose=ready.purpose,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=_context(policy).reference_time,
+        knowledge_cutoff=_context(policy).knowledge_cutoff,
+    )
+    snapshot = CandidatePopulationResolver().resolve(
+        criteria=criteria,
+        subjects=(CandidatePopulationSubject(ready.subject_id, policy.organization_id),),
+        resolved_at=_context(policy).knowledge_cutoff,
+    )
+    readiness = MarketReadinessService().build_report(
+        context=_context(policy),
+        inputs=(MarketReadinessInput(ready.subject_id, ready, ready_evaluation),),
+    )
+    outsider_optionality = MarketOptionAssessmentService().assess(
+        context=MarketOptionContext(
+            organization_id=policy.organization_id,
+            subject_id=outsider.subject_id,
+            market_purpose=outsider.purpose,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            reference_time=_context(policy).reference_time,
+            knowledge_cutoff=_context(policy).knowledge_cutoff,
+        ),
+        decision=outsider,
+        evaluation=outsider_evaluation,
+    )
+
+    with pytest.raises(ValueError, match="fora da população candidata"):
+        MarketSupplyOptionalityAggregationService().build(
+            population_result=AuthorizedCandidatePopulationResult(
+                snapshots=(snapshot,),
+                rejected_contributions=(),
+            ),
+            readiness_reports=(readiness,),
+            optionality_assessments=(outsider_optionality,),
+        )
 
 
 class EmptyDecisionReader:
