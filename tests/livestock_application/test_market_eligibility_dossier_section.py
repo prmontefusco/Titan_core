@@ -43,8 +43,16 @@ from packages.livestock_application.dossier_template import (
     MARKET_TEST_A_CODE,
     MarketEligibilityDossierSectionBuilder,
     MarketEligibilityDossierTemplate,
+    MarketOptionalityDossierSectionBuilder,
+)
+from packages.livestock_application.market_optionality import (
+    MarketOptionAssessmentService,
+    MarketOptionContext,
 )
 from packages.livestock_application.requirement_authority import RecognitionBoundary
+from packages.livestock_application.verification_bundle_interpreter import (
+    LivestockVerificationBundleInterpreter,
+)
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 NOW = datetime(2026, 8, 12, tzinfo=UTC)
@@ -82,11 +90,12 @@ def _artifacts(
     classification_status: str = "COMPLETE",
     organization_id: OrganizationId | None = None,
     animal_id: TypedId | None = None,
+    policy_id: TypedId | None = None,
 ) -> tuple[Decision, Evaluation, Policy]:
     organization_id = organization_id or OrganizationId.new()
     animal_id = animal_id or TypedId.new("animal")
     policy = Policy(
-        policy_id=TypedId.new("policy"),
+        policy_id=policy_id or TypedId.new("policy"),
         organization_id=organization_id,
         code=market_code,
         name="Policy de teste",
@@ -231,6 +240,18 @@ def _artifacts(
         emission_method=DecisionEmissionMethod.AUTOMATED,
     )
     return decision, evaluation, policy
+
+
+def _optionality_context(policy: Policy, decision: Decision) -> MarketOptionContext:
+    return MarketOptionContext(
+        organization_id=policy.organization_id,
+        subject_id=decision.subject_id,
+        market_purpose=decision.purpose,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=NOW,
+        knowledge_cutoff=NOW,
+    )
 
 
 def test_section_declares_real_dimensional_coverage_and_result_boundary() -> None:
@@ -485,3 +506,104 @@ def test_market_test_a_dossier_is_verifiable_in_the_existing_bundle() -> None:
     assert received.manifest.purpose == PURPOSE
     assert b"MARKET_TEST_A" in received.payloads["dossier.json"]
     assert b"MARKET_TEST_B" not in received.payloads["dossier.json"]
+
+
+def test_optionality_section_links_to_canonical_decision_evaluation_and_policy() -> None:
+    decision, evaluation, policy = _artifacts(market_code=MARKET_TEST_A_CODE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_optionality_context(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    section = MarketOptionalityDossierSectionBuilder(
+        market_code=MARKET_TEST_A_CODE,
+        purpose=PURPOSE,
+    ).build(
+        assessment=assessment,
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+    )
+
+    optionality = section.content["market_optionality"]
+    assert optionality["status"] == "EXPLANATORY_DERIVED_SECTION"
+    assert optionality["option_state"] == assessment.state.value
+    assert optionality["canonical_inputs"] == {
+        "decision_id": str(decision.decision_id.value),
+        "evaluation_id": str(evaluation.evaluation_id.value),
+        "policy_id": str(policy.policy_id.value),
+        "policy_version": policy.version,
+        "decision_hash": decision.decision_hash,
+        "evaluation_hash": evaluation.evaluation_hash,
+        "fact_snapshot_hash": evaluation.fact_snapshot.snapshot_hash,
+    }
+    assert optionality["temporal_context"]["knowledge_cutoff"] == NOW.isoformat()
+    assert "not a forecast" in optionality["non_goals"]
+    assert "forecast" not in optionality
+
+
+def test_optionality_section_refuses_assessment_from_another_decision() -> None:
+    decision, evaluation, policy = _artifacts(market_code=MARKET_TEST_A_CODE)
+    other_decision, other_evaluation, _ = _artifacts(
+        organization_id=policy.organization_id,
+        animal_id=decision.subject_id,
+        market_code=MARKET_TEST_A_CODE,
+        policy_id=policy.policy_id,
+    )
+    assessment = MarketOptionAssessmentService().assess(
+        context=_optionality_context(policy, other_decision),
+        decision=other_decision,
+        evaluation=other_evaluation,
+    )
+
+    with pytest.raises(ValueError, match="mesma Decision"):
+        MarketOptionalityDossierSectionBuilder(
+            market_code=MARKET_TEST_A_CODE,
+            purpose=PURPOSE,
+        ).build(
+            assessment=assessment,
+            decision=decision,
+            evaluation=evaluation,
+            policy=policy,
+        )
+
+
+def test_optionality_section_travels_inside_existing_verification_bundle() -> None:
+    decision, evaluation, policy = _artifacts(market_code=MARKET_TEST_A_CODE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_optionality_context(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    dossier = DossierService().build(
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        generated_at=NOW,
+        vertical_section=MarketOptionalityDossierSectionBuilder(
+            market_code=MARKET_TEST_A_CODE,
+            purpose=PURPOSE,
+        ).build(
+            assessment=assessment,
+            decision=decision,
+            evaluation=evaluation,
+            policy=policy,
+        ),
+    )
+
+    bundle = VerificationBundleService(
+        dossier_interpreters=(LivestockVerificationBundleInterpreter(),)
+    ).build_from_dossier(
+        dossier=dossier,
+        audience="auditoria",
+        created_at=NOW,
+    )
+
+    assert dossier.verify()
+    assert "market_optionality_explanation" in bundle.manifest.declared_scopes
+    assert (
+        f"optionality_boundary:{MARKET_ELIGIBILITY_RESULT_BOUNDARY}"
+        in bundle.manifest.declared_scopes
+    )
+    assert any("does not include forecast" in gap for gap in bundle.manifest.declared_gaps)

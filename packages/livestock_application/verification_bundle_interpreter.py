@@ -46,6 +46,20 @@ class LivestockVerificationBundleInterpreter:
                     "Material importado acompanha o pacote como afirmacao importada; "
                     "nao substitui observacao local."
                 )
+        optionality = content.get("market_optionality")
+        if isinstance(optionality, Mapping):
+            scopes.append("market_optionality_explanation")
+            result_boundary = optionality.get("result_boundary")
+            if isinstance(result_boundary, str) and result_boundary:
+                scopes.append(f"optionality_boundary:{result_boundary}")
+            limitations = optionality.get("limitations")
+            if isinstance(limitations, Sequence) and not isinstance(limitations, (str, bytes)):
+                gaps.extend(item for item in limitations if isinstance(item, str))
+            non_goals = optionality.get("non_goals")
+            if isinstance(non_goals, Sequence) and "not a forecast" in non_goals:
+                gaps.append(
+                    "Market optionality section is explanatory and does not include forecast."
+                )
         limitations = content.get("declared_limitations")
         if isinstance(limitations, Sequence) and not isinstance(limitations, (str, bytes)):
             gaps.extend(item for item in limitations if isinstance(item, str))

@@ -46,6 +46,7 @@ from packages.livestock_application.fact_provider import (
     HISTORY_COVERAGE_FACT_TYPE,
     WITHDRAWAL_FACT_TYPE,
 )
+from packages.livestock_application.market_optionality import MarketOptionAssessment
 from packages.livestock_application.requirement_authority import RecognitionBoundary
 from packages.livestock_application.timeline_service import (
     LivestockTimelineService,
@@ -208,6 +209,116 @@ class MarketEligibilityDossierTemplate:
                 policy=policy,
             ),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionalityDossierSectionBuilder:
+    """Builds an explanatory optionality section linked to canonical inputs."""
+
+    market_code: str
+    purpose: str
+    profile: str = "STANDARD"
+    synthetic: bool = True
+    recognition_boundary: RecognitionBoundary = RecognitionBoundary.INTERNAL_ONLY
+
+    def __post_init__(self) -> None:
+        for field_name in ("market_code", "purpose", "profile"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} deve ser texto não vazio.")
+        if not isinstance(self.synthetic, bool):
+            raise TypeError("synthetic deve ser booleano.")
+        if self.recognition_boundary is not RecognitionBoundary.INTERNAL_ONLY:
+            raise ValueError("Optionality dossier section suporta somente INTERNAL_ONLY.")
+
+    def build(
+        self,
+        *,
+        assessment: MarketOptionAssessment,
+        decision: Decision,
+        evaluation: Evaluation,
+        policy: Policy,
+    ) -> VerticalSection:
+        self._guard_coherence(assessment, decision, evaluation, policy)
+        return VerticalSection(
+            namespace=LIVESTOCK_NAMESPACE,
+            section_version=SECTION_VERSION + 2,
+            content={
+                "market_optionality": {
+                    "status": "EXPLANATORY_DERIVED_SECTION",
+                    "market_profile": {
+                        "code": self.market_code,
+                        "profile": self.profile,
+                        "synthetic": self.synthetic,
+                    },
+                    "subject_scope": decision.subject_id.entity_type,
+                    "evaluated_purpose": self.purpose,
+                    "option_state": assessment.state.value,
+                    "reversibility": assessment.reversibility.value,
+                    "preserves_option": assessment.preserves_option,
+                    "canonical_inputs": {
+                        "decision_id": str(decision.decision_id.value),
+                        "evaluation_id": str(evaluation.evaluation_id.value),
+                        "policy_id": str(policy.policy_id.value),
+                        "policy_version": policy.version,
+                        "decision_hash": decision.decision_hash,
+                        "evaluation_hash": evaluation.evaluation_hash,
+                        "fact_snapshot_hash": evaluation.fact_snapshot.snapshot_hash,
+                    },
+                    "temporal_context": {
+                        "reference_time": assessment.context.reference_time.isoformat(),
+                        "knowledge_cutoff": assessment.context.knowledge_cutoff.isoformat(),
+                        "target_window_from": _iso_or_none(assessment.context.target_window_from),
+                        "target_window_until": _iso_or_none(assessment.context.target_window_until),
+                    },
+                    "authority_boundary": {
+                        "recognition_boundary": self.recognition_boundary.value,
+                        "statement": (
+                            "Titan optionality explanation; external recognition is not asserted."
+                        ),
+                    },
+                    "reason_codes": list(assessment.reason_codes),
+                    "missing_evidence_types": list(assessment.missing_evidence_types),
+                    "limitations": list(assessment.limitations),
+                    "result_boundary": assessment.result_boundary,
+                    "non_goals": [
+                        "not a Decision",
+                        "not an Evaluation",
+                        "not export authorization",
+                        "not external authority recognition",
+                        "not a forecast",
+                    ],
+                }
+            },
+        )
+
+    def _guard_coherence(
+        self,
+        assessment: MarketOptionAssessment,
+        decision: Decision,
+        evaluation: Evaluation,
+        policy: Policy,
+    ) -> None:
+        MarketEligibilityDossierSectionBuilder(
+            market_code=self.market_code,
+            purpose=self.purpose,
+            profile=self.profile,
+            synthetic=self.synthetic,
+            recognition_boundary=self.recognition_boundary,
+        )._guard_coherence(decision, evaluation, policy)
+        if assessment.decision_id != decision.decision_id:
+            raise ValueError("Assessment deve referenciar a mesma Decision.")
+        if assessment.evaluation_id != evaluation.evaluation_id:
+            raise ValueError("Assessment deve referenciar a mesma Evaluation.")
+        context = assessment.context
+        if (
+            context.organization_id != decision.organization_id
+            or context.subject_id != decision.subject_id
+            or context.market_purpose != self.purpose
+            or context.policy_id != policy.policy_id
+            or context.policy_version != policy.version
+        ):
+            raise ValueError("Assessment deve preservar o contexto canonico do Dossier.")
 
 
 @dataclass(frozen=True, slots=True)

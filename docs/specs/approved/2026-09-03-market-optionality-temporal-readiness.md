@@ -91,6 +91,8 @@ F4 was completed on 2026-09-03 as an application-only transient option-preservat
 
 F5 was completed on 2026-09-03 as an internal application aggregation over authorized `CandidatePopulationSnapshot`, canonical `MarketReadinessReport` and supplied `MarketOptionAssessment` material. It remains within the approved boundary: no public release, new privacy threshold, persistence, API, UI, worker, forecast, CommercialDemand persistence, detailed disclosure or Dossier change.
 
+F6 was completed on 2026-09-04 as an additive Livestock vertical Dossier section for Market Optionality and existing VerificationBundle interpreter support. It remains within the approved boundary: no new Dossier type, forecast-as-Decision, public certification claim, persistence change, API, UI, worker, notification or sharing/publication change.
+
 ## Canonical Synthetic Scenario
 
 Use fully synthetic data:
