@@ -23,7 +23,7 @@ from packages.livestock_application.market_change_impact import (
 from packages.livestock_application.market_optionality import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
-    DeterministicMarketOptionExplanationDraftProvider,
+    DeterministicMarketOptionExplanationTextProvider,
     MarketOptionAssessmentService,
     MarketOptionChangeImpactService,
     MarketOptionChangeImpactState,
@@ -1044,27 +1044,12 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
         )
 
 
-def test_explanation_pipeline_falls_back_when_provider_invents_material() -> None:
-    class InventingProvider(DeterministicMarketOptionExplanationDraftProvider):
-        def draft(self, *, explanation_context, run_context):  # type: ignore[no-untyped-def]
-            assessment = explanation_context.assessment
-            return MarketOptionExplanationDraft(
-                text="Resumo sintético com conclusão não canônica.",
-                decision_id=assessment.decision_id,
-                evaluation_id=assessment.evaluation_id,
-                policy_id=assessment.context.policy_id,
-                policy_version=assessment.context.policy_version,
-                option_state=MarketOptionState.OPTION_OPEN,
-                referenced_claims=(
-                    MarketOptionExplanationClaim(
-                        claim_type=MarketOptionExplanationClaimType.STATUS,
-                        value="AI_ORIGINATED_STATUS",
-                        source_reference=str(assessment.decision_id),
-                    ),
-                ),
-                referenced_reason_codes=("INVENTED_AI_REASON",),
-                assertions=(MarketOptionExplanationAssertion.FORECAST,),
-            )
+def test_explanation_pipeline_falls_back_when_provider_text_claims_authority() -> None:
+    class InventingProvider(DeterministicMarketOptionExplanationTextProvider):
+        def generate_text(self, *, prompt_payload, run_context):  # type: ignore[no-untyped-def]
+            assert "organization_id" not in prompt_payload.fields
+            assert "subject_id" not in prompt_payload.fields
+            return "Este animal está certificado e eligible para export allowed."
 
     decision, evaluation, policy = _artifacts(purpose=PURPOSE)
     assessment = MarketOptionAssessmentService().assess(
@@ -1073,7 +1058,7 @@ def test_explanation_pipeline_falls_back_when_provider_invents_material() -> Non
         evaluation=evaluation,
     )
 
-    result = MarketOptionExplanationPipelineService(draft_provider=InventingProvider()).explain(
+    result = MarketOptionExplanationPipelineService(text_provider=InventingProvider()).explain(
         assessment=assessment,
         run_context=_ai_run_context(),
     )
@@ -1084,13 +1069,10 @@ def test_explanation_pipeline_falls_back_when_provider_invents_material() -> Non
     assert result.audit_envelope.accepted is False
     assert result.audit_envelope.released_output_digest is None
     assert result.audit_envelope.prompt_payload_digest == result.prompt_payload.payload_digest
-    assert MarketOptionExplanationViolation.INVENTED_CLAIM in result.validation.violations
-    assert MarketOptionExplanationViolation.INVENTED_REASON_CODE in result.validation.violations
-    assert (
-        MarketOptionExplanationViolation.PROHIBITED_AUTHORITATIVE_ASSERTION
-        in result.validation.violations
+    assert MarketOptionExplanationViolation.PROHIBITED_TEXT_CONTENT in (
+        result.validation.violations
     )
-    assert MarketOptionExplanationViolation.INVENTED_CLAIM.value in (
+    assert MarketOptionExplanationViolation.PROHIBITED_TEXT_CONTENT.value in (
         result.audit_envelope.violation_codes
     )
 

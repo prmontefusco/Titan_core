@@ -230,6 +230,7 @@ class MarketOptionExplanationViolation(StrEnum):
     INVENTED_REASON_CODE = "INVENTED_REASON_CODE"
     INVENTED_MISSING_EVIDENCE_TYPE = "INVENTED_MISSING_EVIDENCE_TYPE"
     INVENTED_LIMITATION = "INVENTED_LIMITATION"
+    PROHIBITED_TEXT_CONTENT = "PROHIBITED_TEXT_CONTENT"
     PROHIBITED_AUTHORITATIVE_ASSERTION = "PROHIBITED_AUTHORITATIVE_ASSERTION"
 
 
@@ -484,13 +485,13 @@ class MarketOptionExplanationResult:
     canonical_fallback: Mapping[str, str]
 
 
-class MarketOptionExplanationDraftProvider(Protocol):
-    def draft(
+class MarketOptionExplanationTextProvider(Protocol):
+    def generate_text(
         self,
         *,
-        explanation_context: MarketOptionExplanationContext,
+        prompt_payload: MarketOptionExplanationPromptPayload,
         run_context: MarketOptionExplanationRunContext,
-    ) -> MarketOptionExplanationDraft: ...
+    ) -> str: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -871,6 +872,8 @@ class MarketOptionExplanationGuardService:
             violations.append(MarketOptionExplanationViolation.INVENTED_MISSING_EVIDENCE_TYPE)
         if not set(draft.referenced_limitations).issubset(context.allowed_limitations):
             violations.append(MarketOptionExplanationViolation.INVENTED_LIMITATION)
+        if _contains_prohibited_explanation_text(draft.text):
+            violations.append(MarketOptionExplanationViolation.PROHIBITED_TEXT_CONTENT)
         if any(
             assertion is not MarketOptionExplanationAssertion.CANONICAL_SUMMARY
             for assertion in draft.assertions
@@ -885,30 +888,19 @@ class MarketOptionExplanationGuardService:
 
 
 @dataclass(frozen=True, slots=True)
-class DeterministicMarketOptionExplanationDraftProvider:
-    """Local fake provider for tests; it never calls an external model."""
+class DeterministicMarketOptionExplanationTextProvider:
+    """Local fake text provider for tests; it receives only the prompt payload."""
 
-    def draft(
+    def generate_text(
         self,
         *,
-        explanation_context: MarketOptionExplanationContext,
+        prompt_payload: MarketOptionExplanationPromptPayload,
         run_context: MarketOptionExplanationRunContext,
-    ) -> MarketOptionExplanationDraft:
-        assessment = explanation_context.assessment
-        return MarketOptionExplanationDraft(
-            text=(
-                "Resumo canônico sintético: estado "
-                f"{assessment.state.value} para {assessment.context.market_purpose}."
-            ),
-            decision_id=assessment.decision_id,
-            evaluation_id=assessment.evaluation_id,
-            policy_id=assessment.context.policy_id,
-            policy_version=assessment.context.policy_version,
-            option_state=assessment.state,
-            referenced_reason_codes=assessment.reason_codes,
-            referenced_missing_evidence_types=assessment.missing_evidence_types,
-            referenced_limitations=assessment.limitations,
-            referenced_claims=explanation_context.allowed_claims,
+    ) -> str:
+        return (
+            "Resumo canônico sintético: estado "
+            f"{prompt_payload.fields['option_state']} para "
+            f"{prompt_payload.fields['market_purpose']}."
         )
 
 
@@ -1075,8 +1067,8 @@ class MarketOptionExplanationAuditEnvelopeService:
 class MarketOptionExplanationPipelineService:
     """Composes draft generation with deterministic guards before releasing text."""
 
-    draft_provider: MarketOptionExplanationDraftProvider = (
-        DeterministicMarketOptionExplanationDraftProvider()
+    text_provider: MarketOptionExplanationTextProvider = (
+        DeterministicMarketOptionExplanationTextProvider()
     )
     guard_service: MarketOptionExplanationGuardService = MarketOptionExplanationGuardService()
     data_contract_service: MarketOptionExplanationDataContractService = (
@@ -1103,9 +1095,13 @@ class MarketOptionExplanationPipelineService:
             explanation_context=explanation_context,
             run_context=run_context,
         )
-        draft = self.draft_provider.draft(
-            explanation_context=explanation_context,
+        provider_text = self.text_provider.generate_text(
+            prompt_payload=prompt_payload,
             run_context=run_context,
+        )
+        draft = _draft_from_provider_text(
+            provider_text=provider_text,
+            explanation_context=explanation_context,
         )
         validation = self.guard_service.validate_draft(
             context=explanation_context,
@@ -1173,6 +1169,44 @@ def _canonical_explanation_fallback(
 
 def _field_tuple(values: tuple[str, ...]) -> tuple[Mapping[str, str], ...]:
     return tuple(MappingProxyType({"value": value}) for value in values)
+
+
+def _draft_from_provider_text(
+    *,
+    provider_text: str,
+    explanation_context: MarketOptionExplanationContext,
+) -> MarketOptionExplanationDraft:
+    assessment = explanation_context.assessment
+    return MarketOptionExplanationDraft(
+        text=provider_text,
+        decision_id=assessment.decision_id,
+        evaluation_id=assessment.evaluation_id,
+        policy_id=assessment.context.policy_id,
+        policy_version=assessment.context.policy_version,
+        option_state=assessment.state,
+        referenced_reason_codes=assessment.reason_codes,
+        referenced_missing_evidence_types=assessment.missing_evidence_types,
+        referenced_limitations=assessment.limitations,
+        referenced_claims=explanation_context.allowed_claims,
+    )
+
+
+def _contains_prohibited_explanation_text(text: str) -> bool:
+    normalized = text.casefold()
+    prohibited_fragments = (
+        "certificado",
+        "certificate",
+        "export_allowed",
+        "export allowed",
+        "eligible",
+        "elegível",
+        "elegivel",
+        "future eligibility",
+        "garantia futura",
+        "reconhecimento oficial",
+        "official recognition",
+    )
+    return any(fragment in normalized for fragment in prohibited_fragments)
 
 
 def _allowed_explanation_claims(

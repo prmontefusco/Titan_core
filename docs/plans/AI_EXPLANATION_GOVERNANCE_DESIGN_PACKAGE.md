@@ -144,7 +144,7 @@ No production provider integration should be included in the first build.
 
 Completed on 2026-09-04:
 
-- mock draft provider interface;
+- mock text provider interface constrained to the minimized prompt payload;
 - deterministic local fake;
 - application service returning accepted draft text or canonical fallback;
 - structured allowed claims originated by Titan before provider wording;
@@ -154,7 +154,8 @@ Completed on 2026-09-04:
 - tests proving a provider draft cannot be released when it invents material or claims forecast/authority;
 - tests proving unapproved DataContract id/version fails closed before prompt payload creation;
 - tests proving template/guard digest mismatches are rejected and prompt payload identity changes with template version;
-- tests proving audit material does not retain raw prompt/output text or raw source identifiers.
+- tests proving audit material does not retain raw prompt/output text or raw source identifiers;
+- tests proving provider text with explicit authority/forecast content is rejected before release.
 
 Still outside this local/mock build:
 

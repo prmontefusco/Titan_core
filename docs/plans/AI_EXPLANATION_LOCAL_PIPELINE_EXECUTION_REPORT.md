@@ -11,7 +11,9 @@ This increment turns the F7 guard into a complete local application pipeline:
 ```text
 MarketOptionAssessment
     -> MarketOptionExplanationContext
-    -> deterministic local draft provider
+    -> MarketOptionExplanationPromptPayload
+    -> deterministic local text provider
+    -> Titan-built canonical draft
     -> MarketOptionExplanationGuardService
     -> released text or canonical fallback
 ```
@@ -23,6 +25,8 @@ On 2026-09-04, the local pipeline added an executable DataContract allow-list fo
 The same increment series now versions the synthetic prompt template, explanation schema and deterministic guard. The prompt payload carries `prompt_template_id`, `prompt_template_version`, `prompt_template_digest`, `guard_version`, `guard_digest` and its own canonical `payload_digest`, without storing raw prompts/outputs or calling an external provider.
 
 The pipeline now also produces a minimized local audit envelope. The envelope carries DataContract, processing activity, provider/model labels, schema/template/guard versions and digests, prompt payload digest, source-reference digest, fallback digest, released-output digest only when the guard accepts, violation codes and limitations. It never stores raw prompt text, raw provider output text, raw source identifiers or domain objects.
+
+The provider boundary now receives only `MarketOptionExplanationPromptPayload` and returns text. Canonical draft metadata, source references, allowed claims, reason codes, missing evidence types and limitations are assembled by Titan after provider text generation. This prevents provider implementations from receiving repositories, Domain objects, full explanation context or raw canonical identifiers through the provider interface.
 
 ## Files Changed
 
@@ -38,8 +42,8 @@ Added:
 
 - `MarketOptionExplanationRunContext`;
 - `MarketOptionExplanationResult`;
-- `MarketOptionExplanationDraftProvider`;
-- `DeterministicMarketOptionExplanationDraftProvider`;
+- `MarketOptionExplanationTextProvider`;
+- `DeterministicMarketOptionExplanationTextProvider`;
 - `MarketOptionExplanationPipelineService`;
 - `MarketOptionExplanationClaimType`;
 - `MarketOptionExplanationClaim`;
@@ -49,13 +53,13 @@ Added:
 - `MarketOptionExplanationAuditEnvelope`;
 - `MarketOptionExplanationAuditEnvelopeService`.
 
-The service requires synthetic governance references (`data_contract_id`, version, processing activity, provider profile and model name), prepares canonical context, requests a draft from a supplied provider, validates it with the deterministic guard and releases text only when validation passes.
+The service requires synthetic governance references (`data_contract_id`, version, processing activity, provider profile and model name), prepares canonical context, builds a minimized prompt payload, requests text from a supplied provider, wraps that text in Titan-built canonical draft metadata, validates it with the deterministic guard and releases text only when validation passes.
 
 When validation fails, `released_text` is `None` and callers retain a canonical fallback containing only structured Market Optionality state, reversibility, Policy/version and temporal coordinates.
 
 After ADR-0074 was accepted with changes, the pipeline was hardened with structured allowed claims. `MarketOptionExplanationContext` now carries claims originated by Titan before draft generation, and the guard rejects provider-originated claims that are not present in that allow-list.
 
-The DataContract step runs before draft generation and fails closed for unapproved contract id/version. It preserves audience, subject type, market purpose, Policy version, `reference_time`, `knowledge_cutoff`, option state, reversibility, allowed claims and limitations, while keeping raw canonical identifiers out of provider-visible fields. Canonical source references remain internally available through aliases for guard/audit composition.
+The DataContract step runs before provider text generation and fails closed for unapproved contract id/version. It preserves audience, subject type, market purpose, Policy version, `reference_time`, `knowledge_cutoff`, option state, reversibility, allowed claims and limitations, while keeping raw canonical identifiers out of provider-visible fields. Canonical source references remain internally available through aliases for guard/audit composition.
 
 Prompt template, schema and guard identities are represented as deterministic local metadata. Their digests are computed through Titan's canonical serializer, so a template or guard-version change becomes visible in the payload identity used by the pipeline.
 
@@ -70,7 +74,9 @@ The audit envelope is generated after guard validation and before returning the 
 - Provider draft output cannot be released without passing the deterministic guard.
 - AI/provider draft output cannot originate externally presented explanation claims.
 - Provider-facing prompt payloads are built from an executable allow-list and exclude raw canonical identifiers.
-- Prompt template, schema and guard versions/digests are preserved before provider draft generation.
+- Prompt template, schema and guard versions/digests are preserved before provider text generation.
+- Provider implementations receive only the minimized prompt payload and return text.
+- Explicitly authoritative or forecast-like provider text is rejected before release.
 - Audit material is minimized to digests, codes and governance references; raw prompt/output text is not retained.
 - Later provider behavior cannot rewrite historical canonical records.
 - No cross-tenant context or disclosure semantics were introduced.
@@ -88,6 +94,8 @@ The audit envelope is generated after guard validation and before returning the 
 - prompt payload digest changes when prompt template version changes;
 - minimized audit envelope without raw prompt/output/source identifiers;
 - released-output digest required only for accepted explanations;
+- provider interface constrained to prompt payload only;
+- fallback when provider text contains prohibited authority/forecast terms;
 - mandatory governance references in the run context.
 
 ## Tests Executed
