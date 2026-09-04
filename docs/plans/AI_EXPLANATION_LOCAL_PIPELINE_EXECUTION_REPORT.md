@@ -16,7 +16,7 @@ MarketOptionAssessment
     -> released text or canonical fallback
 ```
 
-The pipeline does not call Gemini or any external provider. It exists to make the future AI boundary executable in tests while ADR-0074 remains proposed and provider governance is not yet accepted.
+The pipeline does not call Gemini or any external provider. It exists to make the future AI boundary executable in tests while production provider governance remains blocked.
 
 ## Files Changed
 
@@ -34,11 +34,15 @@ Added:
 - `MarketOptionExplanationResult`;
 - `MarketOptionExplanationDraftProvider`;
 - `DeterministicMarketOptionExplanationDraftProvider`;
-- `MarketOptionExplanationPipelineService`.
+- `MarketOptionExplanationPipelineService`;
+- `MarketOptionExplanationClaimType`;
+- `MarketOptionExplanationClaim`.
 
 The service requires synthetic governance references (`data_contract_id`, version, processing activity, provider profile and model name), prepares canonical context, requests a draft from a supplied provider, validates it with the deterministic guard and releases text only when validation passes.
 
 When validation fails, `released_text` is `None` and callers retain a canonical fallback containing only structured Market Optionality state, reversibility, Policy/version and temporal coordinates.
+
+After ADR-0074 was accepted with changes, the pipeline was hardened with structured allowed claims. `MarketOptionExplanationContext` now carries claims originated by Titan before draft generation, and the guard rejects provider-originated claims that are not present in that allow-list.
 
 ## Invariants Preserved
 
@@ -47,6 +51,7 @@ When validation fails, `released_text` is `None` and callers retain a canonical 
 - No API, UI, worker or migration was introduced.
 - No Fact, Evidence, Rule, Policy, Evaluation, Decision, Dossier, VerificationBundle, forecast or option state is created by AI.
 - Provider draft output cannot be released without passing the deterministic guard.
+- AI/provider draft output cannot originate externally presented explanation claims.
 - Later provider behavior cannot rewrite historical canonical records.
 - No cross-tenant context or disclosure semantics were introduced.
 
@@ -56,11 +61,12 @@ When validation fails, `released_text` is `None` and callers retain a canonical 
 
 - guarded local deterministic summary release;
 - fallback with no released text when a provider invents material;
+- rejection of provider-originated structured claims outside the Titan allow-list;
 - mandatory governance references in the run context.
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 25 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 26 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.

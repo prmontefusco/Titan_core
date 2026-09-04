@@ -156,3 +156,19 @@ Still pending ADR-0074 acceptance:
 - prompt/output retention;
 - user-visible API/UI behavior;
 - provider/model governance.
+
+## ADR-0074 Acceptance With Changes
+
+ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:
+
+```text
+Canonical Titan output
+    -> CanonicalExplanation
+    -> allowed claims
+    -> AIExplanationContext
+    -> provider wording/paraphrase
+    -> deterministic guard
+    -> AI explanation or canonical fallback
+```
+
+The provider must not originate claims, access repositories or Domain objects, execute tools, follow source-content instructions, stream unvalidated output, declassify source restrictions or rely on unapproved retention/telemetry behavior.

@@ -30,6 +30,8 @@ from packages.livestock_application.market_optionality import (
     MarketOptionEventContext,
     MarketOptionEventKind,
     MarketOptionExplanationAssertion,
+    MarketOptionExplanationClaim,
+    MarketOptionExplanationClaimType,
     MarketOptionExplanationDraft,
     MarketOptionExplanationGuardService,
     MarketOptionExplanationPipelineService,
@@ -717,6 +719,14 @@ def test_explanation_context_preserves_canonical_source_references() -> None:
     assert context.source_references["reference_time"] == NOW.isoformat()
     assert context.source_references["knowledge_cutoff"] == NOW.isoformat()
     assert context.allowed_option_state is MarketOptionState.OPTION_OPEN
+    assert (
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.STATUS,
+            value=MarketOptionState.OPTION_OPEN.value,
+            source_reference=str(decision.decision_id),
+        )
+        in context.allowed_claims
+    )
     assert "AI_EXPLANATION_CONTEXT_IS_NOT_DECISION" in context.limitations
 
 
@@ -738,6 +748,7 @@ def test_explanation_guard_accepts_canonical_summary_draft() -> None:
             policy_id=policy.policy_id,
             policy_version=policy.version,
             option_state=MarketOptionState.OPTION_OPEN,
+            referenced_claims=context.allowed_claims,
             referenced_reason_codes=assessment.reason_codes,
         ),
     )
@@ -772,6 +783,38 @@ def test_explanation_guard_rejects_invented_gap_or_reason() -> None:
     assert validation.accepted is False
     assert MarketOptionExplanationViolation.INVENTED_REASON_CODE in validation.violations
     assert MarketOptionExplanationViolation.INVENTED_MISSING_EVIDENCE_TYPE in validation.violations
+
+
+def test_explanation_guard_rejects_ai_originated_structured_claim() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+
+    validation = MarketOptionExplanationGuardService().validate_draft(
+        context=context,
+        draft=MarketOptionExplanationDraft(
+            text="Resumo sintético com claim estrutural inventado.",
+            decision_id=decision.decision_id,
+            evaluation_id=evaluation.evaluation_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            option_state=MarketOptionState.OPTION_OPEN,
+            referenced_claims=(
+                MarketOptionExplanationClaim(
+                    claim_type=MarketOptionExplanationClaimType.MISSING_INFORMATION,
+                    value="AI_INVENTED_TREATMENT_HISTORY_GAP",
+                    source_reference=str(decision.decision_id),
+                ),
+            ),
+        ),
+    )
+
+    assert validation.accepted is False
+    assert MarketOptionExplanationViolation.INVENTED_CLAIM in validation.violations
 
 
 def test_explanation_guard_rejects_authoritative_or_forecast_claims() -> None:
@@ -837,6 +880,13 @@ def test_explanation_pipeline_falls_back_when_provider_invents_material() -> Non
                 policy_id=assessment.context.policy_id,
                 policy_version=assessment.context.policy_version,
                 option_state=MarketOptionState.OPTION_OPEN,
+                referenced_claims=(
+                    MarketOptionExplanationClaim(
+                        claim_type=MarketOptionExplanationClaimType.STATUS,
+                        value="AI_ORIGINATED_STATUS",
+                        source_reference=str(assessment.decision_id),
+                    ),
+                ),
                 referenced_reason_codes=("INVENTED_AI_REASON",),
                 assertions=(MarketOptionExplanationAssertion.FORECAST,),
             )
@@ -856,6 +906,7 @@ def test_explanation_pipeline_falls_back_when_provider_invents_material() -> Non
     assert result.validation.accepted is False
     assert result.released_text is None
     assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert MarketOptionExplanationViolation.INVENTED_CLAIM in result.validation.violations
     assert MarketOptionExplanationViolation.INVENTED_REASON_CODE in result.validation.violations
     assert (
         MarketOptionExplanationViolation.PROHIBITED_AUTHORITATIVE_ASSERTION

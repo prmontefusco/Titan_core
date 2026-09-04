@@ -1,7 +1,7 @@
 # SPEC: AI Explanation Governance For Canonical Titan Outputs
 
 - **Level:** CRITICAL
-- **Status:** PROPOSED / POLICY DECISION REQUIRED BEFORE LLM INTEGRATION
+- **Status:** ACCEPTED WITH CHANGES / PROVIDER INTEGRATION STILL BLOCKED
 - **Owner:** Titan Core + Titan Livestock
 - **Date:** 2026-09-04
 
@@ -49,6 +49,12 @@ MarketOptionAssessment
 
 - AI explanation is not Decision, Evaluation, Policy, Evidence, Fact, Dossier, VerificationBundle, certificate, forecast or external authority recognition.
 - Every AI explanation input must be derived from canonical Titan outputs selected by server-side authorization.
+- AI must not originate explanation claims; externally presented claims must originate from allow-listed structured explanation context.
+- AI providers must not receive repositories, Domain objects, database handles or tool-execution authority.
+- External or user-supplied content is untrusted data, never provider instruction.
+- Unvalidated output must not be streamed or partially exposed before deterministic guard approval.
+- Provider-side retention, telemetry, abuse logging and secondary use require explicit ProviderProfile/DataContract approval.
+- AI output inherits or strengthens source classification and disclosure restrictions.
 - `reference_time` and `knowledge_cutoff` must be preserved in the prompt context and output metadata.
 - Prompt context must be minimized by DataContract and FieldScope.
 - Output must pass deterministic guard before any user-visible presentation.
@@ -60,14 +66,15 @@ MarketOptionAssessment
 ## Proposed Lifecycle
 
 1. Server resolves authorized canonical source material.
-2. Application builds a minimized explanation context.
-3. DataContract validates fields, purpose, classification and provider eligibility.
-4. AI adapter sends minimized prompt under approved provider profile.
-5. Adapter receives draft and provider metadata.
-6. Deterministic guard validates source references, allowed codes, state and assertions.
-7. Accepted draft is presented as non-authoritative explanation.
-8. Rejected draft is not presented; canonical structured explanation remains available.
-9. Audit records purpose, source references, provider profile/version, model/version, result, violations and correlation without storing unnecessary sensitive payload.
+2. Application builds a canonical explanation model and allowed structured claims.
+3. Application builds a need-to-know explanation context from those claims.
+4. DataContract validates fields, purpose, classification and provider eligibility.
+5. AI adapter sends minimized prompt under approved provider profile.
+6. Adapter buffers the complete draft and provider metadata internally.
+7. Deterministic guard validates source references, allowed claims, allowed codes, state and assertions.
+8. Accepted draft is presented as non-authoritative explanation.
+9. Rejected draft is not presented; canonical structured explanation remains available.
+10. Audit records purpose, source references, provider profile/version, model/version, prompt template/version/digest, explanation schema, guard version, result, violations and correlation without storing unnecessary sensitive payload.
 
 ## Acceptance Criteria
 
@@ -119,8 +126,12 @@ MarketOptionAssessment
 
 Create ADR-0074 and design package for AI explanation governance. Do not implement provider integration until ADR-0074 is accepted.
 
+ADR-0074 was accepted with changes on 2026-09-04. Production provider integration remains blocked until ProviderProfile, concrete DataContract fields, provider-side retention/telemetry, user-visible audiences and audit storage are approved.
+
 ## Local Pipeline Completion
 
 On 2026-09-04, Titan added a local/mock Market Optionality explanation pipeline over the F7 guard. The implementation uses a deterministic fake draft provider and releases text only after `MarketOptionExplanationGuardService` accepts the draft. Rejected drafts return no released text and preserve a canonical structured fallback.
 
 This does not change the policy status of this SPEC: production provider integration, real DataContract fields, prompt/output retention, user-visible API/UI behavior and provider/model selection remain pending ADR-0074 acceptance.
+
+On 2026-09-04, after ADR-0074 was accepted with changes, the local/mock pipeline was hardened with structured allowed claims. The provider draft may reference only claims deterministically originated by Titan from canonical Market Optionality output.

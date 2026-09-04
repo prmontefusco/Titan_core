@@ -188,12 +188,23 @@ class MarketOptionExplanationAssertion(StrEnum):
     OPTION_STATE_CLASSIFICATION = "OPTION_STATE_CLASSIFICATION"
 
 
+class MarketOptionExplanationClaimType(StrEnum):
+    STATUS = "STATUS"
+    REVERSIBILITY = "REVERSIBILITY"
+    REASON_CODE = "REASON_CODE"
+    MISSING_INFORMATION = "MISSING_INFORMATION"
+    LIMITATION = "LIMITATION"
+    TEMPORAL_CONTEXT = "TEMPORAL_CONTEXT"
+    AUTHORITY_BOUNDARY = "AUTHORITY_BOUNDARY"
+
+
 class MarketOptionExplanationViolation(StrEnum):
     MISSING_CANONICAL_REFERENCE = "MISSING_CANONICAL_REFERENCE"
     DECISION_REFERENCE_MISMATCH = "DECISION_REFERENCE_MISMATCH"
     EVALUATION_REFERENCE_MISMATCH = "EVALUATION_REFERENCE_MISMATCH"
     POLICY_REFERENCE_MISMATCH = "POLICY_REFERENCE_MISMATCH"
     OPTION_STATE_MISMATCH = "OPTION_STATE_MISMATCH"
+    INVENTED_CLAIM = "INVENTED_CLAIM"
     INVENTED_REASON_CODE = "INVENTED_REASON_CODE"
     INVENTED_MISSING_EVIDENCE_TYPE = "INVENTED_MISSING_EVIDENCE_TYPE"
     INVENTED_LIMITATION = "INVENTED_LIMITATION"
@@ -257,10 +268,24 @@ class MarketOptionPreservationWarning:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationClaim:
+    claim_type: MarketOptionExplanationClaimType
+    value: str
+    source_reference: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.value, str) or not self.value.strip():
+            raise ValueError("claim value deve ser texto não vazio.")
+        if not isinstance(self.source_reference, str) or not self.source_reference.strip():
+            raise ValueError("claim source_reference deve ser texto não vazio.")
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationContext:
     assessment: MarketOptionAssessment
     audience: MarketOptionExplanationAudience
     source_references: Mapping[str, str]
+    allowed_claims: tuple[MarketOptionExplanationClaim, ...]
     allowed_option_state: MarketOptionState
     allowed_reason_codes: tuple[str, ...]
     allowed_missing_evidence_types: tuple[str, ...]
@@ -281,6 +306,7 @@ class MarketOptionExplanationDraft:
     policy_id: TypedId
     policy_version: int
     option_state: MarketOptionState
+    referenced_claims: tuple[MarketOptionExplanationClaim, ...] = ()
     referenced_reason_codes: tuple[str, ...] = ()
     referenced_missing_evidence_types: tuple[str, ...] = ()
     referenced_limitations: tuple[str, ...] = ()
@@ -677,6 +703,7 @@ class MarketOptionExplanationGuardService:
             assessment=assessment,
             audience=audience,
             source_references=MappingProxyType(references),
+            allowed_claims=_allowed_explanation_claims(assessment),
             allowed_option_state=assessment.state,
             allowed_reason_codes=assessment.reason_codes,
             allowed_missing_evidence_types=assessment.missing_evidence_types,
@@ -707,6 +734,8 @@ class MarketOptionExplanationGuardService:
             assessment.evaluation_id is not None and draft.evaluation_id is None
         ):
             violations.append(MarketOptionExplanationViolation.MISSING_CANONICAL_REFERENCE)
+        if not set(draft.referenced_claims).issubset(context.allowed_claims):
+            violations.append(MarketOptionExplanationViolation.INVENTED_CLAIM)
         if not set(draft.referenced_reason_codes).issubset(context.allowed_reason_codes):
             violations.append(MarketOptionExplanationViolation.INVENTED_REASON_CODE)
         if not set(draft.referenced_missing_evidence_types).issubset(
@@ -752,6 +781,7 @@ class DeterministicMarketOptionExplanationDraftProvider:
             referenced_reason_codes=assessment.reason_codes,
             referenced_missing_evidence_types=assessment.missing_evidence_types,
             referenced_limitations=assessment.limitations,
+            referenced_claims=explanation_context.allowed_claims,
         )
 
 
@@ -831,6 +861,70 @@ def _canonical_explanation_fallback(
             "result_boundary": assessment.result_boundary,
         }
     )
+
+
+def _allowed_explanation_claims(
+    assessment: MarketOptionAssessment,
+) -> tuple[MarketOptionExplanationClaim, ...]:
+    source = _primary_claim_source_reference(assessment)
+    claims = [
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.STATUS,
+            value=assessment.state.value,
+            source_reference=source,
+        ),
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.REVERSIBILITY,
+            value=assessment.reversibility.value,
+            source_reference=source,
+        ),
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.TEMPORAL_CONTEXT,
+            value=(
+                f"reference_time={assessment.context.reference_time.isoformat()};"
+                f"knowledge_cutoff={assessment.context.knowledge_cutoff.isoformat()}"
+            ),
+            source_reference="market_option_context",
+        ),
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.AUTHORITY_BOUNDARY,
+            value="MARKET_OPTIONALITY_IS_EXPLANATORY_NOT_AUTHORITY",
+            source_reference="adr:0073",
+        ),
+    ]
+    claims.extend(
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.REASON_CODE,
+            value=reason_code,
+            source_reference=source,
+        )
+        for reason_code in assessment.reason_codes
+    )
+    claims.extend(
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.MISSING_INFORMATION,
+            value=missing,
+            source_reference=source,
+        )
+        for missing in assessment.missing_evidence_types
+    )
+    claims.extend(
+        MarketOptionExplanationClaim(
+            claim_type=MarketOptionExplanationClaimType.LIMITATION,
+            value=limitation,
+            source_reference=source,
+        )
+        for limitation in assessment.limitations
+    )
+    return tuple(dict.fromkeys(claims))
+
+
+def _primary_claim_source_reference(assessment: MarketOptionAssessment) -> str:
+    if assessment.decision_id is not None:
+        return str(assessment.decision_id)
+    if assessment.evaluation_id is not None:
+        return str(assessment.evaluation_id)
+    return "market_option_assessment"
 
 
 def _missing_evidence_types(evaluation: Evaluation) -> tuple[str, ...]:
