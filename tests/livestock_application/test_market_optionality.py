@@ -31,6 +31,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionEventContext,
     MarketOptionEventKind,
     MarketOptionExplanationAssertion,
+    MarketOptionExplanationAuditEnvelope,
     MarketOptionExplanationClaim,
     MarketOptionExplanationClaimType,
     MarketOptionExplanationDataContractService,
@@ -987,6 +988,60 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
     assert result.prompt_payload.prompt_template_digest
     assert result.prompt_payload.guard_digest
     assert result.prompt_payload.payload_digest
+    assert result.audit_envelope.accepted is True
+    assert result.audit_envelope.prompt_payload_digest == result.prompt_payload.payload_digest
+    assert result.audit_envelope.released_output_digest is not None
+    assert len(result.audit_envelope.released_output_digest) == 64
+    assert result.audit_envelope.violation_codes == ()
+
+
+def test_explanation_audit_envelope_minimizes_prompt_output_and_raw_ids() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService().explain(
+        assessment=assessment,
+        run_context=_ai_run_context(),
+    )
+
+    envelope_text = repr(result.audit_envelope)
+    assert result.released_text is not None
+    assert result.released_text not in envelope_text
+    assert str(policy.organization_id) not in envelope_text
+    assert str(decision.subject_id) not in envelope_text
+    assert str(decision.decision_id) not in envelope_text
+    assert str(evaluation.evaluation_id) not in envelope_text
+    assert str(policy.policy_id) not in envelope_text
+    assert len(result.audit_envelope.source_reference_digest) == 64
+    assert len(result.audit_envelope.canonical_fallback_digest) == 64
+
+
+def test_explanation_audit_envelope_requires_output_digest_only_for_release() -> None:
+    with pytest.raises(ValueError, match="released_output_digest"):
+        MarketOptionExplanationAuditEnvelope(
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            model_name="deterministic-market-optionality-explainer",
+            explanation_schema="MARKET_OPTIONALITY_AI_EXPLANATION_CONTEXT_V1",
+            prompt_template_id="market-optionality-explanation-canonical-summary",
+            prompt_template_version=1,
+            prompt_template_digest="a" * 64,
+            guard_version=1,
+            guard_digest="b" * 64,
+            prompt_payload_digest="c" * 64,
+            source_reference_digest="d" * 64,
+            canonical_fallback_digest="e" * 64,
+            released_output_digest=None,
+            accepted=True,
+            violation_codes=(),
+            limitations=(),
+        )
 
 
 def test_explanation_pipeline_falls_back_when_provider_invents_material() -> None:
@@ -1026,11 +1081,17 @@ def test_explanation_pipeline_falls_back_when_provider_invents_material() -> Non
     assert result.validation.accepted is False
     assert result.released_text is None
     assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert result.audit_envelope.accepted is False
+    assert result.audit_envelope.released_output_digest is None
+    assert result.audit_envelope.prompt_payload_digest == result.prompt_payload.payload_digest
     assert MarketOptionExplanationViolation.INVENTED_CLAIM in result.validation.violations
     assert MarketOptionExplanationViolation.INVENTED_REASON_CODE in result.validation.violations
     assert (
         MarketOptionExplanationViolation.PROHIBITED_AUTHORITATIVE_ASSERTION
         in result.validation.violations
+    )
+    assert MarketOptionExplanationViolation.INVENTED_CLAIM.value in (
+        result.audit_envelope.violation_codes
     )
 
 

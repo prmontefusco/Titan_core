@@ -22,6 +22,8 @@ On 2026-09-04, the local pipeline added an executable DataContract allow-list fo
 
 The same increment series now versions the synthetic prompt template, explanation schema and deterministic guard. The prompt payload carries `prompt_template_id`, `prompt_template_version`, `prompt_template_digest`, `guard_version`, `guard_digest` and its own canonical `payload_digest`, without storing raw prompts/outputs or calling an external provider.
 
+The pipeline now also produces a minimized local audit envelope. The envelope carries DataContract, processing activity, provider/model labels, schema/template/guard versions and digests, prompt payload digest, source-reference digest, fallback digest, released-output digest only when the guard accepts, violation codes and limitations. It never stores raw prompt text, raw provider output text, raw source identifiers or domain objects.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -43,7 +45,9 @@ Added:
 - `MarketOptionExplanationClaim`;
 - `MarketOptionExplanationDataContractService`;
 - `MarketOptionExplanationPromptPayload`;
-- `MarketOptionExplanationPromptTemplate`.
+- `MarketOptionExplanationPromptTemplate`;
+- `MarketOptionExplanationAuditEnvelope`;
+- `MarketOptionExplanationAuditEnvelopeService`.
 
 The service requires synthetic governance references (`data_contract_id`, version, processing activity, provider profile and model name), prepares canonical context, requests a draft from a supplied provider, validates it with the deterministic guard and releases text only when validation passes.
 
@@ -55,6 +59,8 @@ The DataContract step runs before draft generation and fails closed for unapprov
 
 Prompt template, schema and guard identities are represented as deterministic local metadata. Their digests are computed through Titan's canonical serializer, so a template or guard-version change becomes visible in the payload identity used by the pipeline.
 
+The audit envelope is generated after guard validation and before returning the result. Accepted explanations receive a released-output digest; rejected drafts preserve violation codes and keep released-output digest absent.
+
 ## Invariants Preserved
 
 - No external AI provider is called by production/application code.
@@ -65,6 +71,7 @@ Prompt template, schema and guard identities are represented as deterministic lo
 - AI/provider draft output cannot originate externally presented explanation claims.
 - Provider-facing prompt payloads are built from an executable allow-list and exclude raw canonical identifiers.
 - Prompt template, schema and guard versions/digests are preserved before provider draft generation.
+- Audit material is minimized to digests, codes and governance references; raw prompt/output text is not retained.
 - Later provider behavior cannot rewrite historical canonical records.
 - No cross-tenant context or disclosure semantics were introduced.
 
@@ -79,11 +86,13 @@ Prompt template, schema and guard identities are represented as deterministic lo
 - fail-closed behavior for unapproved AI Explanation DataContract id/version;
 - prompt template and guard digest mismatch rejection;
 - prompt payload digest changes when prompt template version changes;
+- minimized audit envelope without raw prompt/output/source identifiers;
+- released-output digest required only for accepted explanations;
 - mandatory governance references in the run context.
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 30 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 32 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.

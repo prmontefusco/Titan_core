@@ -150,14 +150,17 @@ Completed on 2026-09-04:
 - structured allowed claims originated by Titan before provider wording;
 - executable synthetic DataContract allow-list that builds a need-to-know prompt payload without raw Organization, subject, Policy, Decision or Evaluation identifiers;
 - versioned synthetic prompt template, explanation schema and guard metadata with canonical digests;
+- minimized local audit envelope with DataContract/provider/model/schema/template/guard references, payload/source/fallback/output digests, violation codes and limitations;
 - tests proving a provider draft cannot be released when it invents material or claims forecast/authority;
 - tests proving unapproved DataContract id/version fails closed before prompt payload creation;
-- tests proving template/guard digest mismatches are rejected and prompt payload identity changes with template version.
+- tests proving template/guard digest mismatches are rejected and prompt payload identity changes with template version;
+- tests proving audit material does not retain raw prompt/output text or raw source identifiers.
 
 Still outside this local/mock build:
 
 - production provider integration;
 - persisted/provider DataContract governance;
+- persisted audit storage and retention;
 - prompt/output retention;
 - user-visible API/UI behavior;
 - provider/model governance.

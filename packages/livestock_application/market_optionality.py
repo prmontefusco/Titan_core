@@ -446,10 +446,39 @@ class MarketOptionExplanationPromptPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationAuditEnvelope:
+    data_contract_id: str
+    data_contract_version: int
+    processing_activity: str
+    provider_profile: str
+    model_name: str
+    explanation_schema: str
+    prompt_template_id: str
+    prompt_template_version: int
+    prompt_template_digest: str
+    guard_version: int
+    guard_digest: str
+    prompt_payload_digest: str
+    source_reference_digest: str
+    canonical_fallback_digest: str
+    released_output_digest: str | None
+    accepted: bool
+    violation_codes: tuple[str, ...]
+    limitations: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if self.accepted and self.released_output_digest is None:
+            raise ValueError("released_output_digest é obrigatório para explicação liberada.")
+        if not self.accepted and self.released_output_digest is not None:
+            raise ValueError("released_output_digest deve ficar ausente quando guard rejeita.")
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationResult:
     run_context: MarketOptionExplanationRunContext
     explanation_context: MarketOptionExplanationContext
     prompt_payload: MarketOptionExplanationPromptPayload
+    audit_envelope: MarketOptionExplanationAuditEnvelope
     validation: MarketOptionExplanationValidation
     released_text: str | None
     canonical_fallback: Mapping[str, str]
@@ -986,6 +1015,63 @@ class MarketOptionExplanationDataContractService:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationAuditEnvelopeService:
+    """Creates minimized audit material; it does not persist prompts or outputs."""
+
+    def build(
+        self,
+        *,
+        run_context: MarketOptionExplanationRunContext,
+        explanation_context: MarketOptionExplanationContext,
+        prompt_payload: MarketOptionExplanationPromptPayload,
+        validation: MarketOptionExplanationValidation,
+        released_text: str | None,
+        canonical_fallback: Mapping[str, str],
+    ) -> MarketOptionExplanationAuditEnvelope:
+        source_reference_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_source_references",
+            dict(explanation_context.source_references),
+        )
+        fallback_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_canonical_fallback",
+            canonical_fallback,
+        )
+        released_output_digest = (
+            _canonical_digest(
+                "titan.livestock.market_optionality.ai_released_output",
+                {
+                    "text": released_text,
+                    "prompt_payload_digest": prompt_payload.payload_digest,
+                    "guard_digest": prompt_payload.guard_digest,
+                },
+            )
+            if validation.accepted and released_text is not None
+            else None
+        )
+
+        return MarketOptionExplanationAuditEnvelope(
+            data_contract_id=prompt_payload.data_contract_id,
+            data_contract_version=prompt_payload.data_contract_version,
+            processing_activity=run_context.processing_activity,
+            provider_profile=run_context.provider_profile,
+            model_name=run_context.model_name,
+            explanation_schema=prompt_payload.schema,
+            prompt_template_id=prompt_payload.prompt_template_id,
+            prompt_template_version=prompt_payload.prompt_template_version,
+            prompt_template_digest=prompt_payload.prompt_template_digest,
+            guard_version=prompt_payload.guard_version,
+            guard_digest=prompt_payload.guard_digest,
+            prompt_payload_digest=prompt_payload.payload_digest,
+            source_reference_digest=source_reference_digest,
+            canonical_fallback_digest=fallback_digest,
+            released_output_digest=released_output_digest,
+            accepted=validation.accepted,
+            violation_codes=tuple(violation.value for violation in validation.violations),
+            limitations=validation.limitations,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationPipelineService:
     """Composes draft generation with deterministic guards before releasing text."""
 
@@ -995,6 +1081,9 @@ class MarketOptionExplanationPipelineService:
     guard_service: MarketOptionExplanationGuardService = MarketOptionExplanationGuardService()
     data_contract_service: MarketOptionExplanationDataContractService = (
         MarketOptionExplanationDataContractService()
+    )
+    audit_envelope_service: MarketOptionExplanationAuditEnvelopeService = (
+        MarketOptionExplanationAuditEnvelopeService()
     )
 
     def explain(
@@ -1022,13 +1111,24 @@ class MarketOptionExplanationPipelineService:
             context=explanation_context,
             draft=draft,
         )
-        return MarketOptionExplanationResult(
+        released_text = draft.text if validation.accepted else None
+        canonical_fallback = _canonical_explanation_fallback(assessment)
+        audit_envelope = self.audit_envelope_service.build(
             run_context=run_context,
             explanation_context=explanation_context,
             prompt_payload=prompt_payload,
             validation=validation,
-            released_text=draft.text if validation.accepted else None,
-            canonical_fallback=_canonical_explanation_fallback(assessment),
+            released_text=released_text,
+            canonical_fallback=canonical_fallback,
+        )
+        return MarketOptionExplanationResult(
+            run_context=run_context,
+            explanation_context=explanation_context,
+            prompt_payload=prompt_payload,
+            audit_envelope=audit_envelope,
+            validation=validation,
+            released_text=released_text,
+            canonical_fallback=canonical_fallback,
         )
 
 
