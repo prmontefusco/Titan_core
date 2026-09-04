@@ -99,6 +99,7 @@ provedor, não com sintoma genérico.
 | `buyerpolicy_shared_decision` | Proposta e revisão sobre Evaluation compartilhada (ADR-0066, Incremento 1) |
 | `buyerpolicy_rate_limit_auditoria` | Cota por grant e trilha de acesso da BuyerPolicy compartilhada (ADR-0066, Incremento 2) |
 | `market_supply_aggregate_api` | Superfície HTTP protegida de Market Supply F3.5: rota default-off ou autenticada quando feature-flagged |
+| `ai_provider_smoke` | Fumaça sintética da Gemini API com chave local ignorada pelo Git, sem dados Titan ou integração produtiva |
 
 ## Rodar todos de uma vez (roteiro de fumaça)
 
