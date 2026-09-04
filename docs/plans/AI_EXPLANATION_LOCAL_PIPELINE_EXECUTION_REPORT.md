@@ -28,6 +28,8 @@ The pipeline now also produces a minimized local audit envelope. The envelope ca
 
 The provider boundary now receives only `MarketOptionExplanationPromptPayload` and returns text. Canonical draft metadata, source references, allowed claims, reason codes, missing evidence types and limitations are assembled by Titan after provider text generation. This prevents provider implementations from receiving repositories, Domain objects, full explanation context or raw canonical identifiers through the provider interface.
 
+The validation suite now includes `apps/validacao/ai_explanation_pipeline_smoke.py`, a non-production Gemini smoke that composes the real local pipeline with a synthetic `MarketOptionAssessment`. It sends only `MarketOptionExplanationPromptPayload.fields`, omits source-reference aliases, omits generated text from console output and validates the guard/audit envelope boundary with the local key stored outside Git.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -51,7 +53,8 @@ Added:
 - `MarketOptionExplanationPromptPayload`;
 - `MarketOptionExplanationPromptTemplate`;
 - `MarketOptionExplanationAuditEnvelope`;
-- `MarketOptionExplanationAuditEnvelopeService`.
+- `MarketOptionExplanationAuditEnvelopeService`;
+- `apps/validacao/ai_explanation_pipeline_smoke.py`.
 
 The service requires synthetic governance references (`data_contract_id`, version, processing activity, provider profile and model name), prepares canonical context, builds a minimized prompt payload, requests text from a supplied provider, wraps that text in Titan-built canonical draft metadata, validates it with the deterministic guard and releases text only when validation passes.
 
@@ -96,11 +99,12 @@ The audit envelope is generated after guard validation and before returning the 
 - released-output digest required only for accepted explanations;
 - provider interface constrained to prompt payload only;
 - fallback when provider text contains prohibited authority/forecast terms;
+- synthetic Gemini pipeline smoke over minimized prompt payload;
 - mandatory governance references in the run context.
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 32 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 34 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.

@@ -33,9 +33,9 @@ fora.
    diretamente — é o roteiro do Passo 13.2, que cresceu para incluir também
    reprodução (13.3) e geometria (17.1/17.2).
 
-Três roteiros (marcados **HTTP real** abaixo) chamam serviços externos de
-verdade (IBAMA, FUNAI, PRODES/DETER) e exigem as variáveis de ambiente
-correspondentes configuradas na API; sem elas, falham com o motivo do
+Cinco roteiros (marcados **HTTP real** abaixo) chamam serviços externos de
+verdade (IBAMA, FUNAI, PRODES/DETER ou Gemini sintético) e exigem as variáveis de ambiente
+correspondentes configuradas no ambiente adequado; sem elas, falham com o motivo do
 provedor, não com sintoma genérico.
 
 ## Índice por área
@@ -99,7 +99,8 @@ provedor, não com sintoma genérico.
 | `buyerpolicy_shared_decision` | Proposta e revisão sobre Evaluation compartilhada (ADR-0066, Incremento 1) |
 | `buyerpolicy_rate_limit_auditoria` | Cota por grant e trilha de acesso da BuyerPolicy compartilhada (ADR-0066, Incremento 2) |
 | `market_supply_aggregate_api` | Superfície HTTP protegida de Market Supply F3.5: rota default-off ou autenticada quando feature-flagged |
-| `ai_provider_smoke` | Fumaça sintética da Gemini API com chave local ignorada pelo Git, sem dados Titan ou integração produtiva |
+| `ai_provider_smoke` | Fumaça sintética da Gemini API com chave local ignorada pelo Git, sem dados Titan ou integração produtiva — **HTTP real** |
+| `ai_explanation_pipeline_smoke` | Fumaça sintética da Gemini API através do pipeline local de AI Explanation, com provider recebendo somente payload minimizado — **HTTP real** |
 
 ## Rodar todos de uma vez (roteiro de fumaça)
 

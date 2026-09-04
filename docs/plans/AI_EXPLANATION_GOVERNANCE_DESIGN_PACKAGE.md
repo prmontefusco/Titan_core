@@ -155,7 +155,8 @@ Completed on 2026-09-04:
 - tests proving unapproved DataContract id/version fails closed before prompt payload creation;
 - tests proving template/guard digest mismatches are rejected and prompt payload identity changes with template version;
 - tests proving audit material does not retain raw prompt/output text or raw source identifiers;
-- tests proving provider text with explicit authority/forecast content is rejected before release.
+- tests proving provider text with explicit authority/forecast content is rejected before release;
+- synthetic Gemini pipeline smoke under `apps/validacao`, using only minimized non-real payload and omitting generated text from output.
 
 Still outside this local/mock build:
 
