@@ -132,6 +132,8 @@ ADR-0074 was accepted with changes on 2026-09-04. Production provider integratio
 
 On 2026-09-04, Titan added a local/mock Market Optionality explanation pipeline over the F7 guard. The implementation uses a deterministic fake draft provider and releases text only after `MarketOptionExplanationGuardService` accepts the draft. Rejected drafts return no released text and preserve a canonical structured fallback.
 
-This does not change the policy status of this SPEC: production provider integration, real DataContract fields, prompt/output retention, user-visible API/UI behavior and provider/model selection remain pending ADR-0074 acceptance.
+This does not change the production status of this SPEC: production provider integration, persisted/provider DataContract governance, prompt/output retention, user-visible API/UI behavior and provider/model selection remain outside the local/mock build.
 
 On 2026-09-04, after ADR-0074 was accepted with changes, the local/mock pipeline was hardened with structured allowed claims. The provider draft may reference only claims deterministically originated by Titan from canonical Market Optionality output.
+
+The same local/mock pipeline now includes an executable synthetic DataContract allow-list. `MarketOptionExplanationDataContractService` builds a need-to-know provider-facing prompt payload and fails closed for unapproved contract id/version. The payload omits raw Organization, subject, Policy, Decision and Evaluation identifiers while preserving audience, subject type, purpose, Policy version, temporal coordinates, option state, reversibility, allowed claims and limitations.

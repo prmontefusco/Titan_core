@@ -30,6 +30,12 @@ from packages.livestock_application.market_readiness import (
 from packages.shared_kernel import OrganizationId, TypedId
 from packages.shared_kernel.temporal import require_utc
 
+MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID = (
+    "MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_V1"
+)
+MARKET_OPTIONALITY_AI_EXPLANATION_CONTRACT_VERSION = 1
+MARKET_OPTIONALITY_AI_EXPLANATION_SCHEMA = "MARKET_OPTIONALITY_AI_EXPLANATION_CONTEXT_V1"
+
 
 class MarketOptionState(StrEnum):
     """Derived optionality state, distinct from Evaluation/Decision/Readiness."""
@@ -348,10 +354,23 @@ class MarketOptionExplanationRunContext:
             raise ValueError("data_contract_version deve ser inteiro >= 1.")
 
 
+MarketOptionExplanationPromptValue = str | tuple[Mapping[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationPromptPayload:
+    data_contract_id: str
+    data_contract_version: int
+    schema: str
+    fields: Mapping[str, MarketOptionExplanationPromptValue]
+    source_reference_aliases: Mapping[str, str]
+
+
 @dataclass(frozen=True, slots=True)
 class MarketOptionExplanationResult:
     run_context: MarketOptionExplanationRunContext
     explanation_context: MarketOptionExplanationContext
+    prompt_payload: MarketOptionExplanationPromptPayload
     validation: MarketOptionExplanationValidation
     released_text: str | None
     canonical_fallback: Mapping[str, str]
@@ -786,6 +805,85 @@ class DeterministicMarketOptionExplanationDraftProvider:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationDataContractService:
+    """Builds the minimal provider-facing payload allowed by ADR-0074."""
+
+    data_contract_id: str = MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID
+    data_contract_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_CONTRACT_VERSION
+    schema: str = MARKET_OPTIONALITY_AI_EXPLANATION_SCHEMA
+    allowed_fields: tuple[str, ...] = (
+        "audience",
+        "subject_type",
+        "market_purpose",
+        "policy_version",
+        "reference_time",
+        "knowledge_cutoff",
+        "option_state",
+        "reversibility",
+        "claims",
+        "reason_codes",
+        "missing_evidence_types",
+        "limitations",
+        "context_limitations",
+    )
+
+    def build_prompt_payload(
+        self,
+        *,
+        explanation_context: MarketOptionExplanationContext,
+        run_context: MarketOptionExplanationRunContext,
+    ) -> MarketOptionExplanationPromptPayload:
+        if run_context.data_contract_id != self.data_contract_id:
+            raise ValueError("data_contract_id não está aprovado para AI Explanation.")
+        if run_context.data_contract_version != self.data_contract_version:
+            raise ValueError("data_contract_version não está aprovada para AI Explanation.")
+
+        aliases: dict[str, str] = {}
+        claims: list[Mapping[str, str]] = []
+        for index, claim in enumerate(explanation_context.allowed_claims, start=1):
+            alias = f"claim_source:{index}"
+            aliases[alias] = claim.source_reference
+            claims.append(
+                MappingProxyType(
+                    {
+                        "type": claim.claim_type.value,
+                        "value": claim.value,
+                        "source_alias": alias,
+                    }
+                )
+            )
+
+        assessment = explanation_context.assessment
+        fields: dict[str, MarketOptionExplanationPromptValue] = {
+            "audience": explanation_context.audience.value,
+            "subject_type": assessment.context.subject_id.entity_type,
+            "market_purpose": assessment.context.market_purpose,
+            "policy_version": str(assessment.context.policy_version),
+            "reference_time": assessment.context.reference_time.isoformat(),
+            "knowledge_cutoff": assessment.context.knowledge_cutoff.isoformat(),
+            "option_state": assessment.state.value,
+            "reversibility": assessment.reversibility.value,
+            "claims": tuple(claims),
+            "reason_codes": _field_tuple(assessment.reason_codes),
+            "missing_evidence_types": _field_tuple(assessment.missing_evidence_types),
+            "limitations": _field_tuple(assessment.limitations),
+            "context_limitations": _field_tuple(explanation_context.limitations),
+        }
+        unexpected = set(fields) - set(self.allowed_fields)
+        missing = set(self.allowed_fields) - set(fields)
+        if unexpected or missing:
+            raise ValueError("AI Explanation DataContract field set inválido.")
+
+        return MarketOptionExplanationPromptPayload(
+            data_contract_id=self.data_contract_id,
+            data_contract_version=self.data_contract_version,
+            schema=self.schema,
+            fields=MappingProxyType(fields),
+            source_reference_aliases=MappingProxyType(aliases),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationPipelineService:
     """Composes draft generation with deterministic guards before releasing text."""
 
@@ -793,6 +891,9 @@ class MarketOptionExplanationPipelineService:
         DeterministicMarketOptionExplanationDraftProvider()
     )
     guard_service: MarketOptionExplanationGuardService = MarketOptionExplanationGuardService()
+    data_contract_service: MarketOptionExplanationDataContractService = (
+        MarketOptionExplanationDataContractService()
+    )
 
     def explain(
         self,
@@ -807,6 +908,10 @@ class MarketOptionExplanationPipelineService:
             assessment=assessment,
             audience=audience,
         )
+        prompt_payload = self.data_contract_service.build_prompt_payload(
+            explanation_context=explanation_context,
+            run_context=run_context,
+        )
         draft = self.draft_provider.draft(
             explanation_context=explanation_context,
             run_context=run_context,
@@ -818,6 +923,7 @@ class MarketOptionExplanationPipelineService:
         return MarketOptionExplanationResult(
             run_context=run_context,
             explanation_context=explanation_context,
+            prompt_payload=prompt_payload,
             validation=validation,
             released_text=draft.text if validation.accepted else None,
             canonical_fallback=_canonical_explanation_fallback(assessment),
@@ -861,6 +967,10 @@ def _canonical_explanation_fallback(
             "result_boundary": assessment.result_boundary,
         }
     )
+
+
+def _field_tuple(values: tuple[str, ...]) -> tuple[Mapping[str, str], ...]:
+    return tuple(MappingProxyType({"value": value}) for value in values)
 
 
 def _allowed_explanation_claims(

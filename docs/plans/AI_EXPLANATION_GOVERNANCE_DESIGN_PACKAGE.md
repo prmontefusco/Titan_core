@@ -147,12 +147,15 @@ Completed on 2026-09-04:
 - mock draft provider interface;
 - deterministic local fake;
 - application service returning accepted draft text or canonical fallback;
-- tests proving a provider draft cannot be released when it invents material or claims forecast/authority.
+- structured allowed claims originated by Titan before provider wording;
+- executable synthetic DataContract allow-list that builds a need-to-know prompt payload without raw Organization, subject, Policy, Decision or Evaluation identifiers;
+- tests proving a provider draft cannot be released when it invents material or claims forecast/authority;
+- tests proving unapproved DataContract id/version fails closed before prompt payload creation.
 
-Still pending ADR-0074 acceptance:
+Still outside this local/mock build:
 
 - production provider integration;
-- real DataContract field allow-list;
+- persisted/provider DataContract governance;
 - prompt/output retention;
 - user-visible API/UI behavior;
 - provider/model governance.
