@@ -37,6 +37,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationDraft,
     MarketOptionExplanationGuardService,
     MarketOptionExplanationPipelineService,
+    MarketOptionExplanationPromptTemplate,
     MarketOptionExplanationRunContext,
     MarketOptionExplanationViolation,
     MarketOptionInput,
@@ -867,6 +868,12 @@ def test_explanation_data_contract_builds_need_to_know_payload_without_raw_ids()
 
     assert payload.data_contract_id == MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID
     assert payload.data_contract_version == 1
+    assert payload.prompt_template_id == "market-optionality-explanation-canonical-summary"
+    assert payload.prompt_template_version == 1
+    assert len(payload.prompt_template_digest) == 64
+    assert payload.guard_version == 1
+    assert len(payload.guard_digest) == 64
+    assert len(payload.payload_digest) == 64
     assert set(payload.fields) == {
         "audience",
         "subject_type",
@@ -892,6 +899,45 @@ def test_explanation_data_contract_builds_need_to_know_payload_without_raw_ids()
     assert str(decision.decision_id) not in provider_visible_json
     assert str(evaluation.evaluation_id) not in provider_visible_json
     assert str(policy.policy_id) not in provider_visible_json
+
+
+def test_explanation_prompt_template_rejects_digest_mismatch() -> None:
+    with pytest.raises(ValueError, match="template_digest"):
+        MarketOptionExplanationPromptTemplate(template_digest="0" * 64)
+
+    with pytest.raises(ValueError, match="guard_digest"):
+        MarketOptionExplanationPromptTemplate(guard_digest="0" * 64)
+
+
+def test_explanation_prompt_payload_digest_changes_with_template_version() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+
+    payload_v1 = MarketOptionExplanationDataContractService().build_prompt_payload(
+        explanation_context=context,
+        run_context=_ai_run_context(),
+    )
+    payload_v2 = MarketOptionExplanationDataContractService(
+        prompt_template=MarketOptionExplanationPromptTemplate(template_version=2)
+    ).build_prompt_payload(
+        explanation_context=context,
+        run_context=MarketOptionExplanationRunContext(
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            model_name="deterministic-market-optionality-explainer",
+        ),
+    )
+
+    assert payload_v2.prompt_template_version == 2
+    assert payload_v1.prompt_template_digest != payload_v2.prompt_template_digest
+    assert payload_v1.payload_digest != payload_v2.payload_digest
 
 
 def test_explanation_data_contract_rejects_unapproved_contract() -> None:
@@ -938,6 +984,9 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
         MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID
     )
     assert result.prompt_payload.fields["reference_time"] == NOW.isoformat()
+    assert result.prompt_payload.prompt_template_digest
+    assert result.prompt_payload.guard_digest
+    assert result.prompt_payload.payload_digest
 
 
 def test_explanation_pipeline_falls_back_when_provider_invents_material() -> None:

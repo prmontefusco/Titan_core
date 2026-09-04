@@ -149,8 +149,10 @@ Completed on 2026-09-04:
 - application service returning accepted draft text or canonical fallback;
 - structured allowed claims originated by Titan before provider wording;
 - executable synthetic DataContract allow-list that builds a need-to-know prompt payload without raw Organization, subject, Policy, Decision or Evaluation identifiers;
+- versioned synthetic prompt template, explanation schema and guard metadata with canonical digests;
 - tests proving a provider draft cannot be released when it invents material or claims forecast/authority;
-- tests proving unapproved DataContract id/version fails closed before prompt payload creation.
+- tests proving unapproved DataContract id/version fails closed before prompt payload creation;
+- tests proving template/guard digest mismatches are rejected and prompt payload identity changes with template version.
 
 Still outside this local/mock build:
 

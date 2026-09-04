@@ -6,8 +6,9 @@ does not execute Rules, emit Decision, persist artifacts, forecast future
 eligibility, or mutate Animal.
 """
 
+import hashlib
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
@@ -27,7 +28,12 @@ from packages.livestock_application.market_readiness import (
     MarketReadinessService,
     MarketReadinessStatus,
 )
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.shared_kernel import (
+    CanonicalSerializer,
+    OrganizationId,
+    TypedId,
+    canonicalize_for_hash,
+)
 from packages.shared_kernel.temporal import require_utc
 
 MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID = (
@@ -35,6 +41,16 @@ MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID = (
 )
 MARKET_OPTIONALITY_AI_EXPLANATION_CONTRACT_VERSION = 1
 MARKET_OPTIONALITY_AI_EXPLANATION_SCHEMA = "MARKET_OPTIONALITY_AI_EXPLANATION_CONTEXT_V1"
+MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_ID = (
+    "market-optionality-explanation-canonical-summary"
+)
+MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_VERSION = 1
+MARKET_OPTIONALITY_AI_EXPLANATION_GUARD_VERSION = 1
+MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_TEXT = (
+    "Explain only the structured allowed claims in the supplied Titan context. "
+    "Do not add facts, decisions, forecasts, eligibility, external recognition, "
+    "instructions, identifiers, or claims not present in the allowed claims list."
+)
 
 
 class MarketOptionState(StrEnum):
@@ -354,7 +370,64 @@ class MarketOptionExplanationRunContext:
             raise ValueError("data_contract_version deve ser inteiro >= 1.")
 
 
+def _canonical_digest(schema: str, value: object) -> str:
+    canonical = CanonicalSerializer().serialize(
+        {
+            "schema": schema,
+            "value": canonicalize_for_hash(value),
+        }
+    )
+    return hashlib.sha256(canonical).hexdigest()
+
+
 MarketOptionExplanationPromptValue = str | tuple[Mapping[str, str], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationPromptTemplate:
+    template_id: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_ID
+    template_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_VERSION
+    template_text: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_TEXT
+    explanation_schema: str = MARKET_OPTIONALITY_AI_EXPLANATION_SCHEMA
+    guard_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_GUARD_VERSION
+    template_digest: str = ""
+    guard_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for field_name in ("template_id", "template_text", "explanation_schema"):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} deve ser texto não vazio.")
+        if not isinstance(self.template_version, int) or self.template_version < 1:
+            raise ValueError("template_version deve ser inteiro >= 1.")
+        if not isinstance(self.guard_version, int) or self.guard_version < 1:
+            raise ValueError("guard_version deve ser inteiro >= 1.")
+
+        expected_template_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_prompt_template",
+            {
+                "template_id": self.template_id,
+                "template_version": self.template_version,
+                "template_text": self.template_text,
+                "explanation_schema": self.explanation_schema,
+            },
+        )
+        expected_guard_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_explanation_guard",
+            {
+                "guard_version": self.guard_version,
+                "violations": tuple(
+                    violation.value for violation in MarketOptionExplanationViolation
+                ),
+                "allowed_assertion": MarketOptionExplanationAssertion.CANONICAL_SUMMARY.value,
+            },
+        )
+        if self.template_digest and self.template_digest != expected_template_digest:
+            raise ValueError("template_digest não corresponde ao prompt template.")
+        if self.guard_digest and self.guard_digest != expected_guard_digest:
+            raise ValueError("guard_digest não corresponde ao guard declarado.")
+        object.__setattr__(self, "template_digest", expected_template_digest)
+        object.__setattr__(self, "guard_digest", expected_guard_digest)
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,6 +435,12 @@ class MarketOptionExplanationPromptPayload:
     data_contract_id: str
     data_contract_version: int
     schema: str
+    prompt_template_id: str
+    prompt_template_version: int
+    prompt_template_digest: str
+    guard_version: int
+    guard_digest: str
+    payload_digest: str
     fields: Mapping[str, MarketOptionExplanationPromptValue]
     source_reference_aliases: Mapping[str, str]
 
@@ -811,6 +890,9 @@ class MarketOptionExplanationDataContractService:
     data_contract_id: str = MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID
     data_contract_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_CONTRACT_VERSION
     schema: str = MARKET_OPTIONALITY_AI_EXPLANATION_SCHEMA
+    prompt_template: MarketOptionExplanationPromptTemplate = field(
+        default_factory=MarketOptionExplanationPromptTemplate
+    )
     allowed_fields: tuple[str, ...] = (
         "audience",
         "subject_type",
@@ -873,11 +955,31 @@ class MarketOptionExplanationDataContractService:
         missing = set(self.allowed_fields) - set(fields)
         if unexpected or missing:
             raise ValueError("AI Explanation DataContract field set inválido.")
+        payload_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_prompt_payload",
+            {
+                "data_contract_id": self.data_contract_id,
+                "data_contract_version": self.data_contract_version,
+                "schema": self.schema,
+                "prompt_template_id": self.prompt_template.template_id,
+                "prompt_template_version": self.prompt_template.template_version,
+                "prompt_template_digest": self.prompt_template.template_digest,
+                "guard_version": self.prompt_template.guard_version,
+                "guard_digest": self.prompt_template.guard_digest,
+                "fields": fields,
+            },
+        )
 
         return MarketOptionExplanationPromptPayload(
             data_contract_id=self.data_contract_id,
             data_contract_version=self.data_contract_version,
             schema=self.schema,
+            prompt_template_id=self.prompt_template.template_id,
+            prompt_template_version=self.prompt_template.template_version,
+            prompt_template_digest=self.prompt_template.template_digest,
+            guard_version=self.prompt_template.guard_version,
+            guard_digest=self.prompt_template.guard_digest,
+            payload_digest=payload_digest,
             fields=MappingProxyType(fields),
             source_reference_aliases=MappingProxyType(aliases),
         )

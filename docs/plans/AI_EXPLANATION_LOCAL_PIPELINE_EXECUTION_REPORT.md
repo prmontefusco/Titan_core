@@ -20,6 +20,8 @@ The pipeline does not call Gemini or any external provider. It exists to make th
 
 On 2026-09-04, the local pipeline added an executable DataContract allow-list for Market Optionality AI Explanation. The provider-facing prompt payload is now built from approved fields only and excludes raw Organization, subject, Policy, Decision and Evaluation identifiers.
 
+The same increment series now versions the synthetic prompt template, explanation schema and deterministic guard. The prompt payload carries `prompt_template_id`, `prompt_template_version`, `prompt_template_digest`, `guard_version`, `guard_digest` and its own canonical `payload_digest`, without storing raw prompts/outputs or calling an external provider.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -40,7 +42,8 @@ Added:
 - `MarketOptionExplanationClaimType`;
 - `MarketOptionExplanationClaim`;
 - `MarketOptionExplanationDataContractService`;
-- `MarketOptionExplanationPromptPayload`.
+- `MarketOptionExplanationPromptPayload`;
+- `MarketOptionExplanationPromptTemplate`.
 
 The service requires synthetic governance references (`data_contract_id`, version, processing activity, provider profile and model name), prepares canonical context, requests a draft from a supplied provider, validates it with the deterministic guard and releases text only when validation passes.
 
@@ -49,6 +52,8 @@ When validation fails, `released_text` is `None` and callers retain a canonical 
 After ADR-0074 was accepted with changes, the pipeline was hardened with structured allowed claims. `MarketOptionExplanationContext` now carries claims originated by Titan before draft generation, and the guard rejects provider-originated claims that are not present in that allow-list.
 
 The DataContract step runs before draft generation and fails closed for unapproved contract id/version. It preserves audience, subject type, market purpose, Policy version, `reference_time`, `knowledge_cutoff`, option state, reversibility, allowed claims and limitations, while keeping raw canonical identifiers out of provider-visible fields. Canonical source references remain internally available through aliases for guard/audit composition.
+
+Prompt template, schema and guard identities are represented as deterministic local metadata. Their digests are computed through Titan's canonical serializer, so a template or guard-version change becomes visible in the payload identity used by the pipeline.
 
 ## Invariants Preserved
 
@@ -59,6 +64,7 @@ The DataContract step runs before draft generation and fails closed for unapprov
 - Provider draft output cannot be released without passing the deterministic guard.
 - AI/provider draft output cannot originate externally presented explanation claims.
 - Provider-facing prompt payloads are built from an executable allow-list and exclude raw canonical identifiers.
+- Prompt template, schema and guard versions/digests are preserved before provider draft generation.
 - Later provider behavior cannot rewrite historical canonical records.
 - No cross-tenant context or disclosure semantics were introduced.
 
@@ -71,11 +77,13 @@ The DataContract step runs before draft generation and fails closed for unapprov
 - rejection of provider-originated structured claims outside the Titan allow-list;
 - provider-facing prompt payload minimization without raw Organization/subject/Policy/Decision/Evaluation ids;
 - fail-closed behavior for unapproved AI Explanation DataContract id/version;
+- prompt template and guard digest mismatch rejection;
+- prompt payload digest changes when prompt template version changes;
 - mandatory governance references in the run context.
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 28 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 30 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
