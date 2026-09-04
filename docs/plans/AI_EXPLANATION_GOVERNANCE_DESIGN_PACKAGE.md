@@ -1,7 +1,7 @@
 # AI Explanation Governance Design Package
 
-**Status:** PROPOSED / DESIGN ONLY  
-**Date:** 2026-09-04  
+**Status:** PROPOSED / DESIGN ONLY
+**Date:** 2026-09-04
 **Scope:** governance for explanation-only AI over canonical Titan outputs.
 
 ## Objective

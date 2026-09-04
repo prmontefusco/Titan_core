@@ -1,7 +1,7 @@
 # ADR-0074 - AI Explanation Governance
 
-**Date:** 2026-09-04  
-**Status:** PROPOSED  
+**Date:** 2026-09-04
+**Status:** PROPOSED
 **Scope:** Titan Core + Titan Livestock
 
 ## Context
