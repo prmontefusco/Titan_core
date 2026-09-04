@@ -118,3 +118,9 @@ MarketOptionAssessment
 ## Recommended Next Cut
 
 Create ADR-0074 and design package for AI explanation governance. Do not implement provider integration until ADR-0074 is accepted.
+
+## Local Pipeline Completion
+
+On 2026-09-04, Titan added a local/mock Market Optionality explanation pipeline over the F7 guard. The implementation uses a deterministic fake draft provider and releases text only after `MarketOptionExplanationGuardService` accepts the draft. Rejected drafts return no released text and preserve a canonical structured fallback.
+
+This does not change the policy status of this SPEC: production provider integration, real DataContract fields, prompt/output retention, user-visible API/UI behavior and provider/model selection remain pending ADR-0074 acceptance.

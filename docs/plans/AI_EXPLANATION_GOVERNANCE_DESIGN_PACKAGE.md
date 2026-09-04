@@ -139,3 +139,20 @@ After ADR approval:
 4. Keep route/UI disabled until external behavior is approved.
 
 No production provider integration should be included in the first build.
+
+## Local Pipeline Completion
+
+Completed on 2026-09-04:
+
+- mock draft provider interface;
+- deterministic local fake;
+- application service returning accepted draft text or canonical fallback;
+- tests proving a provider draft cannot be released when it invents material or claims forecast/authority.
+
+Still pending ADR-0074 acceptance:
+
+- production provider integration;
+- real DataContract field allow-list;
+- prompt/output retention;
+- user-visible API/UI behavior;
+- provider/model governance.

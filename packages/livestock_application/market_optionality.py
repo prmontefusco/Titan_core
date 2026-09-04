@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Protocol
 
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation, RuleResultStatus
@@ -297,6 +298,46 @@ class MarketOptionExplanationValidation:
     accepted: bool
     violations: tuple[MarketOptionExplanationViolation, ...]
     limitations: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationRunContext:
+    data_contract_id: str
+    data_contract_version: int
+    processing_activity: str
+    provider_profile: str
+    model_name: str
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "data_contract_id",
+            "processing_activity",
+            "provider_profile",
+            "model_name",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} deve ser texto não vazio.")
+        if not isinstance(self.data_contract_version, int) or self.data_contract_version < 1:
+            raise ValueError("data_contract_version deve ser inteiro >= 1.")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationResult:
+    run_context: MarketOptionExplanationRunContext
+    explanation_context: MarketOptionExplanationContext
+    validation: MarketOptionExplanationValidation
+    released_text: str | None
+    canonical_fallback: Mapping[str, str]
+
+
+class MarketOptionExplanationDraftProvider(Protocol):
+    def draft(
+        self,
+        *,
+        explanation_context: MarketOptionExplanationContext,
+        run_context: MarketOptionExplanationRunContext,
+    ) -> MarketOptionExplanationDraft: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -687,6 +728,72 @@ class MarketOptionExplanationGuardService:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class DeterministicMarketOptionExplanationDraftProvider:
+    """Local fake provider for tests; it never calls an external model."""
+
+    def draft(
+        self,
+        *,
+        explanation_context: MarketOptionExplanationContext,
+        run_context: MarketOptionExplanationRunContext,
+    ) -> MarketOptionExplanationDraft:
+        assessment = explanation_context.assessment
+        return MarketOptionExplanationDraft(
+            text=(
+                "Resumo canônico sintético: estado "
+                f"{assessment.state.value} para {assessment.context.market_purpose}."
+            ),
+            decision_id=assessment.decision_id,
+            evaluation_id=assessment.evaluation_id,
+            policy_id=assessment.context.policy_id,
+            policy_version=assessment.context.policy_version,
+            option_state=assessment.state,
+            referenced_reason_codes=assessment.reason_codes,
+            referenced_missing_evidence_types=assessment.missing_evidence_types,
+            referenced_limitations=assessment.limitations,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationPipelineService:
+    """Composes draft generation with deterministic guards before releasing text."""
+
+    draft_provider: MarketOptionExplanationDraftProvider = (
+        DeterministicMarketOptionExplanationDraftProvider()
+    )
+    guard_service: MarketOptionExplanationGuardService = MarketOptionExplanationGuardService()
+
+    def explain(
+        self,
+        *,
+        assessment: MarketOptionAssessment,
+        run_context: MarketOptionExplanationRunContext,
+        audience: MarketOptionExplanationAudience = (
+            MarketOptionExplanationAudience.INTERNAL_OPERATOR
+        ),
+    ) -> MarketOptionExplanationResult:
+        explanation_context = self.guard_service.prepare_context(
+            assessment=assessment,
+            audience=audience,
+        )
+        draft = self.draft_provider.draft(
+            explanation_context=explanation_context,
+            run_context=run_context,
+        )
+        validation = self.guard_service.validate_draft(
+            context=explanation_context,
+            draft=draft,
+        )
+        return MarketOptionExplanationResult(
+            run_context=run_context,
+            explanation_context=explanation_context,
+            validation=validation,
+            released_text=draft.text if validation.accepted else None,
+            canonical_fallback=_canonical_explanation_fallback(assessment),
+        )
+
+
 def _assessment(
     *,
     context: MarketOptionContext,
@@ -707,6 +814,22 @@ def _assessment(
         reason_codes=tuple(dict.fromkeys(reason_codes)),
         missing_evidence_types=tuple(sorted(set(missing_evidence_types))),
         limitations=tuple(dict.fromkeys(limitations)),
+    )
+
+
+def _canonical_explanation_fallback(
+    assessment: MarketOptionAssessment,
+) -> Mapping[str, str]:
+    return MappingProxyType(
+        {
+            "state": assessment.state.value,
+            "reversibility": assessment.reversibility.value,
+            "policy_id": str(assessment.context.policy_id),
+            "policy_version": str(assessment.context.policy_version),
+            "reference_time": assessment.context.reference_time.isoformat(),
+            "knowledge_cutoff": assessment.context.knowledge_cutoff.isoformat(),
+            "result_boundary": assessment.result_boundary,
+        }
     )
 
 

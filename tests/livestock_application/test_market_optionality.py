@@ -22,6 +22,7 @@ from packages.livestock_application.market_change_impact import (
 )
 from packages.livestock_application.market_optionality import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
+    DeterministicMarketOptionExplanationDraftProvider,
     MarketOptionAssessmentService,
     MarketOptionChangeImpactService,
     MarketOptionChangeImpactState,
@@ -31,6 +32,8 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationAssertion,
     MarketOptionExplanationDraft,
     MarketOptionExplanationGuardService,
+    MarketOptionExplanationPipelineService,
+    MarketOptionExplanationRunContext,
     MarketOptionExplanationViolation,
     MarketOptionInput,
     MarketOptionPreservationWarningService,
@@ -46,6 +49,16 @@ PURPOSE = "market-test-a"
 EU_PURPOSE = "synthetic-eu-market"
 US_PURPOSE = "synthetic-us-market"
 CN_PURPOSE = "synthetic-cn-market"
+
+
+def _ai_run_context() -> MarketOptionExplanationRunContext:
+    return MarketOptionExplanationRunContext(
+        data_contract_id="MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_V1",
+        data_contract_version=1,
+        processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+        provider_profile="LOCAL_DETERMINISTIC_FAKE",
+        model_name="deterministic-market-optionality-explainer",
+    )
 
 
 def _context_from_artifacts(policy: Policy, decision: Decision) -> MarketOptionContext:
@@ -791,3 +804,80 @@ def test_explanation_guard_rejects_authoritative_or_forecast_claims() -> None:
     assert (
         MarketOptionExplanationViolation.PROHIBITED_AUTHORITATIVE_ASSERTION in validation.violations
     )
+
+
+def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService().explain(
+        assessment=assessment,
+        run_context=_ai_run_context(),
+    )
+
+    assert result.validation.accepted is True
+    assert result.released_text is not None
+    assert MarketOptionState.OPTION_OPEN.value in result.released_text
+    assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert result.explanation_context.source_references["decision_id"] == str(decision.decision_id)
+
+
+def test_explanation_pipeline_falls_back_when_provider_invents_material() -> None:
+    class InventingProvider(DeterministicMarketOptionExplanationDraftProvider):
+        def draft(self, *, explanation_context, run_context):  # type: ignore[no-untyped-def]
+            assessment = explanation_context.assessment
+            return MarketOptionExplanationDraft(
+                text="Resumo sintético com conclusão não canônica.",
+                decision_id=assessment.decision_id,
+                evaluation_id=assessment.evaluation_id,
+                policy_id=assessment.context.policy_id,
+                policy_version=assessment.context.policy_version,
+                option_state=MarketOptionState.OPTION_OPEN,
+                referenced_reason_codes=("INVENTED_AI_REASON",),
+                assertions=(MarketOptionExplanationAssertion.FORECAST,),
+            )
+
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService(draft_provider=InventingProvider()).explain(
+        assessment=assessment,
+        run_context=_ai_run_context(),
+    )
+
+    assert result.validation.accepted is False
+    assert result.released_text is None
+    assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert MarketOptionExplanationViolation.INVENTED_REASON_CODE in result.validation.violations
+    assert (
+        MarketOptionExplanationViolation.PROHIBITED_AUTHORITATIVE_ASSERTION
+        in result.validation.violations
+    )
+
+
+def test_explanation_run_context_requires_governance_references() -> None:
+    with pytest.raises(ValueError, match="data_contract_id"):
+        MarketOptionExplanationRunContext(
+            data_contract_id="",
+            data_contract_version=1,
+            processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            model_name="deterministic-market-optionality-explainer",
+        )
+
+    with pytest.raises(ValueError, match="data_contract_version"):
+        MarketOptionExplanationRunContext(
+            data_contract_id="MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_V1",
+            data_contract_version=0,
+            processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            model_name="deterministic-market-optionality-explainer",
+        )
