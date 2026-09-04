@@ -93,6 +93,8 @@ F5 was completed on 2026-09-03 as an internal application aggregation over autho
 
 F6 was completed on 2026-09-04 as an additive Livestock vertical Dossier section for Market Optionality and existing VerificationBundle interpreter support. It remains within the approved boundary: no new Dossier type, forecast-as-Decision, public certification claim, persistence change, API, UI, worker, notification or sharing/publication change.
 
+F7 was completed on 2026-09-04 as an application-only deterministic explanation guard over `MarketOptionAssessment`. It prepares canonical source references and validates explanation drafts so future AI summaries cannot silently invent gaps, reason codes, option states, Decisions, Evaluations, Facts, Evidence, Rules, forecasts or external authority recognition. It remains within the approved boundary: no LLM provider integration, prompt execution, persistence, API, UI, worker, notification, forecast or user-visible AI output.
+
 ## Canonical Synthetic Scenario
 
 Use fully synthetic data:

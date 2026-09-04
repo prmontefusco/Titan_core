@@ -169,6 +169,36 @@ class MarketOptionPreservationWarningState(StrEnum):
     INSUFFICIENT_MATERIAL = "INSUFFICIENT_MATERIAL"
 
 
+class MarketOptionExplanationAudience(StrEnum):
+    INTERNAL_OPERATOR = "INTERNAL_OPERATOR"
+    PRODUCER = "PRODUCER"
+    AUDITOR = "AUDITOR"
+
+
+class MarketOptionExplanationAssertion(StrEnum):
+    CANONICAL_SUMMARY = "CANONICAL_SUMMARY"
+    DECISION = "DECISION"
+    EVALUATION = "EVALUATION"
+    FORECAST = "FORECAST"
+    EXTERNAL_AUTHORITY_RECOGNITION = "EXTERNAL_AUTHORITY_RECOGNITION"
+    FACT_CREATION = "FACT_CREATION"
+    EVIDENCE_CREATION = "EVIDENCE_CREATION"
+    RULE_CREATION = "RULE_CREATION"
+    OPTION_STATE_CLASSIFICATION = "OPTION_STATE_CLASSIFICATION"
+
+
+class MarketOptionExplanationViolation(StrEnum):
+    MISSING_CANONICAL_REFERENCE = "MISSING_CANONICAL_REFERENCE"
+    DECISION_REFERENCE_MISMATCH = "DECISION_REFERENCE_MISMATCH"
+    EVALUATION_REFERENCE_MISMATCH = "EVALUATION_REFERENCE_MISMATCH"
+    POLICY_REFERENCE_MISMATCH = "POLICY_REFERENCE_MISMATCH"
+    OPTION_STATE_MISMATCH = "OPTION_STATE_MISMATCH"
+    INVENTED_REASON_CODE = "INVENTED_REASON_CODE"
+    INVENTED_MISSING_EVIDENCE_TYPE = "INVENTED_MISSING_EVIDENCE_TYPE"
+    INVENTED_LIMITATION = "INVENTED_LIMITATION"
+    PROHIBITED_AUTHORITATIVE_ASSERTION = "PROHIBITED_AUTHORITATIVE_ASSERTION"
+
+
 @dataclass(frozen=True, slots=True)
 class MarketOptionChangeImpactEntry:
     subject_id: TypedId
@@ -223,6 +253,50 @@ class MarketOptionPreservationWarning:
     reason_codes: tuple[str, ...]
     limitations: tuple[str, ...]
     result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationContext:
+    assessment: MarketOptionAssessment
+    audience: MarketOptionExplanationAudience
+    source_references: Mapping[str, str]
+    allowed_option_state: MarketOptionState
+    allowed_reason_codes: tuple[str, ...]
+    allowed_missing_evidence_types: tuple[str, ...]
+    allowed_limitations: tuple[str, ...]
+    limitations: tuple[str, ...] = (
+        "AI_EXPLANATION_CONTEXT_IS_NOT_DECISION",
+        "AI_EXPLANATION_CONTEXT_IS_NOT_EVALUATION",
+        "AI_EXPLANATION_CONTEXT_IS_NOT_FORECAST",
+        "AI_EXPLANATION_MUST_PRESERVE_CANONICAL_REFERENCES",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationDraft:
+    text: str
+    decision_id: TypedId | None
+    evaluation_id: TypedId | None
+    policy_id: TypedId
+    policy_version: int
+    option_state: MarketOptionState
+    referenced_reason_codes: tuple[str, ...] = ()
+    referenced_missing_evidence_types: tuple[str, ...] = ()
+    referenced_limitations: tuple[str, ...] = ()
+    assertions: tuple[MarketOptionExplanationAssertion, ...] = (
+        MarketOptionExplanationAssertion.CANONICAL_SUMMARY,
+    )
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.text, str) or not self.text.strip():
+            raise ValueError("explanation draft deve possuir texto não vazio.")
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationValidation:
+    accepted: bool
+    violations: tuple[MarketOptionExplanationViolation, ...]
+    limitations: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -528,6 +602,88 @@ class MarketOptionPreservationWarningService:
             reversibility=reversibility,
             reason_codes=tuple(dict.fromkeys(reason_codes)),
             limitations=tuple(dict.fromkeys(limitations)),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationGuardService:
+    """Prepares and validates AI-facing explanation material over canonical outputs."""
+
+    def prepare_context(
+        self,
+        *,
+        assessment: MarketOptionAssessment,
+        audience: MarketOptionExplanationAudience = (
+            MarketOptionExplanationAudience.INTERNAL_OPERATOR
+        ),
+    ) -> MarketOptionExplanationContext:
+        references = {
+            "organization_id": str(assessment.context.organization_id),
+            "subject_id": str(assessment.context.subject_id),
+            "policy_id": str(assessment.context.policy_id),
+            "policy_version": str(assessment.context.policy_version),
+            "market_purpose": assessment.context.market_purpose,
+            "reference_time": assessment.context.reference_time.isoformat(),
+            "knowledge_cutoff": assessment.context.knowledge_cutoff.isoformat(),
+            "result_boundary": assessment.result_boundary,
+        }
+        if assessment.decision_id is not None:
+            references["decision_id"] = str(assessment.decision_id)
+        if assessment.evaluation_id is not None:
+            references["evaluation_id"] = str(assessment.evaluation_id)
+
+        return MarketOptionExplanationContext(
+            assessment=assessment,
+            audience=audience,
+            source_references=MappingProxyType(references),
+            allowed_option_state=assessment.state,
+            allowed_reason_codes=assessment.reason_codes,
+            allowed_missing_evidence_types=assessment.missing_evidence_types,
+            allowed_limitations=assessment.limitations,
+        )
+
+    def validate_draft(
+        self,
+        *,
+        context: MarketOptionExplanationContext,
+        draft: MarketOptionExplanationDraft,
+    ) -> MarketOptionExplanationValidation:
+        violations: list[MarketOptionExplanationViolation] = []
+        assessment = context.assessment
+
+        if draft.decision_id != assessment.decision_id:
+            violations.append(MarketOptionExplanationViolation.DECISION_REFERENCE_MISMATCH)
+        if draft.evaluation_id != assessment.evaluation_id:
+            violations.append(MarketOptionExplanationViolation.EVALUATION_REFERENCE_MISMATCH)
+        if (
+            draft.policy_id != assessment.context.policy_id
+            or draft.policy_version != assessment.context.policy_version
+        ):
+            violations.append(MarketOptionExplanationViolation.POLICY_REFERENCE_MISMATCH)
+        if draft.option_state is not context.allowed_option_state:
+            violations.append(MarketOptionExplanationViolation.OPTION_STATE_MISMATCH)
+        if (assessment.decision_id is not None and draft.decision_id is None) or (
+            assessment.evaluation_id is not None and draft.evaluation_id is None
+        ):
+            violations.append(MarketOptionExplanationViolation.MISSING_CANONICAL_REFERENCE)
+        if not set(draft.referenced_reason_codes).issubset(context.allowed_reason_codes):
+            violations.append(MarketOptionExplanationViolation.INVENTED_REASON_CODE)
+        if not set(draft.referenced_missing_evidence_types).issubset(
+            context.allowed_missing_evidence_types
+        ):
+            violations.append(MarketOptionExplanationViolation.INVENTED_MISSING_EVIDENCE_TYPE)
+        if not set(draft.referenced_limitations).issubset(context.allowed_limitations):
+            violations.append(MarketOptionExplanationViolation.INVENTED_LIMITATION)
+        if any(
+            assertion is not MarketOptionExplanationAssertion.CANONICAL_SUMMARY
+            for assertion in draft.assertions
+        ):
+            violations.append(MarketOptionExplanationViolation.PROHIBITED_AUTHORITATIVE_ASSERTION)
+
+        return MarketOptionExplanationValidation(
+            accepted=not violations,
+            violations=tuple(dict.fromkeys(violations)),
+            limitations=context.limitations,
         )
 
 

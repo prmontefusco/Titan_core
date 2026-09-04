@@ -28,6 +28,10 @@ from packages.livestock_application.market_optionality import (
     MarketOptionContext,
     MarketOptionEventContext,
     MarketOptionEventKind,
+    MarketOptionExplanationAssertion,
+    MarketOptionExplanationDraft,
+    MarketOptionExplanationGuardService,
+    MarketOptionExplanationViolation,
     MarketOptionInput,
     MarketOptionPreservationWarningService,
     MarketOptionPreservationWarningState,
@@ -681,3 +685,109 @@ def test_preservation_warning_missing_material_does_not_recommend_omitting_facts
     assert warning.before_state is None
     assert warning.after_state is None
     assert "DO_NOT_OMIT_OR_DELAY_REQUIRED_FACT_RECORDING" in warning.limitations
+
+
+def test_explanation_context_preserves_canonical_source_references() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+
+    assert context.source_references["decision_id"] == str(decision.decision_id)
+    assert context.source_references["evaluation_id"] == str(evaluation.evaluation_id)
+    assert context.source_references["policy_id"] == str(policy.policy_id)
+    assert context.source_references["policy_version"] == str(policy.version)
+    assert context.source_references["reference_time"] == NOW.isoformat()
+    assert context.source_references["knowledge_cutoff"] == NOW.isoformat()
+    assert context.allowed_option_state is MarketOptionState.OPTION_OPEN
+    assert "AI_EXPLANATION_CONTEXT_IS_NOT_DECISION" in context.limitations
+
+
+def test_explanation_guard_accepts_canonical_summary_draft() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+
+    validation = MarketOptionExplanationGuardService().validate_draft(
+        context=context,
+        draft=MarketOptionExplanationDraft(
+            text="Resumo sintético baseado apenas nas referências canônicas informadas.",
+            decision_id=decision.decision_id,
+            evaluation_id=evaluation.evaluation_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            option_state=MarketOptionState.OPTION_OPEN,
+            referenced_reason_codes=assessment.reason_codes,
+        ),
+    )
+
+    assert validation.accepted is True
+    assert validation.violations == ()
+
+
+def test_explanation_guard_rejects_invented_gap_or_reason() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+
+    validation = MarketOptionExplanationGuardService().validate_draft(
+        context=context,
+        draft=MarketOptionExplanationDraft(
+            text="Resumo sintético com lacuna inventada.",
+            decision_id=decision.decision_id,
+            evaluation_id=evaluation.evaluation_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            option_state=MarketOptionState.OPTION_OPEN,
+            referenced_reason_codes=("SYNTHETIC_INVENTED_REASON",),
+            referenced_missing_evidence_types=("synthetic_invented_gap",),
+        ),
+    )
+
+    assert validation.accepted is False
+    assert MarketOptionExplanationViolation.INVENTED_REASON_CODE in validation.violations
+    assert MarketOptionExplanationViolation.INVENTED_MISSING_EVIDENCE_TYPE in validation.violations
+
+
+def test_explanation_guard_rejects_authoritative_or_forecast_claims() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+
+    validation = MarketOptionExplanationGuardService().validate_draft(
+        context=context,
+        draft=MarketOptionExplanationDraft(
+            text="Resumo sintético tentando virar forecast e decisão.",
+            decision_id=decision.decision_id,
+            evaluation_id=evaluation.evaluation_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            option_state=MarketOptionState.OPTION_OPEN,
+            assertions=(
+                MarketOptionExplanationAssertion.CANONICAL_SUMMARY,
+                MarketOptionExplanationAssertion.FORECAST,
+                MarketOptionExplanationAssertion.DECISION,
+            ),
+        ),
+    )
+
+    assert validation.accepted is False
+    assert (
+        MarketOptionExplanationViolation.PROHIBITED_AUTHORITATIVE_ASSERTION in validation.violations
+    )
