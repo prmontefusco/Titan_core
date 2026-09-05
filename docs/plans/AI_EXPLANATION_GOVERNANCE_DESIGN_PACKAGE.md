@@ -172,6 +172,12 @@ Still outside this local/mock build:
 - user-visible API/UI behavior;
 - provider/model governance.
 
+## Production Decision Package
+
+On 2026-09-05, ADR-0075 and `docs/specs/proposed/2026-09-05-ai-explanation-production-decision-package.md` were proposed to close the production decision package for ADR-0074. The package recommends strict external-provider governance, a production DataContract allow-list, minimized owner-scoped AI Explanation audit storage and release/failure invariants.
+
+The package remains design-only. It does not approve a concrete provider contract, create migrations, implement an adapter, expose API/UI behavior, store prompts/outputs or enable buyer-facing aggregate AI explanations.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:
