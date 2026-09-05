@@ -42,6 +42,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationPipelineService,
     MarketOptionExplanationPromptTemplate,
     MarketOptionExplanationProviderProfile,
+    MarketOptionExplanationProviderProfileState,
     MarketOptionExplanationRunContext,
     MarketOptionExplanationViolation,
     MarketOptionInput,
@@ -920,6 +921,7 @@ def test_explanation_provider_profile_denies_retention_telemetry_and_secondary_u
 
     assert profile.profile_id == "LOCAL_DETERMINISTIC_FAKE"
     assert profile.profile_version == 1
+    assert profile.lifecycle_state is MarketOptionExplanationProviderProfileState.APPROVED
     assert profile.provider_side_retention == "NONE"
     assert profile.telemetry == "NONE"
     assert profile.abuse_logging == "NONE"
@@ -934,6 +936,30 @@ def test_explanation_provider_profile_denies_retention_telemetry_and_secondary_u
         MarketOptionExplanationProviderProfile(telemetry="PROVIDER_DEFAULT")
     with pytest.raises(ValueError, match="secondary_use"):
         MarketOptionExplanationProviderProfile(secondary_use="ALLOWED")
+
+
+def test_explanation_provider_profile_lifecycle_and_effective_period_are_digestable() -> None:
+    effective_from = NOW - timedelta(days=1)
+    effective_until = NOW + timedelta(days=1)
+    profile = MarketOptionExplanationProviderProfile(
+        effective_from=effective_from,
+        effective_until=effective_until,
+    )
+    suspended = MarketOptionExplanationProviderProfile(
+        lifecycle_state=MarketOptionExplanationProviderProfileState.SUSPENDED,
+        effective_from=effective_from,
+        effective_until=effective_until,
+    )
+
+    assert profile.is_available_at(NOW) is True
+    assert suspended.is_available_at(NOW) is False
+    assert suspended.profile_digest != profile.profile_digest
+    assert MarketOptionExplanationProviderProfile(effective_until=NOW).is_available_at(NOW) is False
+    with pytest.raises(ValueError, match="effective_until"):
+        MarketOptionExplanationProviderProfile(
+            effective_from=NOW,
+            effective_until=NOW,
+        )
 
 
 def test_explanation_provider_profile_rejects_digest_mismatch() -> None:
@@ -1190,6 +1216,69 @@ def test_explanation_pipeline_falls_back_when_provider_is_unavailable() -> None:
     )
     assert "provider internal timeout" not in envelope_text
     assert "diagnostic token" not in envelope_text
+
+
+def test_explanation_pipeline_does_not_call_provider_when_profile_is_suspended() -> None:
+    class UnexpectedProvider(DeterministicMarketOptionExplanationTextProvider):
+        def generate_text(self, *, prompt_payload, run_context):  # type: ignore[no-untyped-def]
+            raise AssertionError("provider should not be called")
+
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService(text_provider=UnexpectedProvider()).explain(
+        assessment=assessment,
+        run_context=MarketOptionExplanationRunContext(
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            model_name="deterministic-market-optionality-explainer",
+            provider_profile_state=MarketOptionExplanationProviderProfileState.SUSPENDED,
+        ),
+    )
+
+    assert result.validation.accepted is False
+    assert result.released_text is None
+    assert MarketOptionExplanationViolation.PROVIDER_PROFILE_UNAVAILABLE in (
+        result.validation.violations
+    )
+    assert MarketOptionExplanationViolation.PROVIDER_PROFILE_UNAVAILABLE.value in (
+        result.audit_envelope.violation_codes
+    )
+
+
+def test_explanation_pipeline_does_not_call_provider_when_profile_is_expired() -> None:
+    class UnexpectedProvider(DeterministicMarketOptionExplanationTextProvider):
+        def generate_text(self, *, prompt_payload, run_context):  # type: ignore[no-untyped-def]
+            raise AssertionError("provider should not be called")
+
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService(text_provider=UnexpectedProvider()).explain(
+        assessment=assessment,
+        run_context=MarketOptionExplanationRunContext(
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            model_name="deterministic-market-optionality-explainer",
+            provider_profile_effective_until=NOW,
+        ),
+    )
+
+    assert result.validation.accepted is False
+    assert result.released_text is None
+    assert MarketOptionExplanationViolation.PROVIDER_PROFILE_UNAVAILABLE in (
+        result.validation.violations
+    )
 
 
 def test_explanation_run_context_requires_governance_references() -> None:

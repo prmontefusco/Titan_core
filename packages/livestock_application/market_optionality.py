@@ -241,6 +241,15 @@ class MarketOptionExplanationViolation(StrEnum):
     PROHIBITED_TEXT_CONTENT = "PROHIBITED_TEXT_CONTENT"
     PROHIBITED_AUTHORITATIVE_ASSERTION = "PROHIBITED_AUTHORITATIVE_ASSERTION"
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
+    PROVIDER_PROFILE_UNAVAILABLE = "PROVIDER_PROFILE_UNAVAILABLE"
+
+
+class MarketOptionExplanationProviderProfileState(StrEnum):
+    DRAFT = "DRAFT"
+    APPROVED = "APPROVED"
+    SUSPENDED = "SUSPENDED"
+    REVOKED = "REVOKED"
+    SUPERSEDED = "SUPERSEDED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,6 +415,11 @@ class MarketOptionCanonicalExplanation:
 class MarketOptionExplanationProviderProfile:
     profile_id: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID
     profile_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION
+    lifecycle_state: MarketOptionExplanationProviderProfileState = (
+        MarketOptionExplanationProviderProfileState.APPROVED
+    )
+    effective_from: datetime | None = None
+    effective_until: datetime | None = None
     provider_side_retention: str = "NONE"
     telemetry: str = "NONE"
     abuse_logging: str = "NONE"
@@ -419,6 +433,18 @@ class MarketOptionExplanationProviderProfile:
             raise ValueError("provider profile_id deve ser texto não vazio.")
         if not isinstance(self.profile_version, int) or self.profile_version < 1:
             raise ValueError("provider profile_version deve ser inteiro >= 1.")
+        if not isinstance(self.lifecycle_state, MarketOptionExplanationProviderProfileState):
+            raise TypeError("lifecycle_state deve ser MarketOptionExplanationProviderProfileState.")
+        if self.effective_from is not None:
+            require_utc(self.effective_from, field_name="effective_from")
+        if self.effective_until is not None:
+            require_utc(self.effective_until, field_name="effective_until")
+        if (
+            self.effective_from is not None
+            and self.effective_until is not None
+            and self.effective_until <= self.effective_from
+        ):
+            raise ValueError("effective_until deve ser posterior a effective_from.")
         expected = {
             "provider_side_retention": "NONE",
             "telemetry": "NONE",
@@ -435,6 +461,13 @@ class MarketOptionExplanationProviderProfile:
             {
                 "profile_id": self.profile_id,
                 "profile_version": self.profile_version,
+                "lifecycle_state": self.lifecycle_state.value,
+                "effective_from": (
+                    None if self.effective_from is None else self.effective_from.isoformat()
+                ),
+                "effective_until": (
+                    None if self.effective_until is None else self.effective_until.isoformat()
+                ),
                 "provider_side_retention": self.provider_side_retention,
                 "telemetry": self.telemetry,
                 "abuse_logging": self.abuse_logging,
@@ -447,6 +480,14 @@ class MarketOptionExplanationProviderProfile:
             raise ValueError("provider profile_digest não corresponde ao perfil declarado.")
         object.__setattr__(self, "profile_digest", expected_digest)
 
+    def is_available_at(self, at_time: datetime) -> bool:
+        require_utc(at_time, field_name="at_time")
+        if self.lifecycle_state is not MarketOptionExplanationProviderProfileState.APPROVED:
+            return False
+        if self.effective_from is not None and at_time < self.effective_from:
+            return False
+        return not (self.effective_until is not None and at_time >= self.effective_until)
+
 
 @dataclass(frozen=True, slots=True)
 class MarketOptionExplanationRunContext:
@@ -456,6 +497,11 @@ class MarketOptionExplanationRunContext:
     model_name: str
     provider_profile: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID
     provider_profile_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION
+    provider_profile_state: MarketOptionExplanationProviderProfileState = (
+        MarketOptionExplanationProviderProfileState.APPROVED
+    )
+    provider_profile_effective_from: datetime | None = None
+    provider_profile_effective_until: datetime | None = None
     provider_profile_digest: str = ""
 
     def __post_init__(self) -> None:
@@ -473,9 +519,22 @@ class MarketOptionExplanationRunContext:
         profile = MarketOptionExplanationProviderProfile(
             profile_id=self.provider_profile,
             profile_version=self.provider_profile_version,
+            lifecycle_state=self.provider_profile_state,
+            effective_from=self.provider_profile_effective_from,
+            effective_until=self.provider_profile_effective_until,
             profile_digest=self.provider_profile_digest,
         )
         object.__setattr__(self, "provider_profile_digest", profile.profile_digest)
+
+    def provider_profile_snapshot(self) -> MarketOptionExplanationProviderProfile:
+        return MarketOptionExplanationProviderProfile(
+            profile_id=self.provider_profile,
+            profile_version=self.provider_profile_version,
+            lifecycle_state=self.provider_profile_state,
+            effective_from=self.provider_profile_effective_from,
+            effective_until=self.provider_profile_effective_until,
+            profile_digest=self.provider_profile_digest,
+        )
 
 
 def _canonical_digest(schema: str, value: object) -> str:
@@ -1211,28 +1270,34 @@ class MarketOptionExplanationPipelineService:
             run_context=run_context,
         )
         canonical_fallback = _canonical_explanation_fallback(assessment)
-        try:
-            provider_text = self.text_provider.generate_text(
-                prompt_payload=prompt_payload,
-                run_context=run_context,
-            )
-        except Exception:
+        provider_profile = run_context.provider_profile_snapshot()
+        if not provider_profile.is_available_at(assessment.context.knowledge_cutoff):
             validation = MarketOptionExplanationValidation(
                 accepted=False,
-                violations=(MarketOptionExplanationViolation.PROVIDER_UNAVAILABLE,),
+                violations=(MarketOptionExplanationViolation.PROVIDER_PROFILE_UNAVAILABLE,),
                 limitations=explanation_context.limitations,
             )
             released_text = None
         else:
-            draft = _draft_from_provider_text(
-                provider_text=provider_text,
-                explanation_context=explanation_context,
-            )
-            validation = self.guard_service.validate_draft(
-                context=explanation_context,
-                draft=draft,
-            )
-            released_text = draft.text if validation.accepted else None
+            try:
+                provider_text = self.text_provider.generate_text(
+                    prompt_payload=prompt_payload,
+                    run_context=run_context,
+                )
+            except Exception:
+                validation = MarketOptionExplanationValidation(
+                    accepted=False,
+                    violations=(MarketOptionExplanationViolation.PROVIDER_UNAVAILABLE,),
+                    limitations=explanation_context.limitations,
+                )
+                released_text = None
+            else:
+                validation, released_text = self._validate_provider_text_for_release(
+                    provider_text=provider_text,
+                    explanation_context=explanation_context,
+                    run_context=run_context,
+                    provider_profile=provider_profile,
+                )
         audit_envelope = self.audit_envelope_service.build(
             run_context=run_context,
             explanation_context=explanation_context,
@@ -1250,6 +1315,37 @@ class MarketOptionExplanationPipelineService:
             released_text=released_text,
             canonical_fallback=canonical_fallback,
         )
+
+    def _validate_provider_text_for_release(
+        self,
+        *,
+        provider_text: str,
+        explanation_context: MarketOptionExplanationContext,
+        run_context: MarketOptionExplanationRunContext,
+        provider_profile: MarketOptionExplanationProviderProfile,
+    ) -> tuple[MarketOptionExplanationValidation, str | None]:
+        draft = _draft_from_provider_text(
+            provider_text=provider_text,
+            explanation_context=explanation_context,
+        )
+        validation = self.guard_service.validate_draft(
+            context=explanation_context,
+            draft=draft,
+        )
+        if not validation.accepted:
+            return validation, None
+        if not provider_profile.is_available_at(
+            explanation_context.assessment.context.knowledge_cutoff
+        ):
+            return (
+                MarketOptionExplanationValidation(
+                    accepted=False,
+                    violations=(MarketOptionExplanationViolation.PROVIDER_PROFILE_UNAVAILABLE,),
+                    limitations=explanation_context.limitations,
+                ),
+                None,
+            )
+        return validation, draft.text
 
 
 def _assessment(

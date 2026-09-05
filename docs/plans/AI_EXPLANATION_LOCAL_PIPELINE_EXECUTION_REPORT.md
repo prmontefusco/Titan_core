@@ -38,6 +38,8 @@ On 2026-09-05, the canonical fallback became a typed immutable value object. `Ma
 
 On 2026-09-05, derived classification propagation became executable in the local/mock pipeline. The canonical fallback and provider-facing payload now carry `PROTECTED_DERIVED_CANONICAL_EXPLANATION` plus disclosure restrictions stating that derived knowledge inherits source restrictions, generation never declassifies information and the result cannot be reused for export inference or redistribution.
 
+On 2026-09-05, the accepted ADR-0075 ProviderProfile lifecycle became executable in the local/mock pipeline. `MarketOptionExplanationProviderProfile` now carries lifecycle state plus optional effective interval, includes those fields in its canonical digest and is checked before provider invocation and before release. Suspended, revoked, superseded, draft or expired profiles produce `PROVIDER_PROFILE_UNAVAILABLE`, do not call the text provider and return canonical fallback.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -61,6 +63,7 @@ Added:
 - `MarketOptionExplanationPromptPayload`;
 - `MarketOptionExplanationPromptTemplate`;
 - `MarketOptionExplanationProviderProfile`;
+- `MarketOptionExplanationProviderProfileState`;
 - `MarketOptionCanonicalExplanation`;
 - `MarketOptionExplanationAuditEnvelope`;
 - `MarketOptionExplanationAuditEnvelopeService`;
@@ -84,6 +87,8 @@ The fallback is now represented by `MarketOptionCanonicalExplanation` instead of
 
 The fallback and minimized prompt payload also include output classification and disclosure restrictions. This makes classification inheritance machine-visible in the application pipeline without introducing production DataClassification persistence, provider governance or user-visible API behavior.
 
+ProviderProfile lifecycle state and effective interval are now part of the executable provider boundary. The pipeline validates profile availability before provider invocation and rechecks it before releasing accepted text, preserving ADR-0075 without adding persistence, provider adapter or external behavior.
+
 ## Invariants Preserved
 
 - No external AI provider is called by production/application code.
@@ -95,6 +100,7 @@ The fallback and minimized prompt payload also include output classification and
 - Provider-facing prompt payloads are built from an executable allow-list and exclude raw canonical identifiers.
 - Prompt template, schema and guard versions/digests are preserved before provider text generation.
 - Provider profile version/digest and no-retention/no-telemetry/no-secondary-use constraints are validated before release.
+- ProviderProfile lifecycle state and effective interval are validated before provider invocation and release.
 - Provider implementations receive only the minimized prompt payload and return text.
 - Explicitly authoritative or forecast-like provider text is rejected before release.
 - Provider unavailability cannot block canonical explanation fallback or leak provider diagnostics through the audit envelope.
@@ -115,6 +121,7 @@ The fallback and minimized prompt payload also include output classification and
 - fail-closed behavior for unapproved AI Explanation DataContract id/version;
 - prompt template and guard digest mismatch rejection;
 - provider profile rejection for unapproved retention, telemetry, secondary use or digest mismatch;
+- ProviderProfile lifecycle/effective-period digesting and fail-closed non-call behavior;
 - prompt payload digest changes when prompt template version changes;
 - minimized audit envelope without raw prompt/output/source identifiers;
 - released-output digest required only for accepted explanations;
@@ -128,11 +135,11 @@ The fallback and minimized prompt payload also include output classification and
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 38 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 41 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
-- `python -m uv run --locked python -m pytest -q` with PostgreSQL integration required - 1662 passed, 4 warnings.
+- `python -m uv run --locked python -m pytest -q` with PostgreSQL integration required - 1665 passed, 4 warnings.
 - `python -m uv run --locked ruff check .` - passed.
 - `python -m uv run --locked ruff format --check .` - passed.
 - `python -m uv run --locked python -m mypy` - passed.
