@@ -234,6 +234,7 @@ class MarketOptionExplanationViolation(StrEnum):
     INVENTED_LIMITATION = "INVENTED_LIMITATION"
     PROHIBITED_TEXT_CONTENT = "PROHIBITED_TEXT_CONTENT"
     PROHIBITED_AUTHORITATIVE_ASSERTION = "PROHIBITED_AUTHORITATIVE_ASSERTION"
+    PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
 
 
 @dataclass(frozen=True, slots=True)
@@ -1155,20 +1156,29 @@ class MarketOptionExplanationPipelineService:
             explanation_context=explanation_context,
             run_context=run_context,
         )
-        provider_text = self.text_provider.generate_text(
-            prompt_payload=prompt_payload,
-            run_context=run_context,
-        )
-        draft = _draft_from_provider_text(
-            provider_text=provider_text,
-            explanation_context=explanation_context,
-        )
-        validation = self.guard_service.validate_draft(
-            context=explanation_context,
-            draft=draft,
-        )
-        released_text = draft.text if validation.accepted else None
         canonical_fallback = _canonical_explanation_fallback(assessment)
+        try:
+            provider_text = self.text_provider.generate_text(
+                prompt_payload=prompt_payload,
+                run_context=run_context,
+            )
+        except Exception:
+            validation = MarketOptionExplanationValidation(
+                accepted=False,
+                violations=(MarketOptionExplanationViolation.PROVIDER_UNAVAILABLE,),
+                limitations=explanation_context.limitations,
+            )
+            released_text = None
+        else:
+            draft = _draft_from_provider_text(
+                provider_text=provider_text,
+                explanation_context=explanation_context,
+            )
+            validation = self.guard_service.validate_draft(
+                context=explanation_context,
+                draft=draft,
+            )
+            released_text = draft.text if validation.accepted else None
         audit_envelope = self.audit_envelope_service.build(
             run_context=run_context,
             explanation_context=explanation_context,

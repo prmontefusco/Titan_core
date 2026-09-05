@@ -1110,6 +1110,39 @@ def test_explanation_pipeline_falls_back_when_provider_text_claims_authority() -
     )
 
 
+def test_explanation_pipeline_falls_back_when_provider_is_unavailable() -> None:
+    class FailingProvider(DeterministicMarketOptionExplanationTextProvider):
+        def generate_text(self, *, prompt_payload, run_context):  # type: ignore[no-untyped-def]
+            assert "organization_id" not in prompt_payload.fields
+            assert "subject_id" not in prompt_payload.fields
+            raise RuntimeError("provider internal timeout with diagnostic token")
+
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService(text_provider=FailingProvider()).explain(
+        assessment=assessment,
+        run_context=_ai_run_context(),
+    )
+
+    envelope_text = repr(result.audit_envelope)
+    assert result.validation.accepted is False
+    assert result.released_text is None
+    assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert result.audit_envelope.accepted is False
+    assert result.audit_envelope.released_output_digest is None
+    assert MarketOptionExplanationViolation.PROVIDER_UNAVAILABLE in (result.validation.violations)
+    assert MarketOptionExplanationViolation.PROVIDER_UNAVAILABLE.value in (
+        result.audit_envelope.violation_codes
+    )
+    assert "provider internal timeout" not in envelope_text
+    assert "diagnostic token" not in envelope_text
+
+
 def test_explanation_run_context_requires_governance_references() -> None:
     with pytest.raises(ValueError, match="data_contract_id"):
         MarketOptionExplanationRunContext(

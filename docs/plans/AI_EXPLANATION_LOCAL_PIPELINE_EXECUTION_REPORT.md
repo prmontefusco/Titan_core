@@ -32,6 +32,8 @@ The validation suite now includes `apps/validacao/ai_explanation_pipeline_smoke.
 
 On 2026-09-05, the local pipeline added an executable synthetic provider profile. The profile denies provider-side retention, telemetry, abuse logging, secondary use, training use and tool execution, and its canonical digest is carried by `MarketOptionExplanationRunContext` and `MarketOptionExplanationAuditEnvelope`.
 
+On 2026-09-05, provider unavailability was made fail-closed. If the text provider raises during generation, the pipeline returns `released_text=None`, preserves the canonical structured fallback, records only `PROVIDER_UNAVAILABLE` in the minimized audit envelope and does not retain provider exception text or diagnostics.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -71,6 +73,8 @@ Prompt template, schema and guard identities are represented as deterministic lo
 
 The audit envelope is generated after guard validation and before returning the result. Accepted explanations receive a released-output digest; rejected drafts preserve violation codes and keep released-output digest absent.
 
+Provider runtime failure is handled as a non-release outcome. The pipeline does not expose provider exception text, retry metadata or diagnostics; it records the stable violation code `PROVIDER_UNAVAILABLE` and returns the same canonical fallback shape used for guard rejection.
+
 ## Invariants Preserved
 
 - No external AI provider is called by production/application code.
@@ -84,6 +88,7 @@ The audit envelope is generated after guard validation and before returning the 
 - Provider profile version/digest and no-retention/no-telemetry/no-secondary-use constraints are validated before release.
 - Provider implementations receive only the minimized prompt payload and return text.
 - Explicitly authoritative or forecast-like provider text is rejected before release.
+- Provider unavailability cannot block canonical explanation fallback or leak provider diagnostics through the audit envelope.
 - Audit material is minimized to digests, codes and governance references; raw prompt/output text is not retained.
 - Later provider behavior cannot rewrite historical canonical records.
 - No cross-tenant context or disclosure semantics were introduced.
@@ -104,15 +109,21 @@ The audit envelope is generated after guard validation and before returning the 
 - released-output digest required only for accepted explanations;
 - provider interface constrained to prompt payload only;
 - fallback when provider text contains prohibited authority/forecast terms;
+- fallback when the provider is unavailable, without retaining provider exception diagnostics;
 - synthetic Gemini pipeline smoke over minimized prompt payload;
 - mandatory governance references in the run context.
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 36 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 37 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
+- `python -m uv run --locked python -m pytest -q` with PostgreSQL integration required - 1661 passed, 4 warnings.
+- `python -m uv run --locked ruff check .` - passed.
+- `python -m uv run --locked ruff format --check .` - passed.
+- `python -m uv run --locked python -m mypy` - passed.
+- `python -m uv run --locked python -m alembic check` - passed, no new upgrade operations detected.
 
 ## Migrations
 
