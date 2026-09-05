@@ -40,6 +40,8 @@ On 2026-09-05, derived classification propagation became executable in the local
 
 On 2026-09-05, the accepted ADR-0075 ProviderProfile lifecycle became executable in the local/mock pipeline. `MarketOptionExplanationProviderProfile` now carries lifecycle state plus optional effective interval, includes those fields in its canonical digest and is checked before provider invocation and before release. Suspended, revoked, superseded, draft or expired profiles produce `PROVIDER_PROFILE_UNAVAILABLE`, do not call the text provider and return canonical fallback.
 
+On 2026-09-05, provider-safe vocabulary projection became executable. The provider-facing payload no longer exposes canonical `reason_codes`, `missing_evidence_types`, `limitations` or `context_limitations`; it exposes only stable local aliases (`reason_aliases`, `missing_evidence_aliases`, `limitation_aliases`, `context_limitation_aliases`). Canonical codes remain inside Titan for guard/audit composition.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -89,6 +91,8 @@ The fallback and minimized prompt payload also include output classification and
 
 ProviderProfile lifecycle state and effective interval are now part of the executable provider boundary. The pipeline validates profile availability before provider invocation and rechecks it before releasing accepted text, preserving ADR-0075 without adding persistence, provider adapter or external behavior.
 
+Provider-safe aliases now replace internal vocabulary in the provider payload. This preserves the canonical vocabulary internally while reducing semantic leakage to provider adapters.
+
 ## Invariants Preserved
 
 - No external AI provider is called by production/application code.
@@ -101,6 +105,7 @@ ProviderProfile lifecycle state and effective interval are now part of the execu
 - Prompt template, schema and guard versions/digests are preserved before provider text generation.
 - Provider profile version/digest and no-retention/no-telemetry/no-secondary-use constraints are validated before release.
 - ProviderProfile lifecycle state and effective interval are validated before provider invocation and release.
+- Provider-facing payloads expose provider-safe aliases rather than canonical internal reason/evidence/limitation codes.
 - Provider implementations receive only the minimized prompt payload and return text.
 - Explicitly authoritative or forecast-like provider text is rejected before release.
 - Provider unavailability cannot block canonical explanation fallback or leak provider diagnostics through the audit envelope.
@@ -122,6 +127,7 @@ ProviderProfile lifecycle state and effective interval are now part of the execu
 - prompt template and guard digest mismatch rejection;
 - provider profile rejection for unapproved retention, telemetry, secondary use or digest mismatch;
 - ProviderProfile lifecycle/effective-period digesting and fail-closed non-call behavior;
+- provider-safe alias projection for reason, missing-evidence, limitation and context-limitation vocabulary;
 - prompt payload digest changes when prompt template version changes;
 - minimized audit envelope without raw prompt/output/source identifiers;
 - released-output digest required only for accepted explanations;

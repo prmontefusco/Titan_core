@@ -162,6 +162,7 @@ Completed on 2026-09-04:
 - tests proving canonical fallback is typed, immutable and still digestable for audit;
 - tests proving derived classification and disclosure restrictions are present in fallback and minimized provider payload;
 - tests proving ProviderProfile lifecycle/effective-period gates prevent provider calls and release when unavailable;
+- tests proving provider-facing payload uses provider-safe aliases instead of canonical internal reason/evidence/limitation codes;
 - synthetic Gemini pipeline smoke under `apps/validacao`, using only minimized non-real payload and omitting generated text from output.
 
 Still outside this local/mock build:

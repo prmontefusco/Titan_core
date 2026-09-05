@@ -1092,10 +1092,10 @@ class MarketOptionExplanationDataContractService:
         "option_state",
         "reversibility",
         "claims",
-        "reason_codes",
-        "missing_evidence_types",
-        "limitations",
-        "context_limitations",
+        "reason_aliases",
+        "missing_evidence_aliases",
+        "limitation_aliases",
+        "context_limitation_aliases",
         "output_classification",
         "disclosure_restrictions",
     )
@@ -1137,10 +1137,14 @@ class MarketOptionExplanationDataContractService:
             "option_state": assessment.state.value,
             "reversibility": assessment.reversibility.value,
             "claims": tuple(claims),
-            "reason_codes": _field_tuple(assessment.reason_codes),
-            "missing_evidence_types": _field_tuple(assessment.missing_evidence_types),
-            "limitations": _field_tuple(assessment.limitations),
-            "context_limitations": _field_tuple(explanation_context.limitations),
+            "reason_aliases": _provider_safe_alias_tuple("reason", assessment.reason_codes),
+            "missing_evidence_aliases": _provider_safe_alias_tuple(
+                "missing_evidence", assessment.missing_evidence_types
+            ),
+            "limitation_aliases": _provider_safe_alias_tuple("limitation", assessment.limitations),
+            "context_limitation_aliases": _provider_safe_alias_tuple(
+                "context_limitation", explanation_context.limitations
+            ),
             "output_classification": MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION,
             "disclosure_restrictions": (MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS),
         }
@@ -1387,8 +1391,18 @@ def _canonical_explanation_fallback(
     )
 
 
-def _field_tuple(values: tuple[str, ...]) -> tuple[Mapping[str, str], ...]:
-    return tuple(MappingProxyType({"value": value}) for value in values)
+def _provider_safe_alias_tuple(
+    namespace: str,
+    values: tuple[str, ...],
+) -> tuple[Mapping[str, str], ...]:
+    return tuple(
+        MappingProxyType(
+            {
+                "alias": f"{namespace}:{index}",
+            }
+        )
+        for index, _value in enumerate(values, start=1)
+    )
 
 
 def _draft_from_provider_text(

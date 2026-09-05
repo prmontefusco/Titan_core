@@ -889,10 +889,10 @@ def test_explanation_data_contract_builds_need_to_know_payload_without_raw_ids()
         "option_state",
         "reversibility",
         "claims",
-        "reason_codes",
-        "missing_evidence_types",
-        "limitations",
-        "context_limitations",
+        "reason_aliases",
+        "missing_evidence_aliases",
+        "limitation_aliases",
+        "context_limitation_aliases",
         "output_classification",
         "disclosure_restrictions",
     }
@@ -901,6 +901,12 @@ def test_explanation_data_contract_builds_need_to_know_payload_without_raw_ids()
     assert payload.source_reference_aliases
 
     provider_visible_json = repr(payload.fields)
+    assert "reason_codes" not in payload.fields
+    assert "missing_evidence_types" not in payload.fields
+    assert "limitations" not in payload.fields
+    assert "context_limitations" not in payload.fields
+    assert payload.fields["reason_aliases"] == ({"alias": "reason:1"},)
+    assert "READY_DECISION" not in provider_visible_json
     assert str(policy.organization_id) not in provider_visible_json
     assert str(decision.subject_id) not in provider_visible_json
     assert str(decision.decision_id) not in provider_visible_json

@@ -145,6 +145,10 @@ def _assert_payload_minimized(prompt_payload: MarketOptionExplanationPromptPaylo
         "policy_id",
         "decision_id",
         "evaluation_id",
+        "reason_codes",
+        "missing_evidence_types",
+        "limitations",
+        "context_limitations",
     }
     present = prohibited_keys.intersection(prompt_payload.fields)
     if present:
