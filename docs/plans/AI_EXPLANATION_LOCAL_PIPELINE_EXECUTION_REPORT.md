@@ -34,6 +34,8 @@ On 2026-09-05, the local pipeline added an executable synthetic provider profile
 
 On 2026-09-05, provider unavailability was made fail-closed. If the text provider raises during generation, the pipeline returns `released_text=None`, preserves the canonical structured fallback, records only `PROVIDER_UNAVAILABLE` in the minimized audit envelope and does not retain provider exception text or diagnostics.
 
+On 2026-09-05, the canonical fallback became a typed immutable value object. `MarketOptionCanonicalExplanation` preserves state, reversibility, Policy/version, `reference_time`, `knowledge_cutoff` and result boundary while exposing an explicit `as_mapping()` projection for canonical audit digests.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -57,6 +59,7 @@ Added:
 - `MarketOptionExplanationPromptPayload`;
 - `MarketOptionExplanationPromptTemplate`;
 - `MarketOptionExplanationProviderProfile`;
+- `MarketOptionCanonicalExplanation`;
 - `MarketOptionExplanationAuditEnvelope`;
 - `MarketOptionExplanationAuditEnvelopeService`;
 - `apps/validacao/ai_explanation_pipeline_smoke.py`.
@@ -75,6 +78,8 @@ The audit envelope is generated after guard validation and before returning the 
 
 Provider runtime failure is handled as a non-release outcome. The pipeline does not expose provider exception text, retry metadata or diagnostics; it records the stable violation code `PROVIDER_UNAVAILABLE` and returns the same canonical fallback shape used for guard rejection.
 
+The fallback is now represented by `MarketOptionCanonicalExplanation` instead of an arbitrary mapping. The value object remains deterministic and digestable through `as_mapping()`, but callers can rely on typed fields for temporal coordinates, Policy reference and result boundary.
+
 ## Invariants Preserved
 
 - No external AI provider is called by production/application code.
@@ -89,6 +94,7 @@ Provider runtime failure is handled as a non-release outcome. The pipeline does 
 - Provider implementations receive only the minimized prompt payload and return text.
 - Explicitly authoritative or forecast-like provider text is rejected before release.
 - Provider unavailability cannot block canonical explanation fallback or leak provider diagnostics through the audit envelope.
+- Canonical fallback is typed, immutable and keeps `reference_time`/`knowledge_cutoff` explicit.
 - Audit material is minimized to digests, codes and governance references; raw prompt/output text is not retained.
 - Later provider behavior cannot rewrite historical canonical records.
 - No cross-tenant context or disclosure semantics were introduced.
@@ -110,16 +116,17 @@ Provider runtime failure is handled as a non-release outcome. The pipeline does 
 - provider interface constrained to prompt payload only;
 - fallback when provider text contains prohibited authority/forecast terms;
 - fallback when the provider is unavailable, without retaining provider exception diagnostics;
+- typed canonical fallback with stable mapping projection for audit digesting;
 - synthetic Gemini pipeline smoke over minimized prompt payload;
 - mandatory governance references in the run context.
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 37 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 38 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
-- `python -m uv run --locked python -m pytest -q` with PostgreSQL integration required - 1661 passed, 4 warnings.
+- `python -m uv run --locked python -m pytest -q` with PostgreSQL integration required - 1662 passed, 4 warnings.
 - `python -m uv run --locked ruff check .` - passed.
 - `python -m uv run --locked ruff format --check .` - passed.
 - `python -m uv run --locked python -m mypy` - passed.

@@ -353,6 +353,34 @@ class MarketOptionExplanationValidation:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionCanonicalExplanation:
+    state: MarketOptionState
+    reversibility: MarketOptionReversibility
+    policy_id: TypedId
+    policy_version: int
+    reference_time: datetime
+    knowledge_cutoff: datetime
+    result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
+
+    def __post_init__(self) -> None:
+        require_utc(self.reference_time, field_name="reference_time")
+        require_utc(self.knowledge_cutoff, field_name="knowledge_cutoff")
+
+    def as_mapping(self) -> Mapping[str, str]:
+        return MappingProxyType(
+            {
+                "state": self.state.value,
+                "reversibility": self.reversibility.value,
+                "policy_id": str(self.policy_id),
+                "policy_version": str(self.policy_version),
+                "reference_time": self.reference_time.isoformat(),
+                "knowledge_cutoff": self.knowledge_cutoff.isoformat(),
+                "result_boundary": self.result_boundary,
+            }
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationProviderProfile:
     profile_id: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID
     profile_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION
@@ -541,7 +569,7 @@ class MarketOptionExplanationResult:
     audit_envelope: MarketOptionExplanationAuditEnvelope
     validation: MarketOptionExplanationValidation
     released_text: str | None
-    canonical_fallback: Mapping[str, str]
+    canonical_fallback: MarketOptionCanonicalExplanation
 
 
 class MarketOptionExplanationTextProvider(Protocol):
@@ -1077,7 +1105,7 @@ class MarketOptionExplanationAuditEnvelopeService:
         prompt_payload: MarketOptionExplanationPromptPayload,
         validation: MarketOptionExplanationValidation,
         released_text: str | None,
-        canonical_fallback: Mapping[str, str],
+        canonical_fallback: MarketOptionCanonicalExplanation,
     ) -> MarketOptionExplanationAuditEnvelope:
         source_reference_digest = _canonical_digest(
             "titan.livestock.market_optionality.ai_source_references",
@@ -1085,7 +1113,7 @@ class MarketOptionExplanationAuditEnvelopeService:
         )
         fallback_digest = _canonical_digest(
             "titan.livestock.market_optionality.ai_canonical_fallback",
-            canonical_fallback,
+            canonical_fallback.as_mapping(),
         )
         released_output_digest = (
             _canonical_digest(
@@ -1223,17 +1251,15 @@ def _assessment(
 
 def _canonical_explanation_fallback(
     assessment: MarketOptionAssessment,
-) -> Mapping[str, str]:
-    return MappingProxyType(
-        {
-            "state": assessment.state.value,
-            "reversibility": assessment.reversibility.value,
-            "policy_id": str(assessment.context.policy_id),
-            "policy_version": str(assessment.context.policy_version),
-            "reference_time": assessment.context.reference_time.isoformat(),
-            "knowledge_cutoff": assessment.context.knowledge_cutoff.isoformat(),
-            "result_boundary": assessment.result_boundary,
-        }
+) -> MarketOptionCanonicalExplanation:
+    return MarketOptionCanonicalExplanation(
+        state=assessment.state,
+        reversibility=assessment.reversibility,
+        policy_id=assessment.context.policy_id,
+        policy_version=assessment.context.policy_version,
+        reference_time=assessment.context.reference_time,
+        knowledge_cutoff=assessment.context.knowledge_cutoff,
+        result_boundary=assessment.result_boundary,
     )
 
 

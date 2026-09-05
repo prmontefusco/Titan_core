@@ -1007,7 +1007,7 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
     assert result.validation.accepted is True
     assert result.released_text is not None
     assert MarketOptionState.OPTION_OPEN.value in result.released_text
-    assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert result.canonical_fallback.state.value == MarketOptionState.OPTION_OPEN.value
     assert result.explanation_context.source_references["decision_id"] == str(decision.decision_id)
     assert result.prompt_payload.data_contract_id == (
         MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID
@@ -1024,6 +1024,33 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
     assert result.audit_envelope.released_output_digest is not None
     assert len(result.audit_envelope.released_output_digest) == 64
     assert result.audit_envelope.violation_codes == ()
+
+
+def test_explanation_canonical_fallback_is_typed_and_digestable() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService().explain(
+        assessment=assessment,
+        run_context=_ai_run_context(),
+    )
+
+    fallback = result.canonical_fallback
+    fallback_mapping = fallback.as_mapping()
+    assert fallback.state is MarketOptionState.OPTION_OPEN
+    assert fallback.reversibility is MarketOptionReversibility.NOT_APPLICABLE
+    assert fallback.policy_id == policy.policy_id
+    assert fallback.policy_version == policy.version
+    assert fallback.reference_time == NOW
+    assert fallback.knowledge_cutoff == NOW
+    assert fallback.result_boundary == MARKET_ELIGIBILITY_RESULT_BOUNDARY
+    assert fallback_mapping["state"] == MarketOptionState.OPTION_OPEN.value
+    assert fallback_mapping["policy_id"] == str(policy.policy_id)
+    assert len(result.audit_envelope.canonical_fallback_digest) == 64
 
 
 def test_explanation_audit_envelope_minimizes_prompt_output_and_raw_ids() -> None:
@@ -1098,7 +1125,7 @@ def test_explanation_pipeline_falls_back_when_provider_text_claims_authority() -
 
     assert result.validation.accepted is False
     assert result.released_text is None
-    assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert result.canonical_fallback.state.value == MarketOptionState.OPTION_OPEN.value
     assert result.audit_envelope.accepted is False
     assert result.audit_envelope.released_output_digest is None
     assert result.audit_envelope.prompt_payload_digest == result.prompt_payload.payload_digest
@@ -1132,7 +1159,7 @@ def test_explanation_pipeline_falls_back_when_provider_is_unavailable() -> None:
     envelope_text = repr(result.audit_envelope)
     assert result.validation.accepted is False
     assert result.released_text is None
-    assert result.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value
+    assert result.canonical_fallback.state.value == MarketOptionState.OPTION_OPEN.value
     assert result.audit_envelope.accepted is False
     assert result.audit_envelope.released_output_digest is None
     assert MarketOptionExplanationViolation.PROVIDER_UNAVAILABLE in (result.validation.violations)
