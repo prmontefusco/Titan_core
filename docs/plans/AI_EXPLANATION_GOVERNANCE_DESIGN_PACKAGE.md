@@ -178,6 +178,8 @@ On 2026-09-05, ADR-0075 and `docs/specs/proposed/2026-09-05-ai-explanation-produ
 
 The package remains design-only. It does not approve a concrete provider contract, create migrations, implement an adapter, expose API/UI behavior, store prompts/outputs or enable buyer-facing aggregate AI explanations.
 
+ADR-0075 was accepted with changes on 2026-09-05. The accepted hardening adds explicit idempotency/replay semantics, derived record owner, processing authorization distinct from data access, separation between canonical digests and pseudonymous audit references, provider-safe aliases, ProviderProfile lifecycle/revocation, structured draft schema, provider capability denial, release-approved audit semantics and canonical fallback gates.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:

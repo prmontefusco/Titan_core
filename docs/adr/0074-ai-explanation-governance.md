@@ -125,7 +125,7 @@ Raw prompt/output persistence is denied by default unless a separate retention d
 - audit storage model;
 - whether any buyer-facing aggregate explanation is allowed.
 
-ADR-0075 proposes the production decision package for provider profile, DataContract and minimized audit storage. Until ADR-0075 and its remaining policy gates are accepted, production provider integration remains blocked.
+ADR-0075 accepts the production decision package for provider profile, DataContract and minimized audit storage with additional hardening. Concrete provider contract, provider processing authorization, audit retention/visibility, migration and user-visible API/UI behavior remain separate gates before production release.
 
 ## Acceptance Criteria
 
