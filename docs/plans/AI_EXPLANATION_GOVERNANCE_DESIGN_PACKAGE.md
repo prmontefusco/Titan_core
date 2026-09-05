@@ -160,6 +160,7 @@ Completed on 2026-09-04:
 - tests proving provider text with explicit authority/forecast content is rejected before release;
 - tests proving provider unavailability returns canonical fallback without retaining provider exception diagnostics;
 - tests proving canonical fallback is typed, immutable and still digestable for audit;
+- tests proving derived classification and disclosure restrictions are present in fallback and minimized provider payload;
 - synthetic Gemini pipeline smoke under `apps/validacao`, using only minimized non-real payload and omitting generated text from output.
 
 Still outside this local/mock build:

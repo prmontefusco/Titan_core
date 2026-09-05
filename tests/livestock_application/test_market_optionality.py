@@ -22,6 +22,8 @@ from packages.livestock_application.market_change_impact import (
 )
 from packages.livestock_application.market_optionality import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
+    MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS,
+    MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION,
     MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
     DeterministicMarketOptionExplanationTextProvider,
     MarketOptionAssessmentService,
@@ -890,6 +892,8 @@ def test_explanation_data_contract_builds_need_to_know_payload_without_raw_ids()
         "missing_evidence_types",
         "limitations",
         "context_limitations",
+        "output_classification",
+        "disclosure_restrictions",
     }
     assert payload.fields["subject_type"] == "animal"
     assert payload.fields["option_state"] == MarketOptionState.OPTION_OPEN.value
@@ -1013,6 +1017,12 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
         MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID
     )
     assert result.prompt_payload.fields["reference_time"] == NOW.isoformat()
+    assert result.prompt_payload.fields["output_classification"] == (
+        MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION
+    )
+    assert result.prompt_payload.fields["disclosure_restrictions"] == (
+        MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS
+    )
     assert result.prompt_payload.prompt_template_digest
     assert result.prompt_payload.guard_digest
     assert result.prompt_payload.payload_digest
@@ -1047,9 +1057,21 @@ def test_explanation_canonical_fallback_is_typed_and_digestable() -> None:
     assert fallback.policy_version == policy.version
     assert fallback.reference_time == NOW
     assert fallback.knowledge_cutoff == NOW
+    assert fallback.output_classification == (
+        MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION
+    )
+    assert fallback.disclosure_restrictions == (
+        MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS
+    )
     assert fallback.result_boundary == MARKET_ELIGIBILITY_RESULT_BOUNDARY
     assert fallback_mapping["state"] == MarketOptionState.OPTION_OPEN.value
     assert fallback_mapping["policy_id"] == str(policy.policy_id)
+    assert fallback_mapping["output_classification"] == (
+        MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION
+    )
+    assert fallback_mapping["disclosure_restrictions"] == (
+        MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS
+    )
     assert len(result.audit_envelope.canonical_fallback_digest) == 64
 
 

@@ -36,6 +36,8 @@ On 2026-09-05, provider unavailability was made fail-closed. If the text provide
 
 On 2026-09-05, the canonical fallback became a typed immutable value object. `MarketOptionCanonicalExplanation` preserves state, reversibility, Policy/version, `reference_time`, `knowledge_cutoff` and result boundary while exposing an explicit `as_mapping()` projection for canonical audit digests.
 
+On 2026-09-05, derived classification propagation became executable in the local/mock pipeline. The canonical fallback and provider-facing payload now carry `PROTECTED_DERIVED_CANONICAL_EXPLANATION` plus disclosure restrictions stating that derived knowledge inherits source restrictions, generation never declassifies information and the result cannot be reused for export inference or redistribution.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -80,6 +82,8 @@ Provider runtime failure is handled as a non-release outcome. The pipeline does 
 
 The fallback is now represented by `MarketOptionCanonicalExplanation` instead of an arbitrary mapping. The value object remains deterministic and digestable through `as_mapping()`, but callers can rely on typed fields for temporal coordinates, Policy reference and result boundary.
 
+The fallback and minimized prompt payload also include output classification and disclosure restrictions. This makes classification inheritance machine-visible in the application pipeline without introducing production DataClassification persistence, provider governance or user-visible API behavior.
+
 ## Invariants Preserved
 
 - No external AI provider is called by production/application code.
@@ -95,6 +99,7 @@ The fallback is now represented by `MarketOptionCanonicalExplanation` instead of
 - Explicitly authoritative or forecast-like provider text is rejected before release.
 - Provider unavailability cannot block canonical explanation fallback or leak provider diagnostics through the audit envelope.
 - Canonical fallback is typed, immutable and keeps `reference_time`/`knowledge_cutoff` explicit.
+- AI explanation fallback and provider payload preserve derived classification and disclosure restrictions.
 - Audit material is minimized to digests, codes and governance references; raw prompt/output text is not retained.
 - Later provider behavior cannot rewrite historical canonical records.
 - No cross-tenant context or disclosure semantics were introduced.
@@ -117,6 +122,7 @@ The fallback is now represented by `MarketOptionCanonicalExplanation` instead of
 - fallback when provider text contains prohibited authority/forecast terms;
 - fallback when the provider is unavailable, without retaining provider exception diagnostics;
 - typed canonical fallback with stable mapping projection for audit digesting;
+- derived output classification and disclosure restrictions in fallback and minimized payload;
 - synthetic Gemini pipeline smoke over minimized prompt payload;
 - mandatory governance references in the run context.
 

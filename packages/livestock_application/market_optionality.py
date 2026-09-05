@@ -53,6 +53,12 @@ MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_TEXT = (
 )
 MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID = "LOCAL_DETERMINISTIC_FAKE"
 MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION = 1
+MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION = "PROTECTED_DERIVED_CANONICAL_EXPLANATION"
+MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS = (
+    "DERIVED_KNOWLEDGE_INHERITS_SOURCE_RESTRICTIONS",
+    "GENERATION_NEVER_DECLASSIFIES_INFORMATION",
+    "NO_REUSE_FOR_EXPORT_INFERENCE_OR_REDISTRIBUTION",
+)
 
 
 class MarketOptionState(StrEnum):
@@ -360,13 +366,27 @@ class MarketOptionCanonicalExplanation:
     policy_version: int
     reference_time: datetime
     knowledge_cutoff: datetime
+    output_classification: str = MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION
+    disclosure_restrictions: tuple[str, ...] = (
+        MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS
+    )
     result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
 
     def __post_init__(self) -> None:
         require_utc(self.reference_time, field_name="reference_time")
         require_utc(self.knowledge_cutoff, field_name="knowledge_cutoff")
+        if not isinstance(self.output_classification, str) or (
+            not self.output_classification.strip()
+        ):
+            raise ValueError("output_classification deve ser texto não vazio.")
+        if not self.disclosure_restrictions:
+            raise ValueError("disclosure_restrictions deve preservar ao menos uma restrição.")
+        if any(
+            not isinstance(item, str) or not item.strip() for item in self.disclosure_restrictions
+        ):
+            raise ValueError("disclosure_restrictions deve conter textos não vazios.")
 
-    def as_mapping(self) -> Mapping[str, str]:
+    def as_mapping(self) -> Mapping[str, str | tuple[str, ...]]:
         return MappingProxyType(
             {
                 "state": self.state.value,
@@ -375,6 +395,8 @@ class MarketOptionCanonicalExplanation:
                 "policy_version": str(self.policy_version),
                 "reference_time": self.reference_time.isoformat(),
                 "knowledge_cutoff": self.knowledge_cutoff.isoformat(),
+                "output_classification": self.output_classification,
+                "disclosure_restrictions": self.disclosure_restrictions,
                 "result_boundary": self.result_boundary,
             }
         )
@@ -466,7 +488,7 @@ def _canonical_digest(schema: str, value: object) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
-MarketOptionExplanationPromptValue = str | tuple[Mapping[str, str], ...]
+MarketOptionExplanationPromptValue = str | tuple[str, ...] | tuple[Mapping[str, str], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1015,6 +1037,8 @@ class MarketOptionExplanationDataContractService:
         "missing_evidence_types",
         "limitations",
         "context_limitations",
+        "output_classification",
+        "disclosure_restrictions",
     )
 
     def build_prompt_payload(
@@ -1058,6 +1082,8 @@ class MarketOptionExplanationDataContractService:
             "missing_evidence_types": _field_tuple(assessment.missing_evidence_types),
             "limitations": _field_tuple(assessment.limitations),
             "context_limitations": _field_tuple(explanation_context.limitations),
+            "output_classification": MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION,
+            "disclosure_restrictions": (MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS),
         }
         unexpected = set(fields) - set(self.allowed_fields)
         missing = set(self.allowed_fields) - set(fields)
@@ -1259,6 +1285,8 @@ def _canonical_explanation_fallback(
         policy_version=assessment.context.policy_version,
         reference_time=assessment.context.reference_time,
         knowledge_cutoff=assessment.context.knowledge_cutoff,
+        output_classification=MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION,
+        disclosure_restrictions=MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS,
         result_boundary=assessment.result_boundary,
     )
 
