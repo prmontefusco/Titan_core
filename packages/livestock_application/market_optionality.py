@@ -51,6 +51,8 @@ MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_TEXT = (
     "Do not add facts, decisions, forecasts, eligibility, external recognition, "
     "instructions, identifiers, or claims not present in the allowed claims list."
 )
+MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID = "LOCAL_DETERMINISTIC_FAKE"
+MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION = 1
 
 
 class MarketOptionState(StrEnum):
@@ -350,12 +352,60 @@ class MarketOptionExplanationValidation:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationProviderProfile:
+    profile_id: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID
+    profile_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION
+    provider_side_retention: str = "NONE"
+    telemetry: str = "NONE"
+    abuse_logging: str = "NONE"
+    secondary_use: str = "PROHIBITED"
+    training_use: str = "PROHIBITED"
+    tool_execution: str = "PROHIBITED"
+    profile_digest: str = ""
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.profile_id, str) or not self.profile_id.strip():
+            raise ValueError("provider profile_id deve ser texto não vazio.")
+        if not isinstance(self.profile_version, int) or self.profile_version < 1:
+            raise ValueError("provider profile_version deve ser inteiro >= 1.")
+        expected = {
+            "provider_side_retention": "NONE",
+            "telemetry": "NONE",
+            "abuse_logging": "NONE",
+            "secondary_use": "PROHIBITED",
+            "training_use": "PROHIBITED",
+            "tool_execution": "PROHIBITED",
+        }
+        for field_name, expected_value in expected.items():
+            if getattr(self, field_name) != expected_value:
+                raise ValueError(f"{field_name} não está aprovado para AI Explanation.")
+        expected_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_provider_profile",
+            {
+                "profile_id": self.profile_id,
+                "profile_version": self.profile_version,
+                "provider_side_retention": self.provider_side_retention,
+                "telemetry": self.telemetry,
+                "abuse_logging": self.abuse_logging,
+                "secondary_use": self.secondary_use,
+                "training_use": self.training_use,
+                "tool_execution": self.tool_execution,
+            },
+        )
+        if self.profile_digest and self.profile_digest != expected_digest:
+            raise ValueError("provider profile_digest não corresponde ao perfil declarado.")
+        object.__setattr__(self, "profile_digest", expected_digest)
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationRunContext:
     data_contract_id: str
     data_contract_version: int
     processing_activity: str
-    provider_profile: str
     model_name: str
+    provider_profile: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID
+    provider_profile_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION
+    provider_profile_digest: str = ""
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -369,6 +419,12 @@ class MarketOptionExplanationRunContext:
                 raise ValueError(f"{field_name} deve ser texto não vazio.")
         if not isinstance(self.data_contract_version, int) or self.data_contract_version < 1:
             raise ValueError("data_contract_version deve ser inteiro >= 1.")
+        profile = MarketOptionExplanationProviderProfile(
+            profile_id=self.provider_profile,
+            profile_version=self.provider_profile_version,
+            profile_digest=self.provider_profile_digest,
+        )
+        object.__setattr__(self, "provider_profile_digest", profile.profile_digest)
 
 
 def _canonical_digest(schema: str, value: object) -> str:
@@ -452,6 +508,8 @@ class MarketOptionExplanationAuditEnvelope:
     data_contract_version: int
     processing_activity: str
     provider_profile: str
+    provider_profile_version: int
+    provider_profile_digest: str
     model_name: str
     explanation_schema: str
     prompt_template_id: str
@@ -1046,6 +1104,8 @@ class MarketOptionExplanationAuditEnvelopeService:
             data_contract_version=prompt_payload.data_contract_version,
             processing_activity=run_context.processing_activity,
             provider_profile=run_context.provider_profile,
+            provider_profile_version=run_context.provider_profile_version,
+            provider_profile_digest=run_context.provider_profile_digest,
             model_name=run_context.model_name,
             explanation_schema=prompt_payload.schema,
             prompt_template_id=prompt_payload.prompt_template_id,

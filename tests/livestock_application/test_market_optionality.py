@@ -39,6 +39,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationGuardService,
     MarketOptionExplanationPipelineService,
     MarketOptionExplanationPromptTemplate,
+    MarketOptionExplanationProviderProfile,
     MarketOptionExplanationRunContext,
     MarketOptionExplanationViolation,
     MarketOptionInput,
@@ -910,6 +911,32 @@ def test_explanation_prompt_template_rejects_digest_mismatch() -> None:
         MarketOptionExplanationPromptTemplate(guard_digest="0" * 64)
 
 
+def test_explanation_provider_profile_denies_retention_telemetry_and_secondary_use() -> None:
+    profile = MarketOptionExplanationProviderProfile()
+
+    assert profile.profile_id == "LOCAL_DETERMINISTIC_FAKE"
+    assert profile.profile_version == 1
+    assert profile.provider_side_retention == "NONE"
+    assert profile.telemetry == "NONE"
+    assert profile.abuse_logging == "NONE"
+    assert profile.secondary_use == "PROHIBITED"
+    assert profile.training_use == "PROHIBITED"
+    assert profile.tool_execution == "PROHIBITED"
+    assert len(profile.profile_digest) == 64
+
+    with pytest.raises(ValueError, match="provider_side_retention"):
+        MarketOptionExplanationProviderProfile(provider_side_retention="PROVIDER_DEFAULT")
+    with pytest.raises(ValueError, match="telemetry"):
+        MarketOptionExplanationProviderProfile(telemetry="PROVIDER_DEFAULT")
+    with pytest.raises(ValueError, match="secondary_use"):
+        MarketOptionExplanationProviderProfile(secondary_use="ALLOWED")
+
+
+def test_explanation_provider_profile_rejects_digest_mismatch() -> None:
+    with pytest.raises(ValueError, match="profile_digest"):
+        MarketOptionExplanationProviderProfile(profile_digest="0" * 64)
+
+
 def test_explanation_prompt_payload_digest_changes_with_template_version() -> None:
     decision, evaluation, policy = _artifacts(purpose=PURPOSE)
     assessment = MarketOptionAssessmentService().assess(
@@ -932,6 +959,7 @@ def test_explanation_prompt_payload_digest_changes_with_template_version() -> No
             data_contract_version=1,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
             provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            provider_profile_version=1,
             model_name="deterministic-market-optionality-explainer",
         ),
     )
@@ -990,6 +1018,9 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
     assert result.prompt_payload.payload_digest
     assert result.audit_envelope.accepted is True
     assert result.audit_envelope.prompt_payload_digest == result.prompt_payload.payload_digest
+    assert result.audit_envelope.provider_profile == "LOCAL_DETERMINISTIC_FAKE"
+    assert result.audit_envelope.provider_profile_version == 1
+    assert len(result.audit_envelope.provider_profile_digest) == 64
     assert result.audit_envelope.released_output_digest is not None
     assert len(result.audit_envelope.released_output_digest) == 64
     assert result.audit_envelope.violation_codes == ()
@@ -1027,6 +1058,8 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
             data_contract_version=1,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
             provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            provider_profile_version=1,
+            provider_profile_digest="f" * 64,
             model_name="deterministic-market-optionality-explainer",
             explanation_schema="MARKET_OPTIONALITY_AI_EXPLANATION_CONTEXT_V1",
             prompt_template_id="market-optionality-explanation-canonical-summary",

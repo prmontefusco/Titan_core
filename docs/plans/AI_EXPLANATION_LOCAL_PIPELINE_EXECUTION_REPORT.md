@@ -30,6 +30,8 @@ The provider boundary now receives only `MarketOptionExplanationPromptPayload` a
 
 The validation suite now includes `apps/validacao/ai_explanation_pipeline_smoke.py`, a non-production Gemini smoke that composes the real local pipeline with a synthetic `MarketOptionAssessment`. It sends only `MarketOptionExplanationPromptPayload.fields`, omits source-reference aliases, omits generated text from console output and validates the guard/audit envelope boundary with the local key stored outside Git.
 
+On 2026-09-05, the local pipeline added an executable synthetic provider profile. The profile denies provider-side retention, telemetry, abuse logging, secondary use, training use and tool execution, and its canonical digest is carried by `MarketOptionExplanationRunContext` and `MarketOptionExplanationAuditEnvelope`.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -52,6 +54,7 @@ Added:
 - `MarketOptionExplanationDataContractService`;
 - `MarketOptionExplanationPromptPayload`;
 - `MarketOptionExplanationPromptTemplate`;
+- `MarketOptionExplanationProviderProfile`;
 - `MarketOptionExplanationAuditEnvelope`;
 - `MarketOptionExplanationAuditEnvelopeService`;
 - `apps/validacao/ai_explanation_pipeline_smoke.py`.
@@ -78,6 +81,7 @@ The audit envelope is generated after guard validation and before returning the 
 - AI/provider draft output cannot originate externally presented explanation claims.
 - Provider-facing prompt payloads are built from an executable allow-list and exclude raw canonical identifiers.
 - Prompt template, schema and guard versions/digests are preserved before provider text generation.
+- Provider profile version/digest and no-retention/no-telemetry/no-secondary-use constraints are validated before release.
 - Provider implementations receive only the minimized prompt payload and return text.
 - Explicitly authoritative or forecast-like provider text is rejected before release.
 - Audit material is minimized to digests, codes and governance references; raw prompt/output text is not retained.
@@ -94,6 +98,7 @@ The audit envelope is generated after guard validation and before returning the 
 - provider-facing prompt payload minimization without raw Organization/subject/Policy/Decision/Evaluation ids;
 - fail-closed behavior for unapproved AI Explanation DataContract id/version;
 - prompt template and guard digest mismatch rejection;
+- provider profile rejection for unapproved retention, telemetry, secondary use or digest mismatch;
 - prompt payload digest changes when prompt template version changes;
 - minimized audit envelope without raw prompt/output/source identifiers;
 - released-output digest required only for accepted explanations;
@@ -104,7 +109,7 @@ The audit envelope is generated after guard validation and before returning the 
 
 ## Tests Executed
 
-- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 34 passed.
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 36 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked python -m mypy packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
