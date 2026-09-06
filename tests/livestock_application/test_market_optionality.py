@@ -1,5 +1,6 @@
 """F1: Market Optionality projection remains pure and non-decisional."""
 
+from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 
@@ -38,6 +39,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationClaimType,
     MarketOptionExplanationDataContractService,
     MarketOptionExplanationDraft,
+    MarketOptionExplanationDraftSection,
     MarketOptionExplanationGuardService,
     MarketOptionExplanationPipelineService,
     MarketOptionExplanationPromptTemplate,
@@ -59,6 +61,12 @@ PURPOSE = "market-test-a"
 EU_PURPOSE = "synthetic-eu-market"
 US_PURPOSE = "synthetic-us-market"
 CN_PURPOSE = "synthetic-cn-market"
+
+
+def _draft_sections(
+    text: str, claim_refs: tuple[str, ...] = ("claim:1",)
+) -> tuple[MarketOptionExplanationDraftSection, ...]:
+    return (MarketOptionExplanationDraftSection(claim_refs=claim_refs, text=text),)
 
 
 def _ai_run_context() -> MarketOptionExplanationRunContext:
@@ -758,6 +766,9 @@ def test_explanation_guard_accepts_canonical_summary_draft() -> None:
             option_state=MarketOptionState.OPTION_OPEN,
             referenced_claims=context.allowed_claims,
             referenced_reason_codes=assessment.reason_codes,
+            sections=_draft_sections(
+                "Resumo sintético baseado apenas nas referências canônicas informadas."
+            ),
         ),
     )
 
@@ -785,6 +796,7 @@ def test_explanation_guard_rejects_invented_gap_or_reason() -> None:
             option_state=MarketOptionState.OPTION_OPEN,
             referenced_reason_codes=("SYNTHETIC_INVENTED_REASON",),
             referenced_missing_evidence_types=("synthetic_invented_gap",),
+            sections=_draft_sections("Resumo sintético com lacuna inventada."),
         ),
     )
 
@@ -818,11 +830,42 @@ def test_explanation_guard_rejects_ai_originated_structured_claim() -> None:
                     source_reference=str(decision.decision_id),
                 ),
             ),
+            sections=_draft_sections("Resumo sintético com claim estrutural inventado."),
         ),
     )
 
     assert validation.accepted is False
     assert MarketOptionExplanationViolation.INVENTED_CLAIM in validation.violations
+
+
+def test_explanation_guard_rejects_unknown_structured_claim_ref() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+
+    validation = MarketOptionExplanationGuardService().validate_draft(
+        context=context,
+        draft=MarketOptionExplanationDraft(
+            text="Resumo sintético apontando para claim não autorizado.",
+            decision_id=decision.decision_id,
+            evaluation_id=evaluation.evaluation_id,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            option_state=MarketOptionState.OPTION_OPEN,
+            referenced_claims=context.allowed_claims,
+            sections=_draft_sections(
+                "Resumo sintético apontando para claim não autorizado.",
+                claim_refs=("claim:999",),
+            ),
+        ),
+    )
+
+    assert validation.accepted is False
+    assert MarketOptionExplanationViolation.UNKNOWN_CLAIM_REFERENCE in validation.violations
 
 
 def test_explanation_guard_rejects_authoritative_or_forecast_claims() -> None:
@@ -843,6 +886,7 @@ def test_explanation_guard_rejects_authoritative_or_forecast_claims() -> None:
             policy_id=policy.policy_id,
             policy_version=policy.version,
             option_state=MarketOptionState.OPTION_OPEN,
+            sections=_draft_sections("Resumo sintético tentando virar forecast e decisão."),
             assertions=(
                 MarketOptionExplanationAssertion.CANONICAL_SUMMARY,
                 MarketOptionExplanationAssertion.FORECAST,
@@ -906,6 +950,12 @@ def test_explanation_data_contract_builds_need_to_know_payload_without_raw_ids()
     assert "limitations" not in payload.fields
     assert "context_limitations" not in payload.fields
     assert payload.fields["reason_aliases"] == ({"alias": "reason:1"},)
+    claims = payload.fields["claims"]
+    assert isinstance(claims, tuple)
+    first_claim = claims[0]
+    assert isinstance(first_claim, Mapping)
+    assert first_claim["claim_ref"] == "claim:1"
+    assert first_claim["source_alias"] == "claim_source:1"
     assert "READY_DECISION" not in provider_visible_json
     assert str(policy.organization_id) not in provider_visible_json
     assert str(decision.subject_id) not in provider_visible_json

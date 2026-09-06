@@ -41,6 +41,7 @@ MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID = (
 )
 MARKET_OPTIONALITY_AI_EXPLANATION_CONTRACT_VERSION = 1
 MARKET_OPTIONALITY_AI_EXPLANATION_SCHEMA = "MARKET_OPTIONALITY_AI_EXPLANATION_CONTEXT_V1"
+MARKET_OPTIONALITY_AI_EXPLANATION_DRAFT_SCHEMA = "MARKET_OPTIONALITY_AI_EXPLANATION_DRAFT_V1"
 MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_ID = (
     "market-optionality-explanation-canonical-summary"
 )
@@ -238,6 +239,8 @@ class MarketOptionExplanationViolation(StrEnum):
     INVENTED_REASON_CODE = "INVENTED_REASON_CODE"
     INVENTED_MISSING_EVIDENCE_TYPE = "INVENTED_MISSING_EVIDENCE_TYPE"
     INVENTED_LIMITATION = "INVENTED_LIMITATION"
+    DRAFT_SCHEMA_MISMATCH = "DRAFT_SCHEMA_MISMATCH"
+    UNKNOWN_CLAIM_REFERENCE = "UNKNOWN_CLAIM_REFERENCE"
     PROHIBITED_TEXT_CONTENT = "PROHIBITED_TEXT_CONTENT"
     PROHIBITED_AUTHORITATIVE_ASSERTION = "PROHIBITED_AUTHORITATIVE_ASSERTION"
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
@@ -340,6 +343,21 @@ class MarketOptionExplanationContext:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationDraftSection:
+    claim_refs: tuple[str, ...]
+    text: str
+
+    def __post_init__(self) -> None:
+        if not self.claim_refs:
+            raise ValueError("draft section deve referenciar ao menos um claim autorizado.")
+        if not isinstance(self.text, str) or not self.text.strip():
+            raise ValueError("draft section deve possuir texto não vazio.")
+        for claim_ref in self.claim_refs:
+            if not isinstance(claim_ref, str) or not claim_ref.strip():
+                raise ValueError("draft section claim_ref deve ser texto não vazio.")
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationDraft:
     text: str
     decision_id: TypedId | None
@@ -351,6 +369,8 @@ class MarketOptionExplanationDraft:
     referenced_reason_codes: tuple[str, ...] = ()
     referenced_missing_evidence_types: tuple[str, ...] = ()
     referenced_limitations: tuple[str, ...] = ()
+    schema: str = MARKET_OPTIONALITY_AI_EXPLANATION_DRAFT_SCHEMA
+    sections: tuple[MarketOptionExplanationDraftSection, ...] = ()
     assertions: tuple[MarketOptionExplanationAssertion, ...] = (
         MarketOptionExplanationAssertion.CANONICAL_SUMMARY,
     )
@@ -358,6 +378,8 @@ class MarketOptionExplanationDraft:
     def __post_init__(self) -> None:
         if not isinstance(self.text, str) or not self.text.strip():
             raise ValueError("explanation draft deve possuir texto não vazio.")
+        if not self.sections:
+            raise ValueError("explanation draft deve possuir seções estruturadas.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1015,6 +1037,14 @@ class MarketOptionExplanationGuardService:
         violations: list[MarketOptionExplanationViolation] = []
         assessment = context.assessment
 
+        if draft.schema != MARKET_OPTIONALITY_AI_EXPLANATION_DRAFT_SCHEMA:
+            violations.append(MarketOptionExplanationViolation.DRAFT_SCHEMA_MISMATCH)
+        allowed_claim_refs = set(_claim_refs_for_context(context))
+        draft_claim_refs = {
+            claim_ref for section in draft.sections for claim_ref in section.claim_refs
+        }
+        if not draft_claim_refs.issubset(allowed_claim_refs):
+            violations.append(MarketOptionExplanationViolation.UNKNOWN_CLAIM_REFERENCE)
         if draft.decision_id != assessment.decision_id:
             violations.append(MarketOptionExplanationViolation.DECISION_REFERENCE_MISMATCH)
         if draft.evaluation_id != assessment.evaluation_id:
@@ -1119,6 +1149,7 @@ class MarketOptionExplanationDataContractService:
             claims.append(
                 MappingProxyType(
                     {
+                        "claim_ref": _claim_ref(index),
                         "type": claim.claim_type.value,
                         "value": claim.value,
                         "source_alias": alias,
@@ -1405,6 +1436,16 @@ def _provider_safe_alias_tuple(
     )
 
 
+def _claim_ref(index: int) -> str:
+    return f"claim:{index}"
+
+
+def _claim_refs_for_context(
+    context: MarketOptionExplanationContext,
+) -> tuple[str, ...]:
+    return tuple(_claim_ref(index) for index, _claim in enumerate(context.allowed_claims, start=1))
+
+
 def _draft_from_provider_text(
     *,
     provider_text: str,
@@ -1422,6 +1463,12 @@ def _draft_from_provider_text(
         referenced_missing_evidence_types=assessment.missing_evidence_types,
         referenced_limitations=assessment.limitations,
         referenced_claims=explanation_context.allowed_claims,
+        sections=(
+            MarketOptionExplanationDraftSection(
+                claim_refs=_claim_refs_for_context(explanation_context),
+                text=provider_text,
+            ),
+        ),
     )
 
 

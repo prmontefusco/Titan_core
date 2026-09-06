@@ -182,6 +182,8 @@ The package remains design-only. It does not approve a concrete provider contrac
 
 ADR-0075 was accepted with changes on 2026-09-05. The accepted hardening adds explicit idempotency/replay semantics, derived record owner, processing authorization distinct from data access, separation between canonical digests and pseudonymous audit references, provider-safe aliases, ProviderProfile lifecycle/revocation, structured draft schema, provider capability denial, release-approved audit semantics and canonical fallback gates.
 
+The local/mock pipeline now implements the structured draft schema boundary required by ADR-0075. Provider-visible claims carry Titan-generated `claim_ref` aliases, `MarketOptionExplanationDraft` is versioned and sectioned, and deterministic guard validation rejects draft sections that reference unknown claims. This remains an application-only safety mechanism; it does not approve a production provider, persistence, public API, UI release or cross-tenant AI explanation.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:
