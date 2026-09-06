@@ -654,6 +654,68 @@ class MarketOptionExplanationProviderProcessingAuthorization:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationRequestIdentity:
+    organization_id: OrganizationId
+    purpose: str
+    policy_id: TypedId
+    policy_version: int
+    reference_time: datetime
+    knowledge_cutoff: datetime
+    data_contract_id: str
+    data_contract_version: int
+    provider_profile: str
+    provider_profile_version: int
+    prompt_template_id: str
+    prompt_template_version: int
+    idempotency_key: str
+    semantic_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "purpose",
+            "data_contract_id",
+            "provider_profile",
+            "prompt_template_id",
+            "idempotency_key",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} deve ser texto não vazio.")
+        for field_name in (
+            "policy_version",
+            "data_contract_version",
+            "provider_profile_version",
+            "prompt_template_version",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, int) or value < 1:
+                raise ValueError(f"{field_name} deve ser inteiro >= 1.")
+        require_utc(self.reference_time, field_name="reference_time")
+        require_utc(self.knowledge_cutoff, field_name="knowledge_cutoff")
+        expected_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_explanation_request_identity",
+            {
+                "organization_id": str(self.organization_id),
+                "purpose": self.purpose,
+                "policy_id": str(self.policy_id),
+                "policy_version": self.policy_version,
+                "reference_time": self.reference_time.isoformat(),
+                "knowledge_cutoff": self.knowledge_cutoff.isoformat(),
+                "data_contract_id": self.data_contract_id,
+                "data_contract_version": self.data_contract_version,
+                "provider_profile": self.provider_profile,
+                "provider_profile_version": self.provider_profile_version,
+                "prompt_template_id": self.prompt_template_id,
+                "prompt_template_version": self.prompt_template_version,
+                "idempotency_key": self.idempotency_key,
+            },
+        )
+        if self.semantic_digest and self.semantic_digest != expected_digest:
+            raise ValueError("semantic_digest não corresponde à identidade declarada.")
+        object.__setattr__(self, "semantic_digest", expected_digest)
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationRunContext:
     data_contract_id: str
     data_contract_version: int
@@ -678,6 +740,7 @@ class MarketOptionExplanationRunContext:
     processing_authorization_effective_from: datetime | None = None
     processing_authorization_effective_until: datetime | None = None
     processing_authorization_digest: str = ""
+    idempotency_key: str | None = None
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -718,6 +781,8 @@ class MarketOptionExplanationRunContext:
             "processing_authorization_digest",
             authorization.authorization_digest,
         )
+        if self.idempotency_key is not None and not self.idempotency_key.strip():
+            raise ValueError("idempotency_key deve ser texto não vazio quando informada.")
 
     def provider_profile_snapshot(self) -> MarketOptionExplanationProviderProfile:
         return MarketOptionExplanationProviderProfile(
@@ -744,6 +809,31 @@ class MarketOptionExplanationRunContext:
             effective_from=self.processing_authorization_effective_from,
             effective_until=self.processing_authorization_effective_until,
             authorization_digest=self.processing_authorization_digest,
+        )
+
+    def request_identity(
+        self,
+        *,
+        assessment: MarketOptionAssessment,
+        prompt_payload: "MarketOptionExplanationPromptPayload",
+    ) -> MarketOptionExplanationRequestIdentity | None:
+        if self.idempotency_key is None:
+            return None
+        context = assessment.context
+        return MarketOptionExplanationRequestIdentity(
+            organization_id=context.organization_id,
+            purpose=context.market_purpose,
+            policy_id=context.policy_id,
+            policy_version=context.policy_version,
+            reference_time=context.reference_time,
+            knowledge_cutoff=context.knowledge_cutoff,
+            data_contract_id=self.data_contract_id,
+            data_contract_version=self.data_contract_version,
+            provider_profile=self.provider_profile,
+            provider_profile_version=self.provider_profile_version,
+            prompt_template_id=prompt_payload.prompt_template_id,
+            prompt_template_version=prompt_payload.prompt_template_version,
+            idempotency_key=self.idempotency_key,
         )
 
 
@@ -893,6 +983,7 @@ class MarketOptionExplanationAuditEnvelope:
     source_reference_digest: str
     source_reference_audit_references: tuple[MarketOptionExplanationOpaqueAuditReference, ...]
     canonical_fallback_digest: str
+    idempotency_reference: str | None
     released_output_digest: str | None
     release_disposition: MarketOptionExplanationReleaseDisposition
     accepted: bool
@@ -1497,6 +1588,10 @@ class MarketOptionExplanationAuditEnvelopeService:
             "titan.livestock.market_optionality.ai_canonical_fallback",
             canonical_fallback.as_mapping(),
         )
+        request_identity = run_context.request_identity(
+            assessment=explanation_context.assessment,
+            prompt_payload=prompt_payload,
+        )
         released_output_digest = (
             _canonical_digest(
                 "titan.livestock.market_optionality.ai_released_output",
@@ -1536,6 +1631,9 @@ class MarketOptionExplanationAuditEnvelopeService:
             source_reference_digest=source_reference_digest,
             source_reference_audit_references=source_reference_audit_references,
             canonical_fallback_digest=fallback_digest,
+            idempotency_reference=(
+                None if request_identity is None else request_identity.semantic_digest
+            ),
             released_output_digest=released_output_digest,
             release_disposition=release_disposition,
             accepted=validation.accepted,

@@ -49,6 +49,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationProviderProfile,
     MarketOptionExplanationProviderProfileState,
     MarketOptionExplanationReleaseDisposition,
+    MarketOptionExplanationRequestIdentity,
     MarketOptionExplanationRunContext,
     MarketOptionExplanationViolation,
     MarketOptionInput,
@@ -76,6 +77,7 @@ def _draft_sections(
 def _ai_run_context(
     organization_id: OrganizationId,
     purpose: str = PURPOSE,
+    idempotency_key: str | None = None,
 ) -> MarketOptionExplanationRunContext:
     return MarketOptionExplanationRunContext(
         data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
@@ -85,6 +87,7 @@ def _ai_run_context(
         processing_authorization_purpose=purpose,
         provider_profile="LOCAL_DETERMINISTIC_FAKE",
         model_name="deterministic-market-optionality-explainer",
+        idempotency_key=idempotency_key,
     )
 
 
@@ -1098,6 +1101,78 @@ def test_explanation_provider_processing_authorization_is_bounded_and_digestable
         )
 
 
+def test_explanation_request_identity_is_semantic_and_digestable() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
+    run_context = _ai_run_context(policy.organization_id, idempotency_key="idem-123")
+    payload = MarketOptionExplanationDataContractService().build_prompt_payload(
+        explanation_context=context,
+        run_context=run_context,
+    )
+
+    identity = run_context.request_identity(assessment=assessment, prompt_payload=payload)
+    changed_purpose_identity = MarketOptionExplanationRequestIdentity(
+        organization_id=policy.organization_id,
+        purpose="other-purpose",
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        reference_time=NOW,
+        knowledge_cutoff=NOW,
+        data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+        data_contract_version=1,
+        provider_profile="LOCAL_DETERMINISTIC_FAKE",
+        provider_profile_version=1,
+        prompt_template_id=payload.prompt_template_id,
+        prompt_template_version=payload.prompt_template_version,
+        idempotency_key="idem-123",
+    )
+
+    assert identity is not None
+    assert len(identity.semantic_digest) == 64
+    assert changed_purpose_identity.semantic_digest != identity.semantic_digest
+    assert (
+        MarketOptionExplanationRequestIdentity(
+            organization_id=policy.organization_id,
+            purpose=PURPOSE,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            reference_time=NOW,
+            knowledge_cutoff=NOW,
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            provider_profile_version=1,
+            prompt_template_id=payload.prompt_template_id,
+            prompt_template_version=payload.prompt_template_version,
+            idempotency_key="idem-123",
+            semantic_digest=identity.semantic_digest,
+        ).semantic_digest
+        == identity.semantic_digest
+    )
+    with pytest.raises(ValueError, match="semantic_digest"):
+        MarketOptionExplanationRequestIdentity(
+            organization_id=policy.organization_id,
+            purpose=PURPOSE,
+            policy_id=policy.policy_id,
+            policy_version=policy.version,
+            reference_time=NOW,
+            knowledge_cutoff=NOW,
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            provider_profile_version=1,
+            prompt_template_id=payload.prompt_template_id,
+            prompt_template_version=payload.prompt_template_version,
+            idempotency_key="idem-123",
+            semantic_digest="0" * 64,
+        )
+
+
 def test_explanation_prompt_payload_digest_changes_with_template_version() -> None:
     decision, evaluation, policy = _artifacts(purpose=PURPOSE)
     assessment = MarketOptionAssessmentService().assess(
@@ -1255,7 +1330,7 @@ def test_explanation_audit_envelope_minimizes_prompt_output_and_raw_ids() -> Non
 
     result = MarketOptionExplanationPipelineService().explain(
         assessment=assessment,
-        run_context=_ai_run_context(policy.organization_id),
+        run_context=_ai_run_context(policy.organization_id, idempotency_key="idem-secret"),
     )
 
     envelope_text = repr(result.audit_envelope)
@@ -1266,6 +1341,9 @@ def test_explanation_audit_envelope_minimizes_prompt_output_and_raw_ids() -> Non
     assert str(decision.decision_id) not in envelope_text
     assert str(evaluation.evaluation_id) not in envelope_text
     assert str(policy.policy_id) not in envelope_text
+    assert "idem-secret" not in envelope_text
+    assert result.audit_envelope.idempotency_reference is not None
+    assert len(result.audit_envelope.idempotency_reference) == 64
     assert len(result.audit_envelope.source_reference_digest) == 64
     assert result.audit_envelope.source_reference_audit_references
     assert str(decision.decision_id) not in repr(
@@ -1331,6 +1409,7 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
                 ),
             ),
             canonical_fallback_digest="e" * 64,
+            idempotency_reference=None,
             released_output_digest=None,
             release_disposition=MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED,
             accepted=True,
@@ -1368,6 +1447,7 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
                 ),
             ),
             canonical_fallback_digest="e" * 64,
+            idempotency_reference=None,
             released_output_digest=None,
             release_disposition=MarketOptionExplanationReleaseDisposition.NOT_RELEASED,
             accepted=True,

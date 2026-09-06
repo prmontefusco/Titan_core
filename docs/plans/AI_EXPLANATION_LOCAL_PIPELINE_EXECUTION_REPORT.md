@@ -52,6 +52,8 @@ On 2026-09-06, provider-managed capabilities denied by ADR-0075 became explicit 
 
 On 2026-09-06, audit release semantics became explicit. `MarketOptionExplanationAuditEnvelope` now records `release_disposition` as `RELEASE_APPROVED` or `NOT_RELEASED`, and validates that `RELEASE_APPROVED` is paired with accepted guard output and a released output digest. This remains an approval-to-release record, not evidence that the requester received or read the output.
 
+On 2026-09-06, idempotency semantics became explicit without adding replay storage. `MarketOptionExplanationRequestIdentity` computes a semantic digest from Organization, purpose, Policy/version, temporal coordinates, DataContract, ProviderProfile, prompt template and idempotency key. `MarketOptionExplanationAuditEnvelope` carries only this digest as `idempotency_reference` when a key is supplied, so the raw key is not retained and byte-identical AI text replay remains outside the local/mock pipeline.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -80,6 +82,7 @@ Added:
 - `MarketOptionExplanationProviderProfile`;
 - `MarketOptionExplanationProviderProfileState`;
 - `MarketOptionExplanationProviderProcessingAuthorization`;
+- `MarketOptionExplanationRequestIdentity`;
 - `MarketOptionExplanationOpaqueAuditReference`;
 - `MarketOptionExplanationDraftSection`;
 - `MarketOptionCanonicalExplanation`;
