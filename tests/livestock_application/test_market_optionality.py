@@ -48,6 +48,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationProviderProcessingAuthorization,
     MarketOptionExplanationProviderProfile,
     MarketOptionExplanationProviderProfileState,
+    MarketOptionExplanationReleaseDisposition,
     MarketOptionExplanationRunContext,
     MarketOptionExplanationViolation,
     MarketOptionInput,
@@ -1187,6 +1188,10 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
     assert result.prompt_payload.guard_digest
     assert result.prompt_payload.payload_digest
     assert result.audit_envelope.accepted is True
+    assert (
+        result.audit_envelope.release_disposition
+        is MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
+    )
     assert result.audit_envelope.prompt_payload_digest == result.prompt_payload.payload_digest
     assert result.audit_envelope.provider_profile == "LOCAL_DETERMINISTIC_FAKE"
     assert result.audit_envelope.provider_profile_version == 1
@@ -1327,6 +1332,44 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
             ),
             canonical_fallback_digest="e" * 64,
             released_output_digest=None,
+            release_disposition=MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED,
+            accepted=True,
+            violation_codes=(),
+            limitations=(),
+        )
+
+    with pytest.raises(ValueError, match="release_disposition"):
+        MarketOptionExplanationAuditEnvelope(
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            processing_authorization_reference=(
+                "SYNTHETIC_AI_EXPLANATION_PROCESSING_AUTHORIZATION"
+            ),
+            processing_authorization_version=1,
+            processing_authorization_digest="0" * 64,
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            provider_profile_version=1,
+            provider_profile_digest="f" * 64,
+            model_name="deterministic-market-optionality-explainer",
+            explanation_schema="MARKET_OPTIONALITY_AI_EXPLANATION_CONTEXT_V1",
+            prompt_template_id="market-optionality-explanation-canonical-summary",
+            prompt_template_version=1,
+            prompt_template_digest="a" * 64,
+            guard_version=1,
+            guard_digest="b" * 64,
+            prompt_payload_digest="c" * 64,
+            source_reference_digest="d" * 64,
+            source_reference_audit_references=(
+                MarketOptionExplanationOpaqueAuditReference(
+                    alias="claim_source:1",
+                    key_version=1,
+                    reference="1" * 64,
+                ),
+            ),
+            canonical_fallback_digest="e" * 64,
+            released_output_digest=None,
+            release_disposition=MarketOptionExplanationReleaseDisposition.NOT_RELEASED,
             accepted=True,
             violation_codes=(),
             limitations=(),
@@ -1354,6 +1397,10 @@ def test_explanation_pipeline_falls_back_when_provider_text_claims_authority() -
 
     assert result.validation.accepted is False
     assert result.released_text is None
+    assert (
+        result.audit_envelope.release_disposition
+        is MarketOptionExplanationReleaseDisposition.NOT_RELEASED
+    )
     assert result.canonical_fallback.state.value == MarketOptionState.OPTION_OPEN.value
     assert result.audit_envelope.accepted is False
     assert result.audit_envelope.released_output_digest is None
@@ -1453,6 +1500,10 @@ def test_explanation_pipeline_does_not_call_provider_without_processing_authoriz
 
     assert result.validation.accepted is False
     assert result.released_text is None
+    assert (
+        result.audit_envelope.release_disposition
+        is MarketOptionExplanationReleaseDisposition.NOT_RELEASED
+    )
     assert MarketOptionExplanationViolation.PROVIDER_PROCESSING_UNAUTHORIZED in (
         result.validation.violations
     )

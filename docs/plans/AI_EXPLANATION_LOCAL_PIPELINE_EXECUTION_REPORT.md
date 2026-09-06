@@ -50,6 +50,8 @@ On 2026-09-06, canonical integrity digests and pseudonymous audit references wer
 
 On 2026-09-06, provider-managed capabilities denied by ADR-0075 became explicit ProviderProfile fields. The synthetic local profile now declares browsing, retrieval, grounding, code execution, file search, persistent memory, connectors, agentic actions and external side effects as `PROHIBITED`, includes them in the profile digest and rejects any profile attempting to enable them.
 
+On 2026-09-06, audit release semantics became explicit. `MarketOptionExplanationAuditEnvelope` now records `release_disposition` as `RELEASE_APPROVED` or `NOT_RELEASED`, and validates that `RELEASE_APPROVED` is paired with accepted guard output and a released output digest. This remains an approval-to-release record, not evidence that the requester received or read the output.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`

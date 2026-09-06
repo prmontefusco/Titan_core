@@ -190,6 +190,8 @@ The local/mock audit envelope now separates canonical integrity digests from pse
 
 Provider-managed capabilities denied by ADR-0075 are now explicit in the local/mock ProviderProfile. Browsing, retrieval, grounding, code execution, file search, persistent memory, connectors, agentic actions and external side effects must remain `PROHIBITED` and are included in the profile digest.
 
+The local/mock audit envelope now records release semantics explicitly as `RELEASE_APPROVED` or `NOT_RELEASED`. `RELEASE_APPROVED` means Titan approved emission after guard validation and audit-envelope construction; it is not evidence of client delivery or user receipt.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:

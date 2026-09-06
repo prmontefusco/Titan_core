@@ -265,6 +265,11 @@ class MarketOptionExplanationProviderProfileState(StrEnum):
     SUPERSEDED = "SUPERSEDED"
 
 
+class MarketOptionExplanationReleaseDisposition(StrEnum):
+    RELEASE_APPROVED = "RELEASE_APPROVED"
+    NOT_RELEASED = "NOT_RELEASED"
+
+
 @dataclass(frozen=True, slots=True)
 class MarketOptionChangeImpactEntry:
     subject_id: TypedId
@@ -889,11 +894,21 @@ class MarketOptionExplanationAuditEnvelope:
     source_reference_audit_references: tuple[MarketOptionExplanationOpaqueAuditReference, ...]
     canonical_fallback_digest: str
     released_output_digest: str | None
+    release_disposition: MarketOptionExplanationReleaseDisposition
     accepted: bool
     violation_codes: tuple[str, ...]
     limitations: tuple[str, ...]
 
     def __post_init__(self) -> None:
+        if self.accepted and (
+            self.release_disposition
+            is not MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
+        ):
+            raise ValueError("release_disposition deve ser RELEASE_APPROVED quando accepted.")
+        if not self.accepted and (
+            self.release_disposition is not MarketOptionExplanationReleaseDisposition.NOT_RELEASED
+        ):
+            raise ValueError("release_disposition deve ser NOT_RELEASED quando guard rejeita.")
         if self.accepted and self.released_output_digest is None:
             raise ValueError("released_output_digest é obrigatório para explicação liberada.")
         if not self.accepted and self.released_output_digest is not None:
@@ -1494,6 +1509,11 @@ class MarketOptionExplanationAuditEnvelopeService:
             if validation.accepted and released_text is not None
             else None
         )
+        release_disposition = (
+            MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
+            if validation.accepted and released_text is not None
+            else MarketOptionExplanationReleaseDisposition.NOT_RELEASED
+        )
 
         return MarketOptionExplanationAuditEnvelope(
             data_contract_id=prompt_payload.data_contract_id,
@@ -1517,6 +1537,7 @@ class MarketOptionExplanationAuditEnvelopeService:
             source_reference_audit_references=source_reference_audit_references,
             canonical_fallback_digest=fallback_digest,
             released_output_digest=released_output_digest,
+            release_disposition=release_disposition,
             accepted=validation.accepted,
             violation_codes=tuple(violation.value for violation in validation.violations),
             limitations=validation.limitations,
