@@ -54,6 +54,10 @@ MARKET_OPTIONALITY_AI_EXPLANATION_PROMPT_TEMPLATE_TEXT = (
 )
 MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID = "LOCAL_DETERMINISTIC_FAKE"
 MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION = 1
+MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_REFERENCE = (
+    "SYNTHETIC_AI_EXPLANATION_PROCESSING_AUTHORIZATION"
+)
+MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_VERSION = 1
 MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION = "PROTECTED_DERIVED_CANONICAL_EXPLANATION"
 MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS = (
     "DERIVED_KNOWLEDGE_INHERITS_SOURCE_RESTRICTIONS",
@@ -245,6 +249,7 @@ class MarketOptionExplanationViolation(StrEnum):
     PROHIBITED_AUTHORITATIVE_ASSERTION = "PROHIBITED_AUTHORITATIVE_ASSERTION"
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     PROVIDER_PROFILE_UNAVAILABLE = "PROVIDER_PROFILE_UNAVAILABLE"
+    PROVIDER_PROCESSING_UNAUTHORIZED = "PROVIDER_PROCESSING_UNAUTHORIZED"
 
 
 class MarketOptionExplanationProviderProfileState(StrEnum):
@@ -512,11 +517,113 @@ class MarketOptionExplanationProviderProfile:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationProviderProcessingAuthorization:
+    organization_id: OrganizationId
+    purpose: str
+    provider_profile: str
+    provider_profile_version: int
+    data_contract_id: str
+    data_contract_version: int
+    classification_ceiling: str = MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION
+    authorization_reference: str = (
+        MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_REFERENCE
+    )
+    authorization_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_VERSION
+    effective_from: datetime | None = None
+    effective_until: datetime | None = None
+    authorization_digest: str = ""
+
+    def __post_init__(self) -> None:
+        for field_name in (
+            "purpose",
+            "provider_profile",
+            "data_contract_id",
+            "classification_ceiling",
+            "authorization_reference",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} deve ser texto não vazio.")
+        for field_name in (
+            "provider_profile_version",
+            "data_contract_version",
+            "authorization_version",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, int) or value < 1:
+                raise ValueError(f"{field_name} deve ser inteiro >= 1.")
+        if self.effective_from is not None:
+            require_utc(self.effective_from, field_name="effective_from")
+        if self.effective_until is not None:
+            require_utc(self.effective_until, field_name="effective_until")
+        if (
+            self.effective_from is not None
+            and self.effective_until is not None
+            and self.effective_until <= self.effective_from
+        ):
+            raise ValueError("effective_until deve ser posterior a effective_from.")
+        expected_digest = _canonical_digest(
+            "titan.livestock.market_optionality.ai_processing_authorization",
+            {
+                "organization_id": str(self.organization_id),
+                "purpose": self.purpose,
+                "provider_profile": self.provider_profile,
+                "provider_profile_version": self.provider_profile_version,
+                "data_contract_id": self.data_contract_id,
+                "data_contract_version": self.data_contract_version,
+                "classification_ceiling": self.classification_ceiling,
+                "authorization_reference": self.authorization_reference,
+                "authorization_version": self.authorization_version,
+                "effective_from": (
+                    None if self.effective_from is None else self.effective_from.isoformat()
+                ),
+                "effective_until": (
+                    None if self.effective_until is None else self.effective_until.isoformat()
+                ),
+            },
+        )
+        if self.authorization_digest and self.authorization_digest != expected_digest:
+            raise ValueError("authorization_digest não corresponde à autorização declarada.")
+        object.__setattr__(self, "authorization_digest", expected_digest)
+
+    def is_effective_at(self, at_time: datetime) -> bool:
+        require_utc(at_time, field_name="at_time")
+        if self.effective_from is not None and at_time < self.effective_from:
+            return False
+        return not (self.effective_until is not None and at_time >= self.effective_until)
+
+    def is_compatible_with(
+        self,
+        *,
+        assessment: MarketOptionAssessment,
+        run_context: "MarketOptionExplanationRunContext",
+    ) -> bool:
+        context = assessment.context
+        if self.organization_id != context.organization_id:
+            return False
+        if self.purpose != context.market_purpose:
+            return False
+        if self.provider_profile != run_context.provider_profile:
+            return False
+        if self.provider_profile_version != run_context.provider_profile_version:
+            return False
+        if self.data_contract_id != run_context.data_contract_id:
+            return False
+        if self.data_contract_version != run_context.data_contract_version:
+            return False
+        if self.classification_ceiling != MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION:
+            return False
+        return self.is_effective_at(context.knowledge_cutoff)
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationRunContext:
     data_contract_id: str
     data_contract_version: int
     processing_activity: str
     model_name: str
+    processing_authorization_organization_id: OrganizationId
+    processing_authorization_purpose: str
     provider_profile: str = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_ID
     provider_profile_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_PROVIDER_PROFILE_VERSION
     provider_profile_state: MarketOptionExplanationProviderProfileState = (
@@ -525,6 +632,15 @@ class MarketOptionExplanationRunContext:
     provider_profile_effective_from: datetime | None = None
     provider_profile_effective_until: datetime | None = None
     provider_profile_digest: str = ""
+    processing_authorization_reference: str = (
+        MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_REFERENCE
+    )
+    processing_authorization_version: int = (
+        MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_VERSION
+    )
+    processing_authorization_effective_from: datetime | None = None
+    processing_authorization_effective_until: datetime | None = None
+    processing_authorization_digest: str = ""
 
     def __post_init__(self) -> None:
         for field_name in (
@@ -547,6 +663,24 @@ class MarketOptionExplanationRunContext:
             profile_digest=self.provider_profile_digest,
         )
         object.__setattr__(self, "provider_profile_digest", profile.profile_digest)
+        authorization = MarketOptionExplanationProviderProcessingAuthorization(
+            organization_id=self.processing_authorization_organization_id,
+            purpose=self.processing_authorization_purpose,
+            provider_profile=self.provider_profile,
+            provider_profile_version=self.provider_profile_version,
+            data_contract_id=self.data_contract_id,
+            data_contract_version=self.data_contract_version,
+            authorization_reference=self.processing_authorization_reference,
+            authorization_version=self.processing_authorization_version,
+            effective_from=self.processing_authorization_effective_from,
+            effective_until=self.processing_authorization_effective_until,
+            authorization_digest=self.processing_authorization_digest,
+        )
+        object.__setattr__(
+            self,
+            "processing_authorization_digest",
+            authorization.authorization_digest,
+        )
 
     def provider_profile_snapshot(self) -> MarketOptionExplanationProviderProfile:
         return MarketOptionExplanationProviderProfile(
@@ -556,6 +690,23 @@ class MarketOptionExplanationRunContext:
             effective_from=self.provider_profile_effective_from,
             effective_until=self.provider_profile_effective_until,
             profile_digest=self.provider_profile_digest,
+        )
+
+    def provider_processing_authorization_snapshot(
+        self,
+    ) -> MarketOptionExplanationProviderProcessingAuthorization:
+        return MarketOptionExplanationProviderProcessingAuthorization(
+            organization_id=self.processing_authorization_organization_id,
+            purpose=self.processing_authorization_purpose,
+            provider_profile=self.provider_profile,
+            provider_profile_version=self.provider_profile_version,
+            data_contract_id=self.data_contract_id,
+            data_contract_version=self.data_contract_version,
+            authorization_reference=self.processing_authorization_reference,
+            authorization_version=self.processing_authorization_version,
+            effective_from=self.processing_authorization_effective_from,
+            effective_until=self.processing_authorization_effective_until,
+            authorization_digest=self.processing_authorization_digest,
         )
 
 
@@ -639,6 +790,9 @@ class MarketOptionExplanationAuditEnvelope:
     data_contract_id: str
     data_contract_version: int
     processing_activity: str
+    processing_authorization_reference: str
+    processing_authorization_version: int
+    processing_authorization_digest: str
     provider_profile: str
     provider_profile_version: int
     provider_profile_digest: str
@@ -1252,6 +1406,9 @@ class MarketOptionExplanationAuditEnvelopeService:
             data_contract_id=prompt_payload.data_contract_id,
             data_contract_version=prompt_payload.data_contract_version,
             processing_activity=run_context.processing_activity,
+            processing_authorization_reference=(run_context.processing_authorization_reference),
+            processing_authorization_version=run_context.processing_authorization_version,
+            processing_authorization_digest=run_context.processing_authorization_digest,
             provider_profile=run_context.provider_profile,
             provider_profile_version=run_context.provider_profile_version,
             provider_profile_digest=run_context.provider_profile_digest,
@@ -1306,7 +1463,18 @@ class MarketOptionExplanationPipelineService:
         )
         canonical_fallback = _canonical_explanation_fallback(assessment)
         provider_profile = run_context.provider_profile_snapshot()
-        if not provider_profile.is_available_at(assessment.context.knowledge_cutoff):
+        processing_authorization = run_context.provider_processing_authorization_snapshot()
+        if not processing_authorization.is_compatible_with(
+            assessment=assessment,
+            run_context=run_context,
+        ):
+            validation = MarketOptionExplanationValidation(
+                accepted=False,
+                violations=(MarketOptionExplanationViolation.PROVIDER_PROCESSING_UNAUTHORIZED,),
+                limitations=explanation_context.limitations,
+            )
+            released_text = None
+        elif not provider_profile.is_available_at(assessment.context.knowledge_cutoff):
             validation = MarketOptionExplanationValidation(
                 accepted=False,
                 violations=(MarketOptionExplanationViolation.PROVIDER_PROFILE_UNAVAILABLE,),

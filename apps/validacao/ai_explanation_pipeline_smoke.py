@@ -102,11 +102,17 @@ def _synthetic_assessment() -> MarketOptionAssessment:
     )
 
 
-def _run_context(model_name: str) -> MarketOptionExplanationRunContext:
+def _run_context(
+    *,
+    assessment: MarketOptionAssessment,
+    model_name: str,
+) -> MarketOptionExplanationRunContext:
     return MarketOptionExplanationRunContext(
         data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
         data_contract_version=1,
         processing_activity="SYNTHETIC_AI_EXPLANATION_PIPELINE_VALIDATION",
+        processing_authorization_organization_id=assessment.context.organization_id,
+        processing_authorization_purpose=assessment.context.market_purpose,
         provider_profile="GEMINI_SYNTHETIC_VALIDATION_ONLY",
         model_name=model_name,
     )
@@ -202,9 +208,10 @@ def main() -> int:
         api_key=api_key,
         model_names=model_names,
     )
+    assessment = _synthetic_assessment()
     result = MarketOptionExplanationPipelineService(text_provider=provider).explain(
-        assessment=_synthetic_assessment(),
-        run_context=_run_context(model_names[0]),
+        assessment=assessment,
+        run_context=_run_context(assessment=assessment, model_name=model_names[0]),
     )
     print(f"{VERDE}OK{FIM} — provider respondeu e o pipeline gerou audit envelope.")
     print(f"{CINZA}  modelo efetivo: {provider.selected_model_name}{FIM}")

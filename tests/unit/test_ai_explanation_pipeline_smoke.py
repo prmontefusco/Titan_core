@@ -21,7 +21,10 @@ def test_ai_explanation_pipeline_smoke_body_uses_only_minimized_payload() -> Non
     context = MarketOptionExplanationGuardService().prepare_context(assessment=assessment)
     payload = MarketOptionExplanationDataContractService().build_prompt_payload(
         explanation_context=context,
-        run_context=_run_context("models/synthetic-test"),
+        run_context=_run_context(
+            assessment=assessment,
+            model_name="models/synthetic-test",
+        ),
     )
 
     body = _gemini_body(payload)

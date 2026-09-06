@@ -43,6 +43,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationGuardService,
     MarketOptionExplanationPipelineService,
     MarketOptionExplanationPromptTemplate,
+    MarketOptionExplanationProviderProcessingAuthorization,
     MarketOptionExplanationProviderProfile,
     MarketOptionExplanationProviderProfileState,
     MarketOptionExplanationRunContext,
@@ -69,11 +70,16 @@ def _draft_sections(
     return (MarketOptionExplanationDraftSection(claim_refs=claim_refs, text=text),)
 
 
-def _ai_run_context() -> MarketOptionExplanationRunContext:
+def _ai_run_context(
+    organization_id: OrganizationId,
+    purpose: str = PURPOSE,
+) -> MarketOptionExplanationRunContext:
     return MarketOptionExplanationRunContext(
         data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
         data_contract_version=1,
         processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+        processing_authorization_organization_id=organization_id,
+        processing_authorization_purpose=purpose,
         provider_profile="LOCAL_DETERMINISTIC_FAKE",
         model_name="deterministic-market-optionality-explainer",
     )
@@ -912,7 +918,7 @@ def test_explanation_data_contract_builds_need_to_know_payload_without_raw_ids()
 
     payload = MarketOptionExplanationDataContractService().build_prompt_payload(
         explanation_context=context,
-        run_context=_ai_run_context(),
+        run_context=_ai_run_context(policy.organization_id),
     )
 
     assert payload.data_contract_id == MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID
@@ -1023,6 +1029,55 @@ def test_explanation_provider_profile_rejects_digest_mismatch() -> None:
         MarketOptionExplanationProviderProfile(profile_digest="0" * 64)
 
 
+def test_explanation_provider_processing_authorization_is_bounded_and_digestable() -> None:
+    organization_id = OrganizationId.new()
+    authorization = MarketOptionExplanationProviderProcessingAuthorization(
+        organization_id=organization_id,
+        purpose=PURPOSE,
+        provider_profile="LOCAL_DETERMINISTIC_FAKE",
+        provider_profile_version=1,
+        data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+        data_contract_version=1,
+        effective_from=NOW - timedelta(days=1),
+        effective_until=NOW + timedelta(days=1),
+    )
+    other_purpose = MarketOptionExplanationProviderProcessingAuthorization(
+        organization_id=organization_id,
+        purpose="other-purpose",
+        provider_profile="LOCAL_DETERMINISTIC_FAKE",
+        provider_profile_version=1,
+        data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+        data_contract_version=1,
+    )
+
+    assert authorization.is_effective_at(NOW) is True
+    assert authorization.authorization_version == 1
+    assert len(authorization.authorization_digest) == 64
+    assert other_purpose.authorization_digest != authorization.authorization_digest
+    assert (
+        MarketOptionExplanationProviderProcessingAuthorization(
+            organization_id=organization_id,
+            purpose=PURPOSE,
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            provider_profile_version=1,
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            effective_until=NOW,
+        ).is_effective_at(NOW)
+        is False
+    )
+    with pytest.raises(ValueError, match="authorization_digest"):
+        MarketOptionExplanationProviderProcessingAuthorization(
+            organization_id=organization_id,
+            purpose=PURPOSE,
+            provider_profile="LOCAL_DETERMINISTIC_FAKE",
+            provider_profile_version=1,
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            authorization_digest="0" * 64,
+        )
+
+
 def test_explanation_prompt_payload_digest_changes_with_template_version() -> None:
     decision, evaluation, policy = _artifacts(purpose=PURPOSE)
     assessment = MarketOptionAssessmentService().assess(
@@ -1034,7 +1089,7 @@ def test_explanation_prompt_payload_digest_changes_with_template_version() -> No
 
     payload_v1 = MarketOptionExplanationDataContractService().build_prompt_payload(
         explanation_context=context,
-        run_context=_ai_run_context(),
+        run_context=_ai_run_context(policy.organization_id),
     )
     payload_v2 = MarketOptionExplanationDataContractService(
         prompt_template=MarketOptionExplanationPromptTemplate(template_version=2)
@@ -1044,6 +1099,8 @@ def test_explanation_prompt_payload_digest_changes_with_template_version() -> No
             data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
             data_contract_version=1,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            processing_authorization_organization_id=policy.organization_id,
+            processing_authorization_purpose=PURPOSE,
             provider_profile="LOCAL_DETERMINISTIC_FAKE",
             provider_profile_version=1,
             model_name="deterministic-market-optionality-explainer",
@@ -1071,6 +1128,8 @@ def test_explanation_data_contract_rejects_unapproved_contract() -> None:
                 data_contract_id="UNAPPROVED_AI_EXPLANATION_CONTRACT",
                 data_contract_version=1,
                 processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+                processing_authorization_organization_id=policy.organization_id,
+                processing_authorization_purpose=PURPOSE,
                 provider_profile="LOCAL_DETERMINISTIC_FAKE",
                 model_name="deterministic-market-optionality-explainer",
             ),
@@ -1087,7 +1146,7 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
 
     result = MarketOptionExplanationPipelineService().explain(
         assessment=assessment,
-        run_context=_ai_run_context(),
+        run_context=_ai_run_context(policy.organization_id),
     )
 
     assert result.validation.accepted is True
@@ -1113,6 +1172,11 @@ def test_explanation_pipeline_releases_only_guarded_deterministic_summary() -> N
     assert result.audit_envelope.provider_profile == "LOCAL_DETERMINISTIC_FAKE"
     assert result.audit_envelope.provider_profile_version == 1
     assert len(result.audit_envelope.provider_profile_digest) == 64
+    assert result.audit_envelope.processing_authorization_reference == (
+        "SYNTHETIC_AI_EXPLANATION_PROCESSING_AUTHORIZATION"
+    )
+    assert result.audit_envelope.processing_authorization_version == 1
+    assert len(result.audit_envelope.processing_authorization_digest) == 64
     assert result.audit_envelope.released_output_digest is not None
     assert len(result.audit_envelope.released_output_digest) == 64
     assert result.audit_envelope.violation_codes == ()
@@ -1128,7 +1192,7 @@ def test_explanation_canonical_fallback_is_typed_and_digestable() -> None:
 
     result = MarketOptionExplanationPipelineService().explain(
         assessment=assessment,
-        run_context=_ai_run_context(),
+        run_context=_ai_run_context(policy.organization_id),
     )
 
     fallback = result.canonical_fallback
@@ -1167,7 +1231,7 @@ def test_explanation_audit_envelope_minimizes_prompt_output_and_raw_ids() -> Non
 
     result = MarketOptionExplanationPipelineService().explain(
         assessment=assessment,
-        run_context=_ai_run_context(),
+        run_context=_ai_run_context(policy.organization_id),
     )
 
     envelope_text = repr(result.audit_envelope)
@@ -1188,6 +1252,11 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
             data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
             data_contract_version=1,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            processing_authorization_reference=(
+                "SYNTHETIC_AI_EXPLANATION_PROCESSING_AUTHORIZATION"
+            ),
+            processing_authorization_version=1,
+            processing_authorization_digest="0" * 64,
             provider_profile="LOCAL_DETERMINISTIC_FAKE",
             provider_profile_version=1,
             provider_profile_digest="f" * 64,
@@ -1224,7 +1293,7 @@ def test_explanation_pipeline_falls_back_when_provider_text_claims_authority() -
 
     result = MarketOptionExplanationPipelineService(text_provider=InventingProvider()).explain(
         assessment=assessment,
-        run_context=_ai_run_context(),
+        run_context=_ai_run_context(policy.organization_id),
     )
 
     assert result.validation.accepted is False
@@ -1257,7 +1326,7 @@ def test_explanation_pipeline_falls_back_when_provider_is_unavailable() -> None:
 
     result = MarketOptionExplanationPipelineService(text_provider=FailingProvider()).explain(
         assessment=assessment,
-        run_context=_ai_run_context(),
+        run_context=_ai_run_context(policy.organization_id),
     )
 
     envelope_text = repr(result.audit_envelope)
@@ -1293,6 +1362,8 @@ def test_explanation_pipeline_does_not_call_provider_when_profile_is_suspended()
             data_contract_version=1,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
             model_name="deterministic-market-optionality-explainer",
+            processing_authorization_organization_id=policy.organization_id,
+            processing_authorization_purpose=PURPOSE,
             provider_profile_state=MarketOptionExplanationProviderProfileState.SUSPENDED,
         ),
     )
@@ -1303,6 +1374,33 @@ def test_explanation_pipeline_does_not_call_provider_when_profile_is_suspended()
         result.validation.violations
     )
     assert MarketOptionExplanationViolation.PROVIDER_PROFILE_UNAVAILABLE.value in (
+        result.audit_envelope.violation_codes
+    )
+
+
+def test_explanation_pipeline_does_not_call_provider_without_processing_authorization() -> None:
+    class UnexpectedProvider(DeterministicMarketOptionExplanationTextProvider):
+        def generate_text(self, *, prompt_payload, run_context):  # type: ignore[no-untyped-def]
+            raise AssertionError("provider should not be called")
+
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService(text_provider=UnexpectedProvider()).explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id, purpose="other-purpose"),
+    )
+
+    assert result.validation.accepted is False
+    assert result.released_text is None
+    assert MarketOptionExplanationViolation.PROVIDER_PROCESSING_UNAUTHORIZED in (
+        result.validation.violations
+    )
+    assert MarketOptionExplanationViolation.PROVIDER_PROCESSING_UNAUTHORIZED.value in (
         result.audit_envelope.violation_codes
     )
 
@@ -1326,6 +1424,8 @@ def test_explanation_pipeline_does_not_call_provider_when_profile_is_expired() -
             data_contract_version=1,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
             model_name="deterministic-market-optionality-explainer",
+            processing_authorization_organization_id=policy.organization_id,
+            processing_authorization_purpose=PURPOSE,
             provider_profile_effective_until=NOW,
         ),
     )
@@ -1343,6 +1443,8 @@ def test_explanation_run_context_requires_governance_references() -> None:
             data_contract_id="",
             data_contract_version=1,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            processing_authorization_organization_id=OrganizationId.new(),
+            processing_authorization_purpose=PURPOSE,
             provider_profile="LOCAL_DETERMINISTIC_FAKE",
             model_name="deterministic-market-optionality-explainer",
         )
@@ -1352,6 +1454,8 @@ def test_explanation_run_context_requires_governance_references() -> None:
             data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
             data_contract_version=0,
             processing_activity="SYNTHETIC_AI_EXPLANATION_VALIDATION",
+            processing_authorization_organization_id=OrganizationId.new(),
+            processing_authorization_purpose=PURPOSE,
             provider_profile="LOCAL_DETERMINISTIC_FAKE",
             model_name="deterministic-market-optionality-explainer",
         )
