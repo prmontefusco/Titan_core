@@ -28,6 +28,7 @@ from packages.livestock_application.market_optionality import (
     MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION,
     MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
     DeterministicMarketOptionExplanationTextProvider,
+    InMemoryMarketOptionExplanationAuditRepository,
     MarketOptionAssessmentService,
     MarketOptionChangeImpactService,
     MarketOptionChangeImpactState,
@@ -36,6 +37,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionEventKind,
     MarketOptionExplanationAssertion,
     MarketOptionExplanationAuditEnvelope,
+    MarketOptionExplanationAuditRecord,
     MarketOptionExplanationClaim,
     MarketOptionExplanationClaimType,
     MarketOptionExplanationDataContractService,
@@ -1454,6 +1456,70 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
             violation_codes=(),
             limitations=(),
         )
+
+
+def test_explanation_audit_record_is_derived_from_result_and_minimized() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    result = MarketOptionExplanationPipelineService().explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id, idempotency_key="idem-secret"),
+    )
+
+    record = MarketOptionExplanationAuditRecord.from_result(
+        audit_id=TypedId.new("ai_explanation_audit"),
+        result=result,
+        requested_at=NOW,
+        evaluated_at=NOW + timedelta(seconds=1),
+        correlation_id=TypedId.new("correlation"),
+    )
+
+    record_text = repr(record)
+    assert record.record_owner_organization_id == policy.organization_id
+    assert record.policy_id == policy.policy_id
+    assert record.release_disposition is MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
+    assert record.released_output_digest == result.audit_envelope.released_output_digest
+    assert record.idempotency_reference == result.audit_envelope.idempotency_reference
+    assert len(record.record_digest()) == 64
+    assert "idem-secret" not in record_text
+    assert result.released_text is not None
+    assert result.released_text not in record_text
+    assert str(decision.subject_id) not in record_text
+    assert str(decision.decision_id) not in record_text
+    assert str(evaluation.evaluation_id) not in record_text
+
+
+def test_explanation_audit_repository_is_append_only_and_owner_scoped() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    result = MarketOptionExplanationPipelineService().explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id),
+    )
+    record = MarketOptionExplanationAuditRecord.from_result(
+        audit_id=TypedId.new("ai_explanation_audit"),
+        result=result,
+        requested_at=NOW,
+        evaluated_at=NOW,
+        correlation_id=TypedId.new("correlation"),
+    )
+    repository = InMemoryMarketOptionExplanationAuditRepository()
+
+    repository.append(record)
+
+    assert repository.get(record.audit_id) == record
+    assert repository.list_for_owner(policy.organization_id) == (record,)
+    assert repository.list_for_owner(OrganizationId.new()) == ()
+    with pytest.raises(ValueError, match="append-only"):
+        repository.append(record)
 
 
 def test_explanation_pipeline_falls_back_when_provider_text_claims_authority() -> None:

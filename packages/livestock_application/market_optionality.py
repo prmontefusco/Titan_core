@@ -1017,6 +1017,251 @@ class MarketOptionExplanationResult:
     canonical_fallback: MarketOptionCanonicalExplanation
 
 
+@dataclass(frozen=True, slots=True)
+class MarketOptionExplanationAuditRecord:
+    """Immutable application contract for future durable AI Explanation audit."""
+
+    audit_id: TypedId
+    record_owner_organization_id: OrganizationId
+    policy_id: TypedId
+    policy_version: int
+    reference_time: datetime
+    knowledge_cutoff: datetime
+    requested_at: datetime
+    evaluated_at: datetime
+    processing_activity: str
+    processing_authorization_reference: str
+    processing_authorization_version: int
+    processing_authorization_digest: str
+    data_contract_id: str
+    data_contract_version: int
+    provider_profile: str
+    provider_profile_version: int
+    provider_profile_digest: str
+    model_name: str
+    explanation_schema: str
+    prompt_template_id: str
+    prompt_template_version: int
+    prompt_template_digest: str
+    guard_version: int
+    guard_digest: str
+    prompt_payload_digest: str
+    source_reference_digest: str
+    source_reference_audit_references: tuple[MarketOptionExplanationOpaqueAuditReference, ...]
+    canonical_fallback_digest: str
+    idempotency_reference: str | None
+    released_output_digest: str | None
+    release_disposition: MarketOptionExplanationReleaseDisposition
+    accepted: bool
+    violation_codes: tuple[str, ...]
+    limitations: tuple[str, ...]
+    correlation_id: TypedId
+
+    def __post_init__(self) -> None:
+        if self.audit_id.entity_type != "ai_explanation_audit":
+            raise ValueError("audit_id deve ter entity_type 'ai_explanation_audit'.")
+        if self.policy_id.entity_type != "policy":
+            raise ValueError("policy_id deve ter entity_type 'policy'.")
+        if self.correlation_id.entity_type != "correlation":
+            raise ValueError("correlation_id deve ter entity_type 'correlation'.")
+        if self.policy_version < 1:
+            raise ValueError("policy_version deve ser inteiro >= 1.")
+        for field_name in ("reference_time", "knowledge_cutoff", "requested_at", "evaluated_at"):
+            require_utc(getattr(self, field_name), field_name=field_name)
+        if self.knowledge_cutoff < self.reference_time:
+            raise ValueError("knowledge_cutoff não pode ser anterior a reference_time.")
+        if self.evaluated_at < self.requested_at:
+            raise ValueError("evaluated_at não pode ser anterior a requested_at.")
+        for field_name in (
+            "processing_activity",
+            "processing_authorization_reference",
+            "processing_authorization_digest",
+            "data_contract_id",
+            "provider_profile",
+            "provider_profile_digest",
+            "model_name",
+            "explanation_schema",
+            "prompt_template_id",
+            "prompt_template_digest",
+            "guard_digest",
+            "prompt_payload_digest",
+            "source_reference_digest",
+            "canonical_fallback_digest",
+        ):
+            value = getattr(self, field_name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{field_name} deve ser texto não vazio.")
+        for field_name in (
+            "processing_authorization_version",
+            "data_contract_version",
+            "provider_profile_version",
+            "prompt_template_version",
+            "guard_version",
+        ):
+            if getattr(self, field_name) < 1:
+                raise ValueError(f"{field_name} deve ser inteiro >= 1.")
+        if self.idempotency_reference is not None and not self.idempotency_reference.strip():
+            raise ValueError("idempotency_reference deve ser texto não vazio quando informado.")
+        envelope = MarketOptionExplanationAuditEnvelope(
+            data_contract_id=self.data_contract_id,
+            data_contract_version=self.data_contract_version,
+            processing_activity=self.processing_activity,
+            processing_authorization_reference=self.processing_authorization_reference,
+            processing_authorization_version=self.processing_authorization_version,
+            processing_authorization_digest=self.processing_authorization_digest,
+            provider_profile=self.provider_profile,
+            provider_profile_version=self.provider_profile_version,
+            provider_profile_digest=self.provider_profile_digest,
+            model_name=self.model_name,
+            explanation_schema=self.explanation_schema,
+            prompt_template_id=self.prompt_template_id,
+            prompt_template_version=self.prompt_template_version,
+            prompt_template_digest=self.prompt_template_digest,
+            guard_version=self.guard_version,
+            guard_digest=self.guard_digest,
+            prompt_payload_digest=self.prompt_payload_digest,
+            source_reference_digest=self.source_reference_digest,
+            source_reference_audit_references=self.source_reference_audit_references,
+            canonical_fallback_digest=self.canonical_fallback_digest,
+            idempotency_reference=self.idempotency_reference,
+            released_output_digest=self.released_output_digest,
+            release_disposition=self.release_disposition,
+            accepted=self.accepted,
+            violation_codes=self.violation_codes,
+            limitations=self.limitations,
+        )
+        if envelope.accepted != self.accepted:
+            raise ValueError("audit envelope inconsistente.")
+
+    @classmethod
+    def from_result(
+        cls,
+        *,
+        audit_id: TypedId,
+        result: MarketOptionExplanationResult,
+        requested_at: datetime,
+        evaluated_at: datetime,
+        correlation_id: TypedId,
+    ) -> "MarketOptionExplanationAuditRecord":
+        assessment_context = result.explanation_context.assessment.context
+        envelope = result.audit_envelope
+        return cls(
+            audit_id=audit_id,
+            record_owner_organization_id=assessment_context.organization_id,
+            policy_id=assessment_context.policy_id,
+            policy_version=assessment_context.policy_version,
+            reference_time=assessment_context.reference_time,
+            knowledge_cutoff=assessment_context.knowledge_cutoff,
+            requested_at=requested_at,
+            evaluated_at=evaluated_at,
+            processing_activity=envelope.processing_activity,
+            processing_authorization_reference=envelope.processing_authorization_reference,
+            processing_authorization_version=envelope.processing_authorization_version,
+            processing_authorization_digest=envelope.processing_authorization_digest,
+            data_contract_id=envelope.data_contract_id,
+            data_contract_version=envelope.data_contract_version,
+            provider_profile=envelope.provider_profile,
+            provider_profile_version=envelope.provider_profile_version,
+            provider_profile_digest=envelope.provider_profile_digest,
+            model_name=envelope.model_name,
+            explanation_schema=envelope.explanation_schema,
+            prompt_template_id=envelope.prompt_template_id,
+            prompt_template_version=envelope.prompt_template_version,
+            prompt_template_digest=envelope.prompt_template_digest,
+            guard_version=envelope.guard_version,
+            guard_digest=envelope.guard_digest,
+            prompt_payload_digest=envelope.prompt_payload_digest,
+            source_reference_digest=envelope.source_reference_digest,
+            source_reference_audit_references=envelope.source_reference_audit_references,
+            canonical_fallback_digest=envelope.canonical_fallback_digest,
+            idempotency_reference=envelope.idempotency_reference,
+            released_output_digest=envelope.released_output_digest,
+            release_disposition=envelope.release_disposition,
+            accepted=envelope.accepted,
+            violation_codes=envelope.violation_codes,
+            limitations=envelope.limitations,
+            correlation_id=correlation_id,
+        )
+
+    def record_digest(self) -> str:
+        return _canonical_digest(
+            "titan.livestock.market_optionality.ai_explanation_audit_record",
+            {
+                "audit_id": str(self.audit_id),
+                "record_owner_organization_id": str(self.record_owner_organization_id),
+                "policy_id": str(self.policy_id),
+                "policy_version": self.policy_version,
+                "reference_time": self.reference_time.isoformat(),
+                "knowledge_cutoff": self.knowledge_cutoff.isoformat(),
+                "requested_at": self.requested_at.isoformat(),
+                "evaluated_at": self.evaluated_at.isoformat(),
+                "processing_activity": self.processing_activity,
+                "processing_authorization_reference": self.processing_authorization_reference,
+                "processing_authorization_version": self.processing_authorization_version,
+                "processing_authorization_digest": self.processing_authorization_digest,
+                "data_contract_id": self.data_contract_id,
+                "data_contract_version": self.data_contract_version,
+                "provider_profile": self.provider_profile,
+                "provider_profile_version": self.provider_profile_version,
+                "provider_profile_digest": self.provider_profile_digest,
+                "model_name": self.model_name,
+                "explanation_schema": self.explanation_schema,
+                "prompt_template_id": self.prompt_template_id,
+                "prompt_template_version": self.prompt_template_version,
+                "prompt_template_digest": self.prompt_template_digest,
+                "guard_version": self.guard_version,
+                "guard_digest": self.guard_digest,
+                "prompt_payload_digest": self.prompt_payload_digest,
+                "source_reference_digest": self.source_reference_digest,
+                "source_reference_audit_references": tuple(
+                    reference.as_mapping() for reference in self.source_reference_audit_references
+                ),
+                "canonical_fallback_digest": self.canonical_fallback_digest,
+                "idempotency_reference": self.idempotency_reference,
+                "released_output_digest": self.released_output_digest,
+                "release_disposition": self.release_disposition.value,
+                "accepted": self.accepted,
+                "violation_codes": self.violation_codes,
+                "limitations": self.limitations,
+                "correlation_id": str(self.correlation_id),
+            },
+        )
+
+
+class MarketOptionExplanationAuditRepositoryPort(Protocol):
+    def append(self, record: MarketOptionExplanationAuditRecord) -> None: ...
+
+    def get(self, audit_id: TypedId) -> MarketOptionExplanationAuditRecord | None: ...
+
+
+class InMemoryMarketOptionExplanationAuditRepository:
+    """Append-only in-memory repository for AI Explanation audit contract tests."""
+
+    def __init__(self) -> None:
+        self._records: dict[TypedId, MarketOptionExplanationAuditRecord] = {}
+        self._order: list[TypedId] = []
+
+    def append(self, record: MarketOptionExplanationAuditRecord) -> None:
+        if record.audit_id in self._records:
+            raise ValueError("AI Explanation audit record já existe; append-only violado.")
+        self._records[record.audit_id] = record
+        self._order.append(record.audit_id)
+
+    def get(self, audit_id: TypedId) -> MarketOptionExplanationAuditRecord | None:
+        return self._records.get(audit_id)
+
+    def list_for_owner(
+        self,
+        record_owner_organization_id: OrganizationId,
+    ) -> tuple[MarketOptionExplanationAuditRecord, ...]:
+        return tuple(
+            record
+            for audit_id in self._order
+            for record in (self._records[audit_id],)
+            if record.record_owner_organization_id == record_owner_organization_id
+        )
+
+
 class MarketOptionExplanationTextProvider(Protocol):
     def generate_text(
         self,

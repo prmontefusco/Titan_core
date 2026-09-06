@@ -54,6 +54,8 @@ On 2026-09-06, audit release semantics became explicit. `MarketOptionExplanation
 
 On 2026-09-06, idempotency semantics became explicit without adding replay storage. `MarketOptionExplanationRequestIdentity` computes a semantic digest from Organization, purpose, Policy/version, temporal coordinates, DataContract, ProviderProfile, prompt template and idempotency key. `MarketOptionExplanationAuditEnvelope` carries only this digest as `idempotency_reference` when a key is supplied, so the raw key is not retained and byte-identical AI text replay remains outside the local/mock pipeline.
 
+On 2026-09-06, the audit storage contract became executable without production persistence. `MarketOptionExplanationAuditRecord` derives `record_owner_organization_id` from the canonical assessment context, copies only minimized envelope material, preserves temporal coordinates and computes a stable record digest. `InMemoryMarketOptionExplanationAuditRepository` provides an append-only contract for tests and rejects duplicate audit ids.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -88,6 +90,9 @@ Added:
 - `MarketOptionCanonicalExplanation`;
 - `MarketOptionExplanationAuditEnvelope`;
 - `MarketOptionExplanationAuditEnvelopeService`;
+- `MarketOptionExplanationAuditRecord`;
+- `MarketOptionExplanationAuditRepositoryPort`;
+- `InMemoryMarketOptionExplanationAuditRepository`;
 - `apps/validacao/ai_explanation_pipeline_smoke.py`.
 
 The service requires synthetic governance references (`data_contract_id`, version, processing activity, provider profile and model name), prepares canonical context, builds a minimized prompt payload, requests text from a supplied provider, wraps that text in Titan-built canonical draft metadata, validates it with the deterministic guard and releases text only when validation passes.

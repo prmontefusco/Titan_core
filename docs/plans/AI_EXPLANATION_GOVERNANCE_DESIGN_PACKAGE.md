@@ -194,6 +194,8 @@ The local/mock audit envelope now records release semantics explicitly as `RELEA
 
 The local/mock pipeline now has an explicit semantic request identity for idempotency correlation. When an idempotency key is supplied, Titan derives an `idempotency_reference` digest from the key plus Organization, purpose, Policy/version, temporal coordinates, DataContract, ProviderProfile and prompt template. This supports audit correlation while preserving the ADR-0075 rule that exact byte replay requires a separately approved released presentation artifact.
 
+The application-level audit storage contract is now executable without production persistence. `MarketOptionExplanationAuditRecord` is derived from `MarketOptionExplanationResult`, uses the canonical assessment context as the record owner source, stores only minimized envelope material and supports stable record digests. `InMemoryMarketOptionExplanationAuditRepository` proves append-only behavior before any migration/RLS implementation is approved.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:
