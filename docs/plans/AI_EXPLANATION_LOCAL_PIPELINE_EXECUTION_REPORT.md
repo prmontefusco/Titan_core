@@ -46,6 +46,8 @@ On 2026-09-05, the accepted ADR-0075 structured draft boundary became executable
 
 On 2026-09-06, external-provider processing authorization became an executable application-only gate. `MarketOptionExplanationProviderProcessingAuthorization` separates permission to access canonical Titan outputs from permission to send minimized derived content to an AI provider. The pipeline now requires Organization, purpose, ProviderProfile, DataContract, classification ceiling and effective-period compatibility before provider invocation, records only a minimized authorization reference/digest in the audit envelope and returns canonical fallback with `PROVIDER_PROCESSING_UNAUTHORIZED` when the authorization is incompatible.
 
+On 2026-09-06, canonical integrity digests and pseudonymous audit references were separated in the local/mock audit envelope. `source_reference_digest` remains a canonical integrity digest of the Titan-side source reference map, while `source_reference_audit_references` carries only alias/key-version/HMAC-derived opaque references for correlation. Tests prove raw identifiers are not present in the envelope and the opaque reference is not an unkeyed SHA-256 hash of the source identifier.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -74,6 +76,7 @@ Added:
 - `MarketOptionExplanationProviderProfile`;
 - `MarketOptionExplanationProviderProfileState`;
 - `MarketOptionExplanationProviderProcessingAuthorization`;
+- `MarketOptionExplanationOpaqueAuditReference`;
 - `MarketOptionExplanationDraftSection`;
 - `MarketOptionCanonicalExplanation`;
 - `MarketOptionExplanationAuditEnvelope`;

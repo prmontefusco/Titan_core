@@ -186,6 +186,8 @@ The local/mock pipeline now implements the structured draft schema boundary requ
 
 The local/mock pipeline also implements the ADR-0075 separation between data access and external AI processing authorization. `MarketOptionExplanationProviderProcessingAuthorization` is currently a transient value object, not an Aggregate Root or persisted grant. It must match the assessment Organization/purpose, ProviderProfile, DataContract, classification ceiling and effective period before provider invocation; otherwise the pipeline fails closed with canonical fallback and minimized audit material.
 
+The local/mock audit envelope now separates canonical integrity digests from pseudonymous audit references. Source references keep a Titan-side canonical digest for integrity and receive alias/key-version/HMAC-derived opaque audit references for correlation. The current key material is synthetic and local to the application-only pipeline; production key management, rotation and storage remain governed by the ADR-0075 production storage/release package.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:

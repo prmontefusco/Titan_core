@@ -7,6 +7,7 @@ eligibility, or mutate Animal.
 """
 
 import hashlib
+import hmac
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -58,6 +59,10 @@ MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_REFERENCE = (
     "SYNTHETIC_AI_EXPLANATION_PROCESSING_AUTHORIZATION"
 )
 MARKET_OPTIONALITY_AI_EXPLANATION_PROCESSING_AUTHORIZATION_VERSION = 1
+MARKET_OPTIONALITY_AI_EXPLANATION_AUDIT_REFERENCE_KEY_VERSION = 1
+MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_AUDIT_REFERENCE_KEY = (
+    b"titan-local-synthetic-ai-explanation-audit-reference-key"
+)
 MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION = "PROTECTED_DERIVED_CANONICAL_EXPLANATION"
 MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS = (
     "DERIVED_KNOWLEDGE_INHERITS_SOURCE_RESTRICTIONS",
@@ -720,6 +725,31 @@ def _canonical_digest(schema: str, value: object) -> str:
     return hashlib.sha256(canonical).hexdigest()
 
 
+def _opaque_audit_reference(
+    *,
+    domain: str,
+    identifier: str,
+    key_version: int = MARKET_OPTIONALITY_AI_EXPLANATION_AUDIT_REFERENCE_KEY_VERSION,
+    key_material: bytes = MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_AUDIT_REFERENCE_KEY,
+) -> str:
+    if not isinstance(domain, str) or not domain.strip():
+        raise ValueError("audit reference domain deve ser texto não vazio.")
+    if not isinstance(identifier, str) or not identifier.strip():
+        raise ValueError("audit reference identifier deve ser texto não vazio.")
+    if not isinstance(key_version, int) or key_version < 1:
+        raise ValueError("audit reference key_version deve ser inteiro >= 1.")
+    if not key_material:
+        raise ValueError("audit reference key_material deve ser não vazio.")
+    message = CanonicalSerializer().serialize(
+        {
+            "domain": domain,
+            "identifier": identifier,
+            "key_version": key_version,
+        }
+    )
+    return hmac.new(key_material, message, hashlib.sha256).hexdigest()
+
+
 MarketOptionExplanationPromptValue = str | tuple[str, ...] | tuple[Mapping[str, str], ...]
 
 
@@ -786,6 +816,30 @@ class MarketOptionExplanationPromptPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationOpaqueAuditReference:
+    alias: str
+    key_version: int
+    reference: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.alias, str) or not self.alias.strip():
+            raise ValueError("opaque audit reference alias deve ser texto não vazio.")
+        if not isinstance(self.key_version, int) or self.key_version < 1:
+            raise ValueError("opaque audit reference key_version deve ser inteiro >= 1.")
+        if not isinstance(self.reference, str) or not self.reference.strip():
+            raise ValueError("opaque audit reference deve ser texto não vazio.")
+
+    def as_mapping(self) -> Mapping[str, str]:
+        return MappingProxyType(
+            {
+                "alias": self.alias,
+                "key_version": str(self.key_version),
+                "reference": self.reference,
+            }
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationAuditEnvelope:
     data_contract_id: str
     data_contract_version: int
@@ -805,6 +859,7 @@ class MarketOptionExplanationAuditEnvelope:
     guard_digest: str
     prompt_payload_digest: str
     source_reference_digest: str
+    source_reference_audit_references: tuple[MarketOptionExplanationOpaqueAuditReference, ...]
     canonical_fallback_digest: str
     released_output_digest: str | None
     accepted: bool
@@ -1385,6 +1440,17 @@ class MarketOptionExplanationAuditEnvelopeService:
             "titan.livestock.market_optionality.ai_source_references",
             dict(explanation_context.source_references),
         )
+        source_reference_audit_references = tuple(
+            MarketOptionExplanationOpaqueAuditReference(
+                alias=alias,
+                key_version=MARKET_OPTIONALITY_AI_EXPLANATION_AUDIT_REFERENCE_KEY_VERSION,
+                reference=_opaque_audit_reference(
+                    domain="titan.livestock.market_optionality.ai_source_reference",
+                    identifier=source_reference,
+                ),
+            )
+            for alias, source_reference in sorted(prompt_payload.source_reference_aliases.items())
+        )
         fallback_digest = _canonical_digest(
             "titan.livestock.market_optionality.ai_canonical_fallback",
             canonical_fallback.as_mapping(),
@@ -1421,6 +1487,7 @@ class MarketOptionExplanationAuditEnvelopeService:
             guard_digest=prompt_payload.guard_digest,
             prompt_payload_digest=prompt_payload.payload_digest,
             source_reference_digest=source_reference_digest,
+            source_reference_audit_references=source_reference_audit_references,
             canonical_fallback_digest=fallback_digest,
             released_output_digest=released_output_digest,
             accepted=validation.accepted,

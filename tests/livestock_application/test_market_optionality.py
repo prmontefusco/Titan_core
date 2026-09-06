@@ -1,5 +1,6 @@
 """F1: Market Optionality projection remains pure and non-decisional."""
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -41,6 +42,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationDraft,
     MarketOptionExplanationDraftSection,
     MarketOptionExplanationGuardService,
+    MarketOptionExplanationOpaqueAuditReference,
     MarketOptionExplanationPipelineService,
     MarketOptionExplanationPromptTemplate,
     MarketOptionExplanationProviderProcessingAuthorization,
@@ -1243,7 +1245,37 @@ def test_explanation_audit_envelope_minimizes_prompt_output_and_raw_ids() -> Non
     assert str(evaluation.evaluation_id) not in envelope_text
     assert str(policy.policy_id) not in envelope_text
     assert len(result.audit_envelope.source_reference_digest) == 64
+    assert result.audit_envelope.source_reference_audit_references
+    assert str(decision.decision_id) not in repr(
+        result.audit_envelope.source_reference_audit_references
+    )
     assert len(result.audit_envelope.canonical_fallback_digest) == 64
+
+
+def test_explanation_audit_references_are_opaque_and_not_unkeyed_hashes() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService().explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id),
+    )
+
+    references = result.audit_envelope.source_reference_audit_references
+    assert references
+    assert all(reference.key_version == 1 for reference in references)
+    assert all(len(reference.reference) == 64 for reference in references)
+    assert all(
+        reference.reference != hashlib.sha256(str(decision.decision_id).encode()).hexdigest()
+        for reference in references
+    )
+    assert {reference.alias for reference in references}.issubset(
+        result.prompt_payload.source_reference_aliases
+    )
 
 
 def test_explanation_audit_envelope_requires_output_digest_only_for_release() -> None:
@@ -1269,6 +1301,13 @@ def test_explanation_audit_envelope_requires_output_digest_only_for_release() ->
             guard_digest="b" * 64,
             prompt_payload_digest="c" * 64,
             source_reference_digest="d" * 64,
+            source_reference_audit_references=(
+                MarketOptionExplanationOpaqueAuditReference(
+                    alias="claim_source:1",
+                    key_version=1,
+                    reference="1" * 64,
+                ),
+            ),
             canonical_fallback_digest="e" * 64,
             released_output_digest=None,
             accepted=True,
