@@ -188,6 +188,8 @@ The local/mock pipeline also implements the ADR-0075 separation between data acc
 
 The local/mock audit envelope now separates canonical integrity digests from pseudonymous audit references. Source references keep a Titan-side canonical digest for integrity and receive alias/key-version/HMAC-derived opaque audit references for correlation. The current key material is synthetic and local to the application-only pipeline; production key management, rotation and storage remain governed by the ADR-0075 production storage/release package.
 
+Provider-managed capabilities denied by ADR-0075 are now explicit in the local/mock ProviderProfile. Browsing, retrieval, grounding, code execution, file search, persistent memory, connectors, agentic actions and external side effects must remain `PROHIBITED` and are included in the profile digest.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:

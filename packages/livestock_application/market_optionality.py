@@ -458,6 +458,15 @@ class MarketOptionExplanationProviderProfile:
     secondary_use: str = "PROHIBITED"
     training_use: str = "PROHIBITED"
     tool_execution: str = "PROHIBITED"
+    browsing: str = "PROHIBITED"
+    retrieval: str = "PROHIBITED"
+    grounding: str = "PROHIBITED"
+    code_execution: str = "PROHIBITED"
+    file_search: str = "PROHIBITED"
+    persistent_memory: str = "PROHIBITED"
+    connectors: str = "PROHIBITED"
+    agentic_actions: str = "PROHIBITED"
+    external_side_effects: str = "PROHIBITED"
     profile_digest: str = ""
 
     def __post_init__(self) -> None:
@@ -484,6 +493,15 @@ class MarketOptionExplanationProviderProfile:
             "secondary_use": "PROHIBITED",
             "training_use": "PROHIBITED",
             "tool_execution": "PROHIBITED",
+            "browsing": "PROHIBITED",
+            "retrieval": "PROHIBITED",
+            "grounding": "PROHIBITED",
+            "code_execution": "PROHIBITED",
+            "file_search": "PROHIBITED",
+            "persistent_memory": "PROHIBITED",
+            "connectors": "PROHIBITED",
+            "agentic_actions": "PROHIBITED",
+            "external_side_effects": "PROHIBITED",
         }
         for field_name, expected_value in expected.items():
             if getattr(self, field_name) != expected_value:
@@ -506,6 +524,15 @@ class MarketOptionExplanationProviderProfile:
                 "secondary_use": self.secondary_use,
                 "training_use": self.training_use,
                 "tool_execution": self.tool_execution,
+                "browsing": self.browsing,
+                "retrieval": self.retrieval,
+                "grounding": self.grounding,
+                "code_execution": self.code_execution,
+                "file_search": self.file_search,
+                "persistent_memory": self.persistent_memory,
+                "connectors": self.connectors,
+                "agentic_actions": self.agentic_actions,
+                "external_side_effects": self.external_side_effects,
             },
         )
         if self.profile_digest and self.profile_digest != expected_digest:

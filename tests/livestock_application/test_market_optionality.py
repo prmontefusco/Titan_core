@@ -992,6 +992,15 @@ def test_explanation_provider_profile_denies_retention_telemetry_and_secondary_u
     assert profile.secondary_use == "PROHIBITED"
     assert profile.training_use == "PROHIBITED"
     assert profile.tool_execution == "PROHIBITED"
+    assert profile.browsing == "PROHIBITED"
+    assert profile.retrieval == "PROHIBITED"
+    assert profile.grounding == "PROHIBITED"
+    assert profile.code_execution == "PROHIBITED"
+    assert profile.file_search == "PROHIBITED"
+    assert profile.persistent_memory == "PROHIBITED"
+    assert profile.connectors == "PROHIBITED"
+    assert profile.agentic_actions == "PROHIBITED"
+    assert profile.external_side_effects == "PROHIBITED"
     assert len(profile.profile_digest) == 64
 
     with pytest.raises(ValueError, match="provider_side_retention"):
@@ -1000,6 +1009,14 @@ def test_explanation_provider_profile_denies_retention_telemetry_and_secondary_u
         MarketOptionExplanationProviderProfile(telemetry="PROVIDER_DEFAULT")
     with pytest.raises(ValueError, match="secondary_use"):
         MarketOptionExplanationProviderProfile(secondary_use="ALLOWED")
+    with pytest.raises(ValueError, match="browsing"):
+        MarketOptionExplanationProviderProfile(browsing="ALLOWED")
+    with pytest.raises(ValueError, match="retrieval"):
+        MarketOptionExplanationProviderProfile(retrieval="ALLOWED")
+    with pytest.raises(ValueError, match="persistent_memory"):
+        MarketOptionExplanationProviderProfile(persistent_memory="ALLOWED")
+    with pytest.raises(ValueError, match="agentic_actions"):
+        MarketOptionExplanationProviderProfile(agentic_actions="ALLOWED")
 
 
 def test_explanation_provider_profile_lifecycle_and_effective_period_are_digestable() -> None:

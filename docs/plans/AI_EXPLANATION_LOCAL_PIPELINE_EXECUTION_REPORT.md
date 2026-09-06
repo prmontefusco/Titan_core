@@ -48,6 +48,8 @@ On 2026-09-06, external-provider processing authorization became an executable a
 
 On 2026-09-06, canonical integrity digests and pseudonymous audit references were separated in the local/mock audit envelope. `source_reference_digest` remains a canonical integrity digest of the Titan-side source reference map, while `source_reference_audit_references` carries only alias/key-version/HMAC-derived opaque references for correlation. Tests prove raw identifiers are not present in the envelope and the opaque reference is not an unkeyed SHA-256 hash of the source identifier.
 
+On 2026-09-06, provider-managed capabilities denied by ADR-0075 became explicit ProviderProfile fields. The synthetic local profile now declares browsing, retrieval, grounding, code execution, file search, persistent memory, connectors, agentic actions and external side effects as `PROHIBITED`, includes them in the profile digest and rejects any profile attempting to enable them.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
