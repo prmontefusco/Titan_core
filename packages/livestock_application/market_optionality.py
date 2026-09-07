@@ -1022,6 +1022,26 @@ class MarketOptionExplanationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationAuditRecordContext:
+    """Caller-provided audit correlation, without record-owner authority."""
+
+    audit_id: TypedId
+    requested_at: datetime
+    evaluated_at: datetime
+    correlation_id: TypedId
+
+    def __post_init__(self) -> None:
+        if self.audit_id.entity_type != "ai_explanation_audit":
+            raise ValueError("audit_id deve ter entity_type 'ai_explanation_audit'.")
+        if self.correlation_id.entity_type != "correlation":
+            raise ValueError("correlation_id deve ter entity_type 'correlation'.")
+        require_utc(self.requested_at, field_name="requested_at")
+        require_utc(self.evaluated_at, field_name="evaluated_at")
+        if self.evaluated_at < self.requested_at:
+            raise ValueError("evaluated_at não pode ser anterior a requested_at.")
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationAuditRecord:
     """Immutable application contract for future durable AI Explanation audit."""
 
@@ -1957,6 +1977,7 @@ class MarketOptionExplanationPipelineService:
         audience: MarketOptionExplanationAudience = (
             MarketOptionExplanationAudience.INTERNAL_OPERATOR
         ),
+        audit_record_context: MarketOptionExplanationAuditRecordContext | None = None,
     ) -> MarketOptionExplanationResult:
         explanation_context = self.guard_service.prepare_context(
             assessment=assessment,
@@ -2016,9 +2037,16 @@ class MarketOptionExplanationPipelineService:
         )
         audit_record = None
         if self.audit_repository is not None:
-            audit_timestamp = datetime.now(UTC)
+            if audit_record_context is None:
+                audit_timestamp = datetime.now(UTC)
+                audit_record_context = MarketOptionExplanationAuditRecordContext(
+                    audit_id=TypedId.new("ai_explanation_audit"),
+                    requested_at=audit_timestamp,
+                    evaluated_at=audit_timestamp,
+                    correlation_id=TypedId.new("correlation"),
+                )
             audit_record = MarketOptionExplanationAuditRecord.from_result(
-                audit_id=TypedId.new("ai_explanation_audit"),
+                audit_id=audit_record_context.audit_id,
                 result=MarketOptionExplanationResult(
                     run_context=run_context,
                     explanation_context=explanation_context,
@@ -2029,9 +2057,9 @@ class MarketOptionExplanationPipelineService:
                     released_text=released_text,
                     canonical_fallback=canonical_fallback,
                 ),
-                requested_at=audit_timestamp,
-                evaluated_at=audit_timestamp,
-                correlation_id=TypedId.new("correlation"),
+                requested_at=audit_record_context.requested_at,
+                evaluated_at=audit_record_context.evaluated_at,
+                correlation_id=audit_record_context.correlation_id,
             )
             try:
                 self.audit_repository.append(audit_record)

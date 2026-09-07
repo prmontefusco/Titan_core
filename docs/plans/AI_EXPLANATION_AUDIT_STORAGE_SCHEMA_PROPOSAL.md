@@ -50,6 +50,9 @@ surface.
   and `InMemoryMarketOptionExplanationAuditRepository`.
 - `MarketOptionExplanationPipelineService` now releases generated AI text only
   after audit append succeeds when an audit repository is configured.
+- `MarketOptionExplanationAuditRecordContext` lets internal callers provide
+  audit id, requested/evaluated timestamps and correlation id without providing
+  or overriding `record_owner_organization_id`.
 - The application-level repository contract now includes owner-scoped
   `find_by_correlation_id(...)` and `find_by_idempotency_reference(...)`
   operations for future transactional parity.

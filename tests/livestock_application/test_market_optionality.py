@@ -38,6 +38,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationAssertion,
     MarketOptionExplanationAuditEnvelope,
     MarketOptionExplanationAuditRecord,
+    MarketOptionExplanationAuditRecordContext,
     MarketOptionExplanationClaim,
     MarketOptionExplanationClaimType,
     MarketOptionExplanationDataContractService,
@@ -1591,6 +1592,35 @@ def test_explanation_pipeline_persists_audit_record_before_ai_release() -> None:
         result.audit_record.release_disposition
         is MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
     )
+
+
+def test_explanation_pipeline_uses_audit_context_without_owner_override() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    repository = InMemoryMarketOptionExplanationAuditRepository()
+    audit_context = MarketOptionExplanationAuditRecordContext(
+        audit_id=TypedId.new("ai_explanation_audit"),
+        requested_at=NOW,
+        evaluated_at=NOW + timedelta(seconds=2),
+        correlation_id=TypedId.new("correlation"),
+    )
+
+    result = MarketOptionExplanationPipelineService(audit_repository=repository).explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id),
+        audit_record_context=audit_context,
+    )
+
+    assert result.audit_record is not None
+    assert result.audit_record.audit_id == audit_context.audit_id
+    assert result.audit_record.requested_at == audit_context.requested_at
+    assert result.audit_record.evaluated_at == audit_context.evaluated_at
+    assert result.audit_record.correlation_id == audit_context.correlation_id
+    assert result.audit_record.record_owner_organization_id == policy.organization_id
 
 
 def test_explanation_pipeline_blocks_ai_release_when_audit_append_fails() -> None:
