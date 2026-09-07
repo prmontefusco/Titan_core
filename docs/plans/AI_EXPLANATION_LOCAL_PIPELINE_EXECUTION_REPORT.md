@@ -58,6 +58,8 @@ On 2026-09-06, the audit storage contract became executable without production p
 
 On 2026-09-06, the local/mock pipeline started enforcing audit-before-AI-release when an audit repository is configured. The pipeline appends a minimized `MarketOptionExplanationAuditRecord` before returning released AI text; if append fails, the generated text is discarded, the result remains `NOT_RELEASED`, canonical fallback remains available and raw storage diagnostics are not exposed through the audit envelope.
 
+On 2026-09-07, `docs/plans/AI_EXPLANATION_AUDIT_STORAGE_SCHEMA_PROPOSAL.md` was added as the concrete production storage proposal for `MarketOptionExplanationAuditRecord`. It recommends `core_audit.ai_explanation_audit_records`, owner-only RLS, append-only runtime semantics, minimized audit columns, no raw prompt/output/source identifiers and split retention as the policy option to review before migration.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
