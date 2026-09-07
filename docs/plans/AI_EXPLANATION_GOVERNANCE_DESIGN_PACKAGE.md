@@ -196,6 +196,8 @@ The local/mock pipeline now has an explicit semantic request identity for idempo
 
 The application-level audit storage contract is now executable without production persistence. `MarketOptionExplanationAuditRecord` is derived from `MarketOptionExplanationResult`, uses the canonical assessment context as the record owner source, stores only minimized envelope material and supports stable record digests. `InMemoryMarketOptionExplanationAuditRepository` proves append-only behavior before any migration/RLS implementation is approved.
 
+The local/mock pipeline now composes that audit contract before AI text release when an audit repository is configured. `MarketOptionExplanationPipelineService` appends the minimized audit record before returning `released_text`; audit append failure turns the provider output into `NOT_RELEASED` with canonical fallback and does not expose storage diagnostics. This is still application-only and does not introduce production persistence, RLS, API/UI release or provider adapter behavior.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:

@@ -56,6 +56,8 @@ On 2026-09-06, idempotency semantics became explicit without adding replay stora
 
 On 2026-09-06, the audit storage contract became executable without production persistence. `MarketOptionExplanationAuditRecord` derives `record_owner_organization_id` from the canonical assessment context, copies only minimized envelope material, preserves temporal coordinates and computes a stable record digest. `InMemoryMarketOptionExplanationAuditRepository` provides an append-only contract for tests and rejects duplicate audit ids.
 
+On 2026-09-06, the local/mock pipeline started enforcing audit-before-AI-release when an audit repository is configured. The pipeline appends a minimized `MarketOptionExplanationAuditRecord` before returning released AI text; if append fails, the generated text is discarded, the result remains `NOT_RELEASED`, canonical fallback remains available and raw storage diagnostics are not exposed through the audit envelope.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
@@ -155,6 +157,8 @@ Provider-safe aliases now replace internal vocabulary in the provider payload. T
 - prompt payload digest changes when prompt template version changes;
 - minimized audit envelope without raw prompt/output/source identifiers;
 - released-output digest required only for accepted explanations;
+- audit-before-AI-release composition with append-only repository contract;
+- fallback when audit append fails, without releasing generated text or exposing storage diagnostics;
 - provider interface constrained to prompt payload only;
 - fallback when provider text contains prohibited authority/forecast terms;
 - fallback when the provider is unavailable, without retaining provider exception diagnostics;
@@ -165,6 +169,7 @@ Provider-safe aliases now replace internal vocabulary in the provider payload. T
 
 ## Tests Executed
 
+- `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py -q` - 48 passed.
 - `python -m uv run --locked python -m pytest tests/livestock_application/test_market_optionality.py tests/unit/test_ai_explanation_pipeline_smoke.py -q` - 41 passed.
 - `python -m uv run --locked ruff check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
 - `python -m uv run --locked ruff format --check packages/livestock_application/market_optionality.py tests/livestock_application/test_market_optionality.py` - passed.
@@ -181,7 +186,7 @@ None.
 
 ## Security Impact
 
-Positive. The future provider boundary now has an executable local pipeline that fails closed before releasing generated text.
+Positive. The future provider boundary now has an executable local pipeline that fails closed before releasing generated text. In auditable mode, generated text is not released unless minimized audit append succeeds.
 
 ## Tenant Isolation Impact
 

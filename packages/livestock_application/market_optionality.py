@@ -6,11 +6,13 @@ does not execute Rules, emit Decision, persist artifacts, forecast future
 eligibility, or mutate Animal.
 """
 
+from __future__ import annotations
+
 import hashlib
 import hmac
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Protocol
@@ -255,6 +257,7 @@ class MarketOptionExplanationViolation(StrEnum):
     PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE"
     PROVIDER_PROFILE_UNAVAILABLE = "PROVIDER_PROFILE_UNAVAILABLE"
     PROVIDER_PROCESSING_UNAUTHORIZED = "PROVIDER_PROCESSING_UNAUTHORIZED"
+    AUDIT_PERSISTENCE_FAILED = "AUDIT_PERSISTENCE_FAILED"
 
 
 class MarketOptionExplanationProviderProfileState(StrEnum):
@@ -633,7 +636,7 @@ class MarketOptionExplanationProviderProcessingAuthorization:
         self,
         *,
         assessment: MarketOptionAssessment,
-        run_context: "MarketOptionExplanationRunContext",
+        run_context: MarketOptionExplanationRunContext,
     ) -> bool:
         context = assessment.context
         if self.organization_id != context.organization_id:
@@ -815,7 +818,7 @@ class MarketOptionExplanationRunContext:
         self,
         *,
         assessment: MarketOptionAssessment,
-        prompt_payload: "MarketOptionExplanationPromptPayload",
+        prompt_payload: MarketOptionExplanationPromptPayload,
     ) -> MarketOptionExplanationRequestIdentity | None:
         if self.idempotency_key is None:
             return None
@@ -1012,6 +1015,7 @@ class MarketOptionExplanationResult:
     explanation_context: MarketOptionExplanationContext
     prompt_payload: MarketOptionExplanationPromptPayload
     audit_envelope: MarketOptionExplanationAuditEnvelope
+    audit_record: MarketOptionExplanationAuditRecord | None
     validation: MarketOptionExplanationValidation
     released_text: str | None
     canonical_fallback: MarketOptionCanonicalExplanation
@@ -1142,7 +1146,7 @@ class MarketOptionExplanationAuditRecord:
         requested_at: datetime,
         evaluated_at: datetime,
         correlation_id: TypedId,
-    ) -> "MarketOptionExplanationAuditRecord":
+    ) -> MarketOptionExplanationAuditRecord:
         assessment_context = result.explanation_context.assessment.context
         envelope = result.audit_envelope
         return cls(
@@ -1901,6 +1905,7 @@ class MarketOptionExplanationPipelineService:
     audit_envelope_service: MarketOptionExplanationAuditEnvelopeService = (
         MarketOptionExplanationAuditEnvelopeService()
     )
+    audit_repository: MarketOptionExplanationAuditRepositoryPort | None = None
 
     def explain(
         self,
@@ -1967,11 +1972,49 @@ class MarketOptionExplanationPipelineService:
             released_text=released_text,
             canonical_fallback=canonical_fallback,
         )
+        audit_record = None
+        if self.audit_repository is not None:
+            audit_timestamp = datetime.now(UTC)
+            audit_record = MarketOptionExplanationAuditRecord.from_result(
+                audit_id=TypedId.new("ai_explanation_audit"),
+                result=MarketOptionExplanationResult(
+                    run_context=run_context,
+                    explanation_context=explanation_context,
+                    prompt_payload=prompt_payload,
+                    audit_envelope=audit_envelope,
+                    audit_record=None,
+                    validation=validation,
+                    released_text=released_text,
+                    canonical_fallback=canonical_fallback,
+                ),
+                requested_at=audit_timestamp,
+                evaluated_at=audit_timestamp,
+                correlation_id=TypedId.new("correlation"),
+            )
+            try:
+                self.audit_repository.append(audit_record)
+            except Exception:
+                validation = MarketOptionExplanationValidation(
+                    accepted=False,
+                    violations=(MarketOptionExplanationViolation.AUDIT_PERSISTENCE_FAILED,),
+                    limitations=explanation_context.limitations,
+                )
+                released_text = None
+                audit_envelope = self.audit_envelope_service.build(
+                    run_context=run_context,
+                    explanation_context=explanation_context,
+                    prompt_payload=prompt_payload,
+                    validation=validation,
+                    released_text=released_text,
+                    canonical_fallback=canonical_fallback,
+                )
+                audit_record = None
         return MarketOptionExplanationResult(
             run_context=run_context,
             explanation_context=explanation_context,
             prompt_payload=prompt_payload,
             audit_envelope=audit_envelope,
+            audit_record=audit_record,
             validation=validation,
             released_text=released_text,
             canonical_fallback=canonical_fallback,

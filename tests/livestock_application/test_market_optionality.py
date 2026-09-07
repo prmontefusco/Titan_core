@@ -1522,6 +1522,63 @@ def test_explanation_audit_repository_is_append_only_and_owner_scoped() -> None:
         repository.append(record)
 
 
+def test_explanation_pipeline_persists_audit_record_before_ai_release() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    repository = InMemoryMarketOptionExplanationAuditRepository()
+
+    result = MarketOptionExplanationPipelineService(audit_repository=repository).explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id),
+    )
+
+    assert result.released_text is not None
+    assert result.audit_record is not None
+    assert repository.get(result.audit_record.audit_id) == result.audit_record
+    assert repository.list_for_owner(policy.organization_id) == (result.audit_record,)
+    assert (
+        result.audit_record.release_disposition
+        is MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
+    )
+
+
+def test_explanation_pipeline_blocks_ai_release_when_audit_append_fails() -> None:
+    class FailingAuditRepository(InMemoryMarketOptionExplanationAuditRepository):
+        def append(self, record):  # type: ignore[no-untyped-def]
+            raise RuntimeError("audit storage unavailable with diagnostics")
+
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    result = MarketOptionExplanationPipelineService(
+        audit_repository=FailingAuditRepository()
+    ).explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id),
+    )
+
+    assert result.released_text is None
+    assert result.audit_record is None
+    assert (
+        result.audit_envelope.release_disposition
+        is MarketOptionExplanationReleaseDisposition.NOT_RELEASED
+    )
+    assert result.audit_envelope.accepted is False
+    assert result.audit_envelope.released_output_digest is None
+    assert MarketOptionExplanationViolation.AUDIT_PERSISTENCE_FAILED in (
+        result.validation.violations
+    )
+    assert "storage unavailable" not in repr(result.audit_envelope)
+
+
 def test_explanation_pipeline_falls_back_when_provider_text_claims_authority() -> None:
     class InventingProvider(DeterministicMarketOptionExplanationTextProvider):
         def generate_text(self, *, prompt_payload, run_context):  # type: ignore[no-untyped-def]
