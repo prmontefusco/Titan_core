@@ -12,7 +12,7 @@ import hashlib
 import hmac
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Protocol
@@ -2038,12 +2038,8 @@ class MarketOptionExplanationPipelineService:
         audit_record = None
         if self.audit_repository is not None:
             if audit_record_context is None:
-                audit_timestamp = datetime.now(UTC)
-                audit_record_context = MarketOptionExplanationAuditRecordContext(
-                    audit_id=TypedId.new("ai_explanation_audit"),
-                    requested_at=audit_timestamp,
-                    evaluated_at=audit_timestamp,
-                    correlation_id=TypedId.new("correlation"),
+                raise ValueError(
+                    "audit_record_context é obrigatório quando audit_repository é configurado."
                 )
             audit_record = MarketOptionExplanationAuditRecord.from_result(
                 audit_id=audit_record_context.audit_id,

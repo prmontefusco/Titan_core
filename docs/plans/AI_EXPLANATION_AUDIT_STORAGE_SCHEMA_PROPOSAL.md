@@ -53,6 +53,9 @@ surface.
 - `MarketOptionExplanationAuditRecordContext` lets internal callers provide
   audit id, requested/evaluated timestamps and correlation id without providing
   or overriding `record_owner_organization_id`.
+- In auditable mode, `MarketOptionExplanationPipelineService` requires an
+  explicit `MarketOptionExplanationAuditRecordContext`; it does not silently
+  mint audit correlation metadata for a repository-backed release path.
 - The application-level repository contract now includes owner-scoped
   `find_by_correlation_id(...)` and `find_by_idempotency_reference(...)`
   operations for future transactional parity.
@@ -352,6 +355,8 @@ Before generating a migration:
 - confirm final schema/table name;
 - confirm RLS policy text and runtime role grants;
 - confirm retention option and field-level retention matrix;
+- confirm the transactional workflow passes explicit audit context from the
+  authorized application boundary before repository append;
 - confirm whether `record_digest` uniqueness remains per-owner;
 - confirm whether `created_at` is database-generated or application-supplied;
 - confirm whether provider/processing authorization tables exist or remain

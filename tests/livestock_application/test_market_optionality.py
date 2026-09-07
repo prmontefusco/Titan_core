@@ -1578,10 +1578,17 @@ def test_explanation_pipeline_persists_audit_record_before_ai_release() -> None:
         evaluation=evaluation,
     )
     repository = InMemoryMarketOptionExplanationAuditRepository()
+    audit_context = MarketOptionExplanationAuditRecordContext(
+        audit_id=TypedId.new("ai_explanation_audit"),
+        requested_at=NOW,
+        evaluated_at=NOW,
+        correlation_id=TypedId.new("correlation"),
+    )
 
     result = MarketOptionExplanationPipelineService(audit_repository=repository).explain(
         assessment=assessment,
         run_context=_ai_run_context(policy.organization_id),
+        audit_record_context=audit_context,
     )
 
     assert result.released_text is not None
@@ -1592,6 +1599,23 @@ def test_explanation_pipeline_persists_audit_record_before_ai_release() -> None:
         result.audit_record.release_disposition
         is MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
     )
+
+
+def test_explanation_pipeline_requires_audit_context_when_repository_is_configured() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+
+    with pytest.raises(ValueError, match="audit_record_context"):
+        MarketOptionExplanationPipelineService(
+            audit_repository=InMemoryMarketOptionExplanationAuditRepository()
+        ).explain(
+            assessment=assessment,
+            run_context=_ai_run_context(policy.organization_id),
+        )
 
 
 def test_explanation_pipeline_uses_audit_context_without_owner_override() -> None:
@@ -1634,12 +1658,19 @@ def test_explanation_pipeline_blocks_ai_release_when_audit_append_fails() -> Non
         decision=decision,
         evaluation=evaluation,
     )
+    audit_context = MarketOptionExplanationAuditRecordContext(
+        audit_id=TypedId.new("ai_explanation_audit"),
+        requested_at=NOW,
+        evaluated_at=NOW,
+        correlation_id=TypedId.new("correlation"),
+    )
 
     result = MarketOptionExplanationPipelineService(
         audit_repository=FailingAuditRepository()
     ).explain(
         assessment=assessment,
         run_context=_ai_run_context(policy.organization_id),
+        audit_record_context=audit_context,
     )
 
     assert result.released_text is None
