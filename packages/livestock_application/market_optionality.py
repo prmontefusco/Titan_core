@@ -1237,6 +1237,20 @@ class MarketOptionExplanationAuditRepositoryPort(Protocol):
 
     def get(self, audit_id: TypedId) -> MarketOptionExplanationAuditRecord | None: ...
 
+    def find_by_correlation_id(
+        self,
+        *,
+        record_owner_organization_id: OrganizationId,
+        correlation_id: TypedId,
+    ) -> tuple[MarketOptionExplanationAuditRecord, ...]: ...
+
+    def find_by_idempotency_reference(
+        self,
+        *,
+        record_owner_organization_id: OrganizationId,
+        idempotency_reference: str,
+    ) -> tuple[MarketOptionExplanationAuditRecord, ...]: ...
+
 
 class InMemoryMarketOptionExplanationAuditRepository:
     """Append-only in-memory repository for AI Explanation audit contract tests."""
@@ -1263,6 +1277,34 @@ class InMemoryMarketOptionExplanationAuditRepository:
             for audit_id in self._order
             for record in (self._records[audit_id],)
             if record.record_owner_organization_id == record_owner_organization_id
+        )
+
+    def find_by_correlation_id(
+        self,
+        *,
+        record_owner_organization_id: OrganizationId,
+        correlation_id: TypedId,
+    ) -> tuple[MarketOptionExplanationAuditRecord, ...]:
+        if correlation_id.entity_type != "correlation":
+            raise ValueError("correlation_id deve ter entity_type 'correlation'.")
+        return tuple(
+            record
+            for record in self.list_for_owner(record_owner_organization_id)
+            if record.correlation_id == correlation_id
+        )
+
+    def find_by_idempotency_reference(
+        self,
+        *,
+        record_owner_organization_id: OrganizationId,
+        idempotency_reference: str,
+    ) -> tuple[MarketOptionExplanationAuditRecord, ...]:
+        if not idempotency_reference.strip():
+            raise ValueError("idempotency_reference deve ser texto não vazio.")
+        return tuple(
+            record
+            for record in self.list_for_owner(record_owner_organization_id)
+            if record.idempotency_reference == idempotency_reference
         )
 
 

@@ -50,6 +50,9 @@ surface.
   and `InMemoryMarketOptionExplanationAuditRepository`.
 - `MarketOptionExplanationPipelineService` now releases generated AI text only
   after audit append succeeds when an audit repository is configured.
+- The application-level repository contract now includes owner-scoped
+  `find_by_correlation_id(...)` and `find_by_idempotency_reference(...)`
+  operations for future transactional parity.
 - Existing protected audit tables use `core_audit`,
   `record_owner_organization_id`, RLS and `FORCE ROW LEVEL SECURITY`.
 
@@ -329,6 +332,11 @@ list_for_owner(record_owner_organization_id)
 find_by_correlation_id(correlation_id)
 find_by_idempotency_reference(idempotency_reference)
 ```
+
+The application-level in-memory repository already implements these operations
+as owner-scoped queries. The future transactional repository must preserve that
+shape and must not expose global correlation or idempotency lookup across
+Organizations.
 
 No query should return raw prompt, released text, raw provider output, source
 identifiers, Evidence, Facts, Dossiers, VerificationBundles, Animal identifiers

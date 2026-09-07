@@ -1522,6 +1522,53 @@ def test_explanation_audit_repository_is_append_only_and_owner_scoped() -> None:
         repository.append(record)
 
 
+def test_explanation_audit_repository_queries_are_owner_scoped() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    assessment = MarketOptionAssessmentService().assess(
+        context=_context_from_artifacts(policy, decision),
+        decision=decision,
+        evaluation=evaluation,
+    )
+    result = MarketOptionExplanationPipelineService().explain(
+        assessment=assessment,
+        run_context=_ai_run_context(policy.organization_id, idempotency_key="idem-secret"),
+    )
+    correlation_id = TypedId.new("correlation")
+    record = MarketOptionExplanationAuditRecord.from_result(
+        audit_id=TypedId.new("ai_explanation_audit"),
+        result=result,
+        requested_at=NOW,
+        evaluated_at=NOW,
+        correlation_id=correlation_id,
+    )
+    repository = InMemoryMarketOptionExplanationAuditRepository()
+    repository.append(record)
+
+    assert repository.find_by_correlation_id(
+        record_owner_organization_id=policy.organization_id,
+        correlation_id=correlation_id,
+    ) == (record,)
+    assert (
+        repository.find_by_correlation_id(
+            record_owner_organization_id=OrganizationId.new(),
+            correlation_id=correlation_id,
+        )
+        == ()
+    )
+    assert record.idempotency_reference is not None
+    assert repository.find_by_idempotency_reference(
+        record_owner_organization_id=policy.organization_id,
+        idempotency_reference=record.idempotency_reference,
+    ) == (record,)
+    assert (
+        repository.find_by_idempotency_reference(
+            record_owner_organization_id=OrganizationId.new(),
+            idempotency_reference=record.idempotency_reference,
+        )
+        == ()
+    )
+
+
 def test_explanation_pipeline_persists_audit_record_before_ai_release() -> None:
     decision, evaluation, policy = _artifacts(purpose=PURPOSE)
     assessment = MarketOptionAssessmentService().assess(
