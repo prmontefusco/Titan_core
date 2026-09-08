@@ -200,6 +200,13 @@ The local/mock pipeline now composes that audit contract before AI text release 
 
 `docs/plans/AI_EXPLANATION_AUDIT_STORAGE_SCHEMA_PROPOSAL.md` now provides the concrete production storage proposal for review: `core_audit.ai_explanation_audit_records`, owner-only RLS, append-only semantics, minimized columns, no raw prompt/output/source identifiers and split retention as the recommended policy option. It remains a proposal and does not authorize migration or production release until the persistence policy gate is closed.
 
+After persistence gate approval, the storage proposal was implemented by
+`packages/core_infrastructure/persistence/migrations/versions/20260907_0080_create_ai_explanation_audit_records.py`
+and `TransactionalAIExplanationAuditRepository`. PostgreSQL/RLS tests prove
+owner-only read visibility, append-only runtime behavior and owner-scoped
+correlation/idempotency lookups. Production provider adapter and user-visible
+API/UI release remain separate decisions.
+
 ## ADR-0074 Acceptance With Changes
 
 ADR-0074 was accepted with changes on 2026-09-04. The design now treats structured allowed claims as the boundary between Titan canonical outputs and AI wording:

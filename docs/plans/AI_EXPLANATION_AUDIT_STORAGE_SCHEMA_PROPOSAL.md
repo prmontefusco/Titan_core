@@ -1,14 +1,16 @@
 # AI Explanation Audit Storage Schema Proposal
 
-**Status:** PROPOSED / POLICY GATE BEFORE MIGRATION
+**Status:** APPROVED AND IMPLEMENTED AS MIGRATION 20260907_0080
 
 **Date:** 2026-09-07
 
-This document proposes the production persistence shape for
-`MarketOptionExplanationAuditRecord`, following ADR-0074 and ADR-0075. It is a
-schema/RLS/retention proposal only. It does not create a migration, transactional
-repository, provider adapter, API route, UI behavior, raw prompt/output
-retention, buyer-facing aggregate explanation or cross-tenant disclosure.
+This document proposed the production persistence shape for
+`MarketOptionExplanationAuditRecord`, following ADR-0074 and ADR-0075. After
+human approval, the schema was implemented as migration
+`packages/core_infrastructure/persistence/migrations/versions/20260907_0080_create_ai_explanation_audit_records.py`.
+It still does not authorize a provider adapter, API route, UI behavior, raw
+prompt/output retention, buyer-facing aggregate explanation or cross-tenant
+disclosure.
 
 ## 1. Scope
 
@@ -422,10 +424,10 @@ validation.
 | Decision | Classification | Recommendation | Human Approval Required |
 | --- | --- | --- | --- |
 | Dedicated audit record concept | Accepted architecture | Keep `MarketOptionExplanationAuditRecord` | NO |
-| Schema placement | Existing repository convention + policy review | `core_audit` | YES as part of persistence gate |
-| Table name | Implementation decision after placement | `ai_explanation_audit_records` | YES as part of schema package |
-| Default raw audit visibility | Policy decision | Owner-only RLS | YES |
+| Schema placement | Approved persistence gate | `core_audit` | APPROVED |
+| Table name | Approved persistence gate | `ai_explanation_audit_records` | APPROVED |
+| Default raw audit visibility | Approved persistence gate | Owner-only RLS | APPROVED |
 | Append-only enforcement | Automated gate after schema approval | No UPDATE/DELETE policies plus tests | NO after schema approval |
 | Raw prompt/output storage | Existing ADR-0075 policy | Denied by default | NO |
-| Retention | Policy decision | Split retention option B | YES |
+| Retention | Approved persistence gate | Split retention option B | APPROVED |
 | Provider adapter/API/UI release | External behavior decision | Keep separate from storage | YES before production release |

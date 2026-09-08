@@ -60,12 +60,16 @@ On 2026-09-06, the local/mock pipeline started enforcing audit-before-AI-release
 
 On 2026-09-07, `docs/plans/AI_EXPLANATION_AUDIT_STORAGE_SCHEMA_PROPOSAL.md` was added as the concrete production storage proposal for `MarketOptionExplanationAuditRecord`. It recommends `core_audit.ai_explanation_audit_records`, owner-only RLS, append-only runtime semantics, minimized audit columns, no raw prompt/output/source identifiers and split retention as the policy option to review before migration.
 
+On 2026-09-08, after persistence gate approval, migration `20260907_0080` and `TransactionalAIExplanationAuditRepository` implemented durable minimized storage for `MarketOptionExplanationAuditRecord`. The PostgreSQL/RLS integration test proves owner-only visibility, append-only runtime behavior and owner-scoped correlation/idempotency lookups without adding provider production integration or user-visible AI release.
+
 ## Files Changed
 
 - `packages/livestock_application/market_optionality.py`
 - `tests/livestock_application/test_market_optionality.py`
 - `tests/unit/test_ai_explanation_pipeline_smoke.py`
 - `apps/validacao/ai_explanation_pipeline_smoke.py`
+- `packages/core_infrastructure/persistence/migrations/versions/20260907_0080_create_ai_explanation_audit_records.py`
+- `packages/livestock_infrastructure/persistence/ai_explanation_audit_repository.py`
 - `docs/specs/proposed/2026-09-04-ai-explanation-governance.md`
 - `docs/plans/AI_EXPLANATION_GOVERNANCE_DESIGN_PACKAGE.md`
 - `docs/plans/AI_EXPLANATION_LOCAL_PIPELINE_EXECUTION_REPORT.md`
@@ -184,7 +188,9 @@ Provider-safe aliases now replace internal vocabulary in the provider payload. T
 
 ## Migrations
 
-None.
+Created after persistence gate approval:
+
+- `20260907_0080_create_ai_explanation_audit_records.py`
 
 ## Security Impact
 
@@ -192,7 +198,7 @@ Positive. The future provider boundary now has an executable local pipeline that
 
 ## Tenant Isolation Impact
 
-No infrastructure access was introduced. The pipeline works only over a supplied canonical `MarketOptionAssessment`.
+Positive. The pipeline works only over a supplied canonical `MarketOptionAssessment`, and durable audit storage is owner-scoped by `record_owner_organization_id` with PostgreSQL RLS.
 
 ## Temporal Semantics Impact
 
@@ -200,4 +206,4 @@ Positive. The canonical fallback and explanation context preserve `reference_tim
 
 ## Human Decisions Required
 
-No additional decision is required for this local/mock pipeline. Production provider integration, persisted DataContract governance, prompt/output retention, user-visible AI output and provider/model selection remain outside this build.
+No additional decision is required for this local/mock pipeline and approved audit persistence cut. Production provider integration, persisted DataContract governance, prompt/output retention, user-visible AI output and provider/model selection remain outside this build.

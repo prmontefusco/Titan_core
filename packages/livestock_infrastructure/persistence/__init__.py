@@ -1,5 +1,9 @@
 """Módulo de infraestrutura do Titan Livestock."""
 
+from packages.livestock_infrastructure.persistence.ai_explanation_audit_repository import (
+    TransactionalAIExplanationAuditRepository,
+    ai_explanation_audit_records_table,
+)
 from packages.livestock_infrastructure.persistence.animal_repository import (
     TransactionalAnimalRepository,
     animal_identifiers_table,
@@ -133,6 +137,7 @@ __all__ = [
     "TransactionalMembershipGrant",
     "TransactionalAnimalMovementRepository",
     "TransactionalAnimalRepository",
+    "TransactionalAIExplanationAuditRepository",
     "TransactionalLivestockLotRepository",
     "TransactionalLotMembershipRepository",
     "TransactionalMedicationBatchRepository",
@@ -176,6 +181,7 @@ __all__ = [
     "transformation_events_table",
     "TransactionalVeterinarianRepository",
     "animal_identifiers_table",
+    "ai_explanation_audit_records_table",
     "coverage_contributions_table",
     "animal_movement_items_table",
     "animal_movements_table",
