@@ -72,7 +72,11 @@ def _criar_lote(operador: Cliente, ids: dict[str, str]) -> object:
 
 def _montar_roteiro(operador: Cliente) -> Roteiro:
     ids: dict[str, str] = {}
-    roteiro = Roteiro("Explicacao comercial executiva por mercado", diario=operador.diario)
+    roteiro = Roteiro(
+        "Explicacao comercial executiva por mercado",
+        diario=operador.diario,
+        linhas_de_corpo=10000,
+    )
     roteiro.passo(
         "1",
         "Operador cria o animal base da explicacao",
@@ -98,7 +102,12 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         conferir=lambda r: (
             None
             if r["subject_type"] == "animal"
-            and r["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
+            and r["commercial_outlook"] == "INCONCLUSIVO"
+            and r["can_sell_to_any_requested_market"] is False
+            and all(m["status"] == "INDETERMINADO" for m in r["markets"])
+            and all(
+                any("prazo de carencia aplicavel" in why for why in m["why"]) for m in r["markets"]
+            )
             and "China" in r["narrative"]
             and "Estados Unidos" in r["narrative"]
             and r["recommended_next_action"]
@@ -106,8 +115,8 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
             else "a explicacao comercial do animal nao resumiu corretamente os mercados"
         ),
         porque=(
-            "A resposta precisa falar a lingua do negocio: onde pode vender, "
-            "onde nao pode e qual a proxima acao para desbloquear."
+            "FINDING-001: sem base de carencia declarada, nenhum mercado pode ser "
+            "promovido a elegivel, mesmo quando tambem falta escolher o estabelecimento."
         ),
     )
     roteiro.passo(
@@ -135,15 +144,21 @@ def _montar_roteiro(operador: Cliente) -> Roteiro:
         conferir=lambda r: (
             None
             if r["subject_type"] == "lot"
-            and r["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
-            and "O lote pode ser comercializado" in r["narrative"]
+            and r["commercial_outlook"] == "INCONCLUSIVO"
+            and r["can_sell_to_any_requested_market"] is False
+            and all(m["status"] == "INDETERMINADO" for m in r["markets"])
+            and all(
+                any("prazo de carencia aplicavel" in why for why in m["why"]) for m in r["markets"]
+            )
+            and "O lote ainda nao possui base suficiente" in r["narrative"]
+            and "pode ser comercializado" not in r["narrative"]
             and r["recommended_next_action"]
             == "Selecionar e qualificar o estabelecimento exigido para os mercados condicionados."
             else "a explicacao comercial do lote nao resumiu corretamente o conjunto"
         ),
         porque=(
-            "O lote precisa devolver a mesma resposta executiva, so que agora "
-            "agregando os animais vigentes do conjunto."
+            "FINDING-001: a explicacao deve preservar a indeterminacao sanitaria dos "
+            "membros e suas justificativas, sem autorizar a comercializacao do lote."
         ),
     )
     roteiro.passo(
@@ -177,9 +192,6 @@ def main() -> int:
         raise SystemExit(
             "Defina TITAN_DATABASE_URL para o roteiro preparar regras e descobrir a Organization."
         )
-    organizacao = opcoes.organizacao or _descobrir_organizacao(database_url)
-    _preparar_regras_de_mercado(database_url, organizacao)
-
     admin = AdminKeycloak.autenticar(
         base_url=keycloak_url,
         realm=realm,
@@ -187,6 +199,13 @@ def main() -> int:
         senha=_ambiente("TITAN_OIDC_ADMIN_PASSWORD", "titan_oidc_local_admin_password"),
     )
     admin.garantir_cliente_de_validacao(CLIENTE_DE_VALIDACAO)
+    operador_subject = admin.garantir_usuario(username="titan_operador", senha=SENHA_DEMONSTRACAO)
+    organizacao = opcoes.organizacao or _descobrir_organizacao(
+        database_url,
+        issuer=f"{keycloak_url}/realms/{realm}",
+        subject=operador_subject,
+    )
+    _preparar_regras_de_mercado(database_url, organizacao)
     diario: list[Requisicao] = []
     operador = Cliente(
         base_url=api,
@@ -206,6 +225,14 @@ def main() -> int:
     print(f"  Organization : {organizacao}")
     print(f"{CINZA}  Rode a semeadura novamente se vier 403 por permissao ausente.{FIM}")
 
+    # Sonda autenticacao, contexto e permissao antes de criar os sujeitos ficticios.
+    sonda = operador.post("/v1/livestock/market-eligibility/commercial-explanations", {})
+    if sonda.status != 422 or sonda["reason_code"] != "ENTRADA_INVALIDA":
+        raise SystemExit(
+            f"Preflight da explicacao comercial falhou (HTTP {sonda.status}). "
+            "Confira a API, semeie novamente se faltar permissao e reinicie a API "
+            "com TITAN_OPERATOR_ORGANIZATION_ID da semeadura."
+        )
     codigo = _montar_roteiro(operador).executar(pausar=opcoes.pausar)
     if codigo == 0:
         print(f"{AMARELO}O script confere forma e status; a leitura de negocio segue humana.{FIM}")

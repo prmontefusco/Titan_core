@@ -1136,12 +1136,15 @@ def test_explicacao_comercial_do_animal_resume_mercados_e_proxima_acao(
     assert corpo["subject_type"] == "animal"
     assert corpo["subject_id"] == animal
     assert corpo["commercial_outlook"] == "INCONCLUSIVO"
+    assert corpo["can_sell_to_any_requested_market"] is False
+    assert "pode ser comercializado" not in corpo["narrative"]
     assert "Estados Unidos" in corpo["narrative"]
     assert "China" in corpo["narrative"]
     assert corpo["recommended_next_action"] == (
         "Selecionar e qualificar o estabelecimento exigido para os mercados condicionados."
     )
     por_mercado = {item["market"]: item for item in corpo["markets"]}
+    assert por_mercado["exportacao-estados-unidos"]["status"] == "INDETERMINADO"
     assert por_mercado["exportacao-china"]["status"] == "INDETERMINADO"
     assert por_mercado["exportacao-china"]["next_action"] == (
         "Selecionar o estabelecimento exigido e repetir a avaliacao deste mercado."
@@ -1390,24 +1393,25 @@ def test_explicacao_comercial_do_lote_resume_animais_afetados(
     corpo = resposta.json()
     assert corpo["subject_type"] == "lot"
     assert corpo["subject_id"] == lote
-    assert corpo["commercial_outlook"] == "PARCIALMENTE_COMERCIALIZAVEL"
-    assert "O lote pode ser comercializado" in corpo["narrative"]
+    assert corpo["commercial_outlook"] == "INCONCLUSIVO"
+    assert corpo["can_sell_to_any_requested_market"] is False
+    assert "O lote ainda nao possui base suficiente" in corpo["narrative"]
+    assert "pode ser comercializado" not in corpo["narrative"]
     assert corpo["recommended_next_action"] == (
         "Selecionar e qualificar o estabelecimento exigido para os mercados condicionados."
     )
     por_mercado = {item["market"]: item for item in corpo["markets"]}
     china = por_mercado["exportacao-china"]
-    assert china["status"] == "CONDICIONADO"
+    assert china["status"] == "INDETERMINADO"
     assert china["affected_animal_ids"] == []
     assert china["next_action"] == (
         "Selecionar o estabelecimento exigido e repetir a avaliacao deste mercado."
     )
-    assert any("selecione o estabelecimento exigido" in why for why in china["why"])
+    assert any("prazo de carencia aplicavel" in why for why in china["why"])
     estados_unidos = por_mercado["exportacao-estados-unidos"]
-    assert estados_unidos["status"] == "ELEGIVEL"
-    assert estados_unidos["why"] == [
-        "Todos os animais vigentes apareceram elegiveis neste mercado."
-    ]
+    assert estados_unidos["status"] == "INDETERMINADO"
+    assert set(estados_unidos["affected_animal_ids"]) == set(animais)
+    assert any("prazo de carencia aplicavel" in why for why in estados_unidos["why"])
 
 
 def test_explicacao_comercial_recusa_quando_sujeito_nao_e_unico(
