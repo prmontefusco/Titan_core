@@ -91,6 +91,10 @@ TERRITORIAL_CAPTURE_READ: Final = "LIVESTOCK_TERRITORIAL_CAPTURE.READ"
 # read access. It is catalogued for F3.5 but deliberately absent from default
 # roles until a deployment grants it explicitly.
 MARKET_SUPPLY_AGGREGATE_ASSESS: Final = "MARKET_SUPPLY.AGGREGATE_ASSESS"
+# Market Optionality AI explanation is an explanation-only capability over canonical
+# outputs. It is catalogued for Market Optionality AI Explanation but deliberately
+# absent from default roles until an explicit grant is assigned.
+MARKET_OPTION_EXPLAIN: Final = "MARKET_OPTION.EXPLAIN"
 
 # A leitura é permissão própria por área, e não uma só para tudo. Papel de
 # consulta restrita — um comprador que só precisa ver o dossiê, um técnico que só
@@ -145,8 +149,11 @@ ESCRITA: Final = frozenset(
 ADMINISTRACAO: Final = frozenset({ENTITY_TYPE_REQUEST_LER, ENTITY_TYPE_REQUEST_DECIDIR})
 
 MARKET_SUPPLY: Final = frozenset({MARKET_SUPPLY_AGGREGATE_ASSESS})
+MARKET_OPTIONALITY: Final = frozenset({MARKET_OPTION_EXPLAIN})
 
-LIVESTOCK_PERMISSIONS: Final = LEITURA | ESCRITA | ADMINISTRACAO | MARKET_SUPPLY
+LIVESTOCK_PERMISSIONS: Final = (
+    LEITURA | ESCRITA | ADMINISTRACAO | MARKET_SUPPLY | MARKET_OPTIONALITY
+)
 
 # -- Papéis ------------------------------------------------------------------
 

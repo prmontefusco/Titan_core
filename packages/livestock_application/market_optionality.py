@@ -12,10 +12,10 @@ import hashlib
 import hmac
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Protocol
+from typing import Any, Protocol
 
 from packages.core_domain.decision import Decision, DecisionResult
 from packages.core_domain.evaluation import Evaluation, RuleResultStatus
@@ -27,7 +27,10 @@ from packages.livestock_application.market_change_impact import (
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MarketReadinessContext,
+    MarketReadinessDecisionReaderPort,
+    MarketReadinessEvaluationReaderPort,
     MarketReadinessInput,
+    MarketReadinessPopulationReader,
     MarketReadinessService,
     MarketReadinessStatus,
 )
@@ -2441,3 +2444,151 @@ def _warning_reversibility(
     if warning_state is MarketOptionPreservationWarningState.OPTION_AT_RISK:
         return MarketOptionReversibility.POTENTIALLY_RESOLVABLE
     return MarketOptionReversibility.UNKNOWN
+
+
+@dataclass(frozen=True, slots=True)
+class AnimalMarketOptionExplanationCommand:
+    """Comando de aplicação para avaliar e explicar optionalidade de animal individual."""
+
+    organization_id: OrganizationId
+    animal_id: TypedId
+    policy_id: TypedId
+    policy_version: int
+    market_purpose: str
+    reference_time: datetime
+    knowledge_cutoff: datetime
+    correlation_id: TypedId | None = None
+    idempotency_reference: str | None = None
+    model_name: str = "models/gemini-3.7-flash"
+    provider_profile: str = "GEMINI_SYNTHETIC_VALIDATION_ONLY"
+
+    def __post_init__(self) -> None:
+        if self.animal_id.entity_type != "animal":
+            raise ValueError("animal_id deve ter entity_type 'animal'.")
+        if self.policy_id.entity_type != "policy":
+            raise ValueError("policy_id deve ter entity_type 'policy'.")
+        if not isinstance(self.policy_version, int) or self.policy_version < 1:
+            raise ValueError("policy_version deve ser inteiro >= 1.")
+        if not isinstance(self.market_purpose, str) or not self.market_purpose.strip():
+            raise ValueError("market_purpose deve ser texto não vazio.")
+        require_utc(self.reference_time, field_name="reference_time")
+        require_utc(self.knowledge_cutoff, field_name="knowledge_cutoff")
+        if self.knowledge_cutoff < self.reference_time:
+            raise ValueError("knowledge_cutoff não pode ser anterior a reference_time.")
+
+
+@dataclass(frozen=True, slots=True)
+class AnimalMarketOptionExplanationResponse:
+    """Resposta pública e sanitizada de explicação de optionalidade."""
+
+    subject_id: TypedId
+    market_purpose: str
+    policy_id: TypedId
+    policy_version: int
+    reference_time: datetime
+    knowledge_cutoff: datetime
+    canonical_state: MarketOptionState
+    reversibility: MarketOptionReversibility
+    release_disposition: MarketOptionExplanationReleaseDisposition
+    explanation_text: str | None
+    canonical_fallback: Mapping[str, Any]
+    audit_id: TypedId | None
+
+
+@dataclass(frozen=True, slots=True)
+class AnimalMarketOptionExplanationOrchestrator:
+    """Orquestra avaliação canônica e explicação por IA para um animal individual."""
+
+    decision_repository: MarketReadinessDecisionReaderPort
+    evaluation_repository: MarketReadinessEvaluationReaderPort
+    pipeline_service: MarketOptionExplanationPipelineService
+    assessment_service: MarketOptionAssessmentService = MarketOptionAssessmentService()
+    population_reader: MarketReadinessPopulationReader | None = None
+
+    def explain_for_animal(
+        self,
+        command: AnimalMarketOptionExplanationCommand,
+    ) -> AnimalMarketOptionExplanationResponse:
+        reader = (
+            self.population_reader
+            if self.population_reader is not None
+            else MarketReadinessPopulationReader(
+                decision_repository=self.decision_repository,
+                evaluation_repository=self.evaluation_repository,
+                readiness_service=self.assessment_service.readiness_service,
+            )
+        )
+        readiness_context = MarketReadinessContext(
+            organization_id=command.organization_id,
+            purpose=command.market_purpose,
+            policy_id=command.policy_id,
+            policy_version=command.policy_version,
+            reference_time=command.reference_time,
+            knowledge_cutoff=command.knowledge_cutoff,
+        )
+        readiness_input = reader._input_for(
+            context=readiness_context,
+            animal_id=command.animal_id,
+        )
+        option_context = MarketOptionContext(
+            organization_id=command.organization_id,
+            subject_id=command.animal_id,
+            market_purpose=command.market_purpose,
+            policy_id=command.policy_id,
+            policy_version=command.policy_version,
+            reference_time=command.reference_time,
+            knowledge_cutoff=command.knowledge_cutoff,
+        )
+        assessment = self.assessment_service.assess(
+            context=option_context,
+            decision=readiness_input.decision,
+            evaluation=readiness_input.evaluation,
+        )
+        run_context = MarketOptionExplanationRunContext(
+            data_contract_id=MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+            data_contract_version=1,
+            processing_activity="MARKET_OPTIONALITY_AI_EXPLANATION_API",
+            processing_authorization_organization_id=command.organization_id,
+            processing_authorization_purpose=command.market_purpose,
+            provider_profile=command.provider_profile,
+            model_name=command.model_name,
+        )
+        audit_record_context = None
+        if self.pipeline_service.audit_repository is not None:
+            now = datetime.now(UTC)
+            correlation_id = (
+                command.correlation_id
+                if command.correlation_id is not None
+                else TypedId.new("correlation")
+            )
+            audit_record_context = MarketOptionExplanationAuditRecordContext(
+                audit_id=TypedId.new("ai_explanation_audit"),
+                requested_at=now,
+                evaluated_at=now,
+                correlation_id=correlation_id,
+            )
+
+        explanation_result = self.pipeline_service.explain(
+            assessment=assessment,
+            run_context=run_context,
+            audit_record_context=audit_record_context,
+        )
+
+        return AnimalMarketOptionExplanationResponse(
+            subject_id=command.animal_id,
+            market_purpose=command.market_purpose,
+            policy_id=command.policy_id,
+            policy_version=command.policy_version,
+            reference_time=command.reference_time,
+            knowledge_cutoff=command.knowledge_cutoff,
+            canonical_state=assessment.state,
+            reversibility=assessment.reversibility,
+            release_disposition=explanation_result.audit_envelope.release_disposition,
+            explanation_text=explanation_result.released_text,
+            canonical_fallback=explanation_result.canonical_fallback.as_mapping(),
+            audit_id=(
+                None
+                if explanation_result.audit_record is None
+                else explanation_result.audit_record.audit_id
+            ),
+        )

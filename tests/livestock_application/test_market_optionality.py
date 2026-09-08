@@ -9,6 +9,7 @@ import pytest
 
 from packages.core_domain.decision import Decision, DecisionReasonCode, DecisionResult
 from packages.core_domain.evaluation import (
+    Evaluation,
     EvaluationOutcome,
     RuleResult,
     RuleResultStatus,
@@ -27,6 +28,9 @@ from packages.livestock_application.market_optionality import (
     MARKET_OPTIONALITY_AI_EXPLANATION_DISCLOSURE_RESTRICTIONS,
     MARKET_OPTIONALITY_AI_EXPLANATION_OUTPUT_CLASSIFICATION,
     MARKET_OPTIONALITY_AI_EXPLANATION_SYNTHETIC_CONTRACT_ID,
+    AnimalMarketOptionExplanationCommand,
+    AnimalMarketOptionExplanationOrchestrator,
+    AnimalMarketOptionExplanationResponse,
     DeterministicMarketOptionExplanationTextProvider,
     InMemoryMarketOptionExplanationAuditRepository,
     MarketOptionAssessmentService,
@@ -1877,3 +1881,96 @@ def test_explanation_run_context_requires_governance_references() -> None:
             provider_profile="LOCAL_DETERMINISTIC_FAKE",
             model_name="deterministic-market-optionality-explainer",
         )
+
+
+class _FakeDecisionRepository:
+    def __init__(self, decisions: list[Decision]) -> None:
+        self.decisions = decisions
+
+    def list_by_subject(
+        self, organization_id: OrganizationId, subject_id: TypedId
+    ) -> list[Decision]:
+        return [
+            item
+            for item in self.decisions
+            if item.organization_id == organization_id and item.subject_id == subject_id
+        ]
+
+
+class _FakeEvaluationRepository:
+    def __init__(self, evaluations: list[Evaluation]) -> None:
+        self.evaluations = evaluations
+
+    def get_by_id(self, evaluation_id: TypedId) -> Evaluation | None:
+        return next(
+            (item for item in self.evaluations if item.evaluation_id == evaluation_id),
+            None,
+        )
+
+
+def test_animal_market_option_explanation_orchestrator_returns_explanation_and_audit() -> None:
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    audit_repo = InMemoryMarketOptionExplanationAuditRepository()
+    pipeline = MarketOptionExplanationPipelineService(audit_repository=audit_repo)
+    orchestrator = AnimalMarketOptionExplanationOrchestrator(
+        decision_repository=_FakeDecisionRepository([decision]),
+        evaluation_repository=_FakeEvaluationRepository([evaluation]),
+        pipeline_service=pipeline,
+    )
+
+    command = AnimalMarketOptionExplanationCommand(
+        organization_id=policy.organization_id,
+        animal_id=decision.subject_id,
+        policy_id=policy.policy_id,
+        policy_version=1,
+        market_purpose=PURPOSE,
+        reference_time=NOW,
+        knowledge_cutoff=NOW,
+    )
+
+    response = orchestrator.explain_for_animal(command)
+
+    assert isinstance(response, AnimalMarketOptionExplanationResponse)
+    assert response.subject_id == decision.subject_id
+    assert response.canonical_state is MarketOptionState.OPTION_OPEN
+    assert response.release_disposition is (
+        MarketOptionExplanationReleaseDisposition.RELEASE_APPROVED
+    )
+    assert response.explanation_text is not None
+    assert response.audit_id is not None
+    assert audit_repo.get(response.audit_id) is not None
+
+
+def test_animal_market_option_explanation_fallback_on_provider_error() -> None:
+    class FailingProvider(DeterministicMarketOptionExplanationTextProvider):
+        def generate_text(self, *, prompt_payload, run_context):  # type: ignore[no-untyped-def]
+            raise RuntimeError("Provider rejected")
+
+    decision, evaluation, policy = _artifacts(purpose=PURPOSE)
+    audit_repo = InMemoryMarketOptionExplanationAuditRepository()
+    pipeline = MarketOptionExplanationPipelineService(
+        text_provider=FailingProvider(),
+        audit_repository=audit_repo,
+    )
+    orchestrator = AnimalMarketOptionExplanationOrchestrator(
+        decision_repository=_FakeDecisionRepository([decision]),
+        evaluation_repository=_FakeEvaluationRepository([evaluation]),
+        pipeline_service=pipeline,
+    )
+
+    command = AnimalMarketOptionExplanationCommand(
+        organization_id=policy.organization_id,
+        animal_id=decision.subject_id,
+        policy_id=policy.policy_id,
+        policy_version=1,
+        market_purpose=PURPOSE,
+        reference_time=NOW,
+        knowledge_cutoff=NOW,
+    )
+
+    response = orchestrator.explain_for_animal(command)
+
+    assert response.canonical_state is MarketOptionState.OPTION_OPEN
+    assert response.release_disposition is (MarketOptionExplanationReleaseDisposition.NOT_RELEASED)
+    assert response.explanation_text is None
+    assert response.canonical_fallback["state"] == MarketOptionState.OPTION_OPEN.value

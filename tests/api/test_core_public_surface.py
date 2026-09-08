@@ -237,6 +237,10 @@ MARKET_SUPPLY_F3_5_ROTAS_BLOQUEADAS = {
     ("/v1/livestock/market-supply/aggregate-assessments", "post"),
 }
 
+MARKET_OPTIONALITY_AI_EXPLANATION_ROTAS_BLOQUEADAS = {
+    ("/v1/livestock/animals/{animal_id}/market-optionality/explanation", "post"),
+}
+
 
 def _esquema() -> dict[str, Any]:
     esquema: dict[str, Any] = client.get("/openapi.json").json()
@@ -283,6 +287,38 @@ def test_market_supply_f3_5_chamada_http_recebe_404_uniforme_antes_do_release_ga
         "status": 404,
         "detail": "O recurso solicitado não existe.",
         "instance": "/v1/livestock/market-supply/aggregate-assessments",
+        "reason_code": "ROTA_NAO_ENCONTRADA",
+    }
+
+
+def test_market_optionality_ai_explanation_sem_rota_publica_sem_feature_flag() -> None:
+    """ADR-0074/0075: rota de IA protegida por feature flag desligada por padrão."""
+    expostas = MARKET_OPTIONALITY_AI_EXPLANATION_ROTAS_BLOQUEADAS & _operacoes()
+
+    assert not expostas, "Market optionality explanation exposto sem feature flag: " + ", ".join(
+        f"{metodo.upper()} {caminho}" for caminho, metodo in sorted(expostas)
+    )
+
+
+def test_market_optionality_ai_explanation_recebe_404_uniforme_sem_feature_flag() -> None:
+    instancia = (
+        "/v1/livestock/animals/00000000-0000-0000-0000-000000000001/market-optionality/explanation"
+    )
+    resposta = client.post(
+        instancia,
+        json={
+            "reference_time": "2026-09-08T00:00:00Z",
+        },
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.headers["content-type"].startswith("application/problem+json")
+    assert resposta.json() == {
+        "type": "urn:titan:problema:rota-nao-encontrada",
+        "title": "Rota não encontrada",
+        "status": 404,
+        "detail": "O recurso solicitado não existe.",
+        "instance": instancia,
         "reason_code": "ROTA_NAO_ENCONTRADA",
     }
 
