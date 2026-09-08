@@ -171,9 +171,6 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
             update(animals_table)
             .where(animals_table.c.animal_id == animal.animal_id.value)
             .values(
-                sex=animal.sex.value,
-                breed=animal.breed,
-                birth_date=animal.birth_date,
                 version=animal.version,
             )
         )
