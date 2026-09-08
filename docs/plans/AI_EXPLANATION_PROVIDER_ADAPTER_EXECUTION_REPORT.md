@@ -17,6 +17,13 @@ Explanation, while preserving ADR-0074 and ADR-0075 boundaries:
 
 ## Code Changed
 
+- `packages/livestock_application/market_optionality.py`
+  - Added `MarketOptionExplanationProviderPayload`, a provider-facing value object that
+    intentionally excludes Titan-side `source_reference_aliases`.
+  - The pipeline now passes `prompt_payload.provider_payload()` to `MarketOptionExplanationTextProvider`.
+    The complete `MarketOptionExplanationPromptPayload` remains internal to Titan for audit/guard
+    correlation.
+
 - `packages/livestock_infrastructure/ai_explanation_provider.py`
   - Added `GeminiMarketOptionExplanationTextProvider`.
   - Added `UrllibAIProviderHttpTransport` with injectable transport for tests.
@@ -39,6 +46,8 @@ Explanation, while preserving ADR-0074 and ADR-0075 boundaries:
 
 - The adapter is disabled by default.
 - The adapter makes no HTTP call when disabled, missing key or model mismatch occurs.
+- Provider implementations now receive `MarketOptionExplanationProviderPayload`, not the complete
+  Titan-side prompt payload with source-reference aliases.
 - The adapter does not serialize Organization, subject, Animal, Policy, Decision or Evaluation identifiers.
 - Provider-visible vocabulary remains alias-based.
 - Provider output is fully buffered before entering the deterministic guard.
@@ -65,6 +74,7 @@ Focused verification:
 
 ```text
 python -m uv run --locked python -m pytest tests/infrastructure/test_ai_explanation_provider_adapter.py tests/unit/test_ai_explanation_pipeline_smoke.py -q
+python -m uv run --locked python -m pytest tests/infrastructure/test_ai_explanation_provider_adapter.py tests/unit/test_ai_explanation_pipeline_smoke.py tests/livestock_application/test_market_optionality.py -q
 python -m uv run --locked ruff check packages/livestock_infrastructure/ai_explanation_provider.py apps/validacao/ai_explanation_pipeline_smoke.py tests/infrastructure/test_ai_explanation_provider_adapter.py tests/unit/test_ai_explanation_pipeline_smoke.py
 python -m uv run --locked ruff format --check packages/livestock_infrastructure/ai_explanation_provider.py apps/validacao/ai_explanation_pipeline_smoke.py tests/infrastructure/test_ai_explanation_provider_adapter.py tests/unit/test_ai_explanation_pipeline_smoke.py
 python -m uv run --locked python -m mypy packages/livestock_infrastructure/ai_explanation_provider.py apps/validacao/ai_explanation_pipeline_smoke.py tests/infrastructure/test_ai_explanation_provider_adapter.py tests/unit/test_ai_explanation_pipeline_smoke.py
@@ -74,11 +84,10 @@ Result before global gate: PASS.
 
 ## Remaining Gap
 
-The current `MarketOptionExplanationTextProvider` protocol still passes the full
-`MarketOptionExplanationPromptPayload` object to the provider adapter. The HTTP body produced by
-this adapter does not include `source_reference_aliases`, but removing those aliases from the
-provider-facing in-process interface should be handled as a later application contract hardening
-cut, because it changes the `TextProvider` boundary rather than the provider implementation.
+The provider-facing in-process payload no longer carries Titan-side source-reference aliases.
+Remaining work is release-oriented: production configuration/profile wiring, synthetic end-to-end
+provider verification with persisted audit, and a later user-visible API/UI gate if Product/Security
+approves release.
 
 ## Human Decisions Required
 

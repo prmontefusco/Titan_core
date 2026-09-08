@@ -83,12 +83,12 @@ def _run_context(
 
 
 def _gemini_body(prompt_payload: MarketOptionExplanationPromptPayload) -> dict[str, object]:
-    return build_gemini_market_option_explanation_body(prompt_payload)
+    return build_gemini_market_option_explanation_body(prompt_payload.provider_payload())
 
 
 def _assert_payload_minimized(prompt_payload: MarketOptionExplanationPromptPayload) -> None:
     try:
-        assert_gemini_market_option_explanation_payload_minimized(prompt_payload)
+        assert_gemini_market_option_explanation_payload_minimized(prompt_payload.provider_payload())
     except AIExplanationProviderUnavailable as error:
         raise SystemExit(
             f"{VERMELHO}Payload provider-facing não está minimizado: {error}.{FIM}"

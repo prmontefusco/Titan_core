@@ -13,6 +13,7 @@ from packages.livestock_application.market_optionality import (
     MarketOptionExplanationGuardService,
     MarketOptionExplanationPipelineService,
     MarketOptionExplanationPromptPayload,
+    MarketOptionExplanationProviderPayload,
     MarketOptionExplanationRunContext,
     MarketOptionReversibility,
     MarketOptionState,
@@ -63,7 +64,7 @@ def test_gemini_provider_is_disabled_by_default_and_makes_no_http_call() -> None
 
     with pytest.raises(AIExplanationProviderUnavailable):
         provider.generate_text(
-            prompt_payload=_prompt_payload(),
+            prompt_payload=_provider_payload(),
             run_context=_run_context(assessment=_assessment(), model_name="models/gemini-test"),
         )
 
@@ -81,7 +82,7 @@ def test_gemini_provider_sends_only_minimized_payload_fields() -> None:
     )
 
     text = provider.generate_text(
-        prompt_payload=_prompt_payload(assessment=assessment),
+        prompt_payload=_provider_payload(assessment=assessment),
         run_context=_run_context(assessment=assessment, model_name="models/gemini-test"),
     )
 
@@ -124,7 +125,7 @@ def test_gemini_provider_rejects_raw_identifier_fields_before_http_call() -> Non
 
     with pytest.raises(AIExplanationProviderUnavailable):
         provider.generate_text(
-            prompt_payload=payload,
+            prompt_payload=payload.provider_payload(),
             run_context=_run_context(assessment=_assessment(), model_name="models/gemini-test"),
         )
 
@@ -142,7 +143,7 @@ def test_gemini_provider_model_mismatch_fails_closed_before_http_call() -> None:
 
     with pytest.raises(AIExplanationProviderUnavailable):
         provider.generate_text(
-            prompt_payload=_prompt_payload(),
+            prompt_payload=_provider_payload(),
             run_context=_run_context(assessment=_assessment(), model_name="models/gemini-test-b"),
         )
 
@@ -190,13 +191,21 @@ def test_body_builder_does_not_serialize_source_reference_aliases() -> None:
     assert payload.source_reference_aliases
 
     body_text = json.dumps(
-        build_gemini_market_option_explanation_body(payload),
+        build_gemini_market_option_explanation_body(payload.provider_payload()),
         ensure_ascii=False,
         default=str,
     )
 
     assert "source_reference_aliases" not in body_text
     assert "claim_source" in body_text
+
+
+def test_provider_payload_does_not_carry_titan_side_source_aliases() -> None:
+    payload = _prompt_payload(assessment=_assessment())
+    provider_payload = payload.provider_payload()
+
+    assert payload.source_reference_aliases
+    assert not hasattr(provider_payload, "source_reference_aliases")
 
 
 def _prompt_payload(
@@ -209,8 +218,15 @@ def _prompt_payload(
         explanation_context=context,
         run_context=_run_context(assessment=assessment, model_name="models/gemini-test"),
     )
-    assert_gemini_market_option_explanation_payload_minimized(payload)
+    assert_gemini_market_option_explanation_payload_minimized(payload.provider_payload())
     return payload
+
+
+def _provider_payload(
+    *,
+    assessment: MarketOptionAssessment | None = None,
+) -> MarketOptionExplanationProviderPayload:
+    return _prompt_payload(assessment=assessment).provider_payload()
 
 
 def _assessment() -> MarketOptionAssessment:

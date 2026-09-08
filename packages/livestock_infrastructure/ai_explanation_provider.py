@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from packages.livestock_application.market_optionality import (
-    MarketOptionExplanationPromptPayload,
+    MarketOptionExplanationProviderPayload,
     MarketOptionExplanationRunContext,
 )
 
@@ -113,7 +113,7 @@ class GeminiMarketOptionExplanationTextProvider:
     def generate_text(
         self,
         *,
-        prompt_payload: MarketOptionExplanationPromptPayload,
+        prompt_payload: MarketOptionExplanationProviderPayload,
         run_context: MarketOptionExplanationRunContext,
     ) -> str:
         if not self.enabled:
@@ -139,7 +139,7 @@ class GeminiMarketOptionExplanationTextProvider:
 
 
 def build_gemini_market_option_explanation_body(
-    prompt_payload: MarketOptionExplanationPromptPayload,
+    prompt_payload: MarketOptionExplanationProviderPayload,
 ) -> MappingJSON:
     return {
         "contents": [
@@ -167,7 +167,7 @@ def build_gemini_market_option_explanation_body(
 
 
 def assert_gemini_market_option_explanation_payload_minimized(
-    prompt_payload: MarketOptionExplanationPromptPayload,
+    prompt_payload: MarketOptionExplanationProviderPayload,
 ) -> None:
     prohibited_keys = {
         "organization_id",

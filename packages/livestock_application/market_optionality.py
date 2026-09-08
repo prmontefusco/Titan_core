@@ -926,6 +926,20 @@ class MarketOptionExplanationPromptTemplate:
 
 
 @dataclass(frozen=True, slots=True)
+class MarketOptionExplanationProviderPayload:
+    data_contract_id: str
+    data_contract_version: int
+    schema: str
+    prompt_template_id: str
+    prompt_template_version: int
+    prompt_template_digest: str
+    guard_version: int
+    guard_digest: str
+    payload_digest: str
+    fields: Mapping[str, MarketOptionExplanationPromptValue]
+
+
+@dataclass(frozen=True, slots=True)
 class MarketOptionExplanationPromptPayload:
     data_contract_id: str
     data_contract_version: int
@@ -938,6 +952,20 @@ class MarketOptionExplanationPromptPayload:
     payload_digest: str
     fields: Mapping[str, MarketOptionExplanationPromptValue]
     source_reference_aliases: Mapping[str, str]
+
+    def provider_payload(self) -> MarketOptionExplanationProviderPayload:
+        return MarketOptionExplanationProviderPayload(
+            data_contract_id=self.data_contract_id,
+            data_contract_version=self.data_contract_version,
+            schema=self.schema,
+            prompt_template_id=self.prompt_template_id,
+            prompt_template_version=self.prompt_template_version,
+            prompt_template_digest=self.prompt_template_digest,
+            guard_version=self.guard_version,
+            guard_digest=self.guard_digest,
+            payload_digest=self.payload_digest,
+            fields=self.fields,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -1332,7 +1360,7 @@ class MarketOptionExplanationTextProvider(Protocol):
     def generate_text(
         self,
         *,
-        prompt_payload: MarketOptionExplanationPromptPayload,
+        prompt_payload: MarketOptionExplanationProviderPayload,
         run_context: MarketOptionExplanationRunContext,
     ) -> str: ...
 
@@ -1745,7 +1773,7 @@ class DeterministicMarketOptionExplanationTextProvider:
     def generate_text(
         self,
         *,
-        prompt_payload: MarketOptionExplanationPromptPayload,
+        prompt_payload: MarketOptionExplanationProviderPayload,
         run_context: MarketOptionExplanationRunContext,
     ) -> str:
         return (
@@ -2010,7 +2038,7 @@ class MarketOptionExplanationPipelineService:
         else:
             try:
                 provider_text = self.text_provider.generate_text(
-                    prompt_payload=prompt_payload,
+                    prompt_payload=prompt_payload.provider_payload(),
                     run_context=run_context,
                 )
             except Exception:
