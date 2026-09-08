@@ -37,7 +37,7 @@ Explanation, while preserving ADR-0074 and ADR-0075 boundaries:
   - Kept the roteiro synthetic-only and manual.
 
 - `tests/infrastructure/test_ai_explanation_provider_adapter.py`
-  - Added tests for default-off behavior, minimized body, raw identifier rejection, model mismatch, environment flagging, pipeline fallback and body serialization.
+  - Added tests for default-off behavior, minimized body, raw identifier rejection, model mismatch, environment flagging, pipeline fallback, body serialization, provider error redaction (no raw diagnostics leaked), and strict provider payload delivery.
 
 - `tests/unit/test_ai_explanation_pipeline_smoke.py`
   - Existing smoke contract tests continue to cover the body builder through the validation roteiro.

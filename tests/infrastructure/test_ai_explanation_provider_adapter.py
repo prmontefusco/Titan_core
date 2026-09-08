@@ -208,6 +208,71 @@ def test_provider_payload_does_not_carry_titan_side_source_aliases() -> None:
     assert not hasattr(provider_payload, "source_reference_aliases")
 
 
+def test_gemini_provider_error_does_not_leak_raw_diagnostic_error() -> None:
+    raw_error_message = "DIAGNOSTIC_TRACE_UNSAFE_INTERNAL_PROVIDER_DATA"
+    transport = CapturingTransport(
+        response=AIProviderHttpResponse(
+            status=500,
+            body={"error": {"code": 500, "message": raw_error_message}},
+        ),
+        calls=[],
+    )
+    provider = GeminiMarketOptionExplanationTextProvider(
+        api_key="test-key",
+        model_name="models/gemini-test",
+        enabled=True,
+        transport=transport,
+    )
+    assessment = _assessment()
+    run_context = _run_context(assessment=assessment, model_name="models/gemini-test")
+
+    with pytest.raises(AIExplanationProviderUnavailable) as exc_info:
+        provider.generate_text(
+            prompt_payload=_provider_payload(assessment=assessment),
+            run_context=run_context,
+        )
+
+    assert raw_error_message not in str(exc_info.value)
+
+    result = MarketOptionExplanationPipelineService(text_provider=provider).explain(
+        assessment=assessment,
+        run_context=run_context,
+    )
+    assert result.released_text is None
+    assert result.canonical_fallback.state is MarketOptionState.OPTION_OPEN
+    assert [violation.value for violation in result.validation.violations] == [
+        "PROVIDER_UNAVAILABLE"
+    ]
+    assert raw_error_message not in repr(result)
+    assert raw_error_message not in repr(result.audit_envelope)
+
+
+def test_pipeline_passes_only_provider_payload_to_provider() -> None:
+    received_payloads: list[object] = []
+
+    class InspectingProvider:
+        def generate_text(
+            self,
+            *,
+            prompt_payload: MarketOptionExplanationProviderPayload,
+            run_context: MarketOptionExplanationRunContext,
+        ) -> str:
+            received_payloads.append(prompt_payload)
+            return "Resumo sintético seguro."
+
+    assessment = _assessment()
+    run_context = _run_context(assessment=assessment, model_name="models/gemini-test")
+    pipeline = MarketOptionExplanationPipelineService(text_provider=InspectingProvider())
+
+    result = pipeline.explain(assessment=assessment, run_context=run_context)
+
+    assert result.released_text == "Resumo sintético seguro."
+    assert len(received_payloads) == 1
+    received = received_payloads[0]
+    assert type(received) is MarketOptionExplanationProviderPayload
+    assert not hasattr(received, "source_reference_aliases")
+
+
 def _prompt_payload(
     *,
     assessment: MarketOptionAssessment | None = None,
