@@ -56,8 +56,11 @@ livestock_lots_table = Table(
         name="fk_livestock_lots_organization",
     ),
     ForeignKeyConstraint(
-        ["property_id"],
-        ["core_audit.rural_properties.property_id"],
+        ["record_owner_organization_id", "property_id"],
+        [
+            "core_audit.rural_properties.record_owner_organization_id",
+            "core_audit.rural_properties.property_id",
+        ],
         name="fk_livestock_lots_property",
     ),
     schema=CORE_AUDIT_SCHEMA,

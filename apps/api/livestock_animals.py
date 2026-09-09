@@ -64,9 +64,11 @@ def registrar_animal(
     connection: ConnectionDependency,
 ) -> AnimalRegistradoResponse:
     event_log: DomainEventLog = DomainEventRepository(connection=connection)
+    animal_repository = TransactionalAnimalRepository(connection=connection)
     servico = AnimalService(
-        repository=TransactionalAnimalRepository(connection=connection),
+        repository=animal_repository,
         recorder=LivestockEventRecorder(event_log=event_log, clock=SystemClock()),
+        birth_property_lookup=animal_repository,
     )
 
     try:
@@ -91,6 +93,13 @@ def registrar_animal(
             status_code=status.HTTP_409_CONFLICT,
             reason_code="CONFLITO_DE_DOMINIO",
             title="Operação recusada pelo domínio",
+            detail=str(error),
+        ) from error
+    except KeyError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso não encontrado",
             detail=str(error),
         ) from error
 

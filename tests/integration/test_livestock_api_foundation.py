@@ -100,6 +100,30 @@ def test_organizacao_sem_vinculo_e_negada(ambiente: Ambiente) -> None:
     assert resposta.json()["reason_code"] == "CONTEXTO_ORGANIZACIONAL_NEGADO"
 
 
+def test_propriedade_de_outra_organizacao_nao_cadastra_animal(ambiente: Ambiente) -> None:
+    """UUID conhecido de propriedade alheia não vira vínculo de nascimento."""
+    cliente = _cliente(ambiente, ambiente.operador)
+    property_b = uuid4()
+    ambiente.connection.execute(
+        text(
+            "INSERT INTO core_audit.rural_properties "
+            "(property_id, record_owner_organization_id, code, name, municipality, "
+            "state_code, created_at) VALUES "
+            "(:property_b, :org_b, 'PROP-B-CROSS', 'Fazenda B', 'Cuiaba', 'MT', NOW())"
+        ),
+        {"property_b": property_b, "org_b": ambiente.org_b.organization_id.value},
+    )
+
+    resposta = cliente.post(
+        "/v1/livestock/animals",
+        json={"birth_property_id": str(property_b), "sex": "MALE"},
+        headers={ORGANIZATION_HEADER: str(ambiente.org_a.organization_id.value)},
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.json()["reason_code"] == "RECURSO_NAO_ENCONTRADO"
+
+
 def test_cabecalho_de_organizacao_ausente_e_recusado(ambiente: Ambiente) -> None:
     cliente = _cliente(ambiente, ambiente.operador)
 

@@ -30,6 +30,7 @@ class InMemoryAnimalRepository(AnimalRepositoryPort):
     def __init__(self) -> None:
         self.saidas: dict[str, AnimalExit] = {}
         self.animals: dict[str, Animal] = {}
+        self.blocked_properties: set[str] = set()
 
     def save(self, animal: Animal) -> None:
         self.animals[animal.animal_id.value.hex] = animal
@@ -56,6 +57,11 @@ class InMemoryAnimalRepository(AnimalRepositoryPort):
                     ):
                         return animal
         return None
+
+    def property_belongs_to_organization(
+        self, organization_id: OrganizationId, property_id: TypedId
+    ) -> bool:
+        return f"{organization_id.value.hex}:{property_id.value.hex}" not in self.blocked_properties
 
     def get_exit(self, animal_id: TypedId) -> AnimalExit | None:
         return self.saidas.get(animal_id.value.hex)
@@ -103,7 +109,11 @@ def test_list_by_organization_filters_by_identifier_substring(
     recorder: LivestockEventRecorder, context: LivestockOperationContext
 ) -> None:
     repository = InMemoryAnimalRepository()
-    service = AnimalService(repository=repository, recorder=recorder)
+    service = AnimalService(
+        repository=repository,
+        recorder=recorder,
+        birth_property_lookup=repository,
+    )
     alvo = service.register_animal(
         context=context,
         birth_property_id=TypedId.new("rural_property"),
@@ -254,6 +264,30 @@ def test_register_animal_duplicate_sisbov_fails(
         )
 
     assert len(event_log.of_type(ANIMAL_REGISTERED)) == 1
+
+
+def test_register_animal_refuses_property_outside_organization(
+    recorder: LivestockEventRecorder,
+    event_log: FakeEventLog,
+    context: LivestockOperationContext,
+) -> None:
+    repository = InMemoryAnimalRepository()
+    prop_id = TypedId.new("rural_property")
+    repository.blocked_properties.add(f"{context.organization_id.value.hex}:{prop_id.value.hex}")
+    service = AnimalService(
+        repository=repository,
+        recorder=recorder,
+        birth_property_lookup=repository,
+    )
+
+    with pytest.raises(KeyError, match="Propriedade rural .* não encontrada"):
+        service.register_animal(
+            context=context,
+            birth_property_id=prop_id,
+            sex=AnimalSex.FEMALE,
+        )
+
+    assert event_log.events == []
 
 
 def test_initial_tag_never_predates_the_registration_it_belongs_to(

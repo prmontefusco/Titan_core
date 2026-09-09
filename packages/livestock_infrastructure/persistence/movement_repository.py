@@ -50,13 +50,19 @@ animal_movements_table = Table(
         name="fk_animal_movements_organization",
     ),
     ForeignKeyConstraint(
-        ["origin_property_id"],
-        ["core_audit.rural_properties.property_id"],
+        ["record_owner_organization_id", "origin_property_id"],
+        [
+            "core_audit.rural_properties.record_owner_organization_id",
+            "core_audit.rural_properties.property_id",
+        ],
         name="fk_animal_movements_origin_property",
     ),
     ForeignKeyConstraint(
-        ["destination_property_id"],
-        ["core_audit.rural_properties.property_id"],
+        ["record_owner_organization_id", "destination_property_id"],
+        [
+            "core_audit.rural_properties.record_owner_organization_id",
+            "core_audit.rural_properties.property_id",
+        ],
         name="fk_animal_movements_destination_property",
     ),
     schema=CORE_AUDIT_SCHEMA,
@@ -118,8 +124,11 @@ property_stays_table = Table(
         name="fk_property_stays_animal",
     ),
     ForeignKeyConstraint(
-        ["property_id"],
-        ["core_audit.rural_properties.property_id"],
+        ["record_owner_organization_id", "property_id"],
+        [
+            "core_audit.rural_properties.record_owner_organization_id",
+            "core_audit.rural_properties.property_id",
+        ],
         name="fk_property_stays_property",
     ),
     ForeignKeyConstraint(

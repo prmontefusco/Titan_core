@@ -59,10 +59,17 @@ class AnimalRepositoryPort(Protocol):
         ...
 
 
+class BirthPropertyOwnershipLookup(Protocol):
+    def property_belongs_to_organization(
+        self, organization_id: OrganizationId, property_id: TypedId
+    ) -> bool: ...
+
+
 @dataclass(frozen=True, slots=True)
 class AnimalService:
     repository: AnimalRepositoryPort
     recorder: LivestockEventRecorder
+    birth_property_lookup: BirthPropertyOwnershipLookup | None = None
 
     def register_animal(
         self,
@@ -75,6 +82,11 @@ class AnimalService:
         initial_identifier_value: str | None = None,
     ) -> Animal:
         organization_id = context.organization_id
+        if self.birth_property_lookup is not None:
+            if not self.birth_property_lookup.property_belongs_to_organization(
+                organization_id, birth_property_id
+            ):
+                raise KeyError(f"Propriedade rural '{birth_property_id.value}' não encontrada.")
         # Um único instante para o cadastro e para a marcação inicial. Lê-los em
         # momentos diferentes daria à marcação um `occurred_at` ANTERIOR ao do
         # cadastro — e uma linha do tempo ordenada por esse campo mostraria o

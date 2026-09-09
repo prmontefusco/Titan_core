@@ -4471,6 +4471,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** a Parte A protege os registros classificados e reduz o alcance da credencial ordinária; superuser ou administrador capaz de remover triggers permanece fora dessa garantia. Evidence ainda usa UPDATE para assinatura/revogação e mantém FINDING-002 aberto até a Parte B. Não houve alteração de API, retenção, criptografia, tenancy ou regras de negócio.
 
 
+### 09/09/2026 — FINDING-003: chaves estrangeiras de propriedade escopadas por Organization
+
+**Estado:** CONCLUIDO — decisão arquitetural registrada na ADR-0077; implementação e verificação concluídas para o recorte de propriedades da vertical Livestock.
+
+**Implementação:** criada a ADR `0077-chaves-estrangeiras-compostas-por-organization-na-vertical-livestock.md`. A migration `20260909_0083_scope_livestock_property_foreign_keys_by_owner.py` substitui as FKs simples para `rural_properties.property_id` por FKs compostas `(record_owner_organization_id, property_id)` em `animals.birth_property_id`, `animal_movements.origin_property_id`, `animal_movements.destination_property_id`, `property_stays.property_id` e `livestock_lots.property_id`. As metadata SQLAlchemy foram alinhadas para impedir drift no Alembic. O cadastro HTTP de animal passa a validar explicitamente a propriedade de nascimento na Organization ativa antes de salvar, retornando `RECURSO_NAO_ENCONTRADO` uniforme para UUID alheio.
+
+**Evidência:** `tests/integration/test_livestock_property_fk_tenant_scope_postgresql.py` prova que DML direto não consegue referenciar propriedade de outra Organization em animal, movimentação, permanência ou lote. `tests/integration/test_livestock_api_foundation.py` cobre o caso HTTP de animal com `birth_property_id` de outra Organization. Testes focados de Animal, Movement e Lot confirmam que os fluxos existentes seguem funcionando com propriedade da mesma Organization.
+
+**Portão:** migration aplicada até `20260909_0083` e `alembic check` sem novas operações. Testes focados aprovados com `22 passed`. Suíte canônica completa aprovada com `1736 passed` e cinco avisos preexistentes de depreciação HTTP 422. `ruff check .`, `ruff format --check .` e `mypy` aprovados.
+
+**Riscos e limites:** o recorte fecha o oráculo relacional de propriedades identificado no FINDING-003 para as tabelas afetadas. Não declara endurecimento universal de todas as FKs simples da plataforma nem altera regras de compartilhamento, contratos públicos, autorização, retenção ou dados históricos. Downgrade destrutivo foi deliberadamente proibido.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

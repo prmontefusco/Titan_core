@@ -66,8 +66,11 @@ animals_table = Table(
         name="fk_animals_organization",
     ),
     ForeignKeyConstraint(
-        ["birth_property_id"],
-        ["core_audit.rural_properties.property_id"],
+        ["record_owner_organization_id", "birth_property_id"],
+        [
+            "core_audit.rural_properties.record_owner_organization_id",
+            "core_audit.rural_properties.property_id",
+        ],
         name="fk_animals_birth_property",
     ),
     # A coerência entre valor e procedência é do banco, e não só do serviço: um
@@ -228,6 +231,21 @@ class TransactionalAnimalRepository(AnimalRepositoryPort):
             return None
         animal_id = TypedId(entity_type="animal", value=row.animal_id)
         return self.get_by_id(animal_id)
+
+    def property_belongs_to_organization(
+        self, organization_id: OrganizationId, property_id: TypedId
+    ) -> bool:
+        if property_id.entity_type != "rural_property":
+            return False
+        from packages.livestock_infrastructure.persistence.property_repository import (
+            rural_properties_table,
+        )
+
+        stmt = select(rural_properties_table.c.property_id).where(
+            rural_properties_table.c.record_owner_organization_id == organization_id.value,
+            rural_properties_table.c.property_id == property_id.value,
+        )
+        return self.connection.execute(stmt).first() is not None
 
     def get_exit(self, animal_id: TypedId) -> AnimalExit | None:
         return TransactionalAnimalExitRepository(connection=self.connection).get_by_animal(
