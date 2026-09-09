@@ -138,6 +138,7 @@ untrusted_message_quarantine_table = Table(
     "untrusted_message_quarantine",
     organization_metadata,
     Column("quarantine_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=True),
     Column("message_id", PG_UUID(as_uuid=True), nullable=False),
     Column("alleged_producer", String(100), nullable=True),
     Column("alleged_organization", String(100), nullable=True),
@@ -145,6 +146,11 @@ untrusted_message_quarantine_table = Table(
     Column("rejection_reason_code", String(50), nullable=False),
     Column("sanitized_routing_metadata", String(200), nullable=True),
     Column("quarantined_at", DateTime(timezone=True), nullable=False),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id"],
+        ["core_identity.organizations.organization_id"],
+        name="fk_untrusted_message_quarantine_owner",
+    ),
     schema=CORE_MESSAGING_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_messaging",
 )
@@ -529,10 +535,14 @@ class TransactionalInboxRepository:
         quarantine_id = TypedId.new("untrusted_quarantine")
         message_id = TypedId.new("incoming_message")
         digest = hashlib.sha256(envelope_bytes).digest()
+        owner_organization_id = _parse_organization_id(alleged_org)
 
         self.connection.execute(
             insert(untrusted_message_quarantine_table).values(
                 quarantine_id=quarantine_id.value,
+                record_owner_organization_id=(
+                    None if owner_organization_id is None else owner_organization_id.value
+                ),
                 message_id=message_id.value,
                 alleged_producer=alleged_producer,
                 alleged_organization=alleged_org,
@@ -601,6 +611,7 @@ class TransactionalInboxQuarantineRepository:
                 SELECT
                     quarantine_id,
                     message_id,
+                    record_owner_organization_id,
                     alleged_organization,
                     alleged_producer,
                     rejection_reason_code,
@@ -621,16 +632,10 @@ class TransactionalInboxQuarantineRepository:
                 else r.quarantined_at
             )
             org_id = None
-            if r.alleged_organization:
-                try:
-                    uuid_val = (
-                        r.alleged_organization
-                        if isinstance(r.alleged_organization, PyUUID)
-                        else PyUUID(str(r.alleged_organization))
-                    )
-                    org_id = OrganizationId(uuid_val)
-                except (ValueError, TypeError):
-                    org_id = None
+            if r.record_owner_organization_id:
+                org_id = OrganizationId(r.record_owner_organization_id)
+            elif r.alleged_organization:
+                org_id = _parse_organization_id(r.alleged_organization)
 
             records.append(
                 QuarantinedMessageRecord(
@@ -654,6 +659,7 @@ class TransactionalInboxQuarantineRepository:
                 SELECT
                     quarantine_id,
                     message_id,
+                    record_owner_organization_id,
                     alleged_organization,
                     alleged_producer,
                     received_bytes_digest,
@@ -674,15 +680,11 @@ class TransactionalInboxQuarantineRepository:
             )
 
         target_org_id = None
-        if row.alleged_organization:
-            try:
-                target_org_id = (
-                    row.alleged_organization
-                    if isinstance(row.alleged_organization, PyUUID)
-                    else PyUUID(str(row.alleged_organization))
-                )
-            except (ValueError, TypeError):
-                target_org_id = None
+        if row.record_owner_organization_id:
+            target_org_id = row.record_owner_organization_id
+        elif row.alleged_organization:
+            parsed = _parse_organization_id(row.alleged_organization)
+            target_org_id = None if parsed is None else parsed.value
 
         msg_id = row.message_id if row.message_id else row.quarantine_id
         operator_org = request.operator_actor_reference.organization_id
@@ -778,3 +780,13 @@ class TransactionalInboxQuarantineRepository:
             processed_at=datetime.now(UTC),
             reason=f"Replay autorizado pelo operador {operator_id}",
         )
+
+
+def _parse_organization_id(value: object) -> OrganizationId | None:
+    if not value:
+        return None
+    try:
+        uuid_val = value if isinstance(value, PyUUID) else PyUUID(str(value))
+    except (TypeError, ValueError):
+        return None
+    return OrganizationId(uuid_val)

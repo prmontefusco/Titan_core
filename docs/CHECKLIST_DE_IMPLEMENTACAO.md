@@ -4549,6 +4549,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** este incremento não implementa TSA real, HSM/KMS, serviço remoto de assinatura, Merkle tree, blockchain, contrato HTTP, assinatura jurídica, assinatura pessoal ou reassinatura de eventos históricos. A chave efêmera é apenas perfil local de desenvolvimento/teste; operação produtiva precisa configurar chave Ed25519 protegida antes de aceitar append de eventos.
 
 
+### 09/09/2026 — FINDING-008: RLS explícito em Permissions e Quarentena
+
+**Estado:** CONCLUIDO — `core_identity.permissions` e `core_messaging.untrusted_message_quarantine` passam a ter Row-Level Security explícito e forçado.
+
+**Implementação:** a migration `20260909_0085_enable_rls_on_reference_permissions_and_quarantine.py` habilita `ENABLE ROW LEVEL SECURITY` e `FORCE ROW LEVEL SECURITY` em `core_identity.permissions`, mantendo leitura como catálogo de referência por policy `FOR SELECT USING (true)` e restringindo inserts ao owner do contexto. A mesma migration adiciona `record_owner_organization_id` nullable em `core_messaging.untrusted_message_quarantine`, cria FK para `core_identity.organizations`, retropreenche linhas com `alleged_organization` UUID conhecido, habilita RLS forçado e define policies de `SELECT` owner-only e `INSERT` owner-scoped ou sem escopo quando a mensagem ainda não possui tenant confiável. O repositório de Inbox passa a derivar o owner da Organization alegada válida e a usar esse owner na listagem e no replay.
+
+**Evidência:** `tests/infrastructure/test_authorization_persistence_contract.py` cobre a policy de catálogo de `permissions`; `tests/infrastructure/test_inbox_persistence_contract.py` cobre a coluna de owner e as policies da quarentena; `tests/integration/test_inbox_quarantine_postgresql.py` prova que `permissions` e `untrusted_message_quarantine` têm RLS/force RLS no PostgreSQL real e que uma role runtime com contexto de outra Organization não enxerga quarentena alheia.
+
+**Portão:** testes focados aprovados com `11 passed`: `python -m uv run --locked pytest tests/infrastructure/test_authorization_persistence_contract.py tests/infrastructure/test_inbox_persistence_contract.py tests/integration/test_inbox_quarantine_postgresql.py`. Suíte canônica completa executada após o ajuste: `pytest`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** `permissions` continua sendo catálogo global por código único e legível; este incremento não muda RBAC, Membership, Roles, autorização HTTP, worker, grants da role `titan_app` ou rotina de replay. Quarentenas sem Organization confiável ficam invisíveis para runtime owner-scoped comum e exigem fluxo administrativo posterior; o ajuste de grants de `core_messaging` permanece no FINDING-009.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

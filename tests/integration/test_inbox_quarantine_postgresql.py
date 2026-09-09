@@ -127,3 +127,93 @@ def test_inbox_quarantine_replay_rejects_cross_organization_operator(
     )
 
     assert result.status == "FORBIDDEN"
+
+
+def test_untrusted_quarantine_rls_hides_other_organization_records(
+    db_connection: Connection,
+) -> None:
+    org_id = OrganizationId.new()
+    other_org_id = OrganizationId.new()
+    db_connection.execute(
+        text(
+            """
+            INSERT INTO core_identity.organizations (organization_id, record_owner_organization_id)
+            VALUES (:org_a, :org_a), (:org_b, :org_b)
+            """
+        ),
+        {"org_a": org_id.value, "org_b": other_org_id.value},
+    )
+    inbox_repo = TransactionalInboxRepository(
+        connection=db_connection, consumer_id="quarantine_worker"
+    )
+    inbox_repo.record_untrusted_quarantine(
+        envelope_bytes=b'{"corrupted": true}',
+        alleged_producer="service_test",
+        alleged_org=str(org_id.value),
+        reason_code="INVALID_SIGNATURE",
+    )
+    quarantine_id = db_connection.execute(
+        text(
+            """
+            SELECT quarantine_id
+            FROM core_messaging.untrusted_message_quarantine
+            WHERE record_owner_organization_id = :org_id
+            """
+        ),
+        {"org_id": org_id.value},
+    ).scalar_one()
+    role_name = f"titan_quarantine_rls_{TypedId.new('role').value.hex[:12]}"
+    quoted_role = db_connection.dialect.identifier_preparer.quote(role_name)
+    db_connection.execute(
+        text(
+            f"CREATE ROLE {quoted_role} "
+            "NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS"
+        )
+    )
+    db_connection.execute(text(f"GRANT USAGE ON SCHEMA core_messaging TO {quoted_role}"))
+    db_connection.execute(
+        text(f"GRANT SELECT ON core_messaging.untrusted_message_quarantine TO {quoted_role}")
+    )
+    db_connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
+    db_connection.execute(
+        text("SELECT set_config('titan.organization_id', :org_id, true)"),
+        {"org_id": str(other_org_id.value)},
+    )
+
+    visible = db_connection.execute(
+        text(
+            """
+            SELECT count(*)
+            FROM core_messaging.untrusted_message_quarantine
+            WHERE quarantine_id = :quarantine_id
+            """
+        ),
+        {"quarantine_id": quarantine_id},
+    ).scalar_one()
+
+    assert visible == 0
+
+
+def test_permissions_and_untrusted_quarantine_have_rls_enabled(
+    db_connection: Connection,
+) -> None:
+    rows = db_connection.execute(
+        text(
+            """
+            SELECT n.nspname, c.relname, c.relrowsecurity, c.relforcerowsecurity
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE (n.nspname, c.relname) IN (
+                ('core_identity', 'permissions'),
+                ('core_messaging', 'untrusted_message_quarantine')
+            )
+            """
+        )
+    ).all()
+
+    assert {
+        (row.nspname, row.relname): (row.relrowsecurity, row.relforcerowsecurity) for row in rows
+    } == {
+        ("core_identity", "permissions"): (True, True),
+        ("core_messaging", "untrusted_message_quarantine"): (True, True),
+    }
