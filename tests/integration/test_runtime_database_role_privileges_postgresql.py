@@ -22,7 +22,7 @@ def test_reprovisioning_restricts_existing_role_and_default_privileges(
     try:
         with engine.begin() as connection:
             connection.execute(text(f"CREATE ROLE {role} NOLOGIN"))
-            for schema in ("core_identity", "core_audit"):
+            for schema in ("core_identity", "core_audit", "core_messaging"):
                 connection.execute(text(f"GRANT ALL ON ALL TABLES IN SCHEMA {schema} TO {role}"))
                 connection.execute(
                     text(
@@ -65,7 +65,45 @@ def test_reprovisioning_restricts_existing_role_and_default_privileges(
                         text("SELECT has_table_privilege(:role, :table, 'DELETE')"),
                         {"role": role, "table": f"core_audit.{table}"},
                     ).scalar_one()
-                for schema in ("core_identity", "core_audit"):
+                for table in (
+                    "inbox_messages",
+                    "inbox_delivery_attempts",
+                    "inbox_conflicts",
+                    "untrusted_message_quarantine",
+                ):
+                    for operation in ("SELECT", "INSERT"):
+                        assert connection.execute(
+                            text("SELECT has_table_privilege(:role, :table, :operation)"),
+                            {
+                                "role": role,
+                                "table": f"core_messaging.{table}",
+                                "operation": operation,
+                            },
+                        ).scalar_one()
+                    for operation in ("DELETE", "TRUNCATE"):
+                        assert not connection.execute(
+                            text("SELECT has_table_privilege(:role, :table, :operation)"),
+                            {
+                                "role": role,
+                                "table": f"core_messaging.{table}",
+                                "operation": operation,
+                            },
+                        ).scalar_one()
+                for table, column, expected in (
+                    ("inbox_messages", "status", True),
+                    ("inbox_messages", "attempt_number", True),
+                    ("inbox_messages", "semantic_message_digest", False),
+                    ("inbox_delivery_attempts", "handling_result", False),
+                    ("untrusted_message_quarantine", "rejection_reason_code", False),
+                ):
+                    assert (
+                        connection.execute(
+                            text("SELECT has_column_privilege(:role, :table, :column, 'UPDATE')"),
+                            {"role": role, "table": f"core_messaging.{table}", "column": column},
+                        ).scalar_one()
+                        is expected
+                    )
+                for schema in ("core_identity", "core_audit", "core_messaging"):
                     # A tabela é criada e revertida nesta transação: prova defaults reais.
                     table = f"{schema}.acl_probe_{uuid4().hex}"
                     connection.execute(text(f"CREATE TABLE {table} (value integer)"))

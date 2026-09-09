@@ -63,6 +63,12 @@ _AUDIT_UPDATE_COLUMNS = {
     "veterinarians": "name, verification_status, evidence_reference",
 }
 _AUDIT_DELETE_TABLES = ("reference_projection", "property_stays", "animal_identifiers")
+_MESSAGING_UPDATE_COLUMNS = {
+    "inbox_messages": (
+        "status, available_at, attempt_number, completed_at, completion_result_code, "
+        "effect_reference, decision_reference, result_digest"
+    ),
+}
 
 
 def _required(name: str) -> str:
@@ -103,7 +109,7 @@ def main() -> None:
                         f"NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD {quoted_password}"
                     )
                 )
-            for schema in ("core_identity", "core_audit"):
+            for schema in ("core_identity", "core_audit", "core_messaging"):
                 connection.execute(text(f"GRANT USAGE ON SCHEMA {schema} TO {quoted_role}"))
                 # Retira também concessões antigas; GRANT restrito sozinho não as reduz.
                 connection.execute(
@@ -157,6 +163,10 @@ def main() -> None:
                 )
             for table in _AUDIT_DELETE_TABLES:
                 connection.execute(text(f"GRANT DELETE ON core_audit.{table} TO {quoted_role}"))
+            for table, columns in _MESSAGING_UPDATE_COLUMNS.items():
+                connection.execute(
+                    text(f"GRANT UPDATE ({columns}) ON core_messaging.{table} TO {quoted_role}")
+                )
     finally:
         engine.dispose()
 

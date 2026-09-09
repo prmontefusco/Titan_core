@@ -4562,6 +4562,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** `permissions` continua sendo catálogo global por código único e legível; este incremento não muda RBAC, Membership, Roles, autorização HTTP, worker, grants da role `titan_app` ou rotina de replay. Quarentenas sem Organization confiável ficam invisíveis para runtime owner-scoped comum e exigem fluxo administrativo posterior; o ajuste de grants de `core_messaging` permanece no FINDING-009.
 
 
+### 09/09/2026 — FINDING-009: grants runtime para Core Messaging
+
+**Estado:** CONCLUIDO — o provisionamento da role runtime passa a incluir o schema `core_messaging` com privilégios mínimos compatíveis com a Inbox e a quarentena.
+
+**Implementação:** `apps/provision_runtime_database_role.py` agora inclui `core_messaging` no ciclo idempotente de `GRANT USAGE`, revogação de concessões antigas de tabela/coluna, `GRANT SELECT, INSERT` para tabelas existentes e defaults restritos para tabelas futuras do schema. `UPDATE` permanece negado por padrão e é concedido somente nas colunas operacionais de `core_messaging.inbox_messages` necessárias para transições de estado, retry, conclusão e digest de resultado. `DELETE` e `TRUNCATE` continuam sem concessão no schema de mensageria.
+
+**Evidência:** `tests/integration/test_runtime_database_role_privileges_postgresql.py` reprovisiona uma role fictícia contaminada com grants amplos em `core_identity`, `core_audit` e `core_messaging`, executa o provisionamento duas vezes e verifica que `core_messaging` preserva SELECT/INSERT, recusa DELETE/TRUNCATE e mantém UPDATE limitado às colunas operacionais de `inbox_messages`.
+
+**Portão:** teste focado PostgreSQL de privilégios runtime aprovado com `1 passed`: `python -m uv run --locked pytest tests/integration/test_runtime_database_role_privileges_postgresql.py`. Suíte canônica completa aprovada após o ajuste: `pytest` com `1748 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este incremento não altera RLS, schema, worker, semântica da Inbox, rotina de replay ou ACLs de `core_audit` além de manter o comportamento existente. O role runtime segue dependendo de contexto RLS correto para enxergar registros protegidos.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.
