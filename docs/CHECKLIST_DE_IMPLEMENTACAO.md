@@ -4601,6 +4601,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** este incremento não adiciona timezone IANA a `RuralProperty`, não cria migration, API, conversão property-local, normalização de dados legados nem política regional. Datas civis locais por propriedade continuam exigindo uma decisão específica de domínio/schema; até lá, a fronteira entregue é UTC explícita e sem conversão silenciosa.
 
 
+### 09/09/2026 — FINDING-012: retry autenticado no frontend após expiração de access token
+
+**Estado:** CONCLUIDO — o frontend passa a interceptar `401 Unauthorized`, tentar renovação silenciosa via OIDC e repetir a requisição uma única vez antes de expor falha ao usuário.
+
+**Implementação:** os clientes HTTP duplicados em `apps/web/src/api/*` foram convergidos para `titanRequest`, que preserva `Authorization`, `X-Titan-Organization-Id`, headers específicos como `Idempotency-Key` e o corpo original da requisição. Em resposta `401`, o helper chama `renewAccessToken` quando fornecido, troca o Bearer pelo token renovado e refaz o request apenas uma vez. `App.tsx` conecta essa função a `react-oidc-context` por `auth.signinSilent()`, sem solicitar refresh token novo nem alterar o fluxo Authorization Code + PKCE já documentado. Se a sessão silenciosa do provedor também expirou, a falha permanece fechada e a UI segue para seus estados de erro existentes.
+
+**Evidência:** `apps/web/src/api/client.test.ts` cobre retry com token renovado e preservação do erro quando a renovação não produz token. A migração dos clientes mantém os testes existentes de headers, payloads, erros tipados e páginas que consomem os endpoints.
+
+**Portão:** frontend aprovado com `npm run test` (`28 passed`, `106 passed`), `npm run build` e `npm run lint`. Suíte canônica completa do repositório executada após o ajuste: `pytest`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** a correção depende de a sessão SSO do Keycloak ainda estar válida para `signinSilent`; não introduz refresh token, não altera realm, client OIDC, backend, expiração de token, salvamento automático de formulários ou UX de recuperação offline. O retry é deliberadamente único para evitar loops ou replay indefinido.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

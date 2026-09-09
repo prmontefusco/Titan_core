@@ -1,11 +1,7 @@
 // Mesmo padrão de api/entityTypeRequests.ts: chamar<T>() central, erro tipado
 // a partir de application/problem+json (ver apps/api/problem.py).
 
-interface RequestOptions {
-  baseUrl: string
-  accessToken: string
-  organizationId: string
-}
+import { titanRequest, type RequestOptions } from './client'
 
 export class AnimalApiError extends Error {
   readonly status: number
@@ -18,20 +14,11 @@ export class AnimalApiError extends Error {
   }
 }
 
-async function chamar<T>(path: string, { baseUrl, accessToken, organizationId }: RequestOptions): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'X-Titan-Organization-Id': organizationId,
-    },
-  })
-
-  if (!response.ok) {
+async function chamar<T>(path: string, options: RequestOptions): Promise<T> {
+  return titanRequest<T>(path, options, {}, async (response) => {
     const corpo = await response.json().catch(() => null)
-    throw new AnimalApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
-  }
-
-  return (await response.json()) as T
+    return new AnimalApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
+  })
 }
 
 export interface AnimalIdentifierResumo {

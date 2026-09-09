@@ -1,8 +1,4 @@
-interface RequestOptions {
-  baseUrl: string
-  accessToken: string
-  organizationId: string
-}
+import { titanRequest, type RequestOptions } from './client'
 
 export class MarketSupplyApiError extends Error {
   readonly status: number
@@ -80,23 +76,11 @@ export function assessMarketSupplyAggregate(
 
 async function chamar<T>(
   path: string,
-  { baseUrl, accessToken, organizationId }: RequestOptions,
+  options: RequestOptions,
   init: RequestInit,
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'X-Titan-Organization-Id': organizationId,
-      'Content-Type': 'application/json',
-      ...init.headers,
-    },
-  })
-
-  if (!response.ok) {
+  return titanRequest<T>(path, options, init, async (response) => {
     const corpo = await response.json().catch(() => null)
-    throw new MarketSupplyApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
-  }
-
-  return (await response.json()) as T
+    return new MarketSupplyApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
+  })
 }

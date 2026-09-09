@@ -1,11 +1,7 @@
 // Mesmo padrão de api/animals.ts, api/treatments.ts e api/eligibility.ts:
 // chamar<T>() central, erro tipado a partir de application/problem+json.
 
-interface RequestOptions {
-  baseUrl: string
-  accessToken: string
-  organizationId: string
-}
+import { titanRequest, type RequestOptions } from './client'
 
 export class LotApiError extends Error {
   readonly status: number
@@ -20,21 +16,12 @@ export class LotApiError extends Error {
 
 async function chamar<T>(
   path: string,
-  { baseUrl, accessToken, organizationId }: RequestOptions,
+  options: RequestOptions,
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'X-Titan-Organization-Id': organizationId,
-    },
-  })
-
-  if (!response.ok) {
+  return titanRequest<T>(path, options, {}, async (response) => {
     const corpo = await response.json().catch(() => null)
-    throw new LotApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
-  }
-
-  return (await response.json()) as T
+    return new LotApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
+  })
 }
 
 export interface LoteAnimaisResumo {

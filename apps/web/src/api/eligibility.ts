@@ -6,11 +6,7 @@
 // corpo (proposal_id, evaluation_outcome, knowledge_limitations...) -- por
 // isso EligibilityApiError guarda o corpo inteiro, não só reason_code/detail.
 
-interface RequestOptions {
-  baseUrl: string
-  accessToken: string
-  organizationId: string
-}
+import { titanRequest, type RequestOptions } from './client'
 
 export class EligibilityApiError extends Error {
   readonly status: number
@@ -36,25 +32,13 @@ export class EligibilityApiError extends Error {
 
 async function chamar<T>(
   path: string,
-  { baseUrl, accessToken, organizationId }: RequestOptions,
+  options: RequestOptions,
   init: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'X-Titan-Organization-Id': organizationId,
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  })
-
-  if (!response.ok) {
+  return titanRequest<T>(path, options, init, async (response) => {
     const corpo = await response.json().catch(() => null)
-    throw new EligibilityApiError(response.status, corpo)
-  }
-
-  return (await response.json()) as T
+    return new EligibilityApiError(response.status, corpo)
+  })
 }
 
 export interface ElegibilidadeResponse {

@@ -1,11 +1,7 @@
 // Cliente técnico do T-05D Corte 5A: consome somente a API sintética já
 // aprovada no Corte 4. Não interpreta conformidade e não cria decisão.
 
-interface RequestOptions {
-  baseUrl: string
-  accessToken: string
-  organizationId: string
-}
+import { titanRequest, type RequestOptions } from './client'
 
 export class TerritorialCaptureApiError extends Error {
   readonly status: number
@@ -20,29 +16,17 @@ export class TerritorialCaptureApiError extends Error {
 
 async function chamar<T>(
   path: string,
-  { baseUrl, accessToken, organizationId }: RequestOptions,
+  options: RequestOptions,
   init: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'X-Titan-Organization-Id': organizationId,
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  })
-
-  if (!response.ok) {
+  return titanRequest<T>(path, options, init, async (response) => {
     const corpo = await response.json().catch(() => null)
-    throw new TerritorialCaptureApiError(
+    return new TerritorialCaptureApiError(
       response.status,
       corpo?.reason_code ?? null,
       corpo?.detail,
     )
-  }
-
-  return (await response.json()) as T
+  })
 }
 
 export interface PropriedadeCriada {

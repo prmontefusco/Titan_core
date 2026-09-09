@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useAuth } from 'react-oidc-context'
 import { Route, Routes } from 'react-router-dom'
 import { apiBaseUrl, organizationId } from './config'
@@ -92,6 +92,7 @@ function LoginScreen({ onEnter }: { onEnter: () => void }) {
 function StatusConteudo({
   status,
   accessToken,
+  renewAccessToken,
   registrationKind,
   userProfile,
   onSignOut,
@@ -99,12 +100,13 @@ function StatusConteudo({
 }: {
   status: MyStatusResponse
   accessToken: string
+  renewAccessToken: () => Promise<string | null>
   registrationKind: EntityKind | undefined
   userProfile: { preferred_username?: string; name?: string; sub?: string; email?: string }
   onSignOut: () => void
   onPedidoEnviado: () => void
 }) {
-  const options = { baseUrl: apiBaseUrl, accessToken, organizationId }
+  const options = { baseUrl: apiBaseUrl, accessToken, organizationId, renewAccessToken }
 
   if (status.has_membership) {
     const aprovado = status.requests.find((pedido) => pedido.status === 'APROVADA')
@@ -205,18 +207,23 @@ function App() {
   const [meuStatus, setMeuStatus] = useState<MyStatusResponse | null>(null)
   const [erroStatus, setErroStatus] = useState<string | null>(null)
 
-  const carregarStatus = () => {
+  const renewAccessToken = useCallback(async () => {
+    const user = await auth.signinSilent()
+    return user?.access_token ?? null
+  }, [auth])
+
+  const carregarStatus = useCallback(() => {
     if (!accessToken) {
       setMeuStatus(null)
       return
     }
     setErroStatus(null)
-    fetchMyStatus({ baseUrl: apiBaseUrl, accessToken, organizationId })
+    fetchMyStatus({ baseUrl: apiBaseUrl, accessToken, organizationId, renewAccessToken })
       .then(setMeuStatus)
       .catch(() => setErroStatus('Não foi possível consultar seu status nesta Organization.'))
-  }
+  }, [accessToken, renewAccessToken])
 
-  useEffect(carregarStatus, [accessToken])
+  useEffect(carregarStatus, [carregarStatus])
 
   if (auth.isLoading) {
     return (
@@ -302,6 +309,7 @@ function App() {
         <StatusConteudo
           status={meuStatus}
           accessToken={accessToken}
+          renewAccessToken={renewAccessToken}
           registrationKind={parseEntityKindClaim(auth.user?.profile.titan_requested_kind)}
           userProfile={{
             preferred_username: auth.user?.profile.preferred_username,

@@ -1,3 +1,5 @@
+import { titanRequest, type RequestOptions } from './client'
+
 export const ENTITY_KINDS = [
   'ADMIN',
   'PRODUTOR',
@@ -50,40 +52,19 @@ export class EntityTypeRequestApiError extends Error {
   }
 }
 
-interface RequestOptions {
-  baseUrl: string
-  accessToken: string
-  organizationId: string
-}
-
 async function chamar<T>(
   path: string,
-  { baseUrl, accessToken, organizationId }: RequestOptions,
+  options: RequestOptions,
   init: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'X-Titan-Organization-Id': organizationId,
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  })
-
-  if (!response.ok) {
+  return titanRequest<T>(path, options, init, async (response) => {
     const corpo = await response.json().catch(() => null)
-    throw new EntityTypeRequestApiError(
+    return new EntityTypeRequestApiError(
       response.status,
       corpo?.reason_code ?? null,
       corpo?.detail,
     )
-  }
-
-  if (response.status === 204) {
-    return undefined as T
-  }
-  return (await response.json()) as T
+  })
 }
 
 export function fetchMyStatus(options: RequestOptions): Promise<MyStatusResponse> {

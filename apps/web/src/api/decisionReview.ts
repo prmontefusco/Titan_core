@@ -2,11 +2,7 @@
 // encontrada, autoridade de decisão ausente) não carregam campos extras como os
 // de api/eligibility.ts -- reason_code/detail bastam.
 
-interface RequestOptions {
-  baseUrl: string
-  accessToken: string
-  organizationId: string
-}
+import { titanRequest, type RequestOptions } from './client'
 
 export class DecisionReviewApiError extends Error {
   readonly status: number
@@ -21,25 +17,13 @@ export class DecisionReviewApiError extends Error {
 
 async function chamar<T>(
   path: string,
-  { baseUrl, accessToken, organizationId }: RequestOptions,
+  options: RequestOptions,
   init: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${baseUrl}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      'X-Titan-Organization-Id': organizationId,
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init.headers,
-    },
-  })
-
-  if (!response.ok) {
+  return titanRequest<T>(path, options, init, async (response) => {
     const corpo = await response.json().catch(() => null)
-    throw new DecisionReviewApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
-  }
-
-  return (await response.json()) as T
+    return new DecisionReviewApiError(response.status, corpo?.reason_code ?? null, corpo?.detail)
+  })
 }
 
 export interface DecisionProposalReason {
