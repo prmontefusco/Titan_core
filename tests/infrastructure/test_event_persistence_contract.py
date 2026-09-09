@@ -20,6 +20,10 @@ def test_event_integrity_contract_is_separate_protected_and_versioned() -> None:
     assert "current_hash" in event_integrity_table.c
     assert "hash_algorithm" in event_integrity_table.c
     assert "hash_profile_version" in event_integrity_table.c
+    assert "signature_algorithm" in event_integrity_table.c
+    assert "signature_key_id" in event_integrity_table.c
+    assert "signature_public_key" in event_integrity_table.c
+    assert "signature_bytes" in event_integrity_table.c
 
 
 def test_event_migration_has_rls_no_mutation_policy_and_reversible_schema() -> None:
@@ -48,3 +52,18 @@ def test_hash_chain_migration_is_append_only_protected_and_reversible() -> None:
     assert "FOR DELETE" not in source
     assert "REVOKE ALL ON core_audit.domain_event_integrity FROM PUBLIC" in source
     assert "op.drop_table(TABLE, schema=SCHEMA)" in source
+
+
+def test_event_integrity_signature_migration_is_additive_and_reversible() -> None:
+    source = Path(
+        "packages/core_infrastructure/persistence/migrations/versions/"
+        "20260909_0084_add_event_integrity_signatures.py"
+    ).read_text(encoding="utf-8")
+    assert 'revision: str = "20260909_0084"' in source
+    assert 'down_revision: str | None = "20260909_0083"' in source
+    assert "signature_algorithm" in source
+    assert "signature_public_key" in source
+    assert "signature_bytes" in source
+    assert "octet_length(signature_public_key) = 32" in source
+    assert "octet_length(signature_bytes) = 64" in source
+    assert "op.drop_column(TABLE, column, schema=SCHEMA)" in source

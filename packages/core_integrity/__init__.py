@@ -13,12 +13,17 @@ from packages.core_integrity.checkpoint import (
 from packages.core_integrity.event_chain import (
     EVENT_CHAIN_PROFILE,
     EVENT_CHAIN_PROFILE_VERSION,
+    EVENT_INTEGRITY_SIGNATURE_ALGORITHM,
+    EVENT_INTEGRITY_SIGNATURE_PROFILE,
+    EVENT_INTEGRITY_SIGNATURE_PROFILE_VERSION,
     HASH_ALGORITHM,
     ChainVerificationReport,
     ChainVerificationStatus,
     EventChainEntry,
     EventChainVerifier,
     build_event_chain_entry,
+    build_event_integrity_signature_payload,
+    verify_event_integrity_signature,
 )
 
 __all__ = [
@@ -26,6 +31,9 @@ __all__ = [
     "CHECKPOINT_PROFILE_VERSION",
     "EVENT_CHAIN_PROFILE",
     "EVENT_CHAIN_PROFILE_VERSION",
+    "EVENT_INTEGRITY_SIGNATURE_ALGORITHM",
+    "EVENT_INTEGRITY_SIGNATURE_PROFILE",
+    "EVENT_INTEGRITY_SIGNATURE_PROFILE_VERSION",
     "HASH_ALGORITHM",
     "ChainVerificationReport",
     "ChainVerificationStatus",
@@ -37,5 +45,7 @@ __all__ = [
     "IntegrityCheckpoint",
     "IntegrityCheckpointVerifier",
     "build_event_chain_entry",
+    "build_event_integrity_signature_payload",
     "build_integrity_checkpoint",
+    "verify_event_integrity_signature",
 ]

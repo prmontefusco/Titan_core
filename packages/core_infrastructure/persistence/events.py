@@ -1,10 +1,14 @@
 """Event store PostgreSQL append-only do Titan Core."""
 
+import base64
 import hashlib
+import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -28,10 +32,18 @@ from sqlalchemy.engine import Row
 from packages.core_application import OptimisticConcurrencyConflict
 from packages.core_domain import DomainEvent
 from packages.core_infrastructure.persistence.organizations import organization_metadata
-from packages.core_integrity import build_event_chain_entry
+from packages.core_integrity import (
+    EVENT_INTEGRITY_SIGNATURE_ALGORITHM,
+    EVENT_INTEGRITY_SIGNATURE_PROFILE,
+    EVENT_INTEGRITY_SIGNATURE_PROFILE_VERSION,
+    EventChainEntry,
+    build_event_chain_entry,
+    build_event_integrity_signature_payload,
+)
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 CORE_AUDIT_SCHEMA = "core_audit"
+_DEFAULT_EVENT_INTEGRITY_SIGNER: "EventIntegrityEd25519Signer | None" = None
 
 domain_events_table = Table(
     "domain_events",
@@ -104,10 +116,25 @@ event_integrity_table = Table(
     Column("hash_profile", String(100), nullable=False),
     Column("hash_profile_version", Integer, nullable=False),
     Column("canonical_serialization_version", String(50), nullable=False),
+    Column("signature_algorithm", String(30), nullable=True),
+    Column("signature_profile", String(100), nullable=True),
+    Column("signature_profile_version", Integer, nullable=True),
+    Column("signature_key_id", String(100), nullable=True),
+    Column("signature_public_key", LargeBinary, nullable=True),
+    Column("signature_bytes", LargeBinary, nullable=True),
+    Column("signature_signed_at", DateTime(timezone=True), nullable=True),
     CheckConstraint("octet_length(current_hash) = 32", name="ck_integrity_current_hash_size"),
     CheckConstraint(
         "previous_hash IS NULL OR octet_length(previous_hash) = 32",
         name="ck_integrity_previous_hash_size",
+    ),
+    CheckConstraint(
+        "signature_public_key IS NULL OR octet_length(signature_public_key) = 32",
+        name="ck_integrity_signature_public_key_size",
+    ),
+    CheckConstraint(
+        "signature_bytes IS NULL OR octet_length(signature_bytes) = 64",
+        name="ck_integrity_signature_bytes_size",
     ),
     CheckConstraint(
         "(aggregate_version = 1 AND previous_hash IS NULL) OR "
@@ -165,6 +192,13 @@ class StoredDomainEvent:
     hash_profile: str | None
     hash_profile_version: int | None
     canonical_serialization_version: str | None
+    signature_algorithm: str | None
+    signature_profile: str | None
+    signature_profile_version: int | None
+    signature_key_id: str | None
+    signature_public_key: bytes | None
+    signature_bytes: bytes | None
+    signature_signed_at: datetime | None
 
     @property
     def payload_digest(self) -> str:
@@ -180,6 +214,7 @@ class StoredDomainEvent:
 @dataclass(frozen=True, slots=True)
 class DomainEventRepository:
     connection: Connection
+    signer: "EventIntegrityEd25519Signer | None" = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.connection, Connection) or not self.connection.in_transaction():
@@ -221,7 +256,9 @@ class DomainEventRepository:
             if previous_hash is None:
                 raise EventIntegrityUnavailable("ELO_ANTERIOR_INDISPONIVEL")
 
-        integrity = build_event_chain_entry(event, previous_hash)
+        integrity = (self.signer or EventIntegrityEd25519Signer.from_environment()).sign(
+            build_event_chain_entry(event, previous_hash)
+        )
 
         self.connection.execute(
             insert(domain_events_table).values(
@@ -264,6 +301,13 @@ class DomainEventRepository:
                 hash_profile=integrity.hash_profile,
                 hash_profile_version=integrity.hash_profile_version,
                 canonical_serialization_version=integrity.canonical_serialization_version,
+                signature_algorithm=integrity.signature_algorithm,
+                signature_profile=integrity.signature_profile,
+                signature_profile_version=integrity.signature_profile_version,
+                signature_key_id=integrity.signature_key_id,
+                signature_public_key=integrity.signature_public_key,
+                signature_bytes=integrity.signature_bytes,
+                signature_signed_at=integrity.signature_signed_at,
             )
         )
 
@@ -340,6 +384,72 @@ def _organization_value(reference: UniversalReference) -> Any:
     return None if reference.organization_id is None else reference.organization_id.value
 
 
+@dataclass(frozen=True, slots=True)
+class EventIntegrityEd25519Signer:
+    private_key: Ed25519PrivateKey
+    key_id: str
+
+    @classmethod
+    def from_environment(cls) -> "EventIntegrityEd25519Signer":
+        global _DEFAULT_EVENT_INTEGRITY_SIGNER
+        key_id = os.environ.get("TITAN_EVENT_INTEGRITY_ED25519_KEY_ID")
+        raw_private_key = os.environ.get("TITAN_EVENT_INTEGRITY_ED25519_PRIVATE_KEY_BASE64")
+        if raw_private_key:
+            private_key = Ed25519PrivateKey.from_private_bytes(base64.b64decode(raw_private_key))
+            return cls(
+                private_key=private_key,
+                key_id=key_id or "titan-event-integrity-env-ed25519",
+            )
+        if os.environ.get("TITAN_ENVIRONMENT", "").upper() == "PRODUCAO":
+            raise EventIntegrityUnavailable("CHAVE_ASSINATURA_INTEGRIDADE_INDISPONIVEL")
+        if _DEFAULT_EVENT_INTEGRITY_SIGNER is None:
+            _DEFAULT_EVENT_INTEGRITY_SIGNER = cls(
+                private_key=Ed25519PrivateKey.generate(),
+                key_id=key_id or "titan-event-integrity-dev-ephemeral-ed25519",
+            )
+        return _DEFAULT_EVENT_INTEGRITY_SIGNER
+
+    def sign(self, entry: EventChainEntry) -> EventChainEntry:
+        public_key = self.private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        signing_entry = EventChainEntry(
+            event=entry.event,
+            previous_hash=entry.previous_hash,
+            current_hash=entry.current_hash,
+            event_canonical_bytes=entry.event_canonical_bytes,
+            hash_algorithm=entry.hash_algorithm,
+            hash_profile=entry.hash_profile,
+            hash_profile_version=entry.hash_profile_version,
+            canonical_serialization_version=entry.canonical_serialization_version,
+            signature_algorithm=EVENT_INTEGRITY_SIGNATURE_ALGORITHM,
+            signature_profile=EVENT_INTEGRITY_SIGNATURE_PROFILE,
+            signature_profile_version=EVENT_INTEGRITY_SIGNATURE_PROFILE_VERSION,
+            signature_key_id=self.key_id,
+            signature_public_key=public_key,
+            signature_signed_at=datetime.now(UTC),
+        )
+        signature = self.private_key.sign(build_event_integrity_signature_payload(signing_entry))
+        return EventChainEntry(
+            event=signing_entry.event,
+            previous_hash=signing_entry.previous_hash,
+            current_hash=signing_entry.current_hash,
+            event_canonical_bytes=signing_entry.event_canonical_bytes,
+            hash_algorithm=signing_entry.hash_algorithm,
+            hash_profile=signing_entry.hash_profile,
+            hash_profile_version=signing_entry.hash_profile_version,
+            canonical_serialization_version=signing_entry.canonical_serialization_version,
+            signature_algorithm=signing_entry.signature_algorithm,
+            signature_profile=signing_entry.signature_profile,
+            signature_profile_version=signing_entry.signature_profile_version,
+            signature_key_id=signing_entry.signature_key_id,
+            signature_public_key=signing_entry.signature_public_key,
+            signature_bytes=signature,
+            signature_signed_at=signing_entry.signature_signed_at,
+        )
+
+
 def _reference(
     *, entity_type: str, identifier: Any, organization_id: Any, contract_version: int
 ) -> UniversalReference:
@@ -396,4 +506,13 @@ def _from_row(row: Row[Any]) -> StoredDomainEvent:
         hash_profile=row.hash_profile,
         hash_profile_version=row.hash_profile_version,
         canonical_serialization_version=row.canonical_serialization_version,
+        signature_algorithm=row.signature_algorithm,
+        signature_profile=row.signature_profile,
+        signature_profile_version=row.signature_profile_version,
+        signature_key_id=row.signature_key_id,
+        signature_public_key=(
+            None if row.signature_public_key is None else bytes(row.signature_public_key)
+        ),
+        signature_bytes=None if row.signature_bytes is None else bytes(row.signature_bytes),
+        signature_signed_at=row.signature_signed_at,
     )

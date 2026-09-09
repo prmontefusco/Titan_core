@@ -3,7 +3,11 @@
 import base64
 import hashlib
 from dataclasses import dataclass
+from datetime import datetime
 from enum import StrEnum
+
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from packages.core_domain import DomainEvent
 from packages.shared_kernel import CanonicalSerializer, UniversalReference
@@ -12,6 +16,9 @@ from packages.shared_kernel.serialization import CanonicalValue
 HASH_ALGORITHM = "SHA-256"
 EVENT_CHAIN_PROFILE = "titan-event-chain"
 EVENT_CHAIN_PROFILE_VERSION = 1
+EVENT_INTEGRITY_SIGNATURE_ALGORITHM = "ED25519"
+EVENT_INTEGRITY_SIGNATURE_PROFILE = "titan-event-integrity-signature"
+EVENT_INTEGRITY_SIGNATURE_PROFILE_VERSION = 1
 CANONICAL_SERIALIZATION_VERSION = CanonicalSerializer.version
 
 
@@ -31,6 +38,13 @@ class EventChainEntry:
     hash_profile: str = EVENT_CHAIN_PROFILE
     hash_profile_version: int = EVENT_CHAIN_PROFILE_VERSION
     canonical_serialization_version: str = CANONICAL_SERIALIZATION_VERSION
+    signature_algorithm: str | None = None
+    signature_profile: str | None = None
+    signature_profile_version: int | None = None
+    signature_key_id: str | None = None
+    signature_public_key: bytes | None = None
+    signature_bytes: bytes | None = None
+    signature_signed_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +105,16 @@ class EventChainVerifier:
             calculated_hash = _calculate_hash(calculated_event_bytes, expected_previous)
             if calculated_hash != entry.current_hash:
                 return _invalid("HASH_ATUAL_DIVERGENTE", position)
+            signature_status = verify_event_integrity_signature(entry)
+            if signature_status == "INVALIDA":
+                return _invalid("ASSINATURA_DE_INTEGRIDADE_INVALIDA", position)
+            if signature_status == "INDETERMINADA":
+                return ChainVerificationReport(
+                    ChainVerificationStatus.INDETERMINADA,
+                    "ASSINATURA_DE_INTEGRIDADE_INDETERMINADA",
+                    position - 1,
+                    position,
+                )
             expected_previous = entry.current_hash
 
         return ChainVerificationReport(
@@ -132,6 +156,74 @@ def _calculate_hash(event_bytes: bytes, previous_hash: bytes | None) -> bytes:
         }
     )
     return hashlib.sha256(protected_bytes).digest()
+
+
+def build_event_integrity_signature_payload(entry: EventChainEntry) -> bytes:
+    if not isinstance(entry, EventChainEntry):
+        raise TypeError("entry deve ser EventChainEntry.")
+    if (
+        entry.signature_algorithm != EVENT_INTEGRITY_SIGNATURE_ALGORITHM
+        or entry.signature_profile != EVENT_INTEGRITY_SIGNATURE_PROFILE
+        or entry.signature_profile_version != EVENT_INTEGRITY_SIGNATURE_PROFILE_VERSION
+        or not entry.signature_key_id
+        or entry.signature_public_key is None
+    ):
+        raise ValueError("Metadados de assinatura de integridade incompletos ou inválidos.")
+
+    serializer = CanonicalSerializer()
+    return serializer.serialize(
+        {
+            "aggregate_id": str(entry.event.aggregate_reference.target_id.value),
+            "aggregate_type": entry.event.aggregate_reference.target_id.entity_type,
+            "aggregate_version": entry.event.aggregate_version,
+            "canonical_serialization_version": entry.canonical_serialization_version,
+            "current_hash_hex": entry.current_hash.hex(),
+            "domain": "titan.core_audit.domain_event_integrity.signature",
+            "event_id": str(entry.event.event_id.value),
+            "event_integrity_hash_algorithm": entry.hash_algorithm,
+            "event_integrity_hash_profile": entry.hash_profile,
+            "event_integrity_hash_profile_version": entry.hash_profile_version,
+            "event_owner_organization_id": str(entry.event.organization_id.value),
+            "previous_hash_hex": None if entry.previous_hash is None else entry.previous_hash.hex(),
+            "signature_algorithm": entry.signature_algorithm,
+            "signature_key_id": entry.signature_key_id,
+            "signature_profile": entry.signature_profile,
+            "signature_profile_version": entry.signature_profile_version,
+            "signature_public_key_base64": base64.b64encode(entry.signature_public_key).decode(
+                "ascii"
+            ),
+        }
+    )
+
+
+def verify_event_integrity_signature(entry: EventChainEntry) -> str:
+    signature_fields = (
+        entry.signature_algorithm,
+        entry.signature_profile,
+        entry.signature_profile_version,
+        entry.signature_key_id,
+        entry.signature_public_key,
+        entry.signature_bytes,
+        entry.signature_signed_at,
+    )
+    if all(value is None for value in signature_fields):
+        return "AUSENTE"
+    if any(value is None for value in signature_fields):
+        return "INDETERMINADA"
+    if (
+        entry.signature_algorithm != EVENT_INTEGRITY_SIGNATURE_ALGORITHM
+        or entry.signature_profile != EVENT_INTEGRITY_SIGNATURE_PROFILE
+        or entry.signature_profile_version != EVENT_INTEGRITY_SIGNATURE_PROFILE_VERSION
+    ):
+        return "INDETERMINADA"
+    assert entry.signature_public_key is not None
+    assert entry.signature_bytes is not None
+    try:
+        public_key = Ed25519PublicKey.from_public_bytes(entry.signature_public_key)
+        public_key.verify(entry.signature_bytes, build_event_integrity_signature_payload(entry))
+    except (InvalidSignature, ValueError):
+        return "INVALIDA"
+    return "VALIDA"
 
 
 def _canonical_event_bytes(event: DomainEvent) -> bytes:

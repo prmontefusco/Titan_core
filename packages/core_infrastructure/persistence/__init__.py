@@ -16,6 +16,7 @@ from packages.core_infrastructure.persistence.decision_governance import (
 from packages.core_infrastructure.persistence.events import (
     DomainEventRepository,
     EventAppendConflict,
+    EventIntegrityEd25519Signer,
     EventIntegrityUnavailable,
     StoredDomainEvent,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "IdempotencyRepository",
     "DomainEventRepository",
     "EventAppendConflict",
+    "EventIntegrityEd25519Signer",
     "EventIntegrityUnavailable",
     "MembershipRepository",
     "OrganizationRepository",

@@ -4536,6 +4536,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** este passo não implementa assinatura Ed25519, migration, provider externo, HSM/KMS, TSA real, contrato HTTP, Merkle tree ou alteração retroativa de eventos históricos. Ele autoriza o próximo BUILD de implementação com limites explícitos e compatíveis com as ADRs 0007, 0008 e 0009.
 
 
+### 09/09/2026 — FINDING-007, BUILD: assinatura Ed25519 de elos de integridade
+
+**Estado:** CONCLUIDO — novos elos de `domain_event_integrity` passam a receber assinatura técnica Ed25519 no append produtivo do repositório.
+
+**Implementação:** a migration `20260909_0084_add_event_integrity_signatures.py` adiciona metadados e bytes de assinatura a `core_audit.domain_event_integrity`: algoritmo, perfil, versão de perfil, `key_id`, chave pública, assinatura e instante de assinatura, com constraints de tamanho para chave pública Ed25519 e assinatura. `EventChainEntry` passou a carregar assinatura opcional e o verificador valida assinatura Ed25519 quando presente, mantendo elos históricos sem assinatura como cadeia SHA-256 verificável sem inventar não-repúdio retroativo. `DomainEventRepository.append` assina novos elos antes de persistir; em produção, ausência de `TITAN_EVENT_INTEGRITY_ED25519_PRIVATE_KEY_BASE64` falha fechado, enquanto desenvolvimento/teste usa chave efêmera de processo sem registrar segredo.
+
+**Evidência:** `tests/core_integrity/test_event_chain.py` cobre assinatura válida, metadado adulterado, bytes de assinatura adulterados e assinatura incompleta indeterminada. `tests/infrastructure/test_event_persistence_contract.py` cobre o contrato da migration e das novas colunas. `tests/integration/test_domain_events_postgresql.py` prova persistência de assinatura em novos eventos, encadeamento preservado, isolamento por Organization e recusa de UPDATE/DELETE/TRUNCATE, incluindo tentativa de alterar `signature_key_id`.
+
+**Portão:** testes focados aprovados com `15 passed`: `python -m uv run --locked pytest tests/core_integrity/test_event_chain.py tests/infrastructure/test_event_persistence_contract.py tests/integration/test_domain_events_postgresql.py`. Suíte canônica completa executada após o ajuste: `pytest`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este incremento não implementa TSA real, HSM/KMS, serviço remoto de assinatura, Merkle tree, blockchain, contrato HTTP, assinatura jurídica, assinatura pessoal ou reassinatura de eventos históricos. A chave efêmera é apenas perfil local de desenvolvimento/teste; operação produtiva precisa configurar chave Ed25519 protegida antes de aceitar append de eventos.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

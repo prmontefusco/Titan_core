@@ -11,6 +11,7 @@ from packages.core_domain import CanonicalPayload, DomainEvent, Organization
 from packages.core_infrastructure.persistence import (
     DomainEventRepository,
     EventAppendConflict,
+    EventIntegrityEd25519Signer,
     OrganizationRepository,
     set_local_organization_context,
 )
@@ -129,6 +130,14 @@ def test_event_store_orders_versions_rejects_gaps_and_isolates_organizations() -
                 assert stored_chain[0].previous_hash is None
                 assert stored_chain[0].current_hash == stored_chain[1].previous_hash
                 assert stored_chain[1].current_hash is not None
+                assert stored_chain[0].signature_algorithm == "ED25519"
+                assert stored_chain[0].signature_profile == "titan-event-integrity-signature"
+                assert stored_chain[0].signature_key_id is not None
+                assert stored_chain[0].signature_public_key is not None
+                assert len(stored_chain[0].signature_public_key) == 32
+                assert stored_chain[0].signature_bytes is not None
+                assert len(stored_chain[0].signature_bytes) == 64
+                assert stored_chain[0].signature_signed_at is not None
                 canonical = events.list_canonical_for_aggregate(first_aggregate)
                 assert [item.aggregate_version for item in canonical] == [1, 2]
                 assert (
@@ -202,6 +211,7 @@ def test_runtime_role_cannot_update_delete_or_truncate_events() -> None:
                     "DELETE FROM core_audit.domain_events",
                     "TRUNCATE core_audit.domain_events",
                     "UPDATE core_audit.domain_event_integrity SET hash_profile_version = 2",
+                    "UPDATE core_audit.domain_event_integrity SET signature_key_id = 'tampered'",
                     "DELETE FROM core_audit.domain_event_integrity",
                     "TRUNCATE core_audit.domain_event_integrity",
                 ):
@@ -209,6 +219,41 @@ def test_runtime_role_cannot_update_delete_or_truncate_events() -> None:
                     with pytest.raises(ProgrammingError):
                         connection.execute(text(statement))
                     savepoint.rollback()
+            finally:
+                transaction.rollback()
+    finally:
+        engine.dispose()
+
+
+def test_event_integrity_uses_configured_ed25519_key_for_new_links() -> None:
+    assert DATABASE_URL is not None
+    engine = create_engine(DATABASE_URL)
+    organization = Organization.create()
+    aggregate = _reference("registro", organization.organization_id)
+    signer = EventIntegrityEd25519Signer.from_environment()
+
+    try:
+        with engine.connect() as connection:
+            transaction = connection.begin()
+            try:
+                set_local_organization_context(connection, organization.organization_id)
+                OrganizationRepository(connection).add(organization)
+                DomainEventRepository(connection, signer=signer).append(
+                    _event(
+                        organization_id=organization.organization_id,
+                        aggregate=aggregate,
+                        version=1,
+                    )
+                )
+
+                stored = DomainEventRepository(connection).list_for_aggregate(aggregate)
+
+                assert len(stored) == 1
+                assert stored[0].signature_algorithm == "ED25519"
+                assert stored[0].signature_profile == "titan-event-integrity-signature"
+                assert stored[0].signature_key_id == signer.key_id
+                assert stored[0].signature_public_key is not None
+                assert stored[0].signature_bytes is not None
             finally:
                 transaction.rollback()
     finally:
