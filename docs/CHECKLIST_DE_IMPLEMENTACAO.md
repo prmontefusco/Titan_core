@@ -4484,6 +4484,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** o recorte fecha o oráculo relacional de propriedades identificado no FINDING-003 para as tabelas afetadas. Não declara endurecimento universal de todas as FKs simples da plataforma nem altera regras de compartilhamento, contratos públicos, autorização, retenção ou dados históricos. Downgrade destrutivo foi deliberadamente proibido.
 
 
+### 09/09/2026 — FINDING-004: Market Supply sem oraculo HTTP de topologia
+
+**Estado:** CONCLUIDO — implementacao e verificacao focada concluidas para o vazamento identificado no release agregado single-owner.
+
+**Implementacao:** `MarketSupplyAggregateAssessmentOrchestrator` deixou de transformar zero ou multiplas contribuicoes aceitas em `ValueError` operacional. Quando a composicao de populacao autorizada nao possui exatamente uma contribuicao liberavel pelo fluxo single-owner atual, o orquestrador agora constroi uma requisicao auditavel uniforme sem `grant`, sem snapshot publico e sem payload agregado. O `MarketSupplyAggregateGateWorkflow` existente registra a negativa e o `MarketSupplyPublicResponseMapper` devolve o contrato publico uniforme `NOT_RELEASED`. A API preserva `503` apenas para configuracao/pipeline desabilitada; com a pipeline habilitada, respostas nao liberadas continuam `200` com corpo publico canonico e headers `no-store`.
+
+**Evidencia:** `tests/livestock_application/test_market_supply.py` cobre composicao multi-owner com duas contribuicoes aceitas, sem excecao, com resposta publica `NOT_RELEASED`, sem agregado e com audit record duravel. `tests/api/test_market_supply_api_release_gate.py` cobre explicitamente o contrato HTTP `200 {"status": "NOT_RELEASED"}` vindo da pipeline habilitada, alem do caso `RELEASED` ja existente.
+
+**Portao:** testes focados aprovados com `25 passed`: `python -m uv run --locked pytest tests/livestock_application/test_market_supply.py tests/api/test_market_supply_api_release_gate.py`. Suite canonica completa aprovada com `1737 passed` e cinco avisos preexistentes de deprecacao HTTP 422, usando `TITAN_DATABASE_URL`, `TITAN_MIGRATION_DATABASE_URL` e `TITAN_RUNTIME_DATABASE_PASSWORD` definidos para os testes administrativos. `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` aprovados; o Alembic manteve apenas o aviso preexistente de reflexao PostGIS `geometry`.
+
+**Riscos e limites:** o incremento remove o oraculo externo da condicao zero/multi-owner, mas nao implementa release multi-owner correlacionado, novos controles de privacy, nova API, migration, forecast, persistencia de CommercialDemand ou alteracao de autorizacao. O audit uniforme usa digest/identidade da requisicao do comprador e nao inclui material de contribuicoes aceitas, evitando transformar o proprio erro de topologia em informacao buyer-facing.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

@@ -510,10 +510,12 @@ class RecordingSubjectReader:
 
 
 class StaticGrantReader:
-    def __init__(self, grant: AuthorizationGrant) -> None:
+    def __init__(self, grant: AuthorizationGrant | None) -> None:
         self.grant = grant
 
     def get_by_id(self, grant_id: UUID) -> AuthorizationGrant | None:
+        if self.grant is None:
+            return None
         return self.grant if grant_id == self.grant.grant_id else None
 
 
@@ -770,7 +772,7 @@ def test_market_supply_orchestrator_replays_idempotent_single_owner_without_new_
     )
 
 
-def test_market_supply_orchestrator_blocks_multi_owner_release_without_audit_correlation() -> None:
+def test_market_supply_orchestrator_returns_uniform_not_released_for_multi_owner() -> None:
     buyer = OrganizationId.new()
     _, _, policy = _artifacts()
     owner_a = OrganizationId.new()
@@ -803,6 +805,7 @@ def test_market_supply_orchestrator_blocks_multi_owner_release_without_audit_cor
         _grant(criteria=criteria_a, buyer_organization_id=buyer),
         _grant(criteria=criteria_b, buyer_organization_id=buyer),
     ]
+    audit_repository = InMemoryMarketSupplyQueryAuditRepository()
     orchestrator = MarketSupplyAggregateAssessmentOrchestrator(
         population_composer=AuthorizedCandidatePopulationCompositionService(
             grant_reader=RecordingGrantReader(grants),
@@ -833,22 +836,32 @@ def test_market_supply_orchestrator_blocks_multi_owner_release_without_audit_cor
             readiness_service=MarketReadinessService(),
         ),
         payload_builder=MarketSupplyAggregatePayloadBuilder(),
-        gate_workflow=MarketSupplyAggregateGateWorkflow(),
+        gate_workflow=MarketSupplyAggregateGateWorkflow(
+            audit_repository=audit_repository,
+            grant_reader=StaticGrantReader(None),
+        ),
     )
 
-    with pytest.raises(ValueError, match="correlacao auditavel multi-owner"):
-        orchestrator.assess_single_owner(
-            MarketSupplyAggregateAssessmentCommand(
-                buyer_organization_id=buyer,
-                base_criteria=base_criteria,
-                requested_quantity=None,
-                privacy_profile=_privacy_profile(),
-                geographic_precision=AggregationGeographicPrecision.REGION,
-                filter_count=1,
-                requested_at=base_criteria.reference_time,
-                audit_id=TypedId.new("market_supply_query_audit"),
-                correlation_id=TypedId.new("correlation"),
-                idempotency_reference="idem-key-2",
-                semantic_request_digest="request:sha256:multi-owner",
-            )
+    prepared, gate_result = orchestrator.assess_single_owner(
+        MarketSupplyAggregateAssessmentCommand(
+            buyer_organization_id=buyer,
+            base_criteria=base_criteria,
+            requested_quantity=None,
+            privacy_profile=_privacy_profile(),
+            geographic_precision=AggregationGeographicPrecision.REGION,
+            filter_count=1,
+            requested_at=base_criteria.reference_time,
+            audit_id=TypedId.new("market_supply_query_audit"),
+            correlation_id=TypedId.new("correlation"),
+            idempotency_reference="idem-key-2",
+            semantic_request_digest="request:sha256:multi-owner",
         )
+    )
+
+    assert prepared.population.result.included_count == 2
+    assert len(prepared.population.result.accepted_contributions) == 2
+    assert gate_result.public_response.status is MarketSupplyPublicResponseStatus.NOT_RELEASED
+    assert gate_result.public_response.aggregate is None
+    assert gate_result.aggregate_result is None
+    assert gate_result.audit_record is not None
+    assert audit_repository.get(gate_result.audit_record.audit_id) == gate_result.audit_record

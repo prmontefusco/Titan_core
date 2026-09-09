@@ -531,8 +531,9 @@ class MarketSupplyAggregateAssessmentOrchestrator:
         prepared = self.prepare(command)
         accepted = prepared.population.result.accepted_contributions
         if len(accepted) != 1:
-            raise ValueError(
-                "release agregado multi-owner exige correlacao auditavel multi-owner.",
+            return MarketSupplyPreparedAggregateGateRequest(
+                assessment=prepared,
+                request=_uniform_not_released_gate_request(command),
             )
         contribution = accepted[0]
         snapshot = contribution.snapshot
@@ -596,6 +597,52 @@ class MarketSupplyAggregateAssessmentOrchestrator:
                 request_candidate_criteria_digest=command.base_criteria.digest(),
             ),
         )
+
+
+def _uniform_not_released_gate_request(
+    command: MarketSupplyAggregateAssessmentCommand,
+) -> MarketSupplyAggregateGateRequest:
+    query_fingerprint = AggregationQueryFingerprint(
+        requester_organization_id=command.buyer_organization_id,
+        beneficiary_organization_id=command.buyer_organization_id,
+        access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+        policy_context_digest=command.base_criteria.policy_context_digest(),
+        filter_fingerprint=command.base_criteria.digest(),
+        result_subject_count=0,
+        requested_at=command.requested_at,
+    )
+    authorization_request = MarketSupplyAuthorizationRequest(
+        owner_organization_id=command.buyer_organization_id,
+        beneficiary_organization_id=command.buyer_organization_id,
+        policy_id=command.base_criteria.policy_id,
+        access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+        field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+        requested_at=command.requested_at,
+    )
+    return MarketSupplyAggregateGateRequest(
+        audit_owner_organization_id=command.buyer_organization_id,
+        authorization_request=authorization_request,
+        query_policy_id=command.base_criteria.policy_id,
+        query_fingerprint=query_fingerprint,
+        recorded_at=command.requested_at,
+        grant=None,
+        aggregate_payload=None,
+        audit_record_context=MarketSupplyAuditRecordContext(
+            audit_id=command.audit_id,
+            policy_version=command.base_criteria.policy_version,
+            privacy_profile_id=command.privacy_profile.profile_id,
+            authorization_context_digest="authorization:sha256:uniform-not-released",
+            candidate_population_digest=command.base_criteria.policy_context_digest(),
+            reference_time=command.base_criteria.reference_time,
+            knowledge_cutoff=command.base_criteria.knowledge_cutoff,
+            requested_at=command.requested_at,
+            revocation_state=MarketSupplyRevocationState.NOT_REVOKED,
+            correlation_id=command.correlation_id,
+            idempotency_reference=command.idempotency_reference,
+            semantic_request_digest=command.semantic_request_digest,
+        ),
+        request_candidate_criteria_digest=command.base_criteria.digest(),
+    )
 
 
 def _authorization_context_digest(grant: AuthorizationGrant) -> str:

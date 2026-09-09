@@ -300,3 +300,45 @@ def test_market_supply_aggregate_route_executes_feature_flagged_pipeline(
     assert response.headers["cache-control"] == "no-store"
     assert response.json()["status"] == "RELEASED"
     assert response.json()["aggregate"]["ready_now"] == 1
+
+
+def test_market_supply_aggregate_route_returns_uniform_not_released_from_pipeline(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    class FakeOrchestrator:
+        def execute_idempotent_single_owner(
+            self,
+            **kwargs: object,
+        ) -> tuple[None, IdempotencyExecution]:
+            payload = CanonicalPayload.from_mapping(
+                schema="market_supply.public_aggregate_response",
+                version=1,
+                value={"status": "NOT_RELEASED"},
+            )
+            return None, IdempotencyExecution(
+                payload.schema,
+                payload.version,
+                payload.canonical_bytes,
+                False,
+            )
+
+    monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "true")
+    monkeypatch.setenv("TITAN_MARKET_SUPPLY_AGGREGATE_PIPELINE_ENABLED", "true")
+    _configure_privacy_profile(monkeypatch)
+    importlib.reload(main_module)
+    _override_context_and_connection()
+    monkeypatch.setattr(
+        market_supply_api,
+        "_build_orchestrator",
+        lambda connection: FakeOrchestrator(),
+    )
+
+    response = TestClient(main_module.app).post(
+        ROUTE,
+        headers={"Idempotency-Key": "market-supply-test-key"},
+        json=_valid_body(),
+    )
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    assert response.json() == {"status": "NOT_RELEASED"}
