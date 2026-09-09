@@ -4523,6 +4523,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** este incremento não implementa sandbox WebAssembly, provas de conhecimento zero, assinatura criptográfica adicional, exportação de bundles HTML/Wasm ou verificação offline autônoma. Ele corrige a acurácia da arquitetura formal e preserva as decisões futuras para tratamento específico, com threat model, implementação, testes e aceite próprios.
 
 
+### 09/09/2026 — FINDING-007, decisão: assinatura assimétrica de eventos e ancoragem
+
+**Estado:** CONCLUIDO — decisão arquitetural aprovada para o recorte incremental de não-repúdio da trilha de eventos.
+
+**Implementação:** criada a ADR-0079, definindo que novos elos de `domain_event_integrity` devem evoluir para assinatura assimétrica Ed25519 sobre bytes canônicos protegidos, com domínio de separação, identidade do evento, Organization, aggregate, versão, hashes, algoritmo, perfil e versão de serialização. A ADR preserva a ancoragem externa por `IntegrityCheckpoint` e `TimestampProvider` da ADR-0007, evitando introduzir TSA, blockchain, Merkle root ou custo recorrente no primeiro corte. HMAC permanece apenas para desenvolvimento/testes que não aleguem não-repúdio público.
+
+**Evidência:** a Discovery confirmou que `packages/core_integrity/event_chain.py` calcula cadeia SHA-256, `packages/core_infrastructure/persistence/events.py` persiste `domain_events` e `domain_event_integrity`, e o repositório não contém assinatura assimétrica por evento na ingestão. A ADR-0007 já havia mantido Merkle, chaves e assinatura fora do escopo inicial; a ADR-0079 reabre esse ponto de forma controlada.
+
+**Portão:** revisão documental e suíte canônica executadas após o ajuste: `pytest`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este passo não implementa assinatura Ed25519, migration, provider externo, HSM/KMS, TSA real, contrato HTTP, Merkle tree ou alteração retroativa de eventos históricos. Ele autoriza o próximo BUILD de implementação com limites explícitos e compatíveis com as ADRs 0007, 0008 e 0009.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.
