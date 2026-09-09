@@ -34,6 +34,8 @@ from packages.core_infrastructure.persistence.events import (
 )
 from packages.core_infrastructure.persistence.evidence import (
     attachments_table,
+    evidence_revocations_table,
+    evidence_signatures_table,
     evidence_verifications_table,
     evidences_table,
 )
@@ -117,6 +119,8 @@ assert outbox_publication_state_table.metadata is target_metadata
 assert timestamp_attempts_table.metadata is target_metadata
 assert evidences_table.metadata is target_metadata
 assert evidence_verifications_table.metadata is target_metadata
+assert evidence_signatures_table.metadata is target_metadata
+assert evidence_revocations_table.metadata is target_metadata
 assert key_registry_table.metadata is target_metadata
 assert attachments_table.metadata is target_metadata
 assert policies_table.metadata is target_metadata

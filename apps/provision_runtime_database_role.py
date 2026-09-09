@@ -19,17 +19,10 @@ from packages.core_infrastructure.persistence.database import (
 _ROLE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 
 # ADR-0076: colunas utilizadas pelos repositórios de estado operacional.
-# Evidence permanece nesta lista apenas até a separação de seu ciclo de vida.
 _AUDIT_UPDATE_COLUMNS = {
     "animals": "version",
     "authorization_grants": "status, revoked_at, revoked_by, revocation_reason",
     "entity_type_requests": "status, decided_at, decided_by_actor_id, decision_reason",
-    "evidences": (
-        "valid_from, valid_until, is_revoked, revoked_at, revoking_actor_id, "
-        "revoking_actor_org_id, revoking_actor_contract_version, revocation_reason, "
-        "signature_id, signature_profile, signature_algorithm, signature_raw_bytes, "
-        "signature_key_id, signature_key_purpose, signature_signed_at, version"
-    ),
     "idempotency_records": "status, result_schema, result_version, result_canonical_bytes",
     "key_registry": "state, expires_at, revoked_at, revocation_reason, version",
     "livestock_lots": "name, lot_type, status",

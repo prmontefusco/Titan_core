@@ -21,7 +21,11 @@ from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 class EvidenceRepositoryPort(Protocol):
     def save(self, evidence: Evidence) -> None: ...
 
-    def update(self, evidence: Evidence) -> None: ...
+    def append_verification(self, evidence: Evidence) -> None: ...
+
+    def append_signature(self, evidence: Evidence) -> None: ...
+
+    def append_revocation(self, evidence: Evidence) -> None: ...
 
     def get_by_id(self, evidence_id: TypedId) -> Evidence | None: ...
 
@@ -76,7 +80,7 @@ class EvidenceService:
         )
 
         updated_evidence = evidence.add_verification(verification)
-        self.repository.update(updated_evidence)
+        self.repository.append_verification(updated_evidence)
         return updated_evidence
 
     def sign_evidence(
@@ -109,7 +113,7 @@ class EvidenceService:
         )
 
         signed_evidence = evidence.sign_evidence(signature)
-        self.repository.update(signed_evidence)
+        self.repository.append_signature(signed_evidence)
         return signed_evidence
 
     def revoke_evidence(
@@ -129,7 +133,7 @@ class EvidenceService:
         )
 
         updated_evidence = evidence.revoke(revocation)
-        self.repository.update(updated_evidence)
+        self.repository.append_revocation(updated_evidence)
         return updated_evidence
 
     def get_evidence(self, evidence_id: TypedId) -> Evidence | None:

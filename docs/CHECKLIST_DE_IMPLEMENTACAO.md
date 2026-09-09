@@ -4471,6 +4471,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** a Parte A protege os registros classificados e reduz o alcance da credencial ordinária; superuser ou administrador capaz de remover triggers permanece fora dessa garantia. Evidence ainda usa UPDATE para assinatura/revogação e mantém FINDING-002 aberto até a Parte B. Não houve alteração de API, retenção, criptografia, tenancy ou regras de negócio.
 
 
+### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
+
+**Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.
+
+**Implementação:** a migration `20260908_0082_preserve_evidence_lifecycle.py` preserva `core_audit.evidences` como baseline histórico, adiciona `core_audit.evidence_signatures` e `core_audit.evidence_revocations`, evolui `core_audit.evidence_verifications` com `evidence_version` e `recorded_at`, e instala guards append-only/owner-scoped para assinatura, verificação e revogação. O repositório transacional de Evidence deixou de executar `UPDATE core_audit.evidences`; `EvidenceService` passou a chamar operações explícitas de append (`append_signature`, `append_verification`, `append_revocation`) e a leitura recompõe o estado aplicável a partir da baseline imutável e do lifecycle registrado. `apps/provision_runtime_database_role.py` removeu o grant temporário de UPDATE em `evidences`.
+
+**Evidência:** `tests/integration/test_evidence_postgresql.py` prova o fluxo real de registrar, assinar, verificar e reler Evidence sem sobrescrever a linha base. `tests/integration/test_evidence_lifecycle_immutability_postgresql.py` confere os triggers da Parte B, a sequência append-only do lifecycle e a recusa física de UPDATE/DELETE/TRUNCATE da baseline. `tests/integration/test_runtime_database_role_privileges_postgresql.py` confirma que reprovisionar a role runtime não devolve UPDATE em `evidences`.
+
+**Portão:** migration aplicada com `TITAN_MIGRATION_DATABASE_URL` administrativa e `alembic current` em `20260908_0082 (head)`. Testes focados PostgreSQL aprovados: Evidence, lifecycle de Evidence, imutabilidade relacional e privilégios runtime (`6 passed`). Suíte canônica com URL administrativa, necessária para fixtures legadas de repository puro, aprovada com `1733 passed` e cinco avisos preexistentes de depreciação HTTP 422. `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` aprovados; o Alembic mantém apenas o aviso preexistente de reflexão PostGIS `geometry`.
+
+**Riscos e limites:** a garantia cobre a role ordinária da aplicação, RLS, ACLs e triggers contra DML indevido; não protege contra superuser ou administrador capaz de remover triggers/ownership. Campos legados de assinatura/revogação permanecem como baseline conhecido para não apagar histórico anterior; novas mudanças usam lifecycle append-only. A suíte completa executada com `TITAN_DATABASE_URL` apontando diretamente para `titan_app` falha em fixtures antigas que semeiam `core_identity.organizations` por DML direto; testes dedicados de runtime permanecem a evidência válida para menor privilégio. Não houve API nova, roteiro manual obrigatório, retenção, criptografia, alteração de tenancy ou regra de negócio.
+
+
 ### 08/09/2026 — Remediacao adversarial FINDING-001: explicacao comercial fail-closed
 
 **Estado:** CONCLUIDO — implementado, verificado e aceito pelo usuario em 08/09/2026, com autorizacao para prosseguir aos proximos achados.

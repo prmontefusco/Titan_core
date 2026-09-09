@@ -1,8 +1,10 @@
 """Persistência de Evidence, Validity, Revocation e Signature sob RLS (ADR-0038/Passo 5.6)."""
 
 import json
-from dataclasses import dataclass
-from datetime import UTC
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+from typing import Any
+from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
@@ -15,6 +17,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -76,6 +79,11 @@ evidences_table = Table(
     Column("signature_signed_at", DateTime(timezone=True), nullable=True),
     Column("version", Integer, nullable=False, server_default="1"),
     CheckConstraint("version >= 1", name="ck_evidences_version"),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "evidence_id",
+        name="uq_evidences_owner_id",
+    ),
     ForeignKeyConstraint(
         ["record_owner_organization_id"],
         ["core_identity.organizations.organization_id"],
@@ -91,21 +99,87 @@ evidence_verifications_table = Table(
     Column("verification_id", PG_UUID(as_uuid=True), primary_key=True),
     Column("evidence_id", PG_UUID(as_uuid=True), nullable=False),
     Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("evidence_version", Integer, nullable=True),
+    Column("recorded_at", DateTime(timezone=True), nullable=True),
     Column("verified_at", DateTime(timezone=True), nullable=False),
     Column("verifier_id", PG_UUID(as_uuid=True), nullable=False),
     Column("verifier_org_id", PG_UUID(as_uuid=True), nullable=False),
     Column("verifier_contract_version", Integer, nullable=False, server_default="1"),
     Column("outcome", String(50), nullable=False),
     Column("notes", Text, nullable=True),
+    CheckConstraint(
+        "evidence_version IS NULL OR evidence_version > 1",
+        name="ck_evidence_verifications_version",
+    ),
+    UniqueConstraint(
+        "evidence_id",
+        "evidence_version",
+        name="uq_evidence_verifications_version",
+    ),
     ForeignKeyConstraint(
         ["evidence_id"],
         ["core_audit.evidences.evidence_id"],
         name="fk_evidence_verifications_evidence",
     ),
     ForeignKeyConstraint(
+        ["record_owner_organization_id", "evidence_id"],
+        ["core_audit.evidences.record_owner_organization_id", "core_audit.evidences.evidence_id"],
+        name="fk_evidence_verifications_owner_evidence",
+    ),
+    ForeignKeyConstraint(
         ["record_owner_organization_id"],
         ["core_identity.organizations.organization_id"],
         name="fk_evidence_verifications_organization",
+    ),
+    schema=CORE_AUDIT_SCHEMA,
+    comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
+)
+
+evidence_signatures_table = Table(
+    "evidence_signatures",
+    organization_metadata,
+    Column("signature_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("evidence_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("evidence_version", Integer, nullable=False),
+    Column("recorded_at", DateTime(timezone=True), nullable=False),
+    Column("profile", String(50), nullable=False),
+    Column("algorithm", String(50), nullable=False),
+    Column("raw_bytes", LargeBinary, nullable=False),
+    Column("key_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("key_purpose", String(100), nullable=False),
+    Column("signed_at", DateTime(timezone=True), nullable=False),
+    CheckConstraint("evidence_version > 1", name="ck_evidence_signatures_version"),
+    UniqueConstraint("evidence_id", "evidence_version", name="uq_evidence_signatures_version"),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id", "evidence_id"],
+        ["core_audit.evidences.record_owner_organization_id", "core_audit.evidences.evidence_id"],
+        name="fk_evidence_signatures_owner_evidence",
+    ),
+    schema=CORE_AUDIT_SCHEMA,
+    comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
+)
+
+evidence_revocations_table = Table(
+    "evidence_revocations",
+    organization_metadata,
+    Column("revocation_id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("evidence_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("evidence_version", Integer, nullable=False),
+    Column("recorded_at", DateTime(timezone=True), nullable=False),
+    Column("revoked_at", DateTime(timezone=True), nullable=False),
+    Column("revoking_actor_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("revoking_actor_org_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("revoking_actor_contract_version", Integer, nullable=False),
+    Column("reason", Text, nullable=False),
+    CheckConstraint("evidence_version > 1", name="ck_evidence_revocations_version"),
+    UniqueConstraint("evidence_id", "evidence_version", name="uq_evidence_revocations_version"),
+    UniqueConstraint("evidence_id", name="uq_evidence_revocations_evidence"),
+    ForeignKeyConstraint(
+        ["record_owner_organization_id", "evidence_id"],
+        ["core_audit.evidences.record_owner_organization_id", "core_audit.evidences.evidence_id"],
+        name="fk_evidence_revocations_owner_evidence",
     ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
@@ -121,31 +195,14 @@ class TransactionalEvidenceRepository:
             raise RuntimeError("TransactionalEvidenceRepository exige transacao ativa.")
 
     def save(self, evidence: Evidence) -> None:
+        if evidence.verifications:
+            raise ValueError("Verificações exigem append_verification após registrar a Evidence.")
+        if evidence.signature is not None:
+            raise ValueError("Assinatura exige append_signature após registrar a Evidence.")
+        if evidence.revocation is not None:
+            raise ValueError("Revogação exige append_revocation após registrar a Evidence.")
         valid_from = evidence.validity_period.valid_from if evidence.validity_period else None
         valid_until = evidence.validity_period.valid_until if evidence.validity_period else None
-
-        is_revoked = evidence.is_revoked
-        revoked_at = evidence.revocation.revoked_at if evidence.revocation else None
-        revoking_actor_id = (
-            evidence.revocation.revoking_actor.target_id.value if evidence.revocation else None
-        )
-        revoking_actor_org_id = (
-            evidence.revocation.revoking_actor.organization_id.value
-            if evidence.revocation and evidence.revocation.revoking_actor.organization_id
-            else (evidence.organization_id.value if evidence.revocation else None)
-        )
-        revoking_actor_contract_version = (
-            evidence.revocation.revoking_actor.contract_version if evidence.revocation else None
-        )
-        revocation_reason = evidence.revocation.reason if evidence.revocation else None
-
-        sig_id = evidence.signature.signature_id.value if evidence.signature else None
-        sig_profile = evidence.signature.profile.value if evidence.signature else None
-        sig_alg = evidence.signature.algorithm if evidence.signature else None
-        sig_bytes = evidence.signature.raw_signature if evidence.signature else None
-        sig_key_id = evidence.signature.key_identifier.key_id.value if evidence.signature else None
-        sig_key_purpose = evidence.signature.key_identifier.purpose if evidence.signature else None
-        sig_signed_at = evidence.signature.signed_at if evidence.signature else None
 
         self.connection.execute(
             text(
@@ -233,144 +290,123 @@ class TransactionalEvidenceRepository:
                 "confidence_reason": evidence.confidence_level.reason,
                 "valid_from": valid_from,
                 "valid_until": valid_until,
-                "is_revoked": is_revoked,
-                "revoked_at": revoked_at,
-                "revoking_actor_id": revoking_actor_id,
-                "revoking_actor_org_id": revoking_actor_org_id,
-                "revoking_actor_contract_version": revoking_actor_contract_version,
-                "revocation_reason": revocation_reason,
-                "signature_id": sig_id,
-                "signature_profile": sig_profile,
-                "signature_algorithm": sig_alg,
-                "signature_raw_bytes": sig_bytes,
-                "signature_key_id": sig_key_id,
-                "signature_key_purpose": sig_key_purpose,
-                "signature_signed_at": sig_signed_at,
+                "is_revoked": False,
+                "revoked_at": None,
+                "revoking_actor_id": None,
+                "revoking_actor_org_id": None,
+                "revoking_actor_contract_version": None,
+                "revocation_reason": None,
+                "signature_id": None,
+                "signature_profile": None,
+                "signature_algorithm": None,
+                "signature_raw_bytes": None,
+                "signature_key_id": None,
+                "signature_key_purpose": None,
+                "signature_signed_at": None,
                 "version": evidence.version,
             },
         )
 
-        self._save_verifications(evidence)
-
-    def update(self, evidence: Evidence) -> None:
-        valid_from = evidence.validity_period.valid_from if evidence.validity_period else None
-        valid_until = evidence.validity_period.valid_until if evidence.validity_period else None
-
-        is_revoked = evidence.is_revoked
-        revoked_at = evidence.revocation.revoked_at if evidence.revocation else None
-        revoking_actor_id = (
-            evidence.revocation.revoking_actor.target_id.value if evidence.revocation else None
-        )
-        revoking_actor_org_id = (
-            evidence.revocation.revoking_actor.organization_id.value
-            if evidence.revocation and evidence.revocation.revoking_actor.organization_id
-            else (evidence.organization_id.value if evidence.revocation else None)
-        )
-        revoking_actor_contract_version = (
-            evidence.revocation.revoking_actor.contract_version if evidence.revocation else None
-        )
-        revocation_reason = evidence.revocation.reason if evidence.revocation else None
-
-        sig_id = evidence.signature.signature_id.value if evidence.signature else None
-        sig_profile = evidence.signature.profile.value if evidence.signature else None
-        sig_alg = evidence.signature.algorithm if evidence.signature else None
-        sig_bytes = evidence.signature.raw_signature if evidence.signature else None
-        sig_key_id = evidence.signature.key_identifier.key_id.value if evidence.signature else None
-        sig_key_purpose = evidence.signature.key_identifier.purpose if evidence.signature else None
-        sig_signed_at = evidence.signature.signed_at if evidence.signature else None
-
+    def _lock_current(self, evidence: Evidence) -> Evidence:
         self.connection.execute(
-            text(
-                """
-                UPDATE core_audit.evidences
-                SET
-                    valid_from = :valid_from,
-                    valid_until = :valid_until,
-                    is_revoked = :is_revoked,
-                    revoked_at = :revoked_at,
-                    revoking_actor_id = :revoking_actor_id,
-                    revoking_actor_org_id = :revoking_actor_org_id,
-                    revoking_actor_contract_version = :revoking_actor_contract_version,
-                    revocation_reason = :revocation_reason,
-                    signature_id = :signature_id,
-                    signature_profile = :signature_profile,
-                    signature_algorithm = :signature_algorithm,
-                    signature_raw_bytes = :signature_raw_bytes,
-                    signature_key_id = :signature_key_id,
-                    signature_key_purpose = :signature_key_purpose,
-                    signature_signed_at = :signature_signed_at,
-                    version = :version
-                WHERE evidence_id = :evidence_id
-                """
-            ),
+            text("SELECT pg_advisory_xact_lock(hashtextextended(CAST(:id AS text), 0))"),
+            {"id": str(evidence.evidence_id.value)},
+        )
+        current = self.get_by_id(evidence.evidence_id)
+        if current is None or current.organization_id != evidence.organization_id:
+            raise KeyError("Evidência não encontrada na Organization ativa.")
+        if evidence.version != current.version + 1:
+            raise ValueError("Versão de ciclo de vida da Evidence desatualizada.")
+        return current
+
+    def append_verification(self, evidence: Evidence) -> None:
+        current = self._lock_current(evidence)
+        if len(evidence.verifications) != len(current.verifications) + 1:
+            raise ValueError("A operação exige exatamente uma nova verificação.")
+        verification = evidence.verifications[-1]
+        if current.add_verification(verification) != evidence:
+            raise ValueError("A verificação não pode alterar o conteúdo da Evidence.")
+        self.connection.execute(
+            text("""
+                INSERT INTO core_audit.evidence_verifications (
+                    verification_id, evidence_id, record_owner_organization_id,
+                    evidence_version, recorded_at, verified_at, verifier_id,
+                    verifier_org_id, verifier_contract_version, outcome, notes
+                ) VALUES (:id, :evidence_id, :owner, :version, clock_timestamp(),
+                          :verified_at, :actor, :actor_org, :contract, :outcome, :notes)
+            """),
             {
+                "id": verification.verification_id.value,
                 "evidence_id": evidence.evidence_id.value,
-                "valid_from": valid_from,
-                "valid_until": valid_until,
-                "is_revoked": is_revoked,
-                "revoked_at": revoked_at,
-                "revoking_actor_id": revoking_actor_id,
-                "revoking_actor_org_id": revoking_actor_org_id,
-                "revoking_actor_contract_version": revoking_actor_contract_version,
-                "revocation_reason": revocation_reason,
-                "signature_id": sig_id,
-                "signature_profile": sig_profile,
-                "signature_algorithm": sig_alg,
-                "signature_raw_bytes": sig_bytes,
-                "signature_key_id": sig_key_id,
-                "signature_key_purpose": sig_key_purpose,
-                "signature_signed_at": sig_signed_at,
+                "owner": evidence.organization_id.value,
                 "version": evidence.version,
+                "verified_at": verification.verified_at,
+                "actor": verification.verifier_reference.target_id.value,
+                "actor_org": (
+                    verification.verifier_reference.organization_id or evidence.organization_id
+                ).value,
+                "contract": verification.verifier_reference.contract_version,
+                "outcome": verification.outcome.value,
+                "notes": verification.notes,
             },
         )
 
-        self._save_verifications(evidence)
+    def append_signature(self, evidence: Evidence) -> None:
+        current = self._lock_current(evidence)
+        signature = evidence.signature
+        if signature is None or current.sign_evidence(signature) != evidence:
+            raise ValueError("A assinatura não pode alterar o conteúdo da Evidence.")
+        self.connection.execute(
+            text("""
+                INSERT INTO core_audit.evidence_signatures (
+                    signature_id, evidence_id, record_owner_organization_id,
+                    evidence_version, recorded_at, profile, algorithm, raw_bytes,
+                    key_id, key_purpose, signed_at
+                ) VALUES (:id, :evidence_id, :owner, :version, clock_timestamp(),
+                          :profile, :algorithm, :raw, :key, :purpose, :signed_at)
+            """),
+            {
+                "id": signature.signature_id.value,
+                "evidence_id": evidence.evidence_id.value,
+                "owner": evidence.organization_id.value,
+                "version": evidence.version,
+                "profile": signature.profile.value,
+                "algorithm": signature.algorithm,
+                "raw": signature.raw_signature,
+                "key": signature.key_identifier.key_id.value,
+                "purpose": signature.key_identifier.purpose,
+                "signed_at": signature.signed_at,
+            },
+        )
 
-    def _save_verifications(self, evidence: Evidence) -> None:
-        for v in evidence.verifications:
-            self.connection.execute(
-                text(
-                    """
-                    INSERT INTO core_audit.evidence_verifications (
-                        verification_id,
-                        evidence_id,
-                        record_owner_organization_id,
-                        verified_at,
-                        verifier_id,
-                        verifier_org_id,
-                        verifier_contract_version,
-                        outcome,
-                        notes
-                    ) VALUES (
-                        :verification_id,
-                        :evidence_id,
-                        :org_id,
-                        :verified_at,
-                        :verifier_id,
-                        :verifier_org_id,
-                        :verifier_contract_version,
-                        :outcome,
-                        :notes
-                    )
-                    ON CONFLICT (verification_id) DO NOTHING
-                    """
-                ),
-                {
-                    "verification_id": v.verification_id.value,
-                    "evidence_id": evidence.evidence_id.value,
-                    "org_id": evidence.organization_id.value,
-                    "verified_at": v.verified_at,
-                    "verifier_id": v.verifier_reference.target_id.value,
-                    "verifier_org_id": (
-                        v.verifier_reference.organization_id.value
-                        if v.verifier_reference.organization_id
-                        else evidence.organization_id.value
-                    ),
-                    "verifier_contract_version": v.verifier_reference.contract_version,
-                    "outcome": v.outcome.value,
-                    "notes": v.notes,
-                },
-            )
+    def append_revocation(self, evidence: Evidence) -> None:
+        current = self._lock_current(evidence)
+        revocation = evidence.revocation
+        if revocation is None or current.revoke(revocation) != evidence:
+            raise ValueError("A revogação não pode alterar o conteúdo da Evidence.")
+        self.connection.execute(
+            text("""
+                INSERT INTO core_audit.evidence_revocations (
+                    revocation_id, evidence_id, record_owner_organization_id,
+                    evidence_version, recorded_at, revoked_at, revoking_actor_id,
+                    revoking_actor_org_id, revoking_actor_contract_version, reason
+                ) VALUES (:id, :evidence_id, :owner, :version, clock_timestamp(),
+                          :revoked_at, :actor, :actor_org, :contract, :reason)
+            """),
+            {
+                "id": TypedId.new("evidence_revocation").value,
+                "evidence_id": evidence.evidence_id.value,
+                "owner": evidence.organization_id.value,
+                "version": evidence.version,
+                "revoked_at": revocation.revoked_at,
+                "actor": revocation.revoking_actor.target_id.value,
+                "actor_org": (
+                    revocation.revoking_actor.organization_id or evidence.organization_id
+                ).value,
+                "contract": revocation.revoking_actor.contract_version,
+                "reason": revocation.reason,
+            },
+        )
 
     def get_by_id(self, evidence_id: TypedId) -> Evidence | None:
         row = self.connection.execute(
@@ -416,8 +452,7 @@ class TransactionalEvidenceRepository:
         if row is None:
             return None
 
-        verifications = self._load_verifications(evidence_id.value)
-        return self._map_row_to_evidence(row, verifications)
+        return self._compose_lifecycle(self._map_row_to_evidence(row, ()))
 
     def list_by_organization(
         self, organization_id: OrganizationId, limit: int = 50, offset: int = 0
@@ -466,8 +501,7 @@ class TransactionalEvidenceRepository:
 
         evidences: list[Evidence] = []
         for row in rows:
-            verifications = self._load_verifications(row.evidence_id)
-            evidences.append(self._map_row_to_evidence(row, verifications))
+            evidences.append(self._compose_lifecycle(self._map_row_to_evidence(row, ())))
         return evidences
 
     def list_by_source(self, source_id: TypedId) -> list[Evidence]:
@@ -514,50 +548,72 @@ class TransactionalEvidenceRepository:
 
         evidences: list[Evidence] = []
         for row in rows:
-            verifications = self._load_verifications(row.evidence_id)
-            evidences.append(self._map_row_to_evidence(row, verifications))
+            evidences.append(self._compose_lifecycle(self._map_row_to_evidence(row, ())))
         return evidences
 
-    def _load_verifications(self, evidence_id_val: object) -> tuple[VerificationRecord, ...]:
+    def _compose_lifecycle(self, base: Evidence) -> Evidence:
+        # A base é imutável. Um único snapshot SQL das três tabelas impede
+        # combinar a versão de uma operação concorrente com conteúdo anterior.
         rows = self.connection.execute(
-            text(
-                """
-                SELECT
-                    verification_id,
-                    verified_at,
-                    verifier_id,
-                    verifier_org_id,
-                    verifier_contract_version,
-                    outcome,
-                    notes
-                FROM core_audit.evidence_verifications
-                WHERE evidence_id = :evidence_id
-                ORDER BY verified_at ASC
-                """
+            text("""
+                SELECT 'verification' AS kind, to_jsonb(v) AS payload
+                FROM core_audit.evidence_verifications v WHERE evidence_id = :id
+                UNION ALL
+                SELECT 'signature', to_jsonb(s)
+                FROM core_audit.evidence_signatures s WHERE evidence_id = :id
+                UNION ALL
+                SELECT 'revocation', to_jsonb(r)
+                FROM core_audit.evidence_revocations r WHERE evidence_id = :id
+            """),
+            {"id": base.evidence_id.value},
+        ).all()
+        events = sorted(
+            rows,
+            key=lambda row: (
+                row.payload["evidence_version"] or 0,
+                row.payload.get("verified_at", ""),
             ),
-            {"evidence_id": evidence_id_val},
-        ).fetchall()
-
+        )
+        result = base
         verifications: list[VerificationRecord] = []
-        for r in rows:
-            v_at = (
-                r.verified_at.replace(tzinfo=UTC) if r.verified_at.tzinfo is None else r.verified_at
-            )
-            v_ref = UniversalReference(
-                target_id=TypedId(entity_type="user", value=r.verifier_id),
-                organization_id=OrganizationId(r.verifier_org_id),
-                contract_version=r.verifier_contract_version,
-            )
-            verifications.append(
-                VerificationRecord(
-                    verification_id=TypedId(entity_type="verification", value=r.verification_id),
-                    verified_at=v_at,
-                    verifier_reference=v_ref,
-                    outcome=VerificationOutcome(r.outcome),
-                    notes=r.notes,
+        for row in events:
+            data = row.payload
+            version = data["evidence_version"] or base.version
+            if row.kind == "verification":
+                verifications.append(
+                    VerificationRecord(
+                        verification_id=TypedId("verification", UUID(data["verification_id"])),
+                        verified_at=_parse_datetime(data["verified_at"]),
+                        verifier_reference=_lifecycle_actor(data, "verifier"),
+                        outcome=VerificationOutcome(data["outcome"]),
+                        notes=data["notes"],
+                    )
                 )
-            )
-        return tuple(verifications)
+            elif row.kind == "signature":
+                result = replace(
+                    result,
+                    signature=CryptographicSignature(
+                        signature_id=TypedId("signature", UUID(data["signature_id"])),
+                        profile=CryptographicProfile(data["profile"]),
+                        algorithm=data["algorithm"],
+                        raw_signature=_parse_bytea(data["raw_bytes"]),
+                        key_identifier=KeyIdentifier(
+                            TypedId("key", UUID(data["key_id"])), data["key_purpose"]
+                        ),
+                        signed_at=_parse_datetime(data["signed_at"]),
+                    ),
+                )
+            else:
+                result = replace(
+                    result,
+                    revocation=EvidenceRevocation(
+                        revoked_at=_parse_datetime(data["revoked_at"]),
+                        revoking_actor=_lifecycle_actor(data, "revoking_actor"),
+                        reason=data["reason"],
+                    ),
+                )
+            result = replace(result, version=max(result.version, version))
+        return replace(result, verifications=tuple(verifications))
 
     def _map_row_to_evidence(
         self, row: object, verifications: tuple[VerificationRecord, ...]
@@ -654,6 +710,25 @@ class TransactionalEvidenceRepository:
             signature=signature,
             version=row.version,  # type: ignore[attr-defined]
         )
+
+
+def _lifecycle_actor(data: dict[str, Any], prefix: str) -> UniversalReference:
+    return UniversalReference(
+        target_id=TypedId("user", UUID(data[f"{prefix}_id"])),
+        organization_id=OrganizationId(UUID(data[f"{prefix}_org_id"])),
+        contract_version=data[f"{prefix}_contract_version"],
+    )
+
+
+def _parse_datetime(value: str | datetime) -> datetime:
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed
+
+
+def _parse_bytea(value: str | bytes) -> bytes:
+    if isinstance(value, bytes):
+        return value
+    return bytes.fromhex(value[2:] if value.startswith("\\x") else value)
 
 
 attachments_table = Table(
