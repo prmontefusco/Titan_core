@@ -51,6 +51,7 @@ from packages.livestock_infrastructure.persistence.lot_repository import (
 )
 from packages.livestock_infrastructure.persistence.market_supply_population_reader import (
     TransactionalMarketSupplyOwnerScopedReadinessExecutor,
+    TransactionalMarketSupplyOwnerScopedReadinessReportBuilder,
     TransactionalMarketSupplyOwnerScopedSubjectReader,
     TransactionalOwnerScopedCandidateAnimalReader,
 )
@@ -145,6 +146,7 @@ __all__ = [
     "TransactionalMarketSupplyQueryAuditRepository",
     "TransactionalMarketSupplyOwnerScopedQueryAuditRepository",
     "TransactionalMarketSupplyOwnerScopedReadinessExecutor",
+    "TransactionalMarketSupplyOwnerScopedReadinessReportBuilder",
     "TransactionalMarketSupplyOwnerScopedSubjectReader",
     "TransactionalOwnerScopedCandidateAnimalReader",
     "TransactionalMedicationClassificationRepository",

@@ -94,72 +94,79 @@ def test_market_supply_aggregate_route_releases_real_single_owner_pipeline(
         from apps.api import livestock_market_supply as market_supply_api
 
         importlib.reload(main_module)
+        idempotency_key = f"market-supply-api-test-{uuid4()}"
+        with engine.begin() as connection:
+            owner = Organization.create()
+            buyer = Organization.create()
+            for organization in (owner, buyer):
+                set_local_organization_context(connection, organization.organization_id)
+                OrganizationRepository(connection).add(organization)
+
+            policy = _save_policy(connection, owner.organization_id)
+            property_id = _save_property(connection, owner.organization_id)
+            animals = _save_ready_animals(
+                connection,
+                organization_id=owner.organization_id,
+                property_id=property_id,
+                policy=policy,
+                count=3,
+            )
+            grant = AuthorizationGrant(
+                grant_id=uuid4(),
+                owner_organization_id=owner.organization_id,
+                beneficiary_organization_id=buyer.organization_id,
+                policy_id=policy.policy_id,
+                policy_version_id=TypedId.new("policy_version"),
+                access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
+                field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
+                valid_from=NOW - timedelta(days=1),
+                valid_until=NOW + timedelta(days=30),
+                status="ATIVO",
+                created_at=NOW - timedelta(days=1),
+                created_by="market-supply-api-test",
+                record_owner_organization_id=owner.organization_id,
+            )
+            set_local_organization_context(connection, owner.organization_id)
+            TransactionalAuthorizationGrantRepository(connection).save(grant)
+
+        buyer_context = _buyer_context(buyer.organization_id)
+        main_module.app.dependency_overrides[
+            market_supply_api.require_market_supply_aggregate_assess
+        ] = lambda: buyer_context
+
+        def runtime_connection() -> Iterator[Connection]:
+            with engine.connect() as request_connection_handle:
+                with request_connection_handle.begin():
+                    yield from _runtime_connection(
+                        request_connection_handle,
+                        role,
+                        buyer.organization_id,
+                    )
+
+        main_module.app.dependency_overrides[request_connection] = runtime_connection
+        client = TestClient(main_module.app, raise_server_exceptions=False)
+        response = client.post(
+            ROUTE,
+            headers={"Idempotency-Key": idempotency_key},
+            json=_request_body(policy.policy_id),
+        )
+        replay = client.post(
+            ROUTE,
+            headers={"Idempotency-Key": idempotency_key},
+            json=_request_body(policy.policy_id),
+        )
+
+        assert response.status_code == 200, response.text
+        assert replay.status_code == 200, replay.text
+        assert response.headers["cache-control"] == "no-store"
+        assert response.json() == replay.json()
+        assert response.json()["status"] == "RELEASED"
+        assert response.json()["aggregate"]["population_count"] == len(animals)
+        assert response.json()["aggregate"]["ready_now"] == len(animals)
+        assert response.json()["aggregate"]["estimated_shortage_now"] == 2
+
         with engine.connect() as connection:
-            transaction = connection.begin()
-            try:
-                owner = Organization.create()
-                buyer = Organization.create()
-                for organization in (owner, buyer):
-                    set_local_organization_context(connection, organization.organization_id)
-                    OrganizationRepository(connection).add(organization)
-
-                policy = _save_policy(connection, owner.organization_id)
-                property_id = _save_property(connection, owner.organization_id)
-                animals = _save_ready_animals(
-                    connection,
-                    organization_id=owner.organization_id,
-                    property_id=property_id,
-                    policy=policy,
-                    count=3,
-                )
-                grant = AuthorizationGrant(
-                    grant_id=uuid4(),
-                    owner_organization_id=owner.organization_id,
-                    beneficiary_organization_id=buyer.organization_id,
-                    policy_id=policy.policy_id,
-                    policy_version_id=TypedId.new("policy_version"),
-                    access_purpose=MARKET_SUPPLY_AGGREGATE_ASSESSMENT,
-                    field_scope_profile=MARKET_SUPPLY_AGGREGATE_FIELD_SCOPE,
-                    valid_from=NOW - timedelta(days=1),
-                    valid_until=NOW + timedelta(days=30),
-                    status="ATIVO",
-                    created_at=NOW - timedelta(days=1),
-                    created_by="market-supply-api-test",
-                    record_owner_organization_id=owner.organization_id,
-                )
-                set_local_organization_context(connection, owner.organization_id)
-                TransactionalAuthorizationGrantRepository(connection).save(grant)
-
-                buyer_context = _buyer_context(buyer.organization_id)
-                main_module.app.dependency_overrides[
-                    market_supply_api.require_market_supply_aggregate_assess
-                ] = lambda: buyer_context
-
-                def runtime_connection() -> Iterator[Connection]:
-                    yield from _runtime_connection(connection, role, buyer.organization_id)
-
-                main_module.app.dependency_overrides[request_connection] = runtime_connection
-                client = TestClient(main_module.app, raise_server_exceptions=False)
-                response = client.post(
-                    ROUTE,
-                    headers={"Idempotency-Key": "market-supply-api-test-key"},
-                    json=_request_body(policy.policy_id),
-                )
-                replay = client.post(
-                    ROUTE,
-                    headers={"Idempotency-Key": "market-supply-api-test-key"},
-                    json=_request_body(policy.policy_id),
-                )
-
-                assert response.status_code == 200, response.text
-                assert replay.status_code == 200, replay.text
-                assert response.headers["cache-control"] == "no-store"
-                assert response.json() == replay.json()
-                assert response.json()["status"] == "RELEASED"
-                assert response.json()["aggregate"]["population_count"] == len(animals)
-                assert response.json()["aggregate"]["ready_now"] == len(animals)
-                assert response.json()["aggregate"]["estimated_shortage_now"] == 2
-
+            with connection.begin():
                 quoted_role = connection.dialect.identifier_preparer.quote(role)
                 connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
                 set_local_organization_context(connection, owner.organization_id)
@@ -171,7 +178,7 @@ def test_market_supply_aggregate_route_releases_real_single_owner_pipeline(
                          WHERE idempotency_reference = :key
                         """
                     ),
-                    {"key": "market-supply-api-test-key"},
+                    {"key": idempotency_key},
                 ).scalar_one()
                 assert audit_count == 1
 
@@ -184,13 +191,11 @@ def test_market_supply_aggregate_route_releases_real_single_owner_pipeline(
                          WHERE idempotency_reference = :key
                         """
                     ),
-                    {"key": "market-supply-api-test-key"},
+                    {"key": idempotency_key},
                 ).scalar_one()
                 assert buyer_visible_audit_count == 0
                 connection.execute(text("RESET ROLE"))
-            finally:
-                main_module.app.dependency_overrides.clear()
-                transaction.rollback()
+        main_module.app.dependency_overrides.clear()
     finally:
         for key, value in previous_env.items():
             if value is None:
@@ -222,8 +227,18 @@ def _runtime_connection(
     set_local_organization_context(connection, organization_id)
     try:
         yield connection
+        assert _current_organization_id(connection) == organization_id
     finally:
         connection.execute(text("RESET ROLE"))
+
+
+def _current_organization_id(connection: Connection) -> OrganizationId | None:
+    raw = connection.execute(
+        text("SELECT NULLIF(current_setting('titan.organization_id', true), '')::uuid"),
+    ).scalar_one_or_none()
+    if raw is None:
+        return None
+    return OrganizationId(raw)
 
 
 def _buyer_context(organization_id: OrganizationId) -> OrganizationContext:

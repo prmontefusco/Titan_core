@@ -42,6 +42,7 @@ from packages.livestock_application.market_supply_population import (
     AuthorizedCandidatePopulationCompositionService,
     AuthorizedCandidatePopulationResult,
     CandidatePopulationCriteria,
+    CandidatePopulationSnapshot,
 )
 from packages.livestock_application.market_supply_privacy import (
     AggregationGeographicPrecision,
@@ -365,6 +366,7 @@ class MarketSupplyReadinessCompositionService:
     evaluation_reader: MarketReadinessEvaluationReaderPort
     readiness_service: MarketReadinessService
     owner_scoped_executor: "MarketSupplyOwnerScopedReadinessExecutorPort | None" = None
+    owner_scoped_report_builder: "MarketSupplyOwnerScopedReadinessReportBuilderPort | None" = None
 
     def build_reports(
         self,
@@ -373,6 +375,11 @@ class MarketSupplyReadinessCompositionService:
     ) -> tuple[MarketReadinessReport, ...]:
         reports: list[MarketReadinessReport] = []
         for snapshot in population_result.snapshots:
+            if self.owner_scoped_report_builder is not None:
+                reports.append(
+                    self.owner_scoped_report_builder.build_report_for_snapshot(snapshot=snapshot)
+                )
+                continue
             criteria = snapshot.criteria
             context = MarketReadinessContext(
                 organization_id=criteria.organization_id,
@@ -419,6 +426,16 @@ class MarketSupplyOwnerScopedReadinessExecutorPort(Protocol):
         *,
         organization_id: OrganizationId,
         callback: Callable[[], MarketReadinessReport],
+    ) -> MarketReadinessReport: ...
+
+
+class MarketSupplyOwnerScopedReadinessReportBuilderPort(Protocol):
+    """Builds readiness reports inside the contributor's own persistence context."""
+
+    def build_report_for_snapshot(
+        self,
+        *,
+        snapshot: CandidatePopulationSnapshot,
     ) -> MarketReadinessReport: ...
 
 

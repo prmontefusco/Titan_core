@@ -6,15 +6,24 @@ readiness, eligibility, disclosure or cross-tenant access.
 """
 
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC
 
 from sqlalchemy import Connection, and_, exists, select, text
 
+from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.organizations import set_local_organization_context
-from packages.livestock_application.market_readiness import MarketReadinessReport
+from packages.livestock_application.market_readiness import (
+    MarketReadinessContext,
+    MarketReadinessPopulationReader,
+    MarketReadinessReport,
+    MarketReadinessService,
+)
 from packages.livestock_application.market_supply_population import (
     CandidatePopulationCriteria,
+    CandidatePopulationSnapshot,
     CandidatePopulationSubject,
 )
 from packages.livestock_domain.animal import BirthOutcome
@@ -101,12 +110,20 @@ class TransactionalMarketSupplyOwnerScopedSubjectReader:
     """
 
     connection: Connection
+    owner_connection_factory: Callable[[], AbstractContextManager[Connection]] | None = None
 
     def list_subjects(
         self,
         *,
         criteria: CandidatePopulationCriteria,
     ) -> tuple[CandidatePopulationSubject, ...]:
+        if self.owner_connection_factory is not None:
+            with self.owner_connection_factory() as owner_connection, owner_connection.begin():
+                set_local_organization_context(owner_connection, criteria.organization_id)
+                return TransactionalOwnerScopedCandidateAnimalReader(
+                    owner_connection,
+                ).list_subjects(criteria=criteria)
+
         previous_organization_id = self._current_organization_id()
         set_local_organization_context(self.connection, criteria.organization_id)
         try:
@@ -167,3 +184,35 @@ class TransactionalMarketSupplyOwnerScopedReadinessExecutor:
             )
             return
         set_local_organization_context(self.connection, organization_id)
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalMarketSupplyOwnerScopedReadinessReportBuilder:
+    """Builds MarketReadiness reports on a dedicated contributor connection."""
+
+    owner_connection_factory: Callable[[], AbstractContextManager[Connection]]
+    readiness_service: MarketReadinessService
+
+    def build_report_for_snapshot(
+        self,
+        *,
+        snapshot: CandidatePopulationSnapshot,
+    ) -> MarketReadinessReport:
+        with self.owner_connection_factory() as owner_connection, owner_connection.begin():
+            set_local_organization_context(owner_connection, snapshot.criteria.organization_id)
+            criteria = snapshot.criteria
+            return MarketReadinessPopulationReader(
+                decision_repository=TransactionalDecisionRepository(owner_connection),
+                evaluation_repository=TransactionalEvaluationRepository(owner_connection),
+                readiness_service=self.readiness_service,
+            ).build_for_animals(
+                context=MarketReadinessContext(
+                    organization_id=criteria.organization_id,
+                    purpose=criteria.purpose,
+                    policy_id=criteria.policy_id,
+                    policy_version=criteria.policy_version,
+                    reference_time=criteria.reference_time,
+                    knowledge_cutoff=criteria.knowledge_cutoff,
+                ),
+                animal_ids=snapshot.included_subject_ids,
+            )

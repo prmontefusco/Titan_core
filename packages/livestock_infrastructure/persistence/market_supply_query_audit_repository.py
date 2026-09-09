@@ -7,6 +7,8 @@ application concepts.
 
 import hashlib
 import json
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -400,8 +402,15 @@ class TransactionalMarketSupplyOwnerScopedQueryAuditRepository:
     """
 
     connection: Connection
+    owner_connection_factory: Callable[[], AbstractContextManager[Connection]] | None = None
 
     def append(self, record: MarketSupplyQueryAuditRecord) -> None:
+        if self.owner_connection_factory is not None:
+            with self.owner_connection_factory() as owner_connection, owner_connection.begin():
+                set_local_organization_context(owner_connection, record.audit_owner_organization_id)
+                TransactionalMarketSupplyQueryAuditRepository(owner_connection).append(record)
+            return
+
         previous_organization_id = self._current_organization_id()
         set_local_organization_context(self.connection, record.audit_owner_organization_id)
         try:
@@ -456,6 +465,18 @@ class TransactionalMarketSupplyOwnerScopedQueryAuditRepository:
         # Existing F3.5 single-owner orchestration evaluates one owner-scoped
         # contribution at a time. Multi-owner history completeness still requires
         # an explicit correlation layer before aggregate release.
+        if self.owner_connection_factory is not None:
+            with self.owner_connection_factory() as owner_connection, owner_connection.begin():
+                set_local_organization_context(owner_connection, owner_organization_id)
+                return TransactionalMarketSupplyQueryAuditRepository(
+                    owner_connection,
+                ).find_related_query_fingerprints(
+                    requester_organization_id=requester_organization_id,
+                    beneficiary_organization_id=beneficiary_organization_id,
+                    access_purpose=access_purpose,
+                    policy_context_digest=policy_context_digest,
+                )
+
         previous_organization_id = self._current_organization_id()
         set_local_organization_context(self.connection, owner_organization_id)
         try:

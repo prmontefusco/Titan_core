@@ -4497,6 +4497,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** o incremento remove o oraculo externo da condicao zero/multi-owner, mas nao implementa release multi-owner correlacionado, novos controles de privacy, nova API, migration, forecast, persistencia de CommercialDemand ou alteracao de autorizacao. O audit uniforme usa digest/identidade da requisicao do comprador e nao inclui material de contribuicoes aceitas, evitando transformar o proprio erro de topologia em informacao buyer-facing.
 
 
+### 09/09/2026 — FINDING-005: Market Supply sem chaveamento owner na conexao do comprador
+
+**Estado:** CONCLUIDO — implementacao e verificacao focada concluidas para o wiring produtivo da rota F3.5.
+
+**Implementacao:** o wiring HTTP de `POST /v1/livestock/market-supply/aggregate-assessments` passou a fornecer uma fabrica de conexoes dedicadas para os adapters owner-scoped de Market Supply. `TransactionalMarketSupplyOwnerScopedSubjectReader` e `TransactionalMarketSupplyOwnerScopedQueryAuditRepository` agora executam leitura de populacao, append de audit e leitura de fingerprints historicos em conexoes/transacoes owner separadas quando essa fabrica e informada. A composicao de readiness ganhou a porta `MarketSupplyOwnerScopedReadinessReportBuilderPort`; o adapter `TransactionalMarketSupplyOwnerScopedReadinessReportBuilder` constroi os repositorios de Decision/Evaluation dentro da conexao owner dedicada, evitando callback fechado sobre a conexao do comprador. A API usa esse builder e nao usa mais o executor que troca `titan.organization_id` na transacao da request.
+
+**Evidencia:** `tests/integration/test_market_supply_api_postgresql.py` foi ajustado para preparar dados commitados, executar a rota com conexoes runtime reais e chave de idempotencia unica, e conferir que a conexao da request permanece no tenant comprador depois da avaliacao. O mesmo teste confirma release single-owner, replay idempotente, audit visivel ao owner e invisivel ao buyer. Testes focados de Market Supply aprovados com `29 passed`.
+
+**Portao:** verificacao focada aprovada com `29 passed`: `python -m uv run --locked pytest tests/integration/test_market_supply_api_postgresql.py tests/integration/test_market_supply_population_reader_postgresql.py tests/integration/test_market_supply_workflow_postgresql.py tests/api/test_market_supply_api_release_gate.py tests/livestock_application/test_market_supply.py`. Suite canonica completa aprovada com `1737 passed` e cinco avisos preexistentes de deprecacao HTTP 422. `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` aprovados; o Alembic manteve apenas o aviso preexistente de reflexao PostGIS `geometry`.
+
+**Riscos e limites:** o incremento remove o chaveamento owner da conexao fisica do comprador no caminho produtivo da API F3.5, mas nao implementa agregacao multi-owner publicavel nem uma role ampla de audit. Os adapters preservam fallback legacy de mesma conexao para uso direto em testes/unidades internas; novos call sites produtivos devem fornecer fabrica de conexao dedicada. O audit owner passa a ser gravado em transacao propria antes da resposta publica, preservando audit-before-release, mas sem prometer atomicidade monolitica entre audit owner e idempotencia buyer.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

@@ -53,7 +53,7 @@ from packages.livestock_application.market_supply_workflow import (
 )
 from packages.livestock_infrastructure.persistence import (
     TransactionalMarketSupplyOwnerScopedQueryAuditRepository,
-    TransactionalMarketSupplyOwnerScopedReadinessExecutor,
+    TransactionalMarketSupplyOwnerScopedReadinessReportBuilder,
     TransactionalMarketSupplyOwnerScopedSubjectReader,
 )
 from packages.shared_kernel import TypedId, UniversalReference
@@ -183,22 +183,31 @@ def assess_market_supply_aggregate(
 
 def _build_orchestrator(connection: Connection) -> MarketSupplyAggregateAssessmentOrchestrator:
     grant_repository = TransactionalAuthorizationGrantRepository(connection)
-    audit_repository = TransactionalMarketSupplyOwnerScopedQueryAuditRepository(connection)
+    owner_connection_factory = connection.engine.connect
+    audit_repository = TransactionalMarketSupplyOwnerScopedQueryAuditRepository(
+        connection,
+        owner_connection_factory=owner_connection_factory,
+    )
     gate_workflow = MarketSupplyAggregateGateWorkflow(
         audit_repository=audit_repository,
         grant_reader=grant_repository,
     )
+    readiness_service = MarketReadinessService()
     return MarketSupplyAggregateAssessmentOrchestrator(
         population_composer=AuthorizedCandidatePopulationCompositionService(
             grant_reader=grant_repository,
-            subject_reader=TransactionalMarketSupplyOwnerScopedSubjectReader(connection),
+            subject_reader=TransactionalMarketSupplyOwnerScopedSubjectReader(
+                connection,
+                owner_connection_factory=owner_connection_factory,
+            ),
         ),
         readiness_composer=MarketSupplyReadinessCompositionService(
             decision_reader=TransactionalDecisionRepository(connection),
             evaluation_reader=TransactionalEvaluationRepository(connection),
-            readiness_service=MarketReadinessService(),
-            owner_scoped_executor=TransactionalMarketSupplyOwnerScopedReadinessExecutor(
-                connection,
+            readiness_service=readiness_service,
+            owner_scoped_report_builder=TransactionalMarketSupplyOwnerScopedReadinessReportBuilder(
+                owner_connection_factory=owner_connection_factory,
+                readiness_service=readiness_service,
             ),
         ),
         payload_builder=MarketSupplyAggregatePayloadBuilder(),
