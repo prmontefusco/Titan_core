@@ -4575,6 +4575,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** este incremento não altera RLS, schema, worker, semântica da Inbox, rotina de replay ou ACLs de `core_audit` além de manter o comportamento existente. O role runtime segue dependendo de contexto RLS correto para enxergar registros protegidos.
 
 
+### 09/09/2026 — FINDING-010: expiração operacional de registros de idempotência
+
+**Estado:** CONCLUIDO — `core_audit.idempotency_records` passa a ter horizonte operacional explícito e limpeza transacional owner-scoped para registros concluídos expirados.
+
+**Implementação:** a migration `20260909_0086_add_idempotency_expiration.py` adiciona `expires_at` obrigatório em `core_audit.idempotency_records`, retropreenche registros existentes com `requested_at + 30 days`, cria a constraint `ck_idempotency_expires_after_request` e o índice parcial `ix_idempotency_records_expired_completed` para varredura de registros `CONCLUIDA`. O trigger `idempotency_completion_only` foi atualizado para preservar `expires_at` imutável durante a transição de conclusão. `IdempotencyRepository` passa a calcular `expires_at` no acquire e expõe `delete_expired_completed`, escopado por Organization, para execução explícita por manutenção privilegiada.
+
+**Evidência:** `tests/infrastructure/test_idempotency_persistence_contract.py` cobre a coluna, a migration de expiração, o índice parcial e a ausência de policy `FOR DELETE`. `tests/integration/test_idempotency_postgresql.py` prova que retries antes da limpeza recuperam o resultado, que a limpeza não remove registros antes de `expires_at`, que registros concluídos expirados são removidos somente no owner informado e que o trigger recusa alteração de `expires_at` durante conclusão indevida.
+
+**Portão:** testes focados aprovados com `9 passed`: `python -m uv run --locked pytest tests/application/test_idempotency_service.py tests/infrastructure/test_idempotency_persistence_contract.py tests/integration/test_idempotency_postgresql.py`. Suíte canônica completa aprovada após o ajuste: `pytest` com `1751 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este incremento não implementa scheduler, worker periódico, API, política jurídica de retenção, LegalHold, DispositionAssessment ou grants de DELETE para a role runtime ordinária. A janela de 30 dias é operacional para replay idempotente do Core e não substitui a ADR-0014 de retenção e descarte controlado.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

@@ -1,6 +1,7 @@
 """Registro transacional e durável de idempotência no PostgreSQL."""
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -8,12 +9,14 @@ from sqlalchemy import (
     Column,
     Connection,
     DateTime,
+    Index,
     Integer,
     LargeBinary,
     String,
     Table,
     UniqueConstraint,
     select,
+    text,
     update,
 )
 from sqlalchemy.dialects.postgresql import UUID, insert
@@ -23,6 +26,9 @@ from packages.core_application.idempotency import IdempotencyRequest, StoredIdem
 from packages.core_domain import CanonicalPayload
 from packages.core_infrastructure.persistence.events import CORE_AUDIT_SCHEMA
 from packages.core_infrastructure.persistence.organizations import organization_metadata
+from packages.shared_kernel import OrganizationId
+
+DEFAULT_IDEMPOTENCY_RETENTION_DAYS = 30
 
 idempotency_records_table = Table(
     "idempotency_records",
@@ -36,11 +42,13 @@ idempotency_records_table = Table(
     Column("operation", String(100), nullable=False),
     Column("intent_digest", LargeBinary, nullable=False),
     Column("requested_at", DateTime(timezone=True), nullable=False),
+    Column("expires_at", DateTime(timezone=True), nullable=False),
     Column("status", String(20), nullable=False),
     Column("result_schema", String(100), nullable=True),
     Column("result_version", Integer, nullable=True),
     Column("result_canonical_bytes", LargeBinary, nullable=True),
     CheckConstraint("octet_length(intent_digest) = 32", name="ck_idempotency_intent_digest"),
+    CheckConstraint("expires_at > requested_at", name="ck_idempotency_expires_after_request"),
     CheckConstraint("status IN ('EM_PROCESSAMENTO', 'CONCLUIDA')", name="ck_idempotency_status"),
     CheckConstraint(
         "(status = 'EM_PROCESSAMENTO' AND result_schema IS NULL AND result_version IS NULL "
@@ -58,6 +66,11 @@ idempotency_records_table = Table(
         "idempotency_key",
         name="uq_idempotency_semantic_scope",
     ),
+    Index(
+        "ix_idempotency_records_expired_completed",
+        "expires_at",
+        postgresql_where=text("status = 'CONCLUIDA'"),
+    ),
     schema=CORE_AUDIT_SCHEMA,
     comment="titan.classification=PROTECTED;titan.module_owner=core_audit",
 )
@@ -66,10 +79,13 @@ idempotency_records_table = Table(
 @dataclass(frozen=True, slots=True)
 class IdempotencyRepository:
     connection: Connection
+    retention_days: int = DEFAULT_IDEMPOTENCY_RETENTION_DAYS
 
     def __post_init__(self) -> None:
         if not isinstance(self.connection, Connection) or not self.connection.in_transaction():
             raise RuntimeError("IdempotencyRepository exige transação ativa.")
+        if self.retention_days <= 0:
+            raise ValueError("retention_days deve ser positivo.")
 
     def acquire(self, request: IdempotencyRequest) -> StoredIdempotencyResult | None:
         principal = request.principal_reference.target_id
@@ -85,6 +101,7 @@ class IdempotencyRepository:
                 operation=request.operation,
                 intent_digest=request.intent_digest,
                 requested_at=request.requested_at,
+                expires_at=request.requested_at + timedelta(days=self.retention_days),
                 status="EM_PROCESSAMENTO",
             )
             .on_conflict_do_nothing(constraint="uq_idempotency_semantic_scope")
@@ -118,6 +135,18 @@ class IdempotencyRepository:
         ).rowcount
         if changed != 1:
             raise RuntimeError("REGISTRO_IDEMPOTENTE_NAO_ADQUIRIDO")
+
+    def delete_expired_completed(
+        self, *, organization_id: OrganizationId, expired_before: datetime
+    ) -> int:
+        result = self.connection.execute(
+            idempotency_records_table.delete().where(
+                idempotency_records_table.c.record_owner_organization_id == organization_id.value,
+                idempotency_records_table.c.status == "CONCLUIDA",
+                idempotency_records_table.c.expires_at < expired_before,
+            )
+        )
+        return int(result.rowcount or 0)
 
 
 def _scope(request: IdempotencyRequest) -> tuple[ColumnElement[bool], ...]:
