@@ -151,6 +151,21 @@ def test_o_parto_cria_a_cria_e_a_linhagem_no_mesmo_ato(fazenda: Fazenda) -> None
     assert {link.parent_id for link in ascendentes} == {vaca}
 
 
+def test_data_de_nascimento_deriva_do_calendario_utc_do_parto(fazenda: Fazenda) -> None:
+    """Sem timezone da propriedade, não há conversão local implícita perto da meia-noite."""
+    vaca = fazenda.animal(AnimalSex.FEMALE)
+    ocorrido_no_limite_utc = datetime(2026, 1, 2, 0, 30, tzinfo=UTC)
+
+    registrado = fazenda.service.register_parturition(
+        context=fazenda.context,
+        dam_id=vaca,
+        occurred_at=ocorrido_no_limite_utc,
+        offspring=(CriaDeclarada(outcome=BirthOutcome.NASCIDO_VIVO),),
+    )
+
+    assert registrado.animals[0].birth_date == ocorrido_no_limite_utc.date()
+
+
 def test_o_agregado_do_evento_e_o_proprio_evento(fazenda: Fazenda, event_log: FakeEventLog) -> None:
     """Mãe e cria o citam; emitir um por ponta transformaria um fato em dois."""
     vaca = fazenda.animal(AnimalSex.FEMALE)

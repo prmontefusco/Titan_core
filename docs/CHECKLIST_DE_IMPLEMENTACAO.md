@@ -4588,6 +4588,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** este incremento não implementa scheduler, worker periódico, API, política jurídica de retenção, LegalHold, DispositionAssessment ou grants de DELETE para a role runtime ordinária. A janela de 30 dias é operacional para replay idempotente do Core e não substitui a ADR-0014 de retenção e descarte controlado.
 
 
+### 09/09/2026 — FINDING-011: fronteiras temporais UTC em reprodução e movimentação
+
+**Estado:** CONCLUIDO — o caminho auditado deixa explícito que movimentos são ordenados por instantes UTC e que a data civil de nascimento derivada de parto usa calendário UTC enquanto propriedade rural não tiver timezone versionado.
+
+**Implementação:** a investigação confirmou que `AnimalMovement`, `PropertyStay` e `MovementService.register_movement` já exigiam `datetime` UTC-aware e recusavam horário ingênuo no domínio/serviço. O ajuste implementado foi no ponto remanescente de derivação de data a partir de instante: `ReproductionService` passou a chamar `_utc_calendar_birth_date`, que valida `occurred_at` como UTC e documenta que não há conversão local implícita nem presunção de timezone da propriedade. A decisão segue a ADR-0052: sem metadado temporal explícito, o sistema não inventa fuso local.
+
+**Evidência:** `tests/livestock_application/test_reproduction_service.py` cobre parto próximo à meia-noite UTC e prova que `birth_date` vem do calendário UTC do instante informado. `tests/livestock_application/test_movement_service.py` cobre reconstrução de estadias com movimentos salvos fora de ordem, atravessando a meia-noite UTC, e prova que a timeline é ordenada por `movement_time`, não por suposição de data civil local.
+
+**Portão:** testes focados aprovados com `31 passed`: `python -m uv run --locked pytest tests/livestock_application/test_movement_service.py tests/livestock_application/test_reproduction_service.py`. Ruff check e Ruff format dos arquivos alterados aprovados. Suíte canônica completa executada após o ajuste: `pytest`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este incremento não adiciona timezone IANA a `RuralProperty`, não cria migration, API, conversão property-local, normalização de dados legados nem política regional. Datas civis locais por propriedade continuam exigindo uma decisão específica de domínio/schema; até lá, a fronteira entregue é UTC explícita e sem conversão silenciosa.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

@@ -281,7 +281,7 @@ class ReproductionService:
             birth_property_id=propriedade,
             sex=declarada.sex,
             breed=declarada.breed,
-            birth_date=occurred_at.date(),
+            birth_date=_utc_calendar_birth_date(occurred_at),
             birth_outcome=declarada.outcome,
             birth_property_source=procedencia,
             created_at=datetime.now(UTC),
@@ -367,3 +367,15 @@ class ReproductionService:
 
 def _iso(valor: date | None) -> str | None:
     return None if valor is None else valor.isoformat()
+
+
+def _utc_calendar_birth_date(occurred_at: datetime) -> date:
+    """Deriva data civil do parto pelo calendário UTC, sem presumir timezone local.
+
+    ADR-0052 proíbe transformar data sem hora em instante presumido. Aqui o dado
+    autoritativo é o instante UTC do parto; enquanto RuralProperty não possuir
+    timezone versionado, a data constitutiva da cria é explicitamente a data do
+    calendário UTC desse instante.
+    """
+    require_utc(occurred_at, field_name="occurred_at")
+    return occurred_at.date()

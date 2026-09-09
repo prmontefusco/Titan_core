@@ -1,6 +1,7 @@
 """Testes unitários para MovementService (Passo 8.3 - Titan Livestock)."""
 
-from datetime import UTC, datetime, timedelta
+from dataclasses import replace
+from datetime import UTC, datetime, time, timedelta
 from uuid import uuid4
 
 import pytest
@@ -282,6 +283,60 @@ def test_register_movement_rejects_naive_time(
             movement_time=datetime(2026, 7, 20, 12, 0),  # noqa: DTZ001 — naive de propósito
             animal_ids=(animal_id,),
         )
+
+
+def test_rebuild_stays_orders_movements_by_utc_instant_not_calendar_date(
+    recorder: LivestockEventRecorder, context: LivestockOperationContext
+) -> None:
+    service, origem, destino, animal_id = _movement_scenario(recorder, context)
+    terceira = TypedId.new("rural_property")
+    service.property_repository.save(
+        RuralProperty(
+            property_id=terceira,
+            organization_id=context.organization_id,
+            code="DEST-2",
+            name="Terceira",
+            municipality="Batatais",
+            state_code="SP",
+        )
+    )
+    animal = service.animal_repository.get_by_id(animal_id)
+    assert animal is not None
+    base_date = (datetime.now(UTC) - timedelta(days=2)).date()
+    primeiro_horario = datetime.combine(base_date, time(23, 30), tzinfo=UTC)
+    segundo_horario = datetime.combine(base_date + timedelta(days=1), time(0, 30), tzinfo=UTC)
+    service.animal_repository.update(
+        replace(animal, created_at=primeiro_horario - timedelta(days=1))
+    )
+
+    primeiro = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=context.organization_id,
+        origin_property_id=origem,
+        destination_property_id=destino,
+        movement_time=primeiro_horario,
+        animal_ids=(animal_id,),
+    )
+    segundo = AnimalMovement(
+        movement_id=TypedId.new("animal_movement"),
+        organization_id=context.organization_id,
+        origin_property_id=destino,
+        destination_property_id=terceira,
+        movement_time=segundo_horario,
+        animal_ids=(animal_id,),
+    )
+    service.movement_repository.save(segundo)
+    service.movement_repository.save(primeiro)
+
+    timeline = service.rebuild_stays_for_animal(animal_id)
+
+    assert [stay.property_id for stay in timeline] == [
+        animal.birth_property_id,
+        destino,
+        terceira,
+    ]
+    assert timeline[1].start_time == primeiro.movement_time
+    assert timeline[1].end_time == segundo.movement_time
 
 
 def test_movement_is_one_event_on_the_movement_stream(
