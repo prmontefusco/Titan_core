@@ -7,6 +7,10 @@
 
 ---
 
+> Nota de reconciliação, 09/09/2026: a ADR-0078 confirma que esta ADR permanece aceita como direção arquitetural futura. No estado atual do MVP, o repositório ainda não possui verificador ZKP produtivo, circuitos zk-SNARK/zk-STARK, geração ou validação de `ZeroKnowledgeProof`.
+
+---
+
 ## 1. Contexto e Problema
 
 Cadeias de suprimentos reguladas exigem auditabilidade e transparência de proveniência em múltiplos níveis de fornecedores (diretos e indiretos). No entanto, fornecedores intermediários recusam-se frequentemente a compartilhar seus identificadores exatos, localizações geográficas ou volumes transacionados por motivos de segredo comercial e concorrência.

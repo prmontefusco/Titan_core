@@ -4510,6 +4510,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** o incremento remove o chaveamento owner da conexao fisica do comprador no caminho produtivo da API F3.5, mas nao implementa agregacao multi-owner publicavel nem uma role ampla de audit. Os adapters preservam fallback legacy de mesma conexao para uso direto em testes/unidades internas; novos call sites produtivos devem fornecer fabrica de conexao dedicada. O audit owner passa a ser gravado em transacao propria antes da resposta publica, preservando audit-before-release, mas sem prometer atomicidade monolitica entre audit owner e idempotencia buyer.
 
 
+### 09/09/2026 — FINDING-006: reconciliacao de capacidades arquiteturais aspiracionais
+
+**Estado:** CONCLUIDO — ADR de reconciliação emitida e documentação arquitetural ajustada para refletir o estado operacional atual do MVP.
+
+**Implementação:** criada a ADR-0078, declarando explicitamente que Wasm Sandbox, ZKP e `SingleFileVerificationBundle` HTML/Wasm permanecem como direção arquitetural aprovada, mas ainda não são capacidades produtivas do repositório. `ARCHITECTURE.md` passou a distinguir stack implementada no MVP de capacidades futuras aprovadas. As ADRs 0033, 0034, 0036 e 0050 receberam nota de reconciliação apontando para a ADR-0078 e impedindo leitura dessas decisões como evidência de runtime Wasm, circuitos ZKP ou verificador HTML/Wasm já entregues.
+
+**Evidência:** a remediação fecha a divergência documental apontada pela auditoria sem adicionar dependência, API, migration, runtime criptográfico, endpoint, regra de negócio ou contrato público. A documentação agora afirma que regras normativas executam hoje em processos Python versionados e auditáveis, e que as capacidades Wasm/ZKP/HTML-Wasm exigirão incremento próprio antes de qualquer alegação operacional.
+
+**Portão:** revisão documental e suíte canônica executadas após o ajuste: `pytest`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este incremento não implementa sandbox WebAssembly, provas de conhecimento zero, assinatura criptográfica adicional, exportação de bundles HTML/Wasm ou verificação offline autônoma. Ele corrige a acurácia da arquitetura formal e preserva as decisões futuras para tratamento específico, com threat model, implementação, testes e aceite próprios.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

@@ -9,6 +9,10 @@
 
 ---
 
+> Nota de reconciliação, 09/09/2026: a ADR-0078 esclarece que a relação desta ADR com a ADR-0036 é compatibilidade arquitetural futura. No MVP atual, o contrato de execução determinística é implementado por processos Python versionados e auditáveis, sem runtime Wasm operacional.
+
+---
+
 ## 1. Contexto
 
 Uma regra pode possuir codigo aparentemente deterministico e ainda produzir resultados nao reproduziveis se consultar estado mutavel, depender de servicos externos, usar tempo corrente, aleatoriedade nao controlada, configuracao nao versionada ou informacoes que nao pertencam ao snapshot autorizado.

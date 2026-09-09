@@ -7,6 +7,10 @@
 
 ---
 
+> Nota de reconciliação, 09/09/2026: a ADR-0078 confirma que esta ADR permanece aceita como direção arquitetural futura. No estado atual do MVP, o repositório ainda não possui exportador produtivo de `SingleFileVerificationBundle` HTML/Wasm nem kernel WebAssembly de verificação offline.
+
+---
+
 ## 1. Contexto e Problema
 
 Exportação de relatórios de auditoria em formatos tradicionais (PDF, CSV, JSON simples) gera dependência permanente de infraestrutura online ou de softwares específicos para validar assinaturas e hashes. Se a plataforma emissora ficar indisponível ou for encerrada, a verificabilidade dos relatórios passados fica comprometida.

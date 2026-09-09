@@ -7,6 +7,10 @@
 
 ---
 
+> Nota de reconciliação, 09/09/2026: a ADR-0078 confirma que esta ADR permanece aceita como direção arquitetural futura. No estado atual do MVP, regras normativas executam em processos Python versionados; o repositório ainda não possui runtime `wasmtime`/`wasmer`, ABI Wasm de regras ou persistência produtiva de `NormativeExecutionReceipt` baseada em bytecode Wasm.
+
+---
+
 ## 1. Contexto e Problema
 
 Instrumentos normativos, leis e políticas corporativas mudam ao longo do tempo. Quando uma política é alterada, reavaliar decisões tomadas anos atrás utilizando a versão atual da aplicação pode levar a conclusões incorretas ou anacrónicas.

@@ -65,12 +65,14 @@ Backend
 
 - Python
 - FastAPI
-- Wasm Runtime (Wasmtime Sandbox) para execução determinística de regras normativas
+- Execução normativa implementada no MVP: serviços Python versionados, sem runtime Wasm operacional.
+- Direção arquitetural aprovada e ainda não implementada: Wasm Runtime (Wasmtime Sandbox) para execução determinística de regras normativas.
 
 Criptografia e Provas
 
-- Verificador ZKP (zk-SNARKs / zk-STARKs) para provas de conhecimento zero em proveniência
-- Verificador Autônomo Monolítico HTML/Wasm para exportação de SingleFileVerificationBundle
+- Implementado no MVP: hashes canônicos, trilhas append-only, assinaturas e verificações conforme os módulos já entregues.
+- Direção arquitetural aprovada e ainda não implementada: Verificador ZKP (zk-SNARKs / zk-STARKs) para provas de conhecimento zero em proveniência.
+- Direção arquitetural aprovada e ainda não implementada: Verificador Autônomo Monolítico HTML/Wasm para exportação de SingleFileVerificationBundle.
 
 Banco
 
@@ -2294,15 +2296,20 @@ Observabilidade acompanha saturação, latência, erros, filas, idade da Outbox,
 
 # Inovações Arquiteturais e Protocolo Aberto (TEP)
 
+Esta seção registra a arquitetura-alvo aprovada. No estado operacional atual do MVP,
+as capacidades de ZKP, `SingleFileVerificationBundle` HTML/Wasm e sandbox Wasm de
+políticas normativas ainda não possuem runtime, dependências ou endpoints produtivos
+no repositório. A reconciliação formal está registrada na ADR-0078.
+
 ## 1. Provas de Conhecimento Zero (ZKP - Zero-Knowledge Proofs)
 
-O Titan Core suporta a ancoragem de provas de conhecimento zero em `VerificationBundles` e `Dossiers` (ADR-0033).
+Direção aprovada para o Titan Core: suportar a ancoragem de provas de conhecimento zero em `VerificationBundles` e `Dossiers` (ADR-0033). Esta capacidade ainda não está implementada no MVP.
 - **Abstração do Domínio:** `ZeroKnowledgeProof`, `ZkCircuitReference`, `PrivateProofConstraint`.
 - **Funcionamento:** Permite provar que um caminho de proveniência (`ProvenancePath`) satisfaz regras regulatórias ou restrições de conformidade sem expor identificadores sensíveis (como pessoas, coordenadas GPS de propriedades ou volumes comerciais).
 
 ## 2. Dossiê Autônomo Monolítico em HTML/Wasm (`SingleFileVerificationBundle`)
 
-Para garantir verificabilidade perpétua sem dependência de servidores ativos ou APIs online (ADR-0034):
+Direção aprovada para garantir verificabilidade perpétua sem dependência de servidores ativos ou APIs online (ADR-0034). Esta capacidade ainda não está implementada no MVP:
 - O dossiê é empacotado em um arquivo único `.html`.
 - O arquivo contém a árvore de hashes canônicos, os metadados das evidências, as chaves públicas e um kernel de verificação criptográfica compilado em WebAssembly.
 - Ao abrir em qualquer navegador web offline, o kernel Wasm executa o recálculo dos hashes e exibe o grafo de proveniência interativo com validação gráfica de integridade e lacunas declaradas.
@@ -2315,7 +2322,7 @@ O Core possui um motor abstrato de validação de restrições relacionais, fís
 
 ## 4. Execution Sandbox de Políticas Normativas em Wasm
 
-Garante a reavaliação determinística atemporal de políticas normativas históricas (ADR-0036):
+Direção aprovada para garantir a reavaliação determinística atemporal de políticas normativas históricas (ADR-0036). Esta capacidade ainda não está implementada no MVP; regras normativas hoje executam em processos Python versionados e testados:
 - **Abstrações:** `WasmNormativePolicyEvaluator`, `PolicyExecutionSandbox`, `NormativeExecutionReceipt`.
 - **Operação:** Compila regras normativas para bytecode WebAssembly determinístico e imutável. Reavaliar um fato histórico executa o bytecode exato da regra na data do evento, impedindo que mudanças posteriores no código da aplicação alterem decisões passadas.
 
@@ -2324,4 +2331,3 @@ Garante a reavaliação determinística atemporal de políticas normativas hist�
 Para eliminar o risco de *lock-in* comercial para clientes e auditores (ADR-0037):
 - A especificação esquemática do **Titan Evidence Protocol (TEP)**, serialização canônica determinística e verificadores offline são mantidos sob licença aberta (MIT/Apache 2.0).
 - A plataforma enterprise (gestão multi-tenant, isolamento RLS, motor adversarial avançado e verticais comerciais como o Titan Livestock) é mantida sob modelo comercial proprietário.
-
