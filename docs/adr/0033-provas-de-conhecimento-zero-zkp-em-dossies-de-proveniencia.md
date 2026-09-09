@@ -1,6 +1,7 @@
 # ADR-0033: Provas de Conhecimento Zero (ZKP) em Dossiês de Proveniência
 
 * **Status:** Aceita
+* **Estado operacional no MVP:** FUTURA_APROVADA — não implementada no repositório atual; ver ADR-0078.
 * **Data:** 2026-07-22
 * **Decisor:** Fundador / Engenheiro Principal
 * **Domínio Afetado:** Titan Core (`core_domain`, `core_integrity`, `core_infrastructure`)

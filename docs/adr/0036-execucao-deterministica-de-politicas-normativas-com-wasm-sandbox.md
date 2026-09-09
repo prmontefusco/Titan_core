@@ -1,6 +1,7 @@
 # ADR-0036: Execução Determinística de Políticas Normativas com Wasm Sandbox
 
 * **Status:** Aceita
+* **Estado operacional no MVP:** FUTURA_APROVADA — runtime Wasm não implementado no repositório atual; ver ADR-0078.
 * **Data:** 2026-07-22
 * **Decisor:** Fundador / Engenheiro Principal
 * **Domínio Afetado:** Titan Core (`core_domain`, `core_application`, `core_infrastructure`)

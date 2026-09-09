@@ -4614,6 +4614,19 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** a correção depende de a sessão SSO do Keycloak ainda estar válida para `signinSilent`; não introduz refresh token, não altera realm, client OIDC, backend, expiração de token, salvamento automático de formulários ou UX de recuperação offline. O retry é deliberadamente único para evitar loops ou replay indefinido.
 
 
+### 09/09/2026 — FINDING-013: distinção documental entre decisão arquitetural e capacidade entregue
+
+**Estado:** CONCLUIDO — ADRs e documentação de governança passam a distinguir explicitamente status decisório de estado operacional no MVP.
+
+**Implementação:** `docs/adr/README.md` agora define a taxonomia `IMPLEMENTADA`, `PARCIALMENTE_IMPLEMENTADA`, `FUTURA_APROVADA` e `DIFERIDA`, deixando explícito que ADR aceita não equivale a funcionalidade disponível. As ADRs 0033, 0034 e 0036 foram anotadas como `FUTURA_APROVADA`, sem ZKP, `SingleFileVerificationBundle` HTML/Wasm ou runtime Wasm produtivo no repositório atual. A ADR-0050 foi anotada como `PARCIALMENTE_IMPLEMENTADA`, porque o contrato determinístico existe por serviços Python versionados, enquanto a execução Wasm permanece futura conforme a ADR-0078.
+
+**Evidência:** `ARCHITECTURE.md` já separa stack implementada de direções futuras aprovadas e a ADR-0078 registra a reconciliação formal. Este ajuste fecha a lacuna restante apontada pela auditoria: as ADRs de referência agora carregam o estado operacional no próprio cabeçalho.
+
+**Portão:** verificação documental por diff e busca textual; suíte canônica completa executada após o ajuste: `pytest`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este incremento não implementa ZKP, HTML/Wasm, runtime Wasm, API, migration, dependência criptográfica, verificador offline ou regra normativa nova. Também não rebaixa a decisão arquitetural futura; apenas impede que ela seja confundida com capacidade operacional entregue.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.

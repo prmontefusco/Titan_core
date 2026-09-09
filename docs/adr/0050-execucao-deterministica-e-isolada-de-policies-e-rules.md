@@ -2,6 +2,7 @@
 
 **Data:** 2026-07-29<br>
 **Status:** ACEITA<br>
+**Estado operacional no MVP:** PARCIALMENTE_IMPLEMENTADA — contrato executado por serviços Python versionados; runtime Wasm permanece futuro conforme ADR-0078.<br>
 **Aceita em:** 2026-07-29<br>
 **Base normativa:** `DOMAIN.md` v1.19 e ADRs aceitas ate ADR-0049<br>
 **Escopo:** Titan Core<br>
