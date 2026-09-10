@@ -28,7 +28,9 @@ schema_version = 1
 # O Core não é uma vertical; fica aqui só para o teste de fronteira ter a lista canônica.
 package_prefixes = ["core_domain", "core_application", "core_infrastructure", "core_integrity"]
 shared_kernel    = "shared_kernel"
-migration_owner  = "titan_core"
+# Tokens `titan.module_owner` que aparecem no comentário das tabelas do Core hoje
+# (grep em packages/**/*.py). Usados pelo filtro de S-M2 para a allowlist de FK.
+module_owner_tokens = ["core_audit", "core_identity", "core_messaging"]
 
 [verticals.livestock]
 display_name         = "Titan Livestock"
@@ -59,7 +61,12 @@ owned_path_prefixes  = [
     "apps/seed_test_livestock_data.py",
 ]
 event_namespaces     = ["livestock"]
-migration_owner      = "titan_livestock"
+# Token `titan.module_owner` das tabelas de Livestock. O repositório hoje usa
+# DOIS tokens para a mesma vertical (`livestock` e `titan_livestock`, ~36 cada) —
+# inconsistência pré-existente a padronizar num PR de lane Livestock. O filtro de
+# S-M2 aceita ambos via `migration_owner_aliases`.
+migration_owner      = "livestock"
+migration_owner_aliases = ["titan_livestock"]
 # Transitório: as migrations de Livestock ainda vivem sob core_infrastructure
 # (Opção D de MIGRATION_CONCURRENCY_STRATEGY.md). Migram para um diretório próprio
 # numa janela de integração (passo S-M4), quando o Codex não estiver no meio de uma migration.
@@ -92,7 +99,8 @@ owned_path_prefixes  = [
     "docs/asset-sustainment/",
 ]
 event_namespaces     = ["asset"]
-migration_owner      = "titan_asset"
+migration_owner      = "asset"
+migration_owner_aliases = []
 migration_locations  = ["packages/asset_infrastructure/persistence/migrations/versions"]
 
 [shared]

@@ -101,6 +101,7 @@ def test_owned_path_prefixes_do_not_overlap_between_verticals() -> None:
 
 def test_event_namespaces_and_migration_owners_are_disjoint() -> None:
     verticals = _manifest()["verticals"]
+    core_tokens = set(_manifest()["core"].get("module_owner_tokens", []))
     seen_ns: dict[str, str] = {}
     seen_owner: dict[str, str] = {}
     for vertical_id, body in verticals.items():
@@ -110,12 +111,21 @@ def test_event_namespaces_and_migration_owners_are_disjoint() -> None:
                 f"'{seen_ns[namespace]}' e '{vertical_id}'"
             )
             seen_ns[namespace] = vertical_id
-        owner = body["migration_owner"]
-        assert owner.startswith("titan_"), f"migration_owner '{owner}' fora do padrão titan_*"
-        assert owner not in seen_owner, (
-            f"migration_owner '{owner}' reivindicado por '{seen_owner[owner]}' e '{vertical_id}'"
+
+        # `migration_owner` + aliases: tokens `titan.module_owner` que a vertical
+        # reivindica. Devem ser não vazios, não colidir entre verticais e não
+        # colidir com os tokens do Core.
+        owner_tokens = {body["migration_owner"], *body.get("migration_owner_aliases", [])}
+        assert all(owner_tokens), f"'{vertical_id}': migration_owner/alias vazio"
+        assert not (owner_tokens & core_tokens), (
+            f"'{vertical_id}': token de migration colide com o Core: {owner_tokens & core_tokens}"
         )
-        seen_owner[owner] = vertical_id
+        for token in owner_tokens:
+            assert token not in seen_owner, (
+                f"Token de migration '{token}' reivindicado por "
+                f"'{seen_owner[token]}' e '{vertical_id}'"
+            )
+            seen_owner[token] = vertical_id
 
 
 def test_owned_prefixes_that_point_into_the_repo_resolve_or_are_future() -> None:
