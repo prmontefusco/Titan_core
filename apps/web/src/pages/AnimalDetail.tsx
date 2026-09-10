@@ -162,7 +162,9 @@ export function AnimalDetail(options: Options) {
           <Link to={`/animals/${animal.animal_id}/market-matrix`}>
             Executar análise de mercado
           </Link>
-          <Link to={`/animals/${animal.animal_id}/commercial-explanation`}>
+          <Link
+            to={`/animals/${animal.animal_id}/commercial-explanation?returnTo=${encodeURIComponent(`/animals/${animal.animal_id}`)}`}
+          >
             Gerar explicação comercial
           </Link>
         </div>

@@ -4844,3 +4844,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `3 passed`: `npm run test -- AnimalDetail`. Frontend completo aprovado com `npm run test` (`116 passed`), `npm run build` e `npm run lint`.
 
 **Riscos e limites:** este corte nao altera API, backend, elegibilidade, matriz, explicacao comercial, autorizacao ou regra de negocio. Ele apenas torna visivel no hub do animal uma rota ja existente do fluxo aprovado.
+
+
+### 10/09/2026 — Frontend Livestock: retorno contextual da explicacao comercial
+
+**Estado:** CONCLUIDO — a explicacao comercial do animal passa a voltar para a origem operacional correta.
+
+**Implementacao:** o hub do animal abre `/commercial-explanation` com `returnTo=/animals/{animalId}`; a matriz de mercado abre a mesma tela com `returnTo=/animals/{animalId}/market-matrix`. `CommercialExplanation` aceita somente esses retornos seguros do mesmo animal e ignora qualquer URL arbitraria, preservando o retorno padrao para a matriz quando o parametro e ausente ou invalido. A rota de lote continua voltando para o lote.
+
+**Evidencia:** `AnimalDetail.test.tsx` cobre o link do hub com retorno ao animal; `MarketMatrix.test.tsx` cobre o link da matriz com retorno a matriz; `CommercialExplanation.test.tsx` cobre retorno ao hub, rejeicao de URL arbitraria e preservacao do fluxo de lote.
+
+**Portao:** testes focados aprovados com `15 passed`: `npm run test -- AnimalDetail MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`118 passed`), `npm run build` e `npm run lint`.
+
+**Riscos e limites:** este corte nao altera API, backend, autorizacao, avaliacao comercial, explicacao comercial ou governanca. Ele apenas corrige navegacao local e falha fechada para parametros de retorno inesperados.

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
   EligibilityApiError,
   runCommercialExplanation,
@@ -32,6 +32,12 @@ function linkGovernancaDeMercado(animalId: string): string {
   return `/rule-governance?${params.toString()}`
 }
 
+function retornoAnimalSeguro(returnTo: string | null, animalId: string): string | null {
+  if (!returnTo) return null
+  const rotasPermitidas = [`/animals/${animalId}`, `/animals/${animalId}/market-matrix`]
+  return rotasPermitidas.includes(returnTo) ? returnTo : null
+}
+
 // Tela S8 (Onda 3), generalizada na Onda 4 para aceitar lote além de animal
 // -- POST /market-eligibility/commercial-explanations já aceita lot_id como
 // alternativa a animal_id (XOR) e devolve o mesmo ExplicacaoComercialResponse
@@ -43,6 +49,7 @@ function linkGovernancaDeMercado(animalId: string): string {
 // expõe o campo `dependency` estruturado, só `next_action` em texto).
 export function CommercialExplanation(options: Options) {
   const { animalId, lotId } = useParams<{ animalId?: string; lotId?: string }>()
+  const [searchParams] = useSearchParams()
   const [resultado, setResultado] = useState<ExplicacaoComercialResponse | null>(null)
   const [proposalId, setProposalId] = useState<string | null>(null)
   const [executando, setExecutando] = useState(false)
@@ -71,8 +78,14 @@ export function CommercialExplanation(options: Options) {
     }
   }
 
+  const retornoAnimal = animalId ? retornoAnimalSeguro(searchParams.get('returnTo'), animalId) : null
   const linkDeVolta = animalId
-    ? { to: `/animals/${animalId}/market-matrix`, texto: 'Voltar para a matriz de mercado' }
+    ? {
+        to: retornoAnimal ?? `/animals/${animalId}/market-matrix`,
+        texto: retornoAnimal === `/animals/${animalId}`
+          ? 'Voltar para o animal'
+          : 'Voltar para a matriz de mercado',
+      }
     : { to: `/lots/${lotId}`, texto: 'Voltar para o lote' }
   const subjectLabel = animalId ? 'Animal' : 'Lote'
   const subjectId = animalId ?? lotId!
