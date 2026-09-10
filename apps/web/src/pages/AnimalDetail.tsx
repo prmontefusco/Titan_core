@@ -103,10 +103,11 @@ export function AnimalDetail(options: Options) {
     <article className="detail-page">
       <DetailPageHeader
         eyebrow="Livestock / Animal"
-        title={`Animal ${animal.animal_id}`}
-        subtitle="Identidade operacional do animal dentro da Organization ativa."
+        title={animal.identifiers[0]?.value ?? `Animal ${animal.animal_id}`}
+        subtitle="Hub operacional do animal dentro da Organization ativa."
         backTo="/animals"
         backLabel="Voltar para a busca"
+        meta={<span className="detail-status-chip">{animal.saida ? 'FORA DO REBANHO' : 'ATIVO NO REBANHO'}</span>}
       />
 
       <DetailSection
@@ -136,6 +137,8 @@ export function AnimalDetail(options: Options) {
               ? 'nenhum'
               : animal.identifiers.map((id) => `${id.type}: ${id.value} (${id.state})`).join(', ')}
           </dd>
+          <dt>Organization</dt>
+          <dd><code>{options.organizationId}</code></dd>
           {animal.saida && (
             <>
               <dt>Saída do rebanho</dt>
@@ -149,8 +152,8 @@ export function AnimalDetail(options: Options) {
       </DetailSection>
 
       <DetailSection
-        title="Ações disponíveis"
-        description="Atalhos para operações existentes sobre este animal."
+        title="Próximas ações"
+        description="Caminhos existentes para investigar histórico, registrar tratamento ou executar avaliações sem criar regra no navegador."
       >
         <div className="detail-action-list">
           <Link to={`/animals/${animal.animal_id}/timeline`}>Ver timeline</Link>

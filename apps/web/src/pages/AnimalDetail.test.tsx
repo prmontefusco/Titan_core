@@ -38,7 +38,10 @@ describe('AnimalDetail', () => {
           breed: 'Nelore',
           birth_date: '2024-01-01',
           birth_property_id: null,
+          birth_property_source: 'DECLARED',
+          birth_outcome: 'KNOWN',
           identifiers: [],
+          created_at: '2024-01-02T00:00:00Z',
           saida: null,
         }),
       }),
@@ -48,6 +51,8 @@ describe('AnimalDetail', () => {
 
     expect(await screen.findByText('Nelore')).toBeInTheDocument()
     expect(screen.getByText(/não disponível nesta versão/i)).toBeInTheDocument()
+    expect(screen.getByText(/ativo no rebanho/i)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /ver timeline/i })).toHaveAttribute('href', '/animals/a1/timeline')
   })
 
   it('mostra mensagem clara quando o animal não é encontrado (404)', async () => {

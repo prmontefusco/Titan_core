@@ -45,6 +45,8 @@ describe('AnimalSearch', () => {
     )
 
     expect(await screen.findByText(/BR9988/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /BR9988/i })).toHaveAttribute('href', '/animals/a1')
+    expect(screen.getByText(/consulta operacional de animal/i)).toBeInTheDocument()
   })
 
   it('mostra mensagem clara quando falta permissão (403)', async () => {

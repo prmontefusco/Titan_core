@@ -1,7 +1,7 @@
 # SPEC: Frontend — Fluxo Operacional de Animal
 
 - **Nível:** STANDARD
-- **Estado:** proposta
+- **Estado:** aprovada
 - **Decisão de Discovery:** PROCEED
 - **Owner de produto:** Founder / Product Owner
 - **Data:** 2026-09-10

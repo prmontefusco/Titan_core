@@ -4660,3 +4660,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao de verificacao:** 29 testes de integracao da API de leitura e cinco regressoes focadas aprovados. Roteiro HTTP real executado com Keycloak, PostgreSQL e role temporaria `NOBYPASSRLS`: cinco passos aprovados, incluindo animal e lote inconclusivos para China/EUA e entrada sem sujeito rejeitada. Suite canonica completa aprovada: `1714 passed` (cinco avisos preexistentes de deprecacao HTTP 422), `ruff check .`, `ruff format --check .` e `mypy` aprovados; `alembic check` sem novas operacoes, com aviso preexistente de reflexao do tipo PostGIS `geometry`. Migrations aplicadas com `TITAN_MIGRATION_DATABASE_URL`; launchers locais recompostos com `python -m uv sync --locked --reinstall`, sem alterar dependencias ou lockfile.
 
 **Riscos e limites:** consumidores que dependiam da promocao indevida passam a receber conclusao inconclusiva; este e o comportamento sanitariamente exigido. Nenhuma regra concreta de carencia foi inventada. O incremento nao resolve os demais achados da auditoria. Aceite de negocio recebido em 08/09/2026; este registro acompanha o commit da correcao conforme o fluxo VERIFY -> ACCEPT.
+
+
+### 10/09/2026 — Frontend Livestock: primeiro corte do fluxo operacional de animal
+
+**Estado:** CONCLUIDO — SPEC aceita pelo Product Owner e primeiro corte BUILD implementado e verificado para coesao de busca, detalhe e timeline do animal.
+
+**Implementacao:** a SPEC `docs/specs/approved/2026-09-10-frontend-fluxo-operacional-animal.md` foi promovida para aprovada. `AnimalSearch` passou a apresentar a consulta como entrada operacional do fluxo, com formulario de busca, resultados estruturados, paginacao e estados de carregamento/vazio/erro/autorizacao preservados pelos componentes existentes. `AnimalDetail` passou a destacar o identificador principal, status operacional derivado dos dados recebidos, Organization ativa e proximas acoes para timeline, tratamento, elegibilidade e analise de mercado. `AnimalTimeline` foi alinhada ao padrao `DetailPage`, mantendo retorno previsivel para o detalhe e exibindo eventos conhecidos com fonte, tipo de agregado, identificador e substituicao quando a API informar.
+
+**Evidencia:** `apps/web/src/pages/AnimalSearch.test.tsx`, `apps/web/src/pages/AnimalDetail.test.tsx` e `apps/web/src/pages/AnimalTimeline.test.tsx` cobrem resultado encontrado, links operacionais, contexto/status, estados vazios e respostas 403/404 relevantes.
+
+**Portao:** testes focados aprovados com `8 passed`: `npm run test -- AnimalSearch AnimalDetail AnimalTimeline`. Frontend completo aprovado com `npm run test` (`108 passed`), `npm run build` e `npm run lint`. Suite canonica completa do repositorio aprovada apos subir PostgreSQL e aplicar migrations: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este corte nao altera backend, contratos publicos, permissao, RBAC/RLS, Organization switcher, criacao de elegibilidade/decisao, Market Supply como fluxo principal, autosave offline ou regras de negocio no navegador. A propriedade exibida continua limitada ao nascimento porque a API ainda nao expoe estadia atual como leitura propria.

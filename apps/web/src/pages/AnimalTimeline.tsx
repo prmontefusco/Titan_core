@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { AnimalApiError, fetchAnimalTimeline, type LinhaDoTempoResponse } from '../api/animals'
 import { EmptyState, ErrorState, LoadingState, UnauthorizedState } from '../components/AsyncStates'
 import { PageContext } from '../components/PageContext'
+import { DetailPageHeader, DetailSection } from '../components/DetailPage'
 
 interface Options {
   baseUrl: string
@@ -44,11 +45,14 @@ export function AnimalTimeline(options: Options) {
   }, [options.baseUrl, options.accessToken, options.organizationId, animalId])
 
   return (
-    <section>
-      <p>
-        <Link to={animalId ? `/animals/${animalId}` : '/animals'}>&larr; Voltar para o animal</Link>
-      </p>
-      <h2>Timeline do animal {animalId}</h2>
+    <article className="detail-page">
+      <DetailPageHeader
+        eyebrow="Livestock / Timeline"
+        title="Timeline do animal"
+        subtitle="Eventos históricos devolvidos pela API, sem fundir fontes heterogêneas nem reescrever histórico."
+        backTo={animalId ? `/animals/${animalId}` : '/animals'}
+        backLabel="Voltar para o animal"
+      />
       <PageContext
         description="A narrativa histórica exibida aqui pertence somente ao animal dentro da Organization ativa."
         items={[
@@ -69,16 +73,25 @@ export function AnimalTimeline(options: Options) {
         <EmptyState tone="compact" message="Nenhum evento registrado ainda." />
       )}
       {!semPermissao && !erro && linha !== null && linha.entries.length > 0 && (
-        <ul>
-          {linha.entries.map((entrada, indice) => (
-            <li key={`${entrada.aggregate_id}-${indice}`}>
-              {new Date(entrada.occurred_at).toLocaleString('pt-BR')} — {entrada.entry_type} (
-              {entrada.source_kind})
-              {entrada.superseded_by && <> — substituído por {entrada.superseded_by}</>}
-            </li>
-          ))}
-        </ul>
+        <DetailSection
+          title="Eventos conhecidos"
+          description={`${linha.entry_count} evento(s) conhecido(s)${linha.known_until ? ` até ${new Date(linha.known_until).toLocaleString('pt-BR')}` : ''}.`}
+        >
+          <ol className="animal-timeline-list">
+            {linha.entries.map((entrada, indice) => (
+              <li key={`${entrada.aggregate_id}-${indice}`}>
+                <time dateTime={entrada.occurred_at}>
+                  {new Date(entrada.occurred_at).toLocaleString('pt-BR')}
+                </time>
+                <strong>{entrada.entry_type}</strong>
+                <span>{entrada.source_kind} / {entrada.aggregate_type}</span>
+                <code>{entrada.aggregate_id}</code>
+                {entrada.superseded_by && <em>Substituído por {entrada.superseded_by}</em>}
+              </li>
+            ))}
+          </ol>
+        </DetailSection>
       )}
-    </section>
+    </article>
   )
 }
