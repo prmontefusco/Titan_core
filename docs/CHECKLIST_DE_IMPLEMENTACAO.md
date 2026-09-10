@@ -4751,3 +4751,10 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `4 passed`: `npm run test -- MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`112 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
 
 **Riscos e limites:** este corte nao altera API, backend, catalogo, templates, policies, rules, adoptions, permissoes ou semantica de mercado. Os atalhos reduzem erro operacional de digitacao, mas nao validam se uma exigencia normativa concreta deve ser adotada para determinado mercado.
+
+
+### 10/09/2026 — Ponto de retomada externo: correcoes geodata
+
+**Estado:** REGISTRADO — apos concluir o bloco atual de governanca de mercado no frontend, retomar as correcoes de geodata descritas em `D:\projects\programming\Titan\_geodata\integracao\PENDENCIAS\_CONSUMIDOR\_TITAN.md`.
+
+**Escopo:** este registro e apenas lembrete operacional para retomada. Nenhuma correcao de geodata foi analisada ou implementada neste ponto, e nenhuma regra do Titan foi alterada por este registro.
