@@ -11,8 +11,46 @@ concurrency:
   group: quality-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Níveis de portão (docs/architecture/MULTI_VERTICAL_CI_GATES.md):
+#   - parallel-vertical-gates : Nível 1 de fronteira — só em pull_request. Rápido,
+#     sem banco. Aplica PARALLEL_VERTICAL_SAFETY (propriedade de arquivo + rótulo
+#     shared-integration). Não substitui o portão completo.
+#   - full-gate               : Nível 2/3 — roda em TODO push e TODO pull_request,
+#     sem filtro de caminho. Core + Livestock + Asset + arquitetura + integração +
+#     migrations, juntos. É a matriz de compatibilidade do repositório: um commit
+#     em integration/main só é válido com tudo verde.
+#
+# O particionamento por caminho para feedback mais rápido do Nível 1 (rodar só a
+# suíte da vertical tocada) só passa a valer quando `tests/asset_*` existir; até lá
+# não há o que particionar e o full-gate cobre tudo.
+
 jobs:
-  quality:
+  parallel-vertical-gates:
+    name: Fronteiras de lane (PR)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Obter código
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Portão de propriedade de arquivo
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_REF: ${{ github.head_ref }}
+          # O rótulo `shared-integration` no PR declara CHANGE_CLASS=SHARED_INTEGRATION.
+          CHANGE_CLASS: ${{ contains(github.event.pull_request.labels.*.name, 'shared-integration') && 'SHARED_INTEGRATION' || '' }}
+        run: |
+          python3 scripts/check_file_ownership.py \
+            --manifest docs/architecture/verticals.toml \
+            --base-ref "$BASE_SHA" \
+            --branch "$HEAD_REF" \
+            --change-class "$CHANGE_CLASS"
+
+  full-gate:
     name: Testes e análise estática
     runs-on: ubuntu-24.04
     timeout-minutes: 15
