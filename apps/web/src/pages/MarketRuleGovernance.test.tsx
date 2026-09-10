@@ -299,5 +299,106 @@ describe('MarketRuleGovernance', () => {
 
     expect(await screen.findByText(/regra publicada/i)).toBeInTheDocument()
     expect(screen.getByText('ri-1')).toBeInTheDocument()
+    expect(screen.getByText('rule-exigibilidade-sanitaria')).toBeInTheDocument()
+    expect(screen.getByText('ad-1')).toBeInTheDocument()
+    expect(screen.getByText(/este resultado já foi gravado/i)).toBeInTheDocument()
+  })
+
+  it('explica conflito de domínio ao confirmar fluxo já existente', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      const metodo = init?.method ?? 'GET'
+      if (url.includes('catalogs/livestock-market-rules') && metodo === 'GET') {
+        return Promise.resolve({ ok: true, status: 200, json: async () => respostaCatalogo() })
+      }
+      if (url.endsWith('/v1/rule-governance/policies?limit=200')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () =>
+            respostaPolicies([
+              {
+                policy_id: 'pol-1',
+                organization_id: 'org-1',
+                code: 'politica-china',
+                name: 'China',
+                description: '',
+                version: 1,
+                status: 'published',
+                valid_from: null,
+                valid_to: null,
+                created_at: '2026-08-01T00:00:00Z',
+                published_at: '2026-08-01T00:00:00Z',
+              },
+            ]),
+        })
+      }
+      if (url.endsWith('/governance-flow')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            template_code: 'sanitary-requirement-campaign-v1',
+            identity: {
+              code: 'rule-exigibilidade-sanitaria',
+              purpose: 'Aplicar regra',
+              scope: 'livestock.animal',
+              source_type: 'politica_interna',
+              vertical: 'livestock',
+              description: '',
+            },
+            version: {
+              template_code: 'sanitary-requirement-campaign-v1',
+              rule_code: 'rule-exigibilidade-sanitaria',
+              name: 'Brucelose China',
+              description: '',
+              severity: 'blocking',
+              normative_source: '',
+              required_evidence_types: [],
+              conditions: [],
+              justification: '',
+              corrective_action: '',
+            },
+            adoption: { purpose: 'exportacao-china', scope: 'livestock.animal', reason: '' },
+          }),
+        })
+      }
+      if (url.endsWith('/execute')) {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          json: async () => ({
+            reason_code: 'CONFLITO_DE_DOMINIO',
+            detail: 'Ja existe regra ativa com este codigo.',
+          }),
+        })
+      }
+      throw new Error(`URL não mapeada no mock: ${url} (${metodo})`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<MarketRuleGovernance {...options} />)
+
+    fireEvent.change(await screen.findByLabelText('Modelo'), {
+      target: { value: 'sanitary-requirement-campaign-v1' },
+    })
+    fireEvent.change(await screen.findByLabelText(/campanha sanitaria exigida/i), {
+      target: { value: 'brucelose' },
+    })
+    fireEvent.change(screen.getByLabelText(/mercado \(purpose\)/i), {
+      target: { value: 'exportacao-china' },
+    })
+    fireEvent.change(screen.getByLabelText(/nome da regra/i), {
+      target: { value: 'Brucelose China' },
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: /pré-visualizar/i }))
+    expect(await screen.findByText(/pré-visualização/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/usar política existente/i), {
+      target: { value: 'pol-1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /confirmar e publicar/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/já foi criada/i)
   })
 })

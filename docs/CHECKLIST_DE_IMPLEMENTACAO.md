@@ -4758,3 +4758,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Estado:** REGISTRADO — apos concluir o bloco atual de governanca de mercado no frontend, retomar as correcoes de geodata descritas em `D:\projects\programming\Titan\_geodata\integracao\PENDENCIAS\_CONSUMIDOR\_TITAN.md`.
 
 **Escopo:** este registro e apenas lembrete operacional para retomada. Nenhuma correcao de geodata foi analisada ou implementada neste ponto, e nenhuma regra do Titan foi alterada por este registro.
+
+
+### 10/09/2026 — Frontend Livestock: resultado e conflito na governanca de regras
+
+**Estado:** CONCLUIDO — tela de governanca de regras passou a deixar mais claro o que foi gravado e quando uma confirmacao repetida conflita.
+
+**Implementacao:** `MarketRuleGovernance` passou a exibir, apos publicacao, o codigo da identidade, o identificador da versao publicada, o identificador da adocao e aviso de que o resultado ja foi gravado. Conflitos HTTP 409 no fluxo assistido agora recebem mensagem operacional orientando o operador a verificar se a regra ou adocao ja existe antes de repetir a confirmacao.
+
+**Evidencia:** `apps/web/src/pages/MarketRuleGovernance.test.tsx` cobre a exibicao dos identificadores do resultado publicado e o tratamento de conflito `CONFLITO_DE_DOMINIO`.
+
+**Portao:** teste focado aprovado com `5 passed`: `npm run test -- MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`113 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
+
+**Riscos e limites:** este corte nao cria endpoint de consulta previa, nao altera API, backend, policies, rules, adoptions ou permissao. A deteccao de existencia previa continua vindo da recusa autoritativa do backend.

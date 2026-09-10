@@ -184,7 +184,13 @@ export function MarketRuleGovernance(options: Options) {
       })
       setResultado(executado)
     } catch (error) {
-      setErroExecucao(error instanceof Error ? error.message : 'Falha ao confirmar o fluxo.')
+      if (error instanceof PolicyGovernanceApiError && error.status === 409) {
+        setErroExecucao(
+          `${error.message} Revise se a regra ou a adoção já foi criada para este mercado antes de confirmar novamente.`,
+        )
+      } else {
+        setErroExecucao(error instanceof Error ? error.message : 'Falha ao confirmar o fluxo.')
+      }
     } finally {
       setExecutando(false)
     }
@@ -465,21 +471,28 @@ export function MarketRuleGovernance(options: Options) {
       {resultado && (
         <div>
           <h3>Regra publicada</h3>
+          <p>
+            Este resultado já foi gravado. Para criar outra regra, altere os campos do fluxo e
+            gere uma nova pré-visualização antes de confirmar.
+          </p>
           <dl>
             <dt>Identidade da regra</dt>
             <dd>
               <code>{resultado.identity.rule_identity_id}</code>
             </dd>
+            <dt>Código da regra</dt>
+            <dd>{resultado.identity.code}</dd>
             <dt>Versão publicada</dt>
             <dd>
-              {resultado.version.name} — v{resultado.version.version}
+              {resultado.version.name} — v{resultado.version.version} (
+              <code>{resultado.version.rule_id}</code>)
             </dd>
             {resultado.adoption && (
               <>
                 <dt>Adoção</dt>
                 <dd>
-                  {resultado.adoption.purpose} / {resultado.adoption.scope} (
-                  {resultado.adoption.status})
+                  {resultado.adoption.purpose} / {resultado.adoption.scope} —{' '}
+                  {resultado.adoption.status} (<code>{resultado.adoption.adoption_id}</code>)
                 </dd>
               </>
             )}
