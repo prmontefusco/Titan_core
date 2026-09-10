@@ -15,6 +15,10 @@ interface Options {
   organizationId: string
 }
 
+function textosUnicos(textos: string[]): string[] {
+  return [...new Set(textos)]
+}
+
 // Tela S8 (Onda 3), generalizada na Onda 4 para aceitar lote além de animal
 // -- POST /market-eligibility/commercial-explanations já aceita lot_id como
 // alternativa a animal_id (XOR) e devolve o mesmo ExplicacaoComercialResponse
@@ -124,13 +128,13 @@ export function CommercialExplanation(options: Options) {
               <li key={mercado.market}>
                 <div>
                   <strong>{mercado.market}</strong>
-                  <span>{mercado.status}</span>
+                  <span className="market-status-chip">{mercado.status}</span>
                 </div>
                 <p>{mercado.summary}</p>
                 {mercado.why.length > 0 && (
                   <ul>
-                    {mercado.why.map((motivo, indice) => (
-                      <li key={indice}>{motivo}</li>
+                    {textosUnicos(mercado.why).map((motivo) => (
+                      <li key={motivo}>{motivo}</li>
                     ))}
                   </ul>
                 )}

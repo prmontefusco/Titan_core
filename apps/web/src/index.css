@@ -1396,6 +1396,19 @@ body {
   color: #ffffff;
 }
 
+.market-status-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: var(--radius-pill);
+  background: rgba(148, 163, 184, 0.12);
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .market-flow-list span,
 .market-flow-list p,
 .market-flow-list li {

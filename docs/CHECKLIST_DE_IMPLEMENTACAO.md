@@ -4712,3 +4712,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** testes focados aprovados com `8 passed`: `npm run test -- MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`109 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
 
 **Riscos e limites:** este corte nao altera API, backend, permissao, RBAC/RLS, Market Supply, regras comerciais, selecao de mercados, dependencia por mercado, DecisionReview, Dossier ou semantica de elegibilidade. A UI apenas solicita a avaliacao/explicacao e apresenta o retorno do backend.
+
+
+### 10/09/2026 — Frontend Livestock: legibilidade de mercados ausentes/inconclusivos
+
+**Estado:** CONCLUIDO — apresentacao da matriz e explicacao comercial ajustada para o caso real de mercados `AUSENTE`/`INCONCLUSIVO` sem alterar a conclusao da API.
+
+**Implementacao:** `MarketMatrix` e `CommercialExplanation` passaram a renderizar o status de cada mercado em chip visual separado do nome do mercado, evitando leitura colada como `exportacao-uniao-europeiaAUSENTE`. Mensagens identicas de gaps/motivos sao agrupadas apenas na apresentacao, preservando o status, resumo e conclusao recebidos do backend.
+
+**Evidencia:** `apps/web/src/pages/MarketMatrix.test.tsx` e `apps/web/src/pages/CommercialExplanation.test.tsx` cobrem status separado em chip e deduplicacao visual de mensagens repetidas como `Nenhuma regra governada adotada para este mercado.`.
+
+**Portao:** testes focados aprovados com `10 passed`: `npm run test -- MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`111 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este corte nao altera API, backend, regras governadas, adocao de mercados, Decision, Dossier, nem interpreta duplicidades semanticamente. Se mensagens iguais representarem dimensoes internas diferentes, essa distincao continua indisponivel no contrato atual da UI; o ajuste apenas reduz ruido visual.

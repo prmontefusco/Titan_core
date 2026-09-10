@@ -92,6 +92,40 @@ describe('MarketMatrix', () => {
     )
   })
 
+  it('deduplica lacunas repetidas sem alterar o status recebido', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () =>
+          respostaBase({
+            commercial_outlook: 'INCONCLUSIVO',
+            markets: [
+              {
+                market: 'exportacao-uniao-europeia',
+                status: 'AUSENTE',
+                projection_status: 'ATUAL',
+                summary: 'Mercado ainda nao pode ser avaliado.',
+                dependency: null,
+                gaps: [
+                  { code: 'REGRA_AUSENTE', message: 'Nenhuma regra governada adotada para este mercado.' },
+                  { code: 'REGRA_AUSENTE', message: 'Nenhuma regra governada adotada para este mercado.' },
+                ],
+                reasons: [],
+              },
+            ],
+          }),
+      }),
+    )
+
+    renderTela()
+    fireEvent.click(screen.getByRole('button', { name: /executar análise de mercado/i }))
+
+    expect(await screen.findByText('AUSENTE')).toHaveClass('market-status-chip')
+    expect(screen.getAllByText('Nenhuma regra governada adotada para este mercado.')).toHaveLength(1)
+  })
+
   it('mostra o seletor de estabelecimento quando há dependência não escolhida, e reavalia', async () => {
     const fetchMock = vi
       .fn()

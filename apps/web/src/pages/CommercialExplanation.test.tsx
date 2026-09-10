@@ -95,6 +95,45 @@ describe('CommercialExplanation', () => {
     expect(screen.getByText(/Próxima ação recomendada/i)).toBeInTheDocument()
   })
 
+  it('deduplica motivos repetidos na apresentação por mercado', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          subject_type: 'animal',
+          subject_id: 'a1',
+          requested_markets: ['exportacao-uniao-europeia'],
+          commercial_outlook: 'INCONCLUSIVO',
+          can_sell_to_any_requested_market: false,
+          executive_summary: 'Resumo.',
+          narrative: 'Nao ha conhecimento suficiente.',
+          recommended_next_action: null,
+          markets: [
+            {
+              market: 'exportacao-uniao-europeia',
+              status: 'AUSENTE',
+              summary: 'Mercado ainda nao pode ser avaliado.',
+              why: [
+                'Nenhuma regra governada adotada para este mercado.',
+                'Nenhuma regra governada adotada para este mercado.',
+              ],
+              next_action: null,
+              affected_animal_ids: [],
+            },
+          ],
+        }),
+      }),
+    )
+
+    renderTela()
+    fireEvent.click(screen.getByRole('button', { name: /gerar explicação comercial/i }))
+
+    expect(await screen.findByText('AUSENTE')).toHaveClass('market-status-chip')
+    expect(screen.getAllByText('Nenhuma regra governada adotada para este mercado.')).toHaveLength(1)
+  })
+
   it('mostra a nota de revisão humana necessária', async () => {
     vi.stubGlobal(
       'fetch',

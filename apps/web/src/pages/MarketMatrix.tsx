@@ -22,6 +22,10 @@ function dependenciaPendente(entry: MarketEntry): boolean {
   return entry.dependency !== null && entry.dependency.selected_subject_id === null
 }
 
+function textosUnicos(textos: string[]): string[] {
+  return [...new Set(textos)]
+}
+
 // Tela S7 (Onda 3). Quando algum mercado depende de um sujeito ainda não
 // escolhido (ex.: China exige frigorífico), mostra o seletor e reexecuta com
 // slaughterhouse_counterparty_id -- o backend não aceita mapear dependência
@@ -129,13 +133,13 @@ export function MarketMatrix(options: Options) {
               <li key={entry.market}>
                 <div>
                   <strong>{entry.market}</strong>
-                  <span>{entry.status}</span>
+                  <span className="market-status-chip">{entry.status}</span>
                 </div>
                 {entry.summary && <p>{entry.summary}</p>}
                 {entry.gaps.length > 0 && (
                   <ul>
-                    {entry.gaps.map((gap, indice) => (
-                      <li key={indice}>{gap.message}</li>
+                    {textosUnicos(entry.gaps.map((gap) => gap.message)).map((mensagem) => (
+                      <li key={mensagem}>{mensagem}</li>
                     ))}
                   </ul>
                 )}
