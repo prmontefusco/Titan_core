@@ -55,6 +55,7 @@ describe('AnimalTimeline', () => {
 
     expect(await screen.findByText('TREATMENT_APPLIED')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /voltar para o animal/i })).toHaveAttribute('href', '/animals/a1')
+    expect(screen.getByRole('link', { name: /voltar ao detalhe operacional do animal/i })).toHaveAttribute('href', '/animals/a1')
     expect(screen.getByText(/eventos conhecidos/i)).toBeInTheDocument()
   })
 

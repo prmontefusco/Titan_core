@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { AnimalApiError, fetchAnimalTimeline, type LinhaDoTempoResponse } from '../api/animals'
 import { EmptyState, ErrorState, LoadingState, UnauthorizedState } from '../components/AsyncStates'
-import { PageContext } from '../components/PageContext'
+import { AnimalFlowContext } from '../components/AnimalFlowContext'
 import { DetailPageHeader, DetailSection } from '../components/DetailPage'
 
 interface Options {
@@ -53,12 +53,10 @@ export function AnimalTimeline(options: Options) {
         backTo={animalId ? `/animals/${animalId}` : '/animals'}
         backLabel="Voltar para o animal"
       />
-      <PageContext
+      <AnimalFlowContext
         description="A narrativa histórica exibida aqui pertence somente ao animal dentro da Organization ativa."
-        items={[
-          { label: 'Organization', value: options.organizationId },
-          { label: 'Animal', value: animalId ?? '—' },
-        ]}
+        organizationId={options.organizationId}
+        animalId={animalId ?? '—'}
       />
 
       {semPermissao && (

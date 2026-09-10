@@ -4805,3 +4805,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `1 passed`: `npm run test -- LivestockHome`. Frontend completo aprovado com `npm run test` (`114 passed`), `npm run build` e `npm run lint`.
 
 **Riscos e limites:** este corte nao altera backend, autorizacao, RBAC/RLS, Market Supply, governanca de regras, fila administrativa ou contratos publicos. A home apenas organiza o ponto de entrada do usuario para capacidades ja existentes.
+
+
+### 10/09/2026 — Frontend Livestock: contexto consistente no fluxo do animal
+
+**Estado:** CONCLUIDO — telas secundarias do fluxo de animal passam a exibir o mesmo contexto operacional e um retorno explicito ao detalhe do animal.
+
+**Implementacao:** criado `AnimalFlowContext`, componente concreto de apresentacao para paginas que operam sobre um animal. `AnimalTimeline`, `TreatmentForm`, `AnimalEligibility`, `MarketMatrix` e a rota animal de `CommercialExplanation` passaram a reutilizar esse contexto para Organization, Animal e link "Voltar ao detalhe operacional do animal". A explicacao comercial de lote preserva o contexto de lote e nao recebe atalho de animal.
+
+**Evidencia:** testes das cinco telas cobrem o retorno operacional para `/animals/{animalId}`; `CommercialExplanation.test.tsx` tambem cobre que a rota de lote continua sem o retorno de animal.
+
+**Portao:** testes focados aprovados com `19 passed`: `npm run test -- AnimalTimeline AnimalEligibility TreatmentForm MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`114 passed`), `npm run build` e `npm run lint`.
+
+**Riscos e limites:** este corte nao altera API, backend, autorizacao, contratos publicos, elegibilidade, mercado, tratamento ou semantica de timeline. A mudanca e de navegacao/contexto visual para reduzir perda de orientacao dentro do fluxo principal.

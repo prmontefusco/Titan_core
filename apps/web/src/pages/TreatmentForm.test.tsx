@@ -100,6 +100,7 @@ describe('TreatmentForm', () => {
     expect(screen.getByText(/registro operacional de aplicação/i)).toBeInTheDocument()
     expect(screen.getByText('org-1')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /voltar para o animal/i })).toHaveAttribute('href', '/animals/a1')
+    expect(screen.getByRole('link', { name: /voltar ao detalhe operacional do animal/i })).toHaveAttribute('href', '/animals/a1')
     expect(screen.getByText(/não substitui Evidence validada/i)).toBeInTheDocument()
 
     const medicamento = await screen.findByLabelText('Medicamento')

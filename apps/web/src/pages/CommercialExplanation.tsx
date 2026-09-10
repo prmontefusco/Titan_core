@@ -6,6 +6,7 @@ import {
   type ExplicacaoComercialResponse,
 } from '../api/eligibility'
 import { ErrorState } from '../components/AsyncStates'
+import { AnimalFlowContext } from '../components/AnimalFlowContext'
 import { DetailPageHeader, DetailSection } from '../components/DetailPage'
 import { PageContext } from '../components/PageContext'
 
@@ -83,13 +84,21 @@ export function CommercialExplanation(options: Options) {
         }
       />
 
-      <PageContext
-        description="A explicação é emitida para o sujeito e Organization ativos. Ausências e limitações permanecem como a API retornar."
-        items={[
-          { label: 'Organization', value: options.organizationId },
-          { label: subjectLabel, value: subjectId },
-        ]}
-      />
+      {animalId ? (
+        <AnimalFlowContext
+          description="A explicação é emitida para o animal e Organization ativos. Ausências e limitações permanecem como a API retornar."
+          organizationId={options.organizationId}
+          animalId={animalId}
+        />
+      ) : (
+        <PageContext
+          description="A explicação é emitida para o lote e Organization ativos. Ausências e limitações permanecem como a API retornar."
+          items={[
+            { label: 'Organization', value: options.organizationId },
+            { label: subjectLabel, value: subjectId },
+          ]}
+        />
+      )}
 
       {proposalId && (
         <section className="eligibility-review-alert" role="alert">
