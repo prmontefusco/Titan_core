@@ -4627,6 +4627,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Riscos e limites:** este incremento não implementa ZKP, HTML/Wasm, runtime Wasm, API, migration, dependência criptográfica, verificador offline ou regra normativa nova. Também não rebaixa a decisão arquitetural futura; apenas impede que ela seja confundida com capacidade operacional entregue.
 
 
+### 09/09/2026 — Encerramento da rodada de correções da auditoria adversarial
+
+**Estado:** ENCERRADA — os achados `FINDING-001` a `FINDING-013` foram tratados, verificados e commitados em incrementos separados.
+
+**Registro de transição:** esta rodada não deixa correção aberta dentro do escopo da auditoria adversarial analisada. Os limites declarados em cada finding permanecem visíveis como fronteiras conscientes do MVP, não como cauda implícita desta implementação. Novas melhorias — por exemplo operação produtiva de cleanup, timezone versionado por propriedade, TSA/HSM/KMS, ZKP, verificador HTML/Wasm, hardening operacional ou novas frentes de produto — devem entrar como novas frentes pelo fluxo canônico `IDEA → DISCOVERY → DECISION → SPEC → PLAN → BUILD → VERIFY → ACCEPT`.
+
+**Critério para próximos trabalhos:** qualquer frente posterior deve possuir escopo próprio, evidência no repositório, decisão de produto quando necessária, testes proporcionais e registro no checklist quando entregue. Esta nota fecha apenas a campanha de remediação dos findings atuais; não antecipa prioridade nem autoriza implementação automática de capacidades futuras.
+
+
 ### 09/09/2026 — FINDING-002, Parte B: Evidence preservada e lifecycle append-only
 
 **Estado:** CONCLUIDO — decisão arquitetural aprovada na ADR-0076; implementação e verificação concluídas. FINDING-002 fica encerrado para a garantia contra DML ordinário da aplicação, respeitados os limites declarados na ADR.
