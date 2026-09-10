@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   PolicyGovernanceApiError,
   createPolicy,
@@ -31,12 +32,24 @@ const MERCADOS_INICIAIS = [
   { code: 'exportacao-uniao-europeia', label: 'União Europeia' },
 ]
 
+function retornoAnimalSeguro(returnTo: string | null, animalId: string | null): string | null {
+  if (!returnTo || !animalId) return null
+  const rotasPermitidas = [
+    `/animals/${animalId}/market-matrix`,
+    `/animals/${animalId}/commercial-explanation`,
+  ]
+  return rotasPermitidas.includes(returnTo) ? returnTo : null
+}
+
 // Incremento 2 (NR-5): tela sobre a API do Incremento 1
 // (apps/api/policy_governance.py + livestock_rule_governance.py). Não
 // inventa lógica nova — só guia o operador pelos mesmos quatro passos que a
 // API já expõe: escolher/publicar a Policy, escolher o template, pré-ver o
 // que seria criado (sem gravar nada) e só então confirmar.
 export function MarketRuleGovernance(options: Options) {
+  const [searchParams] = useSearchParams()
+  const returnTo = retornoAnimalSeguro(searchParams.get('returnTo'), searchParams.get('animalId'))
+
   const [catalogo, setCatalogo] = useState<LivestockMarketRuleCatalog | null>(null)
   const [semPermissaoCatalogo, setSemPermissaoCatalogo] = useState(false)
   const [erroCatalogo, setErroCatalogo] = useState<string | null>(null)
@@ -225,6 +238,11 @@ export function MarketRuleGovernance(options: Options) {
         description="Toda governança mostrada aqui permanece restrita à Organization ativa e às policies autorizadas pelo backend."
         items={[{ label: 'Organization', value: options.organizationId }]}
       />
+      {returnTo && (
+        <p className="flow-return-link">
+          <Link to={returnTo}>Voltar para a análise do animal</Link>
+        </p>
+      )}
       <p>
         Escolha ou publique a política, escolha um modelo de regra já classificado, pré-visualize
         o que seria criado e só então confirme.

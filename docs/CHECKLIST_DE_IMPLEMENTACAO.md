@@ -4818,3 +4818,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** testes focados aprovados com `19 passed`: `npm run test -- AnimalTimeline AnimalEligibility TreatmentForm MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`114 passed`), `npm run build` e `npm run lint`.
 
 **Riscos e limites:** este corte nao altera API, backend, autorizacao, contratos publicos, elegibilidade, mercado, tratamento ou semantica de timeline. A mudanca e de navegacao/contexto visual para reduzir perda de orientacao dentro do fluxo principal.
+
+
+### 10/09/2026 — Frontend Livestock: retorno entre analise de mercado e governanca
+
+**Estado:** CONCLUIDO — o caminho de mercado ausente para governanca de regras passa a preservar um retorno seguro para a analise do animal.
+
+**Implementacao:** `MarketMatrix` e a rota animal de `CommercialExplanation` passaram a enviar `returnTo` e `animalId` ao link "Publicar ou adotar regras de mercado". `MarketRuleGovernance` agora le esses parametros e mostra "Voltar para a analise do animal" somente quando o retorno aponta para rotas permitidas do mesmo animal (`/market-matrix` ou `/commercial-explanation`). Retornos arbitrarios externos ou fora do fluxo sao ignorados.
+
+**Evidencia:** `MarketMatrix.test.tsx` e `CommercialExplanation.test.tsx` cobrem os links de governanca com retorno. `MarketRuleGovernance.test.tsx` cobre retorno seguro para a matriz e rejeicao de URL arbitraria.
+
+**Portao:** testes focados aprovados com `17 passed`: `npm run test -- MarketMatrix CommercialExplanation MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`116 passed`), `npm run build` e `npm run lint`.
+
+**Riscos e limites:** este corte nao preenche template automaticamente, nao cria regra, nao publica Policy, nao adota regra e nao reexecuta a matriz sozinho. A governanca continua exigindo acao explicita do operador e autorizacao do backend.

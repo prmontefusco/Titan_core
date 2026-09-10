@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MarketRuleGovernance } from './MarketRuleGovernance'
 
@@ -89,6 +90,14 @@ function fetchMockPadrao(handlers: Record<string, () => unknown>) {
   })
 }
 
+function renderGovernance(route = '/rule-governance') {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <MarketRuleGovernance {...options} />
+    </MemoryRouter>,
+  )
+}
+
 describe('MarketRuleGovernance', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -104,11 +113,44 @@ describe('MarketRuleGovernance', () => {
       }),
     )
 
-    render(<MarketRuleGovernance {...options} />)
+    renderGovernance()
 
     expect(
       await screen.findByRole('option', { name: 'Campanha sanitaria obrigatoria' }),
     ).toBeInTheDocument()
+  })
+
+  it('mostra retorno para a análise do animal quando a origem é segura', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchMockPadrao({
+        'catalogs/livestock-market-rules': respostaCatalogo,
+        '/policies': () => respostaPolicies(),
+      }),
+    )
+
+    renderGovernance('/rule-governance?returnTo=%2Fanimals%2Fa1%2Fmarket-matrix&animalId=a1')
+
+    expect(await screen.findByRole('option', { name: 'Campanha sanitaria obrigatoria' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /voltar para a análise do animal/i })).toHaveAttribute(
+      'href',
+      '/animals/a1/market-matrix',
+    )
+  })
+
+  it('ignora retorno arbitrário fora do fluxo de animal', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchMockPadrao({
+        'catalogs/livestock-market-rules': respostaCatalogo,
+        '/policies': () => respostaPolicies(),
+      }),
+    )
+
+    renderGovernance('/rule-governance?returnTo=https%3A%2F%2Fexample.com&animalId=a1')
+
+    expect(await screen.findByRole('option', { name: 'Campanha sanitaria obrigatoria' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /voltar para a análise do animal/i })).not.toBeInTheDocument()
   })
 
   it('preenche o mercado inicial e sincroniza escopo e parametro do template', async () => {
@@ -120,7 +162,7 @@ describe('MarketRuleGovernance', () => {
       }),
     )
 
-    render(<MarketRuleGovernance {...options} />)
+    renderGovernance()
 
     fireEvent.change(await screen.findByLabelText('Modelo'), {
       target: { value: 'slaughterhouse-qualification-v1' },
@@ -148,7 +190,7 @@ describe('MarketRuleGovernance', () => {
       }),
     )
 
-    render(<MarketRuleGovernance {...options} />)
+    renderGovernance()
 
     expect(await screen.findByText(/não tem permissão/i)).toBeInTheDocument()
   })
@@ -272,7 +314,7 @@ describe('MarketRuleGovernance', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<MarketRuleGovernance {...options} />)
+    renderGovernance()
 
     fireEvent.change(await screen.findByLabelText('Modelo'), {
       target: { value: 'sanitary-requirement-campaign-v1' },
@@ -383,7 +425,7 @@ describe('MarketRuleGovernance', () => {
     })
     vi.stubGlobal('fetch', fetchMock)
 
-    render(<MarketRuleGovernance {...options} />)
+    renderGovernance()
 
     fireEvent.change(await screen.findByLabelText('Modelo'), {
       target: { value: 'sanitary-requirement-campaign-v1' },
