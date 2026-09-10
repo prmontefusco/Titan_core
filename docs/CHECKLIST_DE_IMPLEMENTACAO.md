@@ -4755,9 +4755,11 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 
 ### 10/09/2026 — Ponto de retomada externo: correcoes geodata
 
-**Estado:** REGISTRADO — apos concluir o bloco atual de governanca de mercado no frontend, retomar as correcoes de geodata descritas em `D:\projects\programming\Titan\_geodata\integracao\PENDENCIAS\_CONSUMIDOR\_TITAN.md`.
+**Estado:** EM EXECUCAO — apos concluir o bloco atual de governanca de mercado no frontend, foram retomadas as correcoes de geodata descritas em `D:\projects\programming\Titan_geodata\integracao\PENDENCIAS_CONSUMIDOR_TITAN.md`.
 
 **Escopo:** este registro e apenas lembrete operacional para retomada. Nenhuma correcao de geodata foi analisada ou implementada neste ponto, e nenhuma regra do Titan foi alterada por este registro.
+
+**Item 3 fechado em 10/09/2026 — FUNAI via `/sicar/farm/summary`.** O adapter HTTP do `Titan_geodata` passou a usar o endpoint resumido `GET /api/v1/sicar/farm/summary` para `fetch_funai_overlap`, preservando `version_ids`, `source_area_hectares` e `feature_count` sem baixar geometrias pesadas de `/sicar/farm`. A resposta resumida tem parser proprio (`FarmSummaryLayer` / `interpretar_camada_resumida`) e continua sem julgamento normativo: o Titan apenas transforma o fato espacial recebido em `TerritorialOverlapAssessment`. **Evidencia:** `tests/livestock_infrastructure/test_car_client.py` cobre a URL resumida, a preservacao de `version_ids` e a recusa de resposta resumida sem proveniencia de versao.
 
 
 ### 10/09/2026 — Frontend Livestock: resultado e conflito na governanca de regras

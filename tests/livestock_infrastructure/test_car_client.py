@@ -108,6 +108,44 @@ RESPOSTA_FARM: dict[str, object] = {
     "coverage": [],
 }
 
+RESPOSTA_FARM_SUMMARY: dict[str, object] = {
+    "cod_imovel": RESPOSTA_FARM["cod_imovel"],
+    "state": "MS",
+    "lookup": RESPOSTA_FARM["lookup"],
+    "property": {
+        "cod_imovel": RESPOSTA_FARM["cod_imovel"],
+        "state": "MS",
+        "municipio": "Santa Rita do Pardo",
+        "area_declared_hectares": 1363.93,
+        "condition": "Aguardando analise",
+    },
+    "layers": [
+        {
+            "layer": "AREA_IMOVEL",
+            "label": "Area do Imovel",
+            "scope": "property",
+            "source": "SICAR/CAR",
+            "present": True,
+            "feature_count": 1,
+            "area_hectares": 1363.93,
+            "source_area_hectares": 1363.93,
+            "version_ids": ["area_imovel_ms_v1"],
+        },
+        {
+            "layer": "FUNAI_TI",
+            "label": "Terras Indigenas (FUNAI)",
+            "scope": "restriction",
+            "source": "FUNAI",
+            "present": True,
+            "feature_count": 1,
+            "area_hectares": 123.4,
+            "source_area_hectares": 456.7,
+            "version_ids": ["funai_ms_v1"],
+        },
+    ],
+    "coverage": [],
+}
+
 RESPOSTA_IBAMA: dict[str, object] = {
     "operation": "intersects",
     "dataset": {
@@ -206,6 +244,10 @@ def _bruto(dados: Mapping[str, object] | None = None) -> bytes:
 
 def _bruto_farm(dados: Mapping[str, object] | None = None) -> bytes:
     return json.dumps(dados if dados is not None else RESPOSTA_FARM).encode("utf-8")
+
+
+def _bruto_farm_summary(dados: Mapping[str, object] | None = None) -> bytes:
+    return json.dumps(dados if dados is not None else RESPOSTA_FARM_SUMMARY).encode("utf-8")
 
 
 def _bruto_ibama(dados: Mapping[str, object] | None = None) -> bytes:
@@ -515,7 +557,11 @@ def test_cliente_reaproveita_farm_para_listar_camadas(
     assert layers[0].polygon_digest == digest_de(layers[0].polygon_payload)
 
 
-def test_cliente_consulta_sobreposicao_funai_pelo_farm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cliente_consulta_sobreposicao_funai_pelo_resumo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pedido_capturado: dict[str, object] = {}
+
     class _Resposta:
         def __enter__(self) -> "_Resposta":
             return self
@@ -524,9 +570,11 @@ def test_cliente_consulta_sobreposicao_funai_pelo_farm(monkeypatch: pytest.Monke
             return None
 
         def read(self) -> bytes:
-            return _bruto_farm()
+            return _bruto_farm_summary()
 
     def _urlopen(request: object, timeout: int) -> _Resposta:
+        pedido_capturado["request"] = request
+        pedido_capturado["timeout"] = timeout
         return _Resposta()
 
     monkeypatch.setattr("urllib.request.urlopen", _urlopen)
@@ -537,10 +585,48 @@ def test_cliente_consulta_sobreposicao_funai_pelo_farm(monkeypatch: pytest.Monke
         state="MS",
     )
 
+    request = pedido_capturado["request"]
+    assert isinstance(request, urllib.request.Request)
+    assert (
+        request.full_url == "http://provider.invalido/api/v1/sicar/farm/summary"
+        "?cod_imovel=MS-5007554-1EF4AA06D08041829247C61FE4412C4F&state=MS"
+    )
+    assert pedido_capturado["timeout"] == cliente.timeout_seconds
     assert overlap.source == "FUNAI"
     assert overlap.layer == "FUNAI_TI"
     assert overlap.feature_count == 1
     assert overlap.area_hectares == 123.4
+    assert overlap.source_area_hectares == 456.7
+    assert overlap.version_ids == ("funai_ms_v1",)
+
+
+def test_cliente_recusa_resumo_sem_version_ids(monkeypatch: pytest.MonkeyPatch) -> None:
+    torta = dict(RESPOSTA_FARM_SUMMARY)
+    camada = dict(cast(list[dict[str, object]], torta["layers"])[0])
+    camada.pop("version_ids")
+    torta["layers"] = [camada]
+
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_farm_summary(torta)
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(GeodataIndisponivel, match="version_ids"):
+        cliente.fetch_funai_overlap(
+            cod_imovel="MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+            state="MS",
+        )
 
 
 def test_cliente_consulta_timeline_do_prodes(monkeypatch: pytest.MonkeyPatch) -> None:

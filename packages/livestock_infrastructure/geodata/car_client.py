@@ -27,6 +27,7 @@ from packages.livestock_domain.geometry import digest_de
 TIMEOUT_PADRAO_SEGUNDOS = 30
 CAMINHO_IMOVEL = "/api/v1/sicar/properties"
 CAMINHO_FARM = "/api/v1/sicar/farm"
+CAMINHO_FARM_SUMMARY = "/api/v1/sicar/farm/summary"
 CAMINHO_IBAMA_POLIGONO = "/api/v1/ibama/spatial/polygon"
 
 
@@ -105,6 +106,20 @@ class CarLayer:
     polygon_digest: str
     area_hectares: float | None
     feature_count: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class FarmSummaryLayer:
+    """Uma camada resumida do imovel, sem geometria pesada."""
+
+    layer: str
+    label: str
+    source: str | None
+    present: bool
+    area_hectares: float | None
+    source_area_hectares: float | None
+    feature_count: int
+    version_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +269,17 @@ class GeodataCarClient(CarLookupPort):
             return [interpretar_camada(item) for item in dados]
         raise GeodataIndisponivel("A lista de camadas nao veio como lista.")
 
+    def fetch_farm_summary(self, cod_imovel: str, state: str) -> list[FarmSummaryLayer]:
+        """Camadas resumidas que o provider tem para o imovel, sem geometrias."""
+        bruto = self._pedir_farm_summary(cod_imovel, state)
+        try:
+            dados = json.loads(bruto)
+        except json.JSONDecodeError as erro:
+            raise GeodataIndisponivel("O provider nao devolveu JSON.") from erro
+        if isinstance(dados, dict) and isinstance(dados.get("layers"), list):
+            return [interpretar_camada_resumida(item) for item in dados["layers"]]
+        raise GeodataIndisponivel("A lista resumida de camadas nao veio como lista.")
+
     def fetch_ibama_overlaps(
         self, *, polygon_payload: str, srid: int = 4326
     ) -> SpatialRestrictionAssessment:
@@ -349,17 +375,30 @@ class GeodataCarClient(CarLookupPort):
         state: str,
     ) -> TerritorialOverlapAssessment:
         """Consulta a sobreposicao territorial atual da FUNAI para um imovel."""
-        for layer in self.fetch_layers(cod_imovel, state):
+        for layer in self.fetch_farm_summary(cod_imovel, state):
             if layer.layer == "FUNAI_TI":
                 return TerritorialOverlapAssessment(
                     source="FUNAI",
                     layer=layer.layer,
                     label=layer.label,
-                    feature_count=layer.feature_count or 0,
+                    feature_count=layer.feature_count,
                     area_hectares=layer.area_hectares,
-                    source_area_hectares=layer.area_hectares,
-                    version_ids=(),
-                    response_digest=layer.polygon_digest,
+                    source_area_hectares=layer.source_area_hectares,
+                    version_ids=layer.version_ids,
+                    response_digest=digest_de(
+                        json.dumps(
+                            {
+                                "layer": layer.layer,
+                                "feature_count": layer.feature_count,
+                                "area_hectares": layer.area_hectares,
+                                "source_area_hectares": layer.source_area_hectares,
+                                "version_ids": list(layer.version_ids),
+                            },
+                            separators=(",", ":"),
+                            sort_keys=True,
+                            ensure_ascii=False,
+                        )
+                    ),
                 )
         return TerritorialOverlapAssessment(
             source="FUNAI",
@@ -440,6 +479,42 @@ class GeodataCarClient(CarLookupPort):
                 f"Provider inacessivel em {self.base_url}: {erro.reason}"
             ) from erro
 
+    def _pedir_farm_summary(self, cod_imovel: str, state: str) -> bytes:
+        codigo = cod_imovel.strip()
+        uf = state.strip().upper()
+        if not codigo:
+            raise ValueError("cod_imovel nao pode ser vazio.")
+        if len(uf) != 2:
+            raise ValueError("state deve ter duas letras.")
+
+        url = (
+            f"{self.base_url.rstrip('/')}{CAMINHO_FARM_SUMMARY}?"
+            f"{urllib.parse.urlencode({'cod_imovel': codigo, 'state': uf})}"
+        )
+        pedido = urllib.request.Request(
+            url,
+            headers={"X-API-Key": self.api_key, "Accept": "application/json"},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(pedido, timeout=self.timeout_seconds) as resposta:
+                conteudo: bytes = resposta.read()
+                return conteudo
+        except urllib.error.HTTPError as erro:
+            if erro.code == 404:
+                raise CarNaoEncontrado(
+                    f"Imovel '{codigo}' nao encontrado em {uf} na base consultada."
+                ) from erro
+            corpo = erro.read().decode("utf-8", errors="replace")[:300]
+            raise GeodataIndisponivel(
+                f"O provider devolveu {erro.code} para o resumo de '{codigo}': {corpo}"
+                f" (chave usada: {self.chave_mascarada})"
+            ) from erro
+        except urllib.error.URLError as erro:
+            raise GeodataIndisponivel(
+                f"Provider inacessivel em {self.base_url}: {erro.reason}"
+            ) from erro
+
     def _pedir_timeline(
         self,
         *,
@@ -512,6 +587,30 @@ def interpretar_camada(item: Any) -> CarLayer:
         polygon_digest=digest_de(payload),
         area_hectares=float(area) if isinstance(area, int | float) else None,
         feature_count=int(contagem) if isinstance(contagem, int) else None,
+    )
+
+
+def interpretar_camada_resumida(item: Any) -> FarmSummaryLayer:
+    """Uma entrada resumida de camada, preservando proveniencia de versoes."""
+    if not isinstance(item, dict):
+        raise GeodataIndisponivel("Entrada resumida de camada malformada.")
+    versoes = item.get("version_ids")
+    if not isinstance(versoes, list) or not all(isinstance(valor, str) for valor in versoes):
+        raise GeodataIndisponivel("A camada resumida nao traz version_ids como lista.")
+    contagem = item.get("feature_count")
+    if not isinstance(contagem, int):
+        raise GeodataIndisponivel("A camada resumida nao traz feature_count inteiro.")
+    area = item.get("area_hectares")
+    area_fonte = item.get("source_area_hectares")
+    return FarmSummaryLayer(
+        layer=str(item.get("layer", "")),
+        label=str(item.get("label", "")),
+        source=str(item["source"]) if item.get("source") else None,
+        present=bool(item.get("present")),
+        feature_count=contagem,
+        area_hectares=float(area) if isinstance(area, int | float) else None,
+        source_area_hectares=float(area_fonte) if isinstance(area_fonte, int | float) else None,
+        version_ids=tuple(versoes),
     )
 
 
