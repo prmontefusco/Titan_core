@@ -26,6 +26,10 @@ function textosUnicos(textos: string[]): string[] {
   return [...new Set(textos)]
 }
 
+function temMercadoAusente(markets: MarketEntry[]): boolean {
+  return markets.some((entry) => entry.status === 'AUSENTE')
+}
+
 // Tela S7 (Onda 3). Quando algum mercado depende de um sujeito ainda não
 // escolhido (ex.: China exige frigorífico), mostra o seletor e reexecuta com
 // slaughterhouse_counterparty_id -- o backend não aceita mapear dependência
@@ -126,6 +130,9 @@ export function MarketMatrix(options: Options) {
             <span className="detail-status-chip">{resultado.commercial_outlook}</span>
             <p>{resultado.executive_summary}</p>
             <Link to={`/animals/${animalId}/commercial-explanation`}>Ver explicação comercial</Link>
+            {temMercadoAusente(resultado.markets) && (
+              <Link to="/rule-governance">Publicar ou adotar regras de mercado</Link>
+            )}
           </div>
 
           <ul className="market-flow-list">

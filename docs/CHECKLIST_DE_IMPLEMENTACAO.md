@@ -4725,3 +4725,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** testes focados aprovados com `10 passed`: `npm run test -- MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`111 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
 
 **Riscos e limites:** este corte nao altera API, backend, regras governadas, adocao de mercados, Decision, Dossier, nem interpreta duplicidades semanticamente. Se mensagens iguais representarem dimensoes internas diferentes, essa distincao continua indisponivel no contrato atual da UI; o ajuste apenas reduz ruido visual.
+
+
+### 10/09/2026 — Frontend Livestock: caminho operacional para governanca de mercado
+
+**Estado:** CONCLUIDO — matriz e explicacao comercial passam a apontar o operador para a tela de governanca quando a API informa mercado `AUSENTE`.
+
+**Implementacao:** `MarketMatrix` e `CommercialExplanation` passaram a exibir a acao "Publicar ou adotar regras de mercado" quando algum mercado retornado pelo backend esta com status `AUSENTE`. O link leva para `/rule-governance`, reaproveitando a tela ja existente de governanca de regras; a UI nao cria regra, nao preenche template automaticamente e nao resolve elegibilidade no navegador.
+
+**Evidencia:** `apps/web/src/pages/MarketMatrix.test.tsx` e `apps/web/src/pages/CommercialExplanation.test.tsx` cobrem que o link aparece no caso de mercado ausente junto da deduplicacao visual ja existente.
+
+**Portao:** teste focado aprovado com `10 passed`: `npm run test -- MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`111 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
+
+**Riscos e limites:** este corte nao altera backend, regras governadas, policies, adocoes, permissoes, contratos publicos, Decision ou Dossier. A preparacao real das regras continua dependendo da governanca autorizada e/ou dos roteiros de validacao existentes.

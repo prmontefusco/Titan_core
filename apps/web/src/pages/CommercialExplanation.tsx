@@ -19,6 +19,10 @@ function textosUnicos(textos: string[]): string[] {
   return [...new Set(textos)]
 }
 
+function temMercadoAusente(markets: ExplicacaoComercialResponse['markets']): boolean {
+  return markets.some((mercado) => mercado.status === 'AUSENTE')
+}
+
 // Tela S8 (Onda 3), generalizada na Onda 4 para aceitar lote além de animal
 // -- POST /market-eligibility/commercial-explanations já aceita lot_id como
 // alternativa a animal_id (XOR) e devolve o mesmo ExplicacaoComercialResponse
@@ -120,6 +124,9 @@ export function CommercialExplanation(options: Options) {
               <p>
                 <strong>Próxima ação recomendada:</strong> {resultado.recommended_next_action}
               </p>
+            )}
+            {temMercadoAusente(resultado.markets) && (
+              <Link to="/rule-governance">Publicar ou adotar regras de mercado</Link>
             )}
           </div>
 

@@ -132,6 +132,10 @@ describe('CommercialExplanation', () => {
 
     expect(await screen.findByText('AUSENTE')).toHaveClass('market-status-chip')
     expect(screen.getAllByText('Nenhuma regra governada adotada para este mercado.')).toHaveLength(1)
+    expect(screen.getByRole('link', { name: /publicar ou adotar regras de mercado/i })).toHaveAttribute(
+      'href',
+      '/rule-governance',
+    )
   })
 
   it('mostra a nota de revisão humana necessária', async () => {
