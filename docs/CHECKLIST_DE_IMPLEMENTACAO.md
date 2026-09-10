@@ -4738,3 +4738,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `10 passed`: `npm run test -- MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`111 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
 
 **Riscos e limites:** este corte nao altera backend, regras governadas, policies, adocoes, permissoes, contratos publicos, Decision ou Dossier. A preparacao real das regras continua dependendo da governanca autorizada e/ou dos roteiros de validacao existentes.
+
+
+### 10/09/2026 — Frontend Livestock: atalhos de mercado na governanca de regras
+
+**Estado:** CONCLUIDO — tela de governanca de regras ficou mais guiada para os mercados iniciais sem publicar ou adotar regra automaticamente.
+
+**Implementacao:** `MarketRuleGovernance` passou a oferecer atalhos para `exportacao-china`, `exportacao-estados-unidos` e `exportacao-uniao-europeia`. O atalho preenche apenas campos editaveis do fluxo ja existente: `market_purpose`, nome sugerido, fonte normativa sugerida pelo catalogo, escopo do template e, quando o template exige, o parametro `market_purpose`. A confirmacao continua exigindo Policy escolhida/publicada, pre-visualizacao e acao explicita do operador.
+
+**Evidencia:** `apps/web/src/pages/MarketRuleGovernance.test.tsx` cobre o preenchimento guiado para o template de habilitacao de estabelecimento, incluindo sincronizacao do escopo `livestock.slaughterhouse` e do parametro `market_purpose`.
+
+**Portao:** teste focado aprovado com `4 passed`: `npm run test -- MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`112 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
+
+**Riscos e limites:** este corte nao altera API, backend, catalogo, templates, policies, rules, adoptions, permissoes ou semantica de mercado. Os atalhos reduzem erro operacional de digitacao, mas nao validam se uma exigencia normativa concreta deve ser adotada para determinado mercado.

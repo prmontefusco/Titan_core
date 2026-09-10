@@ -25,6 +25,12 @@ interface Options {
   organizationId: string
 }
 
+const MERCADOS_INICIAIS = [
+  { code: 'exportacao-china', label: 'China' },
+  { code: 'exportacao-estados-unidos', label: 'Estados Unidos' },
+  { code: 'exportacao-uniao-europeia', label: 'União Europeia' },
+]
+
 // Incremento 2 (NR-5): tela sobre a API do Incremento 1
 // (apps/api/policy_governance.py + livestock_rule_governance.py). Não
 // inventa lógica nova — só guia o operador pelos mesmos quatro passos que a
@@ -141,6 +147,26 @@ export function MarketRuleGovernance(options: Options) {
     } finally {
       setCarregandoPrevia(false)
     }
+  }
+
+  const aplicarMercadoInicial = (mercado: (typeof MERCADOS_INICIAIS)[number]) => {
+    setMarketPurpose(mercado.code)
+    if (template?.scope_hint) {
+      setAdoptionScope(template.scope_hint)
+    }
+    if (!nome.trim()) {
+      setNome(
+        template ? `${template.name} — ${mercado.label}` : `Regra de mercado — ${mercado.label}`,
+      )
+    }
+    if (!normativeSource.trim() && template?.normative_source_hint) {
+      setNormativeSource(template.normative_source_hint)
+    }
+    if (template?.parameters.some((parametro) => parametro.name === 'market_purpose')) {
+      setParametros({ ...parametros, market_purpose: mercado.code })
+    }
+    setPrevia(null)
+    setResultado(null)
   }
 
   const confirmar = async () => {
@@ -319,6 +345,18 @@ export function MarketRuleGovernance(options: Options) {
         Estes campos dizem para qual finalidade a regra vale e como ela vai aparecer depois — não
         existe uma lista fixa de valores permitidos, você escolhe e reaproveita os mesmos daqui em
         diante.
+      </p>
+      <p>
+        Mercados iniciais:{' '}
+        {MERCADOS_INICIAIS.map((mercado) => (
+          <button
+            key={mercado.code}
+            type="button"
+            onClick={() => aplicarMercadoInicial(mercado)}
+          >
+            Usar {mercado.label}
+          </button>
+        ))}
       </p>
       <p>
         <label htmlFor="market-purpose">Mercado (purpose)</label>

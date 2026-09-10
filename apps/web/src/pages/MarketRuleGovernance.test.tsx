@@ -16,6 +16,33 @@ function respostaCatalogo() {
     fact_types: [],
     templates: [
       {
+        template_code: 'slaughterhouse-qualification-v1',
+        rule_code: 'rule-habilitacao-estabelecimento',
+        name: 'Habilitacao do estabelecimento por mercado',
+        purpose_hint: 'Usar quando o mercado depende da habilitacao do frigorifico escolhido.',
+        scope_hint: 'livestock.slaughterhouse',
+        normative_source_hint: 'Lista oficial do pais de destino ou protocolo do estabelecimento.',
+        required_evidence_types: ['livestock.establishment_qualification.<mercado>'],
+        conditions: [
+          {
+            fact_type: 'livestock.establishment_qualification.{{market_purpose}}',
+            payload_key: 'qualification_status',
+            operator: 'equals',
+            expected_value: 'HABILITADO',
+            description: 'O estabelecimento precisa estar habilitado para o mercado escolhido.',
+          },
+        ],
+        justification_hint: '',
+        corrective_action_hint: '',
+        parameters: [
+          {
+            name: 'market_purpose',
+            description: 'Codigo do mercado usado no fact_type da qualificacao do estabelecimento.',
+            example: 'exportacao-china',
+          },
+        ],
+      },
+      {
         template_code: 'sanitary-requirement-campaign-v1',
         rule_code: 'rule-exigibilidade-sanitaria',
         name: 'Campanha sanitaria obrigatoria',
@@ -82,6 +109,33 @@ describe('MarketRuleGovernance', () => {
     expect(
       await screen.findByRole('option', { name: 'Campanha sanitaria obrigatoria' }),
     ).toBeInTheDocument()
+  })
+
+  it('preenche o mercado inicial e sincroniza escopo e parametro do template', async () => {
+    vi.stubGlobal(
+      'fetch',
+      fetchMockPadrao({
+        'catalogs/livestock-market-rules': respostaCatalogo,
+        '/policies': () => respostaPolicies(),
+      }),
+    )
+
+    render(<MarketRuleGovernance {...options} />)
+
+    fireEvent.change(await screen.findByLabelText('Modelo'), {
+      target: { value: 'slaughterhouse-qualification-v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /usar china/i }))
+
+    expect(screen.getByLabelText(/mercado \(purpose\)/i)).toHaveValue('exportacao-china')
+    expect(screen.getByLabelText(/escopo de adoção/i)).toHaveValue('livestock.slaughterhouse')
+    expect(screen.getByLabelText(/codigo do mercado usado/i)).toHaveValue('exportacao-china')
+    expect(screen.getByLabelText(/nome da regra/i)).toHaveValue(
+      'Habilitacao do estabelecimento por mercado — China',
+    )
+    expect(screen.getByLabelText(/fonte normativa/i)).toHaveValue(
+      'Lista oficial do pais de destino ou protocolo do estabelecimento.',
+    )
   })
 
   it('mostra mensagem de permissão ausente quando o catálogo responde 403', async () => {
