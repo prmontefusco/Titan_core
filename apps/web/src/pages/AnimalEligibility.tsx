@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { EligibilityApiError, runAnimalEligibility, type ElegibilidadeResponse } from '../api/eligibility'
 import { ErrorState } from '../components/AsyncStates'
 import { DetailDescriptionList, DetailPageHeader, DetailSection } from '../components/DetailPage'
-import { PageContext } from '../components/PageContext'
+import { AnimalFlowContext } from '../components/AnimalFlowContext'
 
 interface Options {
   baseUrl: string
@@ -56,12 +56,10 @@ export function AnimalEligibility(options: Options) {
         }
       />
 
-      <PageContext
+      <AnimalFlowContext
         description="A avaliação será executada no contexto da Organization ativa e pode gravar Evaluation, Decision e Dossier."
-        items={[
-          { label: 'Organization', value: options.organizationId },
-          { label: 'Animal', value: animalId },
-        ]}
+        organizationId={options.organizationId}
+        animalId={animalId}
       />
 
       {proposalId && (

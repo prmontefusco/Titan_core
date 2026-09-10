@@ -10,7 +10,7 @@ import {
 } from '../api/treatments'
 import { EmptyState, ErrorState, LoadingState } from '../components/AsyncStates'
 import { DetailPageHeader, DetailSection } from '../components/DetailPage'
-import { PageContext } from '../components/PageContext'
+import { AnimalFlowContext } from '../components/AnimalFlowContext'
 
 interface Options {
   baseUrl: string
@@ -107,12 +107,10 @@ export function TreatmentForm(options: Options) {
         backTo={`/animals/${animalId}`}
         backLabel="Voltar para o animal"
       />
-      <PageContext
+      <AnimalFlowContext
         description="O registro será feito apenas para o animal e a Organization atualmente em uso."
-        items={[
-          { label: 'Organization', value: options.organizationId },
-          { label: 'Animal', value: animalId },
-        ]}
+        organizationId={options.organizationId}
+        animalId={animalId}
       />
 
       <DetailSection

@@ -68,6 +68,7 @@ describe('MarketMatrix', () => {
     expect(screen.getByText(/antes de executar/i)).toBeInTheDocument()
     expect(screen.getByText('org-1')).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /voltar para o animal/i })).toHaveAttribute('href', '/animals/a1')
+    expect(screen.getByRole('link', { name: /voltar ao detalhe operacional do animal/i })).toHaveAttribute('href', '/animals/a1')
   })
 
   it('mostra o resumo e os mercados depois de executar', async () => {

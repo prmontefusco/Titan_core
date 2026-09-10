@@ -12,6 +12,12 @@
 
 **Portão:** verificação consolidada ao final da reconciliação da lane histórica. O incremento não altera API, domínio, persistência, RBAC/RLS ou contratos públicos.
 
+### 13/10/2026 — Retomada Livestock: contexto do fluxo do animal reconciliado
+
+**Estado:** CONCLUÍDO — `AnimalTimeline`, `TreatmentForm`, `AnimalEligibility`, `MarketMatrix` e a explicação comercial de animal voltam a compartilhar `AnimalFlowContext`, com Organization, Animal e retorno explícito ao detalhe operacional. A explicação de lote permanece fora desse contexto.
+
+**Evidência:** os testes das cinco telas cobrem o retorno para `/animals/{animalId}` e preservam a distinção da rota de lote. **Portão:** verificação consolidada ao final da reconciliação; nenhuma API ou regra de negócio foi alterada.
+
 ### 21/09/2026 — Commercial Passport: roteiro autenticado valida rastreio populacional
 
 **Estado:** CONCLUÍDO — o roteiro executável `apps/validacao/commercial_passport_api.py`, usado para

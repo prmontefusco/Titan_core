@@ -55,6 +55,7 @@ describe('CommercialExplanation', () => {
       'href',
       '/animals/a1/market-matrix',
     )
+    expect(screen.getByRole('link', { name: /voltar ao detalhe operacional do animal/i })).toHaveAttribute('href', '/animals/a1')
   })
 
   it('mostra a narrativa e o detalhe por mercado depois de executar', async () => {
@@ -191,6 +192,8 @@ describe('CommercialExplanation', () => {
     fireEvent.click(screen.getByRole('button', { name: /gerar explicação comercial/i }))
 
     expect(await screen.findByText(/INCONCLUSIVO/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /voltar para o lote/i })).toHaveAttribute('href', '/lots/l1')
+    expect(screen.queryByRole('link', { name: /voltar ao detalhe operacional do animal/i })).not.toBeInTheDocument()
     expect(screen.getByText('a1')).toBeInTheDocument()
     expect(screen.getByText('a2')).toBeInTheDocument()
 

@@ -9,8 +9,8 @@ import {
   type MarketEntry,
 } from '../api/eligibility'
 import { ErrorState } from '../components/AsyncStates'
+import { AnimalFlowContext } from '../components/AnimalFlowContext'
 import { DetailPageHeader, DetailSection } from '../components/DetailPage'
-import { PageContext } from '../components/PageContext'
 
 interface Options {
   baseUrl: string
@@ -93,12 +93,10 @@ export function MarketMatrix(options: Options) {
         }
       />
 
-      <PageContext
+      <AnimalFlowContext
         description="A análise usa o animal e a Organization ativa. Dependências comerciais continuam explícitas quando a API exigir sujeito adicional."
-        items={[
-          { label: 'Organization', value: options.organizationId },
-          { label: 'Animal', value: animalId },
-        ]}
+        organizationId={options.organizationId}
+        animalId={animalId}
       />
 
       {proposalId && (
