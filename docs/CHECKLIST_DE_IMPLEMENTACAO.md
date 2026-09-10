@@ -1,8 +1,16 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 21 de setembro de 2026
+**Atualizado em:** 13 de outubro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
-**Próximo passo planejado:** ver o **ponto de parada de 27 de agosto de 2026** logo abaixo — é onde a sessão corrente parou e o que a próxima retoma. Continua pendente, de frente distinta: adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
+**Próximo passo do Livestock:** após a reconciliação da lane histórica em 13 de outubro de 2026, escolher uma única frente por decisão de produto: aprofundar o snapshot/rastreabilidade do Commercial Passport ou definir qual `MarketProfile` consome os fatos territoriais e sanitários já disponíveis. Market Supply com consumidor real, SISBOV oficial, MapBiomas e bases normativas de mercados reais permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
+
+### 13/10/2026 — Retomada Livestock: home operacional reconciliada
+
+**Estado:** CONCLUÍDO — o primeiro incremento exclusivo da antiga `lane/livestock` foi reaplicado sobre a `main` atual. A rota autenticada `/` passa a abrir a `LivestockHome`, contextualizada pela Organization ativa e pelo tipo aprovado do usuário, enquanto a fila administrativa permanece em `/admin`.
+
+**Evidência:** `apps/web/src/pages/LivestockHome.test.tsx` cobre a entrada operacional, a Organization ativa e os atalhos reais para animais, lotes e governança de regras. A navegação lateral identifica a entrada como `Livestock`, sem criar regra de negócio ou autorização no navegador.
+
+**Portão:** verificação consolidada ao final da reconciliação da lane histórica. O incremento não altera API, domínio, persistência, RBAC/RLS ou contratos públicos.
 
 ### 21/09/2026 — Commercial Passport: roteiro autenticado valida rastreio populacional
 
