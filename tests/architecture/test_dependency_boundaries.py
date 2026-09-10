@@ -15,15 +15,17 @@ VERTICALS_MANIFEST = PROJECT_ROOT / "docs" / "architecture" / "verticals.toml"
 # existiu. `require_existing_root` existe para que isso não se repita em silêncio.
 CORE_PACKAGES = ("core_domain", "core_application", "core_infrastructure", "core_integrity")
 
-# O env.py do Alembic é o ponto de composição das migrations de TODO o banco. As
-# tabelas de uma vertical que compartilham o schema core_audit precisam ser
-# registradas na mesma MetaData do Core para o `alembic check` resolver as FKs e
-# não propor removê-las; isso obriga o ambiente de migrations a importar as
-# tabelas da vertical. Ele é a única exceção — infraestrutura de composição, não
-# lógica reutilizável do Core. Todo o resto do Core permanece proibido de conhecer
-# verticais. O caminho mais limpo a prazo é a vertical possuir o próprio ambiente
-# de migrations; enquanto elas viverem sob o Core, esta exceção é necessária.
-MIGRATIONS_COMPOSITION_ROOT = (
+# O env.py de um ambiente Alembic é ponto de composição de migrations: ele importa
+# as tabelas que registra na MetaData — as do próprio dono e as tabelas do Core
+# que são alvo de FK — para o `alembic check` resolver as FKs e não propor
+# removê-las. É a única exceção à fronteira Core⊥vertical / vertical⊥vertical, e
+# vale para QUALQUER `env.py` sob `packages/*/persistence/migrations/`: hoje só o
+# do Core (que ainda importa tabelas de Livestock); em A-M1 o de Asset; em S-M4 o
+# de Livestock. `test_migrations_composition_root_exists` garante que a exceção
+# não vira letra morta se o arquivo do Core for movido/renomeado.
+MIGRATIONS_COMPOSITION_ROOTS = tuple(sorted(PACKAGES_ROOT.glob("*/persistence/migrations/env.py")))
+# O do Core precisa existir sempre; os das verticais são opcionais até A-M1/S-M4.
+CORE_MIGRATIONS_COMPOSITION_ROOT = (
     PACKAGES_ROOT / "core_infrastructure" / "persistence" / "migrations" / "env.py"
 )
 
@@ -174,7 +176,7 @@ def test_core_does_not_import_verticals() -> None:
 
     Os prefixos proibidos vêm do manifesto: toda vertical registrada
     (`livestock`, `asset`, …) é coberta automaticamente, mesmo antes de existir
-    no disco. A exceção nomeada `MIGRATIONS_COMPOSITION_ROOT` permanece.
+    no disco. A exceção dos `env.py` de composição de migrations permanece.
     """
     forbidden_verticals = ("packages.verticals",) + tuple(
         prefix
@@ -185,7 +187,7 @@ def test_core_does_not_import_verticals() -> None:
         f"{module.relative_to(PROJECT_ROOT)} -> {dependency}"
         for package in CORE_PACKAGES
         for module in python_modules(PACKAGES_ROOT / package)
-        if module != MIGRATIONS_COMPOSITION_ROOT
+        if module not in MIGRATIONS_COMPOSITION_ROOTS
         for dependency in imported_modules(module)
         if any(
             dependency == prefix or dependency.startswith(f"{prefix}.")
@@ -341,13 +343,17 @@ def test_core_named_http_adapters_do_not_import_livestock() -> None:
 
 
 def test_migrations_composition_root_exists() -> None:
-    """A exceção acima só é segura enquanto o alvo existir.
+    """A exceção acima só é segura enquanto os alvos existirem.
 
-    Se o env.py for movido ou renomeado, a exceção viraria letra morta e o teste
-    de fronteira voltaria a valer para ele sem ninguém perceber — a mesma classe
-    de falha silenciosa que `require_existing_root` evita.
+    Se um `env.py` for movido ou renomeado, a exceção viraria letra morta e o
+    teste de fronteira voltaria a valer para ele sem ninguém perceber — a mesma
+    classe de falha silenciosa que `require_existing_root` evita.
     """
-    assert MIGRATIONS_COMPOSITION_ROOT.exists(), (
-        "O ponto de composição das migrations não está no caminho esperado; "
+    assert CORE_MIGRATIONS_COMPOSITION_ROOT.exists(), (
+        "O ponto de composição das migrations do Core não está no caminho esperado; "
         "a exceção de fronteira em test_core_does_not_import_verticals está obsoleta."
+    )
+    assert CORE_MIGRATIONS_COMPOSITION_ROOT in MIGRATIONS_COMPOSITION_ROOTS, (
+        "O glob de env.py de migrations não encontrou o do Core; a exceção "
+        "generalizada não está cobrindo o alvo conhecido."
     )
