@@ -65,6 +65,9 @@ describe('MarketMatrix', () => {
     renderTela()
 
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/antes de executar/i)).toBeInTheDocument()
+    expect(screen.getByText('org-1')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /voltar para o animal/i })).toHaveAttribute('href', '/animals/a1')
   })
 
   it('mostra o resumo e os mercados depois de executar', async () => {
@@ -83,6 +86,10 @@ describe('MarketMatrix', () => {
     expect(await screen.findByText(/PODE_VENDER/)).toBeInTheDocument()
     expect(screen.getByText(/exportacao-estados-unidos/)).toBeInTheDocument()
     expect(screen.getByText(/Elegível para os EUA/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /ver explicação comercial/i })).toHaveAttribute(
+      'href',
+      '/animals/a1/commercial-explanation',
+    )
   })
 
   it('mostra o seletor de estabelecimento quando há dependência não escolhida, e reavalia', async () => {

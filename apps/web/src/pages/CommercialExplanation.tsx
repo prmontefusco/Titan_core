@@ -5,6 +5,9 @@ import {
   runCommercialExplanation,
   type ExplicacaoComercialResponse,
 } from '../api/eligibility'
+import { ErrorState } from '../components/AsyncStates'
+import { DetailPageHeader, DetailSection } from '../components/DetailPage'
+import { PageContext } from '../components/PageContext'
 
 interface Options {
   baseUrl: string
@@ -54,43 +57,76 @@ export function CommercialExplanation(options: Options) {
   const linkDeVolta = animalId
     ? { to: `/animals/${animalId}/market-matrix`, texto: 'Voltar para a matriz de mercado' }
     : { to: `/lots/${lotId}`, texto: 'Voltar para o lote' }
+  const subjectLabel = animalId ? 'Animal' : 'Lote'
+  const subjectId = animalId ?? lotId!
 
   return (
-    <section>
-      <p>
-        <Link to={linkDeVolta.to}>&larr; {linkDeVolta.texto}</Link>
-      </p>
-      <h2>Explicação comercial</h2>
+    <article className="detail-page">
+      <DetailPageHeader
+        eyebrow="Livestock / Explicação comercial"
+        title="Explicação comercial"
+        subtitle="Narrativa e motivos devolvidos pela API para explicar a conclusão comercial, sem reclassificação no navegador."
+        backTo={linkDeVolta.to}
+        backLabel={linkDeVolta.texto}
+        actions={
+          <button type="button" onClick={executar} disabled={executando}>
+            {executando ? 'Executando...' : 'Gerar explicação comercial'}
+          </button>
+        }
+      />
 
-      <button type="button" onClick={executar} disabled={executando}>
-        {executando ? 'Executando…' : 'Gerar explicação comercial'}
-      </button>
+      <PageContext
+        description="A explicação é emitida para o sujeito e Organization ativos. Ausências e limitações permanecem como a API retornar."
+        items={[
+          { label: 'Organization', value: options.organizationId },
+          { label: subjectLabel, value: subjectId },
+        ]}
+      />
 
       {proposalId && (
-        <p role="alert">
-          Revisão humana necessária antes de emitir a decisão. Proposta: <code>{proposalId}</code>.{' '}
+        <section className="eligibility-review-alert" role="alert">
+          <h2>Revisão humana necessária</h2>
+          <p>A API recusou a emissão automática. Proposta: <code>{proposalId}</code>.</p>
           <Link to={`/review/${proposalId}`}>Abrir revisão humana</Link>
-        </p>
+        </section>
       )}
-      {erro && <p role="alert">{erro}</p>}
+      {erro && <ErrorState tone="compact" title="Falha ao gerar explicação" message={erro} />}
+
+      {!resultado && !proposalId && !erro && (
+        <DetailSection
+          title="Antes de gerar"
+          description="A explicação comercial só é solicitada quando o operador executa a ação."
+        >
+          <p className="empty-notice">
+            Gere a explicação para ver conclusão, narrativa, próximos passos e motivos por mercado.
+          </p>
+        </DetailSection>
+      )}
 
       {resultado && (
-        <>
-          <p>
-            <strong>{resultado.commercial_outlook}</strong>
-          </p>
-          <p>{resultado.narrative}</p>
-          <p>{resultado.executive_summary}</p>
-          {resultado.recommended_next_action && (
-            <p>
-              <strong>Próxima ação recomendada:</strong> {resultado.recommended_next_action}
-            </p>
-          )}
+        <DetailSection
+          title="Conclusão explicada"
+          description="Conclusão, narrativa e ações recomendadas retornadas pelo backend."
+        >
+          <div className="market-flow-summary">
+            <span className="detail-status-chip">{resultado.commercial_outlook}</span>
+            <p>{resultado.narrative}</p>
+            <p>{resultado.executive_summary}</p>
+            {resultado.recommended_next_action && (
+              <p>
+                <strong>Próxima ação recomendada:</strong> {resultado.recommended_next_action}
+              </p>
+            )}
+          </div>
 
-          <ul>
+          <ul className="market-flow-list">
             {resultado.markets.map((mercado) => (
               <li key={mercado.market}>
-                <strong>{mercado.market}</strong>: {mercado.status} — {mercado.summary}
+                <div>
+                  <strong>{mercado.market}</strong>
+                  <span>{mercado.status}</span>
+                </div>
+                <p>{mercado.summary}</p>
                 {mercado.why.length > 0 && (
                   <ul>
                     {mercado.why.map((motivo, indice) => (
@@ -99,9 +135,7 @@ export function CommercialExplanation(options: Options) {
                   </ul>
                 )}
                 {mercado.next_action && (
-                  <p>
-                    <em>Próxima ação: {mercado.next_action}</em>
-                  </p>
+                  <p><em>Próxima ação: {mercado.next_action}</em></p>
                 )}
                 {mercado.affected_animal_ids.length > 0 && (
                   <p>
@@ -117,8 +151,8 @@ export function CommercialExplanation(options: Options) {
               </li>
             ))}
           </ul>
-        </>
+        </DetailSection>
       )}
-    </section>
+    </article>
   )
 }

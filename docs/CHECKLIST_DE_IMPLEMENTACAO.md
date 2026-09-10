@@ -4699,3 +4699,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `3 passed`: `npm run test -- TreatmentForm`. Frontend completo aprovado com `npm run test` (`109 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
 
 **Riscos e limites:** este corte nao altera API, backend, permissao, medicamentos/lotes, Evidence, prescricao, campanhas sanitarias, correcao de tratamento, regras de carencia ou semantica sanitaria. Autorizacao e validacao continuam exclusivamente no backend.
+
+
+### 10/09/2026 — Frontend Livestock: matriz e explicacao comercial no fluxo do animal
+
+**Estado:** CONCLUIDO — telas de matriz de mercado e explicacao comercial alinhadas ao fluxo operacional do animal, sem reinterpretar conclusoes comerciais no navegador.
+
+**Implementacao:** `MarketMatrix` passou a usar o padrao `DetailPage`, com retorno ao animal, contexto de Organization/Animal, estado inicial antes da execucao, alerta estruturado de revisao humana, erro padronizado, resumo comercial e lista de mercados retornados pela API. Dependencias de estabelecimento continuam explicitas e so reexecutam a chamada com sujeito escolhido pelo operador. `CommercialExplanation` tambem passou a usar `DetailPage`, com contexto de Animal ou Lote, estado inicial, erro padronizado, conclusao explicada, narrativa, resumo executivo, proxima acao e motivos por mercado exatamente como devolvidos pela API.
+
+**Evidencia:** `apps/web/src/pages/MarketMatrix.test.tsx` e `apps/web/src/pages/CommercialExplanation.test.tsx` cobrem ausencia de execucao automatica, contexto operacional, links de retorno/explicacao, resultado por mercado, dependencia de estabelecimento, revisao humana, suporte a lote e links para animais afetados.
+
+**Portao:** testes focados aprovados com `8 passed`: `npm run test -- MarketMatrix CommercialExplanation`. Frontend completo aprovado com `npm run test` (`109 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este corte nao altera API, backend, permissao, RBAC/RLS, Market Supply, regras comerciais, selecao de mercados, dependencia por mercado, DecisionReview, Dossier ou semantica de elegibilidade. A UI apenas solicita a avaliacao/explicacao e apresenta o retorno do backend.

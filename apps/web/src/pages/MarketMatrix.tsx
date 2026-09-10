@@ -8,6 +8,9 @@ import {
   type ContraparteExternaResumo,
   type MarketEntry,
 } from '../api/eligibility'
+import { ErrorState } from '../components/AsyncStates'
+import { DetailPageHeader, DetailSection } from '../components/DetailPage'
+import { PageContext } from '../components/PageContext'
 
 interface Options {
   baseUrl: string
@@ -68,35 +71,67 @@ export function MarketMatrix(options: Options) {
   }
 
   return (
-    <section>
-      <p>
-        <Link to={`/animals/${animalId}`}>&larr; Voltar para o animal</Link>
-      </p>
-      <h2>Matriz de mercado</h2>
+    <article className="detail-page">
+      <DetailPageHeader
+        eyebrow="Livestock / Mercado"
+        title="Matriz de mercado"
+        subtitle="Avaliação comercial por mercado devolvida pela API. A UI não recalcula elegibilidade nem resolve dependências por conta própria."
+        backTo={`/animals/${animalId}`}
+        backLabel="Voltar para o animal"
+        actions={
+          <button type="button" onClick={() => executar()} disabled={executando}>
+            {executando ? 'Executando...' : 'Executar análise de mercado'}
+          </button>
+        }
+      />
 
-      <button type="button" onClick={() => executar()} disabled={executando}>
-        {executando ? 'Executando…' : 'Executar análise de mercado'}
-      </button>
+      <PageContext
+        description="A análise usa o animal e a Organization ativa. Dependências comerciais continuam explícitas quando a API exigir sujeito adicional."
+        items={[
+          { label: 'Organization', value: options.organizationId },
+          { label: 'Animal', value: animalId },
+        ]}
+      />
 
       {proposalId && (
-        <p role="alert">
-          Revisão humana necessária antes de emitir a decisão. Proposta: <code>{proposalId}</code>.{' '}
+        <section className="eligibility-review-alert" role="alert">
+          <h2>Revisão humana necessária</h2>
+          <p>A API recusou a emissão automática. Proposta: <code>{proposalId}</code>.</p>
           <Link to={`/review/${proposalId}`}>Abrir revisão humana</Link>
-        </p>
+        </section>
       )}
-      {erro && <p role="alert">{erro}</p>}
+      {erro && <ErrorState tone="compact" title="Falha ao executar análise" message={erro} />}
+
+      {!resultado && !proposalId && !erro && (
+        <DetailSection
+          title="Antes de executar"
+          description="A análise só é solicitada quando o operador executa a ação explicitamente."
+        >
+          <p className="empty-notice">
+            Execute a matriz para ver mercados elegíveis, bloqueados, condicionados ou indeterminados.
+          </p>
+        </DetailSection>
+      )}
 
       {resultado && (
-        <>
-          <p>
-            <strong>{resultado.commercial_outlook}</strong> — {resultado.executive_summary}
-          </p>
+        <DetailSection
+          title="Resultado comercial"
+          description="Conclusão e mercados retornados pelo backend para esta execução."
+        >
+          <div className="market-flow-summary">
+            <span className="detail-status-chip">{resultado.commercial_outlook}</span>
+            <p>{resultado.executive_summary}</p>
+            <Link to={`/animals/${animalId}/commercial-explanation`}>Ver explicação comercial</Link>
+          </div>
 
-          <ul>
+          <ul className="market-flow-list">
             {resultado.markets.map((entry) => (
               <li key={entry.market}>
-                <strong>{entry.market}</strong>: {entry.status}
-                {entry.summary && <> — {entry.summary}</>}
+                <div>
+                  <strong>{entry.market}</strong>
+                  <span>{entry.status}</span>
+                </div>
+                {entry.summary && <p>{entry.summary}</p>}
                 {entry.gaps.length > 0 && (
                   <ul>
                     {entry.gaps.map((gap, indice) => (
@@ -109,25 +144,24 @@ export function MarketMatrix(options: Options) {
           </ul>
 
           {precisaDeSelecao && (
-            <p>
+            <div className="market-dependency-box">
               <label htmlFor="matriz-contraparte">
                 Este mercado depende de um estabelecimento ainda não escolhido
               </label>
-              <br />
               <select
                 id="matriz-contraparte"
                 value={contraparteSelecionada}
                 onChange={(evento) => setContraparteSelecionada(evento.target.value)}
               >
                 <option value="">
-                  {contrapartes === null ? 'Carregando…' : 'Selecione um estabelecimento'}
+                  {contrapartes === null ? 'Carregando...' : 'Selecione um estabelecimento'}
                 </option>
                 {contrapartes?.map((contraparte) => (
                   <option key={contraparte.counterparty_id} value={contraparte.counterparty_id}>
                     {contraparte.name}
                   </option>
                 ))}
-              </select>{' '}
+              </select>
               <button
                 type="button"
                 onClick={() => executar(contraparteSelecionada)}
@@ -135,14 +169,10 @@ export function MarketMatrix(options: Options) {
               >
                 Reavaliar com estabelecimento selecionado
               </button>
-            </p>
+            </div>
           )}
-
-          <p>
-            <Link to={`/animals/${animalId}/commercial-explanation`}>Ver explicação comercial</Link>
-          </p>
-        </>
+        </DetailSection>
       )}
-    </section>
+    </article>
   )
 }

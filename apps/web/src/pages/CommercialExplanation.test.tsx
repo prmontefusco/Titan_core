@@ -49,6 +49,12 @@ describe('CommercialExplanation', () => {
     renderTela()
 
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/antes de gerar/i)).toBeInTheDocument()
+    expect(screen.getByText('org-1')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /voltar para a matriz de mercado/i })).toHaveAttribute(
+      'href',
+      '/animals/a1/market-matrix',
+    )
   })
 
   it('mostra a narrativa e o detalhe por mercado depois de executar', async () => {
@@ -86,6 +92,7 @@ describe('CommercialExplanation', () => {
     expect(await screen.findByText(/PODE_VENDER/)).toBeInTheDocument()
     expect(screen.getByText(/pode ser vendido para os EUA agora/)).toBeInTheDocument()
     expect(screen.getByText(/Todos os requisitos foram atendidos/)).toBeInTheDocument()
+    expect(screen.getByText(/Próxima ação recomendada/i)).toBeInTheDocument()
   })
 
   it('mostra a nota de revisão humana necessária', async () => {
