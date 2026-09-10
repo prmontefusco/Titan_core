@@ -33,6 +33,9 @@ describe('AnimalEligibility', () => {
     renderTela()
 
     expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByText(/antes de executar/i)).toBeInTheDocument()
+    expect(screen.getByText('org-1')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /voltar para o animal/i })).toHaveAttribute('href', '/animals/a1')
   })
 
   it('mostra o resultado depois de executar', async () => {
@@ -61,6 +64,8 @@ describe('AnimalEligibility', () => {
 
     expect(await screen.findByText('APROVADA')).toBeInTheDocument()
     expect(screen.getByText('ELEGIVEL')).toBeInTheDocument()
+    expect(screen.getByText(/corte de conhecimento/i)).toBeInTheDocument()
+    expect(screen.getByText('ev1')).toBeInTheDocument()
   })
 
   it('mostra a nota de revisão humana necessária com o proposal_id', async () => {
@@ -83,6 +88,7 @@ describe('AnimalEligibility', () => {
     const alerta = await screen.findByRole('alert')
     expect(alerta).toHaveTextContent(/revisão humana/i)
     expect(alerta).toHaveTextContent('p1')
+    expect(screen.getByRole('link', { name: /abrir revisão humana/i })).toHaveAttribute('href', '/review/p1')
   })
 
   it('mostra erro genérico sem crashar em outras falhas', async () => {

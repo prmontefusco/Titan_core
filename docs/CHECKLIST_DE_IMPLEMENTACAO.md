@@ -4673,3 +4673,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** testes focados aprovados com `8 passed`: `npm run test -- AnimalSearch AnimalDetail AnimalTimeline`. Frontend completo aprovado com `npm run test` (`108 passed`), `npm run build` e `npm run lint`. Suite canonica completa do repositorio aprovada apos subir PostgreSQL e aplicar migrations: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
 
 **Riscos e limites:** este corte nao altera backend, contratos publicos, permissao, RBAC/RLS, Organization switcher, criacao de elegibilidade/decisao, Market Supply como fluxo principal, autosave offline ou regras de negocio no navegador. A propriedade exibida continua limitada ao nascimento porque a API ainda nao expoe estadia atual como leitura propria.
+
+
+### 10/09/2026 — Frontend Livestock: elegibilidade operacional do animal
+
+**Estado:** CONCLUIDO — tela de elegibilidade alinhada ao fluxo operacional de animal, preservando execucao explicita e decisao autoritativa do backend.
+
+**Implementacao:** `AnimalEligibility` passou a usar o padrao `DetailPage`, exibindo retorno previsivel ao detalhe do animal, contexto de Organization/Animal, estado inicial antes da execucao, acao explicita de avaliacao, alerta estruturado de revisao humana e resultado em lista descritiva com outcome, corte de conhecimento, motivos, limitacoes, Evaluation, Decision e Dossie. A UI continua sem calcular elegibilidade, sem reinterpretar motivos e sem executar side-effect ao abrir a pagina.
+
+**Evidencia:** `apps/web/src/pages/AnimalEligibility.test.tsx` cobre ausencia de execucao automatica, contexto operacional, resultado aprovado, link para revisao humana quando a API devolve `REVISAO_HUMANA_NECESSARIA` e erro generico em falhas como 404.
+
+**Portao:** teste focado aprovado com `4 passed`: `npm run test -- AnimalEligibility`. Frontend completo aprovado com `npm run test` (`108 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este corte nao altera API, backend, permissions, RBAC/RLS, criacao de regras, DecisionReview, Market Supply, Dossier ou semantica de elegibilidade. Estados de autorizacao e conflito continuam dependentes do contrato de erro exposto pela API.

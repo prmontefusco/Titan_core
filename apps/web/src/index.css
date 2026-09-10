@@ -1302,6 +1302,31 @@ body {
   overflow-wrap: anywhere;
 }
 
+.eligibility-review-alert {
+  display: grid;
+  gap: 0.55rem;
+  padding: 1rem;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.eligibility-review-alert h2,
+.eligibility-review-alert p {
+  margin: 0;
+}
+
+.eligibility-review-alert h2 {
+  color: #fcd34d;
+  font-size: 1rem;
+}
+
+.eligibility-review-alert a {
+  width: fit-content;
+  color: #fcd34d;
+  font-weight: 700;
+}
+
 @media (max-width: 640px) {
   .animal-search-controls,
   .animal-result-link {
