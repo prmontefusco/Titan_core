@@ -97,6 +97,11 @@ describe('TreatmentForm', () => {
 
     renderFormulario()
 
+    expect(screen.getByText(/registro operacional de aplicação/i)).toBeInTheDocument()
+    expect(screen.getByText('org-1')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /voltar para o animal/i })).toHaveAttribute('href', '/animals/a1')
+    expect(screen.getByText(/não substitui Evidence validada/i)).toBeInTheDocument()
+
     const medicamento = await screen.findByLabelText('Medicamento')
     fireEvent.change(medicamento, { target: { value: 'm1' } })
 
@@ -176,5 +181,23 @@ describe('TreatmentForm', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/não pode estar no futuro/i)
     // A seleção continua visível -- o operador não perde o que preencheu.
     expect(screen.getByLabelText('Lote')).toHaveValue('b1')
+  })
+
+  it('mostra estado vazio quando não há medicamentos disponíveis', async () => {
+    vi.stubGlobal(
+      'fetch',
+      mockFetchSequence([
+        {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [], limit: 50, offset: 0, has_more: false }),
+        },
+      ]),
+    )
+
+    renderFormulario()
+
+    expect(await screen.findByText(/nenhum medicamento disponível/i)).toBeInTheDocument()
+    expect(screen.getByLabelText('Medicamento')).toBeDisabled()
   })
 })

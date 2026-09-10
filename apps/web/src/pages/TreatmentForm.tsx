@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
   TreatmentApiError,
   fetchMedicationBatches,
@@ -8,6 +8,8 @@ import {
   type LoteResumo,
   type MedicamentoResumo,
 } from '../api/treatments'
+import { EmptyState, ErrorState, LoadingState } from '../components/AsyncStates'
+import { DetailPageHeader, DetailSection } from '../components/DetailPage'
 import { PageContext } from '../components/PageContext'
 
 interface Options {
@@ -97,11 +99,14 @@ export function TreatmentForm(options: Options) {
   }
 
   return (
-    <section>
-      <p>
-        <Link to={`/animals/${animalId}`}>&larr; Voltar para o animal</Link>
-      </p>
-      <h2>Registrar tratamento</h2>
+    <article className="detail-page">
+      <DetailPageHeader
+        eyebrow="Livestock / Tratamento"
+        title="Registrar tratamento"
+        subtitle="Registro operacional de aplicação. O backend preserva a regra sanitária; a UI apenas envia os dados informados."
+        backTo={`/animals/${animalId}`}
+        backLabel="Voltar para o animal"
+      />
       <PageContext
         description="O registro será feito apenas para o animal e a Organization atualmente em uso."
         items={[
@@ -110,18 +115,28 @@ export function TreatmentForm(options: Options) {
         ]}
       />
 
-      <form onSubmit={submeter}>
-        <p>
+      <DetailSection
+        title="Aplicação"
+        description="Selecione medicamento e lote antes de registrar. Nenhum dado é salvo até o envio explícito."
+      >
+        {medicamentos === null && <LoadingState tone="compact" message="Carregando medicamentos..." />}
+        {medicamentos !== null && medicamentos.length === 0 && (
+          <EmptyState
+            tone="compact"
+            message="Nenhum medicamento disponível para registro nesta Organization."
+          />
+        )}
+        <form className="treatment-form" onSubmit={submeter}>
           <label htmlFor="tratamento-medicamento">Medicamento</label>
-          <br />
           <select
             id="tratamento-medicamento"
             value={medicamentoId}
             onChange={(evento) => setMedicamentoId(evento.target.value)}
             required
+            disabled={medicamentos === null || medicamentos.length === 0}
           >
             <option value="">
-              {medicamentos === null ? 'Carregando…' : 'Selecione um medicamento'}
+              {medicamentos === null ? 'Carregando...' : 'Selecione um medicamento'}
             </option>
             {medicamentos?.map((medicamento) => (
               <option key={medicamento.medication_id} value={medicamento.medication_id}>
@@ -129,11 +144,8 @@ export function TreatmentForm(options: Options) {
               </option>
             ))}
           </select>
-        </p>
 
-        <p>
           <label htmlFor="tratamento-lote">Lote</label>
-          <br />
           <select
             id="tratamento-lote"
             value={loteId}
@@ -142,26 +154,20 @@ export function TreatmentForm(options: Options) {
             disabled={!medicamentoId || carregandoLotes}
           >
             <option value="">
-              {carregandoLotes ? 'Carregando…' : 'Selecione um lote'}
+              {carregandoLotes ? 'Carregando...' : 'Selecione um lote'}
             </option>
             {lotes.map((lote) => (
               <option key={lote.batch_id} value={lote.batch_id}>
-                {lote.batch_number} — vence em{' '}
+                {lote.batch_number} - vence em{' '}
                 {new Date(lote.expiry_date).toLocaleDateString('pt-BR')}
               </option>
             ))}
           </select>
           {medicamentoId && !carregandoLotes && lotes.length === 0 && (
-            <>
-              <br />
-              <em>Nenhum lote cadastrado para este medicamento.</em>
-            </>
+            <p className="field-help">Nenhum lote cadastrado para este medicamento.</p>
           )}
-        </p>
 
-        <p>
           <label htmlFor="tratamento-instante">Instante de aplicação</label>
-          <br />
           <input
             id="tratamento-instante"
             type="datetime-local"
@@ -169,36 +175,33 @@ export function TreatmentForm(options: Options) {
             onChange={(evento) => setAppliedAt(evento.target.value)}
             required
           />
-        </p>
 
-        <p>
           <label htmlFor="tratamento-dose">Dose (opcional)</label>
-          <br />
           <input
             id="tratamento-dose"
             type="text"
             value={dose}
             onChange={(evento) => setDose(evento.target.value)}
           />
-        </p>
 
-        <p>
           <label htmlFor="tratamento-nota">Nota de evidência (opcional, não é prova)</label>
-          <br />
           <input
             id="tratamento-nota"
             type="text"
             value={nota}
             onChange={(evento) => setNota(evento.target.value)}
           />
-        </p>
+          <p className="field-help">
+            A nota ajuda a operação, mas não substitui Evidence validada nem comprova verdade material.
+          </p>
 
-        {erro && <p role="alert">{erro}</p>}
+          {erro && <ErrorState tone="compact" message={erro} />}
 
-        <button type="submit" disabled={enviando || !loteId}>
-          {enviando ? 'Registrando…' : 'Registrar aplicação'}
-        </button>
-      </form>
-    </section>
+          <button type="submit" disabled={enviando || !loteId}>
+            {enviando ? 'Registrando...' : 'Registrar aplicação'}
+          </button>
+        </form>
+      </DetailSection>
+    </article>
   )
 }

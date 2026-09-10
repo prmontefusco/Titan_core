@@ -1327,6 +1327,28 @@ body {
   font-weight: 700;
 }
 
+.treatment-form {
+  display: grid;
+  gap: 0.65rem;
+  max-width: 42rem;
+}
+
+.treatment-form label {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.treatment-form input,
+.treatment-form select {
+  width: 100%;
+}
+
+.field-help {
+  margin: -0.2rem 0 0.35rem;
+  color: var(--color-text-muted);
+  font-size: 0.8125rem;
+}
+
 @media (max-width: 640px) {
   .animal-search-controls,
   .animal-result-link {

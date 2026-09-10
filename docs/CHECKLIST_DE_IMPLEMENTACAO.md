@@ -4686,3 +4686,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `4 passed`: `npm run test -- AnimalEligibility`. Frontend completo aprovado com `npm run test` (`108 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
 
 **Riscos e limites:** este corte nao altera API, backend, permissions, RBAC/RLS, criacao de regras, DecisionReview, Market Supply, Dossier ou semantica de elegibilidade. Estados de autorizacao e conflito continuam dependentes do contrato de erro exposto pela API.
+
+
+### 10/09/2026 — Frontend Livestock: registro operacional de tratamento
+
+**Estado:** CONCLUIDO — tela de tratamento alinhada ao fluxo operacional de animal, preservando escrita explicita e sem promover nota livre a Evidence.
+
+**Implementacao:** `TreatmentForm` passou a usar o padrao `DetailPage`, exibindo retorno previsivel ao detalhe do animal, contexto de Organization/Animal, estado de carregamento de medicamentos, estado vazio quando nao ha medicamentos, ajuda operacional para lote ausente e erro padronizado. O formulario manteve o mesmo payload e endpoints; a nota de evidencia continua sendo enviada como nota livre e a tela declara que ela nao substitui Evidence validada nem comprova verdade material.
+
+**Evidencia:** `apps/web/src/pages/TreatmentForm.test.tsx` cobre registro com navegacao ao detalhe, preservacao da selecao em conflito de backend, contexto operacional, retorno ao animal e estado vazio sem medicamentos.
+
+**Portao:** teste focado aprovado com `3 passed`: `npm run test -- TreatmentForm`. Frontend completo aprovado com `npm run test` (`109 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check`.
+
+**Riscos e limites:** este corte nao altera API, backend, permissao, medicamentos/lotes, Evidence, prescricao, campanhas sanitarias, correcao de tratamento, regras de carencia ou semantica sanitaria. Autorizacao e validacao continuam exclusivamente no backend.
