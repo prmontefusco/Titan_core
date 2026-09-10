@@ -15,7 +15,6 @@ import type { NavigationItem } from './components/Sidebar'
 import { AdminQueue } from './components/AdminQueue'
 import { EntityTypeSelectionForm } from './components/EntityTypeSelectionForm'
 import { PendingStatus } from './components/PendingStatus'
-import { AdminDashboard } from './pages/AdminDashboard'
 import { AnimalSearch } from './pages/AnimalSearch'
 import { AnimalDetail } from './pages/AnimalDetail'
 import { AnimalTimeline } from './pages/AnimalTimeline'
@@ -29,6 +28,7 @@ import { LotDetail } from './pages/LotDetail'
 import { DecisionReview } from './pages/DecisionReview'
 import { MarketRuleGovernance } from './pages/MarketRuleGovernance'
 import { TerritorialCaptureQa } from './pages/TerritorialCaptureQa'
+import { LivestockHome } from './pages/LivestockHome'
 import titanLogo from './assets/titan-bode.png'
 
 function LoginScreen({ onEnter }: { onEnter: () => void }) {
@@ -113,7 +113,7 @@ function StatusConteudo({
     const kind: EntityKind = aprovado?.requested_kind ?? 'ADMIN'
 
     const navigationItems: NavigationItem[] = [
-      { path: '/', label: 'Dashboard', icon: '📊' },
+      { path: '/', label: 'Livestock', icon: '📊' },
       { path: '/animals', label: 'Animais', icon: '🐄' },
       { path: '/lots', label: 'Lotes', icon: '📦' },
       { path: '/market-supply', label: 'Market Supply', icon: '📈' },
@@ -138,7 +138,7 @@ function StatusConteudo({
         navigationItems={navigationItems}
       >
         <Routes>
-          <Route path="/" element={<AdminDashboard {...options} />} />
+          <Route path="/" element={<LivestockHome kind={kind} organizationId={organizationId} />} />
           <Route path="/animals" element={<AnimalSearch {...options} />} />
           <Route path="/animals/:animalId" element={<AnimalDetail {...options} />} />
           <Route path="/animals/:animalId/timeline" element={<AnimalTimeline {...options} />} />

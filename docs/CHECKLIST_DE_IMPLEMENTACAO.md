@@ -4792,3 +4792,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `5 passed`: `npm run test -- MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`113 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
 
 **Riscos e limites:** este corte nao altera API, backend, regras, policies, adoptions, permissao ou semantica de governanca. A limpeza e apenas estado visual local para evitar acao sobre informacao obsoleta.
+
+
+### 10/09/2026 — Frontend Livestock: home operacional da vertical
+
+**Estado:** CONCLUIDO — a rota inicial autenticada deixa de abrir um painel administrativo generico e passa a abrir a entrada operacional do Livestock.
+
+**Implementacao:** `App` passou a renderizar `LivestockHome` em `/`, usando a Organization ativa e o tipo aprovado do usuario para contextualizar os atalhos reais da vertical. A navegacao lateral troca o rotulo `Dashboard` por `Livestock`; a fila administrativa continua disponivel em `/admin`, sem perder funcionalidade. Este corte reaproveita a tela `LivestockHome` ja existente e nao cria dashboard geral, regra de negocio, API, permission ou contrato novo.
+
+**Evidencia:** `apps/web/src/pages/LivestockHome.test.tsx` cobre a apresentacao da entrada operacional, Organization ativa e links para busca de animal, busca de lote e governanca de regras.
+
+**Portao:** teste focado aprovado com `1 passed`: `npm run test -- LivestockHome`. Frontend completo aprovado com `npm run test` (`114 passed`), `npm run build` e `npm run lint`.
+
+**Riscos e limites:** este corte nao altera backend, autorizacao, RBAC/RLS, Market Supply, governanca de regras, fila administrativa ou contratos publicos. A home apenas organiza o ponto de entrada do usuario para capacidades ja existentes.
