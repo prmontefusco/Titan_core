@@ -413,6 +413,23 @@ python -m uv run --locked alembic upgrade head
 
 Não execute `downgrade` em ambiente compartilhado ou com migrations posteriores sem plano e autorização específicos. Migrations são o único mecanismo autorizado para alterar schema; `create_all()` e equivalentes não são usados.
 
+## Titan Geodata opcional
+
+A integracao com `Titan_geodata` e desligada por padrao. A API, o worker e os
+demais fluxos sobem sem essa dependencia; apenas rotas que consultam ou importam
+CAR, FUNAI, PRODES, DETER ou IBAMA via provider externo exigem:
+
+```powershell
+$env:TITAN_GEODATA_URL="http://localhost:8001"
+$env:TITAN_GEODATA_API_KEY="<chave-do-titan-geodata>"
+```
+
+`TITAN_GEODATA_URL` deve apontar para a raiz do servico, sem `/api/v1`; o adapter
+acrescenta os caminhos versionados. `TITAN_GEODATA_API_KEY` e segredo operacional
+e nunca deve ser commitado, impresso em logs ou copiado para exemplos reais. Sem
+uma das duas variaveis, `car_lookup_opcional()` retorna `None` e as rotas
+dependentes recusam a operacao com `503`, nomeando a configuracao ausente.
+
 ## Integração contínua
 
 O workflow `.github/workflows/quality.yml` executa testes, verificações arquiteturais, Ruff e Mypy em `push` e `pull_request`.
