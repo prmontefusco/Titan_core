@@ -4831,3 +4831,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** testes focados aprovados com `17 passed`: `npm run test -- MarketMatrix CommercialExplanation MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`116 passed`), `npm run build` e `npm run lint`.
 
 **Riscos e limites:** este corte nao preenche template automaticamente, nao cria regra, nao publica Policy, nao adota regra e nao reexecuta a matriz sozinho. A governanca continua exigindo acao explicita do operador e autorizacao do backend.
+
+
+### 10/09/2026 — Frontend Livestock: atalho de explicacao comercial no hub do animal
+
+**Estado:** CONCLUIDO — o detalhe do animal passa a expor diretamente a explicacao comercial, alem da matriz de mercado.
+
+**Implementacao:** `AnimalDetail` ganhou o atalho "Gerar explicacao comercial" apontando para `/animals/{animalId}/commercial-explanation`. A acao segue o mesmo padrao das demais: apenas navega para a tela existente; a explicacao so e gerada quando o operador executa explicitamente a acao naquela tela.
+
+**Evidencia:** `AnimalDetail.test.tsx` cobre o novo link para a explicacao comercial.
+
+**Portao:** teste focado aprovado com `3 passed`: `npm run test -- AnimalDetail`. Frontend completo aprovado com `npm run test` (`116 passed`), `npm run build` e `npm run lint`.
+
+**Riscos e limites:** este corte nao altera API, backend, elegibilidade, matriz, explicacao comercial, autorizacao ou regra de negocio. Ele apenas torna visivel no hub do animal uma rota ja existente do fluxo aprovado.
