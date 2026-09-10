@@ -65,10 +65,13 @@ Comportamento desejado, sobre a lista de verticais **lida de `verticals.toml`**:
 ```
 para cada vertical A registrada:            core_*  não importa  A
 para cada par A != B de verticais:          A       não importa  B
-para cada vertical A:                       A_domain      não importa A_application nem *_infrastructure
-                                            A_application não importa fastapi/sqlalchemy
-                                            imports de A_application/A_infrastructure para core_infrastructure
+para cada vertical A:                       A_domain      não importa A_application nem A_infrastructure
+                                                          nem core_application nem core_infrastructure
+                                            A_application não importa fastapi/sqlalchemy/apps
+                                            imports de A_application para core_infrastructure
                                               ⊆ allowlist de DEPENDENCY_RULES.md §5
+                                            (A_infrastructure -> core_infrastructure permanece irrestrito
+                                             pela matriz de DEPENDENCY_RULES.md §2)
 exceção de migrations:                       qualquer env.py sob packages/*/persistence/migrations/ pode
                                               importar tabelas do Core (alvo de FK) e as próprias
 ```
