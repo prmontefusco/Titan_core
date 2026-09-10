@@ -4761,6 +4761,8 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 
 **Item 3 fechado em 10/09/2026 — FUNAI via `/sicar/farm/summary`.** O adapter HTTP do `Titan_geodata` passou a usar o endpoint resumido `GET /api/v1/sicar/farm/summary` para `fetch_funai_overlap`, preservando `version_ids`, `source_area_hectares` e `feature_count` sem baixar geometrias pesadas de `/sicar/farm`. A resposta resumida tem parser proprio (`FarmSummaryLayer` / `interpretar_camada_resumida`) e continua sem julgamento normativo: o Titan apenas transforma o fato espacial recebido em `TerritorialOverlapAssessment`. **Evidencia:** `tests/livestock_infrastructure/test_car_client.py` cobre a URL resumida, a preservacao de `version_ids` e a recusa de resposta resumida sem proveniencia de versao.
 
+**Item 2 fechado em 10/09/2026 — UF nao carregada nao e imovel inexistente.** O adapter HTTP do `Titan_geodata` passou a ler o corpo dos `404` de `/sicar/farm`, `/sicar/farm/summary` e `/sicar/farm/timeline`; quando o provider declara `UF not loaded`, o Titan levanta `BaseEstadualNaoCarregada` em vez de `CarNaoEncontrado`. As rotas de preview/importacao do CAR e consultas territoriais FUNAI/PRODES/DETER traduzem esse estado para `503 BASE_ESTADUAL_NAO_CARREGADA`, preservando a diferenca entre "codigo CAR inexistente" e "base estadual ainda nao disponivel". **Evidencia:** `tests/livestock_infrastructure/test_car_client.py` cobre os tres caminhos HTTP e confirma que a lacuna de cobertura nao vira ausencia limpa.
+
 
 ### 10/09/2026 — Frontend Livestock: resultado e conflito na governanca de regras
 

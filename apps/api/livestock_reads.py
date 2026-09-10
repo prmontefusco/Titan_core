@@ -69,6 +69,7 @@ from packages.livestock_application.territorial_timeline_service import (
 from packages.livestock_domain.geometry import CAMADA_PERIMETRO
 from packages.livestock_domain.territorial_capture import thaw_territorial_response_summary
 from packages.livestock_infrastructure.geodata import (
+    BaseEstadualNaoCarregada,
     CarNaoEncontrado,
     GeodataIndisponivel,
     GeodataNaoConfigurado,
@@ -140,6 +141,15 @@ def _nao_encontrado(o_que: str) -> DomainProblem:
         reason_code="RECURSO_NAO_ENCONTRADO",
         title="Recurso não encontrado",
         detail=f"{o_que} não encontrado nesta organização.",
+    )
+
+
+def _base_estadual_nao_carregada(error: BaseEstadualNaoCarregada) -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        reason_code="BASE_ESTADUAL_NAO_CARREGADA",
+        title="Base estadual ainda nao carregada",
+        detail=str(error),
     )
 
 
@@ -1443,6 +1453,8 @@ def consultar_car(
 ) -> CarPreviewResumo:
     try:
         imovel = _geometria_servico(connection).preview_car(cod_imovel, state)
+    except BaseEstadualNaoCarregada as error:
+        raise _base_estadual_nao_carregada(error) from error
     except CarNaoEncontrado as error:
         raise _nao_encontrado("Imovel no CAR") from error
     except GeodataNaoConfigurado as error:
@@ -1573,6 +1585,10 @@ def consultar_sobreposicao_territorial_funai(
         )
     except KeyError as error:
         raise _nao_encontrado("Propriedade") from error
+    except BaseEstadualNaoCarregada as error:
+        raise _base_estadual_nao_carregada(error) from error
+    except CarNaoEncontrado as error:
+        raise _nao_encontrado("Imovel no CAR") from error
     except GeodataNaoConfigurado as error:
         raise DomainProblem(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1620,6 +1636,10 @@ def consultar_timeline_territorial_prodes(
         )
     except KeyError as error:
         raise _nao_encontrado("Propriedade") from error
+    except BaseEstadualNaoCarregada as error:
+        raise _base_estadual_nao_carregada(error) from error
+    except CarNaoEncontrado as error:
+        raise _nao_encontrado("Imovel no CAR") from error
     except GeodataNaoConfigurado as error:
         raise DomainProblem(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1674,6 +1694,10 @@ def consultar_timeline_territorial_deter(
         )
     except KeyError as error:
         raise _nao_encontrado("Propriedade") from error
+    except BaseEstadualNaoCarregada as error:
+        raise _base_estadual_nao_carregada(error) from error
+    except CarNaoEncontrado as error:
+        raise _nao_encontrado("Imovel no CAR") from error
     except GeodataNaoConfigurado as error:
         raise DomainProblem(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

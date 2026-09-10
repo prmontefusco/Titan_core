@@ -117,6 +117,7 @@ from packages.livestock_domain.parentage import (
 from packages.livestock_domain.reproduction import GestationalAgeBasis
 from packages.livestock_domain.territorial_capture import thaw_territorial_response_summary
 from packages.livestock_infrastructure.geodata import (
+    BaseEstadualNaoCarregada,
     CarNaoEncontrado,
     GeodataIndisponivel,
     GeodataNaoConfigurado,
@@ -202,6 +203,15 @@ def _nao_encontrado(o_que: str) -> DomainProblem:
         reason_code="RECURSO_NAO_ENCONTRADO",
         title="Recurso não encontrado",
         detail=f"{o_que} não encontrado nesta organização.",
+    )
+
+
+def _base_estadual_nao_carregada(error: BaseEstadualNaoCarregada) -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        reason_code="BASE_ESTADUAL_NAO_CARREGADA",
+        title="Base estadual ainda nao carregada",
+        detail=str(error),
     )
 
 
@@ -1994,6 +2004,8 @@ def importar_geometria_do_car(
             notes=corpo.notes,
             incluir_camadas=corpo.incluir_camadas,
         )
+    except BaseEstadualNaoCarregada as error:
+        raise _base_estadual_nao_carregada(error) from error
     except CarNaoEncontrado as error:
         raise _nao_encontrado("Imovel no CAR") from error
     except GeodataNaoConfigurado as error:

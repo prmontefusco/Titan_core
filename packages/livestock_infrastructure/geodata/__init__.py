@@ -1,6 +1,7 @@
 """Integração com providers geoespaciais externos (Passo 17.2, ADR-0026)."""
 
 from packages.livestock_infrastructure.geodata.car_client import (
+    BaseEstadualNaoCarregada,
     CarLayer,
     CarLookupPort,
     CarNaoEncontrado,
@@ -22,6 +23,7 @@ from packages.livestock_infrastructure.geodata.car_client import (
 )
 
 __all__ = [
+    "BaseEstadualNaoCarregada",
     "CarLayer",
     "CarLookupPort",
     "CarNaoEncontrado",

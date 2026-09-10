@@ -35,6 +35,10 @@ class CarNaoEncontrado(LookupError):
     """O codigo informado nao corresponde a imovel na base consultada."""
 
 
+class BaseEstadualNaoCarregada(RuntimeError):
+    """A UF informada ainda nao foi carregada pelo provider geoespacial."""
+
+
 class GeodataIndisponivel(RuntimeError):
     """O provider nao respondeu, ou respondeu o que nao se sabe interpretar."""
 
@@ -429,11 +433,12 @@ class GeodataCarClient(CarLookupPort):
                 resultado: bytes = resposta.read()
                 return resultado
         except urllib.error.HTTPError as erro:
+            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             if erro.code == 404:
+                _reclassificar_404_geodata(corpo, uf)
                 raise CarNaoEncontrado(
                     f"Imovel '{cod_imovel}' nao encontrado em {uf} na base consultada."
                 ) from erro
-            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             raise GeodataIndisponivel(
                 f"O provider devolveu {erro.code} para '{cod_imovel}': {corpo}"
                 f" (chave usada: {self.chave_mascarada})"
@@ -465,11 +470,12 @@ class GeodataCarClient(CarLookupPort):
                 conteudo: bytes = resposta.read()
                 return conteudo
         except urllib.error.HTTPError as erro:
+            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             if erro.code == 404:
+                _reclassificar_404_geodata(corpo, uf)
                 raise CarNaoEncontrado(
                     f"Imovel '{codigo}' nao encontrado em {uf} na base consultada."
                 ) from erro
-            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             raise GeodataIndisponivel(
                 f"O provider devolveu {erro.code} para '{codigo}': {corpo}"
                 f" (chave usada: {self.chave_mascarada})"
@@ -501,11 +507,12 @@ class GeodataCarClient(CarLookupPort):
                 conteudo: bytes = resposta.read()
                 return conteudo
         except urllib.error.HTTPError as erro:
+            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             if erro.code == 404:
+                _reclassificar_404_geodata(corpo, uf)
                 raise CarNaoEncontrado(
                     f"Imovel '{codigo}' nao encontrado em {uf} na base consultada."
                 ) from erro
-            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             raise GeodataIndisponivel(
                 f"O provider devolveu {erro.code} para o resumo de '{codigo}': {corpo}"
                 f" (chave usada: {self.chave_mascarada})"
@@ -553,11 +560,12 @@ class GeodataCarClient(CarLookupPort):
                 conteudo: bytes = resposta.read()
                 return conteudo
         except urllib.error.HTTPError as erro:
+            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             if erro.code == 404:
+                _reclassificar_404_geodata(corpo, uf)
                 raise CarNaoEncontrado(
                     f"Imovel '{codigo}' nao encontrado em {uf} na base consultada."
                 ) from erro
-            corpo = erro.read().decode("utf-8", errors="replace")[:300]
             raise GeodataIndisponivel(
                 f"O provider devolveu {erro.code} na timeline territorial '{camada}': {corpo}"
                 f" (chave usada: {self.chave_mascarada})"
@@ -588,6 +596,13 @@ def interpretar_camada(item: Any) -> CarLayer:
         area_hectares=float(area) if isinstance(area, int | float) else None,
         feature_count=int(contagem) if isinstance(contagem, int) else None,
     )
+
+
+def _reclassificar_404_geodata(corpo: str, uf: str) -> None:
+    if "UF not loaded" in corpo:
+        raise BaseEstadualNaoCarregada(
+            f"A base estadual de {uf} ainda nao foi carregada no Titan_geodata."
+        )
 
 
 def interpretar_camada_resumida(item: Any) -> FarmSummaryLayer:

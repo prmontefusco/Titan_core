@@ -19,6 +19,7 @@ import pytest
 
 from packages.livestock_domain.geometry import digest_de
 from packages.livestock_infrastructure.geodata import (
+    BaseEstadualNaoCarregada,
     GeodataCarClient,
     GeodataIndisponivel,
     GeodataNaoConfigurado,
@@ -532,6 +533,25 @@ def test_cliente_busca_o_imovel_pelo_endpoint_farm(monkeypatch: pytest.MonkeyPat
     assert imovel.layer == "AREA_IMOVEL"
 
 
+def test_cliente_distingue_uf_nao_carregada_de_imovel_inexistente(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _urlopen(request: object, timeout: int) -> object:
+        raise urllib.error.HTTPError(
+            url="http://provider.invalido/api/v1/sicar/farm",
+            code=404,
+            msg="Not Found",
+            hdrs=Message(),
+            fp=BytesIO(b'{"detail":"UF not loaded: GO"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(BaseEstadualNaoCarregada, match="GO"):
+        cliente.fetch("GO-123", "GO")
+
+
 def test_cliente_reaproveita_farm_para_listar_camadas(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -629,6 +649,28 @@ def test_cliente_recusa_resumo_sem_version_ids(monkeypatch: pytest.MonkeyPatch) 
         )
 
 
+def test_resumo_funai_distingue_uf_nao_carregada(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _urlopen(request: object, timeout: int) -> object:
+        raise urllib.error.HTTPError(
+            url="http://provider.invalido/api/v1/sicar/farm/summary",
+            code=404,
+            msg="Not Found",
+            hdrs=Message(),
+            fp=BytesIO(b'{"detail":"UF not loaded: MT"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(BaseEstadualNaoCarregada, match="MT"):
+        cliente.fetch_funai_overlap(
+            cod_imovel="MT-123",
+            state="MT",
+        )
+
+
 def test_cliente_consulta_timeline_do_prodes(monkeypatch: pytest.MonkeyPatch) -> None:
     pedido_capturado: dict[str, object] = {}
 
@@ -680,6 +722,23 @@ def test_cliente_recusa_intervalo_invertido_no_prodes() -> None:
             year_from=2022,
             year_to=2021,
         )
+
+
+def test_timeline_distingue_uf_nao_carregada(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _urlopen(request: object, timeout: int) -> object:
+        raise urllib.error.HTTPError(
+            url="http://provider.invalido/api/v1/sicar/farm/timeline",
+            code=404,
+            msg="Not Found",
+            hdrs=Message(),
+            fp=BytesIO(b'{"detail":"UF not loaded: PA"}'),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(BaseEstadualNaoCarregada, match="PA"):
+        cliente.fetch_prodes_timeline(cod_imovel="PA-123", state="PA")
 
 
 def test_cliente_consulta_timeline_do_deter(monkeypatch: pytest.MonkeyPatch) -> None:
