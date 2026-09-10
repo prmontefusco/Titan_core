@@ -127,7 +127,7 @@ describe('MarketMatrix', () => {
     expect(screen.getAllByText('Nenhuma regra governada adotada para este mercado.')).toHaveLength(1)
     expect(screen.getByRole('link', { name: /publicar ou adotar regras de mercado/i })).toHaveAttribute(
       'href',
-      '/rule-governance',
+      '/rule-governance?returnTo=%2Fanimals%2Fa1%2Fmarket-matrix&animalId=a1',
     )
   })
 

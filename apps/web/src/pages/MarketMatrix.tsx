@@ -30,6 +30,14 @@ function temMercadoAusente(markets: MarketEntry[]): boolean {
   return markets.some((entry) => entry.status === 'AUSENTE')
 }
 
+function linkGovernancaDeMercado(animalId: string): string {
+  const params = new URLSearchParams({
+    returnTo: `/animals/${animalId}/market-matrix`,
+    animalId,
+  })
+  return `/rule-governance?${params.toString()}`
+}
+
 // Tela S7 (Onda 3). Quando algum mercado depende de um sujeito ainda não
 // escolhido (ex.: China exige frigorífico), mostra o seletor e reexecuta com
 // slaughterhouse_counterparty_id -- o backend não aceita mapear dependência
@@ -129,7 +137,9 @@ export function MarketMatrix(options: Options) {
             <p>{resultado.executive_summary}</p>
             <Link to={`/animals/${animalId}/commercial-explanation`}>Ver explicação comercial</Link>
             {temMercadoAusente(resultado.markets) && (
-              <Link to="/rule-governance">Publicar ou adotar regras de mercado</Link>
+              <Link to={linkGovernancaDeMercado(animalId)}>
+                Publicar ou adotar regras de mercado
+              </Link>
             )}
           </div>
 

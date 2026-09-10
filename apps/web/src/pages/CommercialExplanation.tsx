@@ -24,6 +24,14 @@ function temMercadoAusente(markets: ExplicacaoComercialResponse['markets']): boo
   return markets.some((mercado) => mercado.status === 'AUSENTE')
 }
 
+function linkGovernancaDeMercado(animalId: string): string {
+  const params = new URLSearchParams({
+    returnTo: `/animals/${animalId}/commercial-explanation`,
+    animalId,
+  })
+  return `/rule-governance?${params.toString()}`
+}
+
 // Tela S8 (Onda 3), generalizada na Onda 4 para aceitar lote além de animal
 // -- POST /market-eligibility/commercial-explanations já aceita lot_id como
 // alternativa a animal_id (XOR) e devolve o mesmo ExplicacaoComercialResponse
@@ -135,7 +143,9 @@ export function CommercialExplanation(options: Options) {
               </p>
             )}
             {temMercadoAusente(resultado.markets) && (
-              <Link to="/rule-governance">Publicar ou adotar regras de mercado</Link>
+              <Link to={animalId ? linkGovernancaDeMercado(animalId) : '/rule-governance'}>
+                Publicar ou adotar regras de mercado
+              </Link>
             )}
           </div>
 

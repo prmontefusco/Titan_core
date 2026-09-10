@@ -18,6 +18,12 @@
 
 **Evidência:** os testes das cinco telas cobrem o retorno para `/animals/{animalId}` e preservam a distinção da rota de lote. **Portão:** verificação consolidada ao final da reconciliação; nenhuma API ou regra de negócio foi alterada.
 
+### 13/10/2026 — Retomada Livestock: retorno seguro da governança reconciliado
+
+**Estado:** CONCLUÍDO — matriz e explicação comercial preservam um retorno seguro para a análise do mesmo animal ao encaminhar o operador à governança. `MarketRuleGovernance` aceita somente as duas rotas internas permitidas e ignora destinos arbitrários.
+
+**Evidência:** testes de matriz, explicação e governança cobrem os links com contexto e a rejeição de URL externa. **Portão:** verificação consolidada ao final da reconciliação; publicação e adoção continuam explícitas e autorizadas pelo backend.
+
 ### 21/09/2026 — Commercial Passport: roteiro autenticado valida rastreio populacional
 
 **Estado:** CONCLUÍDO — o roteiro executável `apps/validacao/commercial_passport_api.py`, usado para
