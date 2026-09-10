@@ -1,0 +1,104 @@
+# Manifesto de composição das verticais Titan.
+#
+# FONTE DA VERDADE para:
+#   - tests/architecture/test_dependency_boundaries.py  (fronteiras Core/vertical e vertical <-> vertical)
+#   - tests/architecture/test_vertical_manifest.py      (consistência deste arquivo)
+#   - scripts/check_file_ownership.py                   (portão de propriedade de arquivo na CI)
+#
+# NÃO contém comportamento de domínio. NÃO é importado por packages/core_* nem por
+# packages/<vertical>_*. É lido apenas por tests/ e por scripts/ de CI.
+#
+# Ver: docs/architecture/VERTICAL_OWNERSHIP_MATRIX.md
+#      docs/architecture/MULTI_VERTICAL_CI_GATES.md
+#      docs/architecture/NEW_VERTICAL_BOOTSTRAP_STANDARD.md
+#
+# Regras ao editar:
+#   - `vertical_id` (a chave da tabela) é estável e nunca muda depois de registrado.
+#   - Uma vertical registrada aqui mas ainda não criada no disco é PULADA pelos testes
+#     de fronteira (nunca some silenciosamente: ver o contrato de require_registered_vertical).
+#   - A lista de verticais é SEMPRE explícita aqui; nunca inferida do sistema de arquivos.
+#   - `sustainment` ainda NÃO é registrado: decisão B de
+#     docs/architecture/DECISIONS_REQUIRED_PHASE0.md (mesmo vertical_id de `asset` ou vertical irmã).
+
+schema_version = 1
+
+# Prefixos de import de camada, por vertical: "<prefix>_domain", "<prefix>_application",
+# "<prefix>_infrastructure" em packages/.
+[core]
+# O Core não é uma vertical; fica aqui só para o teste de fronteira ter a lista canônica.
+package_prefixes = ["core_domain", "core_application", "core_infrastructure", "core_integrity"]
+shared_kernel    = "shared_kernel"
+migration_owner  = "titan_core"
+
+[verticals.livestock]
+display_name         = "Titan Livestock"
+status               = "active"          # active | bootstrap | planned
+import_prefix        = "livestock"
+package_roots        = [
+    "packages/livestock_domain",
+    "packages/livestock_application",
+    "packages/livestock_infrastructure",
+]
+test_roots           = [
+    "tests/livestock_domain",
+    "tests/livestock_application",
+    "tests/livestock_infrastructure",
+]
+# Prefixos de caminho (não-glob): um arquivo "pertence" à vertical se seu caminho
+# repo-relativo começa por qualquer um destes.
+owned_path_prefixes  = [
+    "packages/livestock_domain/",
+    "packages/livestock_application/",
+    "packages/livestock_infrastructure/",
+    "tests/livestock_domain/",
+    "tests/livestock_application/",
+    "tests/livestock_infrastructure/",
+    "apps/api/livestock_",
+    "apps/api/geodata_dependencies.py",
+    "apps/worker/livestock_handlers.py",
+    "apps/seed_test_livestock_data.py",
+]
+event_namespaces     = ["livestock"]
+migration_owner      = "titan_livestock"
+# Transitório: as migrations de Livestock ainda vivem sob core_infrastructure
+# (Opção D de MIGRATION_CONCURRENCY_STRATEGY.md). Migram para um diretório próprio
+# numa janela de integração (passo S-M4), quando o Codex não estiver no meio de uma migration.
+migration_locations  = ["packages/core_infrastructure/persistence/migrations/versions"]
+
+[verticals.asset]
+display_name         = "Titan Asset & Sustainment"
+status               = "bootstrap"
+import_prefix        = "asset"
+package_roots        = [
+    "packages/asset_domain",
+    "packages/asset_application",
+    "packages/asset_infrastructure",
+]
+test_roots           = [
+    "tests/asset_domain",
+    "tests/asset_application",
+    "tests/asset_infrastructure",
+]
+owned_path_prefixes  = [
+    "packages/asset_domain/",
+    "packages/asset_application/",
+    "packages/asset_infrastructure/",
+    "tests/asset_domain/",
+    "tests/asset_application/",
+    "tests/asset_infrastructure/",
+    "apps/api/asset/",
+    "apps/validacao/asset/",
+    "apps/worker/asset_handlers.py",
+    "docs/asset-sustainment/",
+]
+event_namespaces     = ["asset"]
+migration_owner      = "titan_asset"
+migration_locations  = ["packages/asset_infrastructure/persistence/migrations/versions"]
+
+[shared]
+# Caminhos Lane C: um PR que os toca exige CHANGE_CLASS=SHARED_INTEGRATION,
+# salvo os append-only listados abaixo (ledger acrescido por qualquer lane no
+# mesmo commit da mudança — AGENTS.md "O checklist é o ledger").
+append_by_any_lane = [
+    "docs/CHECKLIST_DE_IMPLEMENTACAO.md",
+]
