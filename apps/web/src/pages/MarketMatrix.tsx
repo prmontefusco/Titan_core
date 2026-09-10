@@ -38,6 +38,13 @@ function linkGovernancaDeMercado(animalId: string): string {
   return `/rule-governance?${params.toString()}`
 }
 
+function linkExplicacaoComercial(animalId: string): string {
+  const params = new URLSearchParams({
+    returnTo: `/animals/${animalId}/market-matrix`,
+  })
+  return `/animals/${animalId}/commercial-explanation?${params.toString()}`
+}
+
 // Tela S7 (Onda 3). Quando algum mercado depende de um sujeito ainda não
 // escolhido (ex.: China exige frigorífico), mostra o seletor e reexecuta com
 // slaughterhouse_counterparty_id -- o backend não aceita mapear dependência
@@ -135,7 +142,7 @@ export function MarketMatrix(options: Options) {
           <div className="market-flow-summary">
             <span className="detail-status-chip">{resultado.commercial_outlook}</span>
             <p>{resultado.executive_summary}</p>
-            <Link to={`/animals/${animalId}/commercial-explanation`}>Ver explicação comercial</Link>
+            <Link to={linkExplicacaoComercial(animalId)}>Ver explicação comercial</Link>
             {temMercadoAusente(resultado.markets) && (
               <Link to={linkGovernancaDeMercado(animalId)}>
                 Publicar ou adotar regras de mercado

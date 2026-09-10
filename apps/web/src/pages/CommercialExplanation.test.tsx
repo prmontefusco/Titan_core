@@ -10,9 +10,9 @@ const options = {
   organizationId: 'org-1',
 }
 
-function renderTela(animalId = 'a1') {
+function renderTela(animalId = 'a1', query = '') {
   return render(
-    <MemoryRouter initialEntries={[`/animals/${animalId}/commercial-explanation`]}>
+    <MemoryRouter initialEntries={[`/animals/${animalId}/commercial-explanation${query}`]}>
       <Routes>
         <Route
           path="/animals/:animalId/commercial-explanation"
@@ -56,6 +56,30 @@ describe('CommercialExplanation', () => {
       '/animals/a1/market-matrix',
     )
     expect(screen.getByRole('link', { name: /voltar ao detalhe operacional do animal/i })).toHaveAttribute('href', '/animals/a1')
+  })
+
+  it('volta para o detalhe do animal quando veio do hub operacional', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderTela('a1', '?returnTo=%2Fanimals%2Fa1')
+
+    expect(screen.getByRole('link', { name: /voltar para o animal/i })).toHaveAttribute(
+      'href',
+      '/animals/a1',
+    )
+  })
+
+  it('ignora retorno arbitrário e preserva o retorno padrão para a matriz', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderTela('a1', '?returnTo=https%3A%2F%2Fexample.com')
+
+    expect(screen.getByRole('link', { name: /voltar para a matriz de mercado/i })).toHaveAttribute(
+      'href',
+      '/animals/a1/market-matrix',
+    )
   })
 
   it('mostra a narrativa e o detalhe por mercado depois de executar', async () => {

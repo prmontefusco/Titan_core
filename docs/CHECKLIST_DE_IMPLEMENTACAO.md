@@ -30,6 +30,12 @@
 
 **Evidência:** `AnimalDetail.test.tsx` cobre o atalho. **Portão:** verificação consolidada ao final da reconciliação; API, autorização e regras comerciais permanecem inalteradas.
 
+### 13/10/2026 — Retomada Livestock: retorno contextual da explicação reconciliado
+
+**Estado:** CONCLUÍDO — a explicação comercial retorna ao detalhe quando aberta pelo hub e à matriz quando aberta pela matriz. Somente rotas internas do mesmo animal são aceitas; lote continua retornando ao lote.
+
+**Evidência:** testes de detalhe, matriz e explicação cobrem origens válidas, URL arbitrária recusada e fluxo de lote. **Portão:** verificação consolidada ao final da reconciliação; trata-se apenas de navegação local fail-closed.
+
 ### 21/09/2026 — Commercial Passport: roteiro autenticado valida rastreio populacional
 
 **Estado:** CONCLUÍDO — o roteiro executável `apps/validacao/commercial_passport_api.py`, usado para

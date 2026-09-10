@@ -89,7 +89,7 @@ describe('MarketMatrix', () => {
     expect(screen.getByText(/Elegível para os EUA/)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /ver explicação comercial/i })).toHaveAttribute(
       'href',
-      '/animals/a1/commercial-explanation',
+      '/animals/a1/commercial-explanation?returnTo=%2Fanimals%2Fa1%2Fmarket-matrix',
     )
   })
 
