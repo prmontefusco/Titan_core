@@ -4771,3 +4771,16 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `5 passed`: `npm run test -- MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`113 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
 
 **Riscos e limites:** este corte nao cria endpoint de consulta previa, nao altera API, backend, policies, rules, adoptions ou permissao. A deteccao de existencia previa continua vindo da recusa autoritativa do backend.
+
+
+### 10/09/2026 — Frontend Livestock: limpeza de estado na governanca de regras
+
+**Estado:** CONCLUIDO — tela de governanca de regras deixa de misturar pre-visualizacao, erro ou resultado antigo quando o operador altera o fluxo.
+
+**Implementacao:** `MarketRuleGovernance` passou a limpar pre-visualizacao, erros e resultado gravado quando o operador altera template, parametros, mercado, escopo, nome, fonte normativa ou atalho de mercado. Mudanca de Policy tambem remove resultado/erro de confirmacao anterior. Gerar nova pre-visualizacao remove resultado anterior antes de chamar a API.
+
+**Evidencia:** `apps/web/src/pages/MarketRuleGovernance.test.tsx` cobre que, apos uma regra ser publicada, alterar o nome da regra remove o resultado gravado exibido anteriormente.
+
+**Portao:** teste focado aprovado com `5 passed`: `npm run test -- MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`113 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
+
+**Riscos e limites:** este corte nao altera API, backend, regras, policies, adoptions, permissao ou semantica de governanca. A limpeza e apenas estado visual local para evitar acao sobre informacao obsoleta.

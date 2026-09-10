@@ -302,6 +302,13 @@ describe('MarketRuleGovernance', () => {
     expect(screen.getByText('rule-exigibilidade-sanitaria')).toBeInTheDocument()
     expect(screen.getByText('ad-1')).toBeInTheDocument()
     expect(screen.getByText(/este resultado já foi gravado/i)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByLabelText(/nome da regra/i), {
+      target: { value: 'Brucelose China revisada' },
+    })
+
+    expect(screen.queryByRole('heading', { name: /regra publicada/i })).not.toBeInTheDocument()
+    expect(screen.queryByText('ri-1')).not.toBeInTheDocument()
   })
 
   it('explica conflito de domínio ao confirmar fluxo já existente', async () => {

@@ -66,6 +66,13 @@ export function MarketRuleGovernance(options: Options) {
   const [executando, setExecutando] = useState(false)
   const [erroExecucao, setErroExecucao] = useState<string | null>(null)
 
+  const limparFluxoGerado = () => {
+    setPrevia(null)
+    setErroPrevia(null)
+    setResultado(null)
+    setErroExecucao(null)
+  }
+
   const recarregarPolicies = () => {
     setErroPolicies(null)
     listPolicies(options)
@@ -133,6 +140,8 @@ export function MarketRuleGovernance(options: Options) {
     setCarregandoPrevia(true)
     setErroPrevia(null)
     setPrevia(null)
+    setResultado(null)
+    setErroExecucao(null)
     try {
       const sugestao = await suggestGovernanceFlow(options, templateCode, {
         marketPurpose,
@@ -150,6 +159,7 @@ export function MarketRuleGovernance(options: Options) {
   }
 
   const aplicarMercadoInicial = (mercado: (typeof MERCADOS_INICIAIS)[number]) => {
+    limparFluxoGerado()
     setMarketPurpose(mercado.code)
     if (template?.scope_hint) {
       setAdoptionScope(template.scope_hint)
@@ -165,8 +175,6 @@ export function MarketRuleGovernance(options: Options) {
     if (template?.parameters.some((parametro) => parametro.name === 'market_purpose')) {
       setParametros({ ...parametros, market_purpose: mercado.code })
     }
-    setPrevia(null)
-    setResultado(null)
   }
 
   const confirmar = async () => {
@@ -236,7 +244,11 @@ export function MarketRuleGovernance(options: Options) {
           <select
             id="policy-existente"
             value={policyId}
-            onChange={(evento) => setPolicyId(evento.target.value)}
+            onChange={(evento) => {
+              setPolicyId(evento.target.value)
+              setResultado(null)
+              setErroExecucao(null)
+            }}
           >
             <option value="">— selecione —</option>
             {policies.map((item) => (
@@ -312,9 +324,9 @@ export function MarketRuleGovernance(options: Options) {
           id="template-select"
           value={templateCode}
           onChange={(evento) => {
+            limparFluxoGerado()
             setTemplateCode(evento.target.value)
             setParametros({})
-            setPrevia(null)
           }}
         >
           <option value="">— selecione —</option>
@@ -337,9 +349,10 @@ export function MarketRuleGovernance(options: Options) {
               <input
                 id={`param-${parametro.name}`}
                 value={parametros[parametro.name] ?? ''}
-                onChange={(evento) =>
+                onChange={(evento) => {
+                  limparFluxoGerado()
                   setParametros({ ...parametros, [parametro.name]: evento.target.value })
-                }
+                }}
               />
             </p>
           ))}
@@ -375,7 +388,10 @@ export function MarketRuleGovernance(options: Options) {
         <input
           id="market-purpose"
           value={marketPurpose}
-          onChange={(evento) => setMarketPurpose(evento.target.value)}
+          onChange={(evento) => {
+            limparFluxoGerado()
+            setMarketPurpose(evento.target.value)
+          }}
           placeholder="ex.: mercado-interno, exportacao-china"
         />
       </p>
@@ -391,7 +407,10 @@ export function MarketRuleGovernance(options: Options) {
         <input
           id="adoption-scope"
           value={adoptionScope}
-          onChange={(evento) => setAdoptionScope(evento.target.value)}
+          onChange={(evento) => {
+            limparFluxoGerado()
+            setAdoptionScope(evento.target.value)
+          }}
           placeholder="livestock.animal"
         />
       </p>
@@ -403,7 +422,10 @@ export function MarketRuleGovernance(options: Options) {
         <input
           id="regra-nome"
           value={nome}
-          onChange={(evento) => setNome(evento.target.value)}
+          onChange={(evento) => {
+            limparFluxoGerado()
+            setNome(evento.target.value)
+          }}
           placeholder="ex.: Carência farmacológica — Mercado Interno"
         />
       </p>
@@ -418,7 +440,10 @@ export function MarketRuleGovernance(options: Options) {
         <input
           id="fonte-normativa"
           value={normativeSource}
-          onChange={(evento) => setNormativeSource(evento.target.value)}
+          onChange={(evento) => {
+            limparFluxoGerado()
+            setNormativeSource(evento.target.value)
+          }}
           placeholder="ex.: Instrução Normativa MAPA nº X, ou 'Política interna do frigorífico'"
         />
       </p>
