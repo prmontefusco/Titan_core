@@ -23,7 +23,7 @@ $env:TITAN_MIGRATION_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_pa
 $env:TITAN_RUNTIME_DATABASE_PASSWORD="titan_local_runtime_password"
 python -m uv run --locked python -m apps.provision_runtime_database_role
 $env:TITAN_DATABASE_URL="postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
-python -m uv run --locked python -m alembic upgrade head
+python -m uv run --locked python -m alembic upgrade heads
 ```
 
 Portão de verificação completo:

@@ -388,11 +388,11 @@ $env:TITAN_MIGRATION_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_pa
 $env:TITAN_RUNTIME_DATABASE_PASSWORD="titan_local_runtime_password"
 python -m uv run --locked python -m apps.provision_runtime_database_role
 $env:TITAN_DATABASE_URL="postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
-python -m uv run --locked alembic upgrade head
+python -m uv run --locked alembic upgrade heads
 python -m uv run --locked alembic current
 ```
 
-Bootstrap mínimo da Organization operadora, após `alembic upgrade head`:
+Bootstrap mínimo da Organization operadora, após `alembic upgrade heads`:
 
 ```powershell
 $env:TITAN_OPERATOR_ORGANIZATION_ID="<uuid-estavel-da-organization-operadora>"
@@ -408,7 +408,7 @@ Teste reversível enquanto somente a revisão técnica inicial existir:
 ```powershell
 python -m uv run --locked alembic downgrade base
 python -m uv run --locked alembic current
-python -m uv run --locked alembic upgrade head
+python -m uv run --locked alembic upgrade heads
 ```
 
 Não execute `downgrade` em ambiente compartilhado ou com migrations posteriores sem plano e autorização específicos. Migrations são o único mecanismo autorizado para alterar schema; `create_all()` e equivalentes não são usados.

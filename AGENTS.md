@@ -261,7 +261,7 @@ O ambiente local roda em contêineres. Antes de qualquer teste de integração, 
 ```text
 docker compose up -d
 $env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
-python -m uv run --locked alembic upgrade head
+python -m uv run --locked alembic upgrade heads
 ```
 
 Verificações:

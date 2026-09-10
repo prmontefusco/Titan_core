@@ -103,7 +103,7 @@ jobs:
         run: uv sync --locked
 
       - name: Aplicar migrations
-        run: uv run --locked alembic upgrade head
+        run: uv run --locked alembic upgrade heads
 
       - name: Provisionar role de runtime restrita
         env:
