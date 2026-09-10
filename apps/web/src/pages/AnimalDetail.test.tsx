@@ -53,6 +53,10 @@ describe('AnimalDetail', () => {
     expect(screen.getByText(/não disponível nesta versão/i)).toBeInTheDocument()
     expect(screen.getByText(/ativo no rebanho/i)).toBeInTheDocument()
     expect(screen.getByRole('link', { name: /ver timeline/i })).toHaveAttribute('href', '/animals/a1/timeline')
+    expect(screen.getByRole('link', { name: /gerar explicação comercial/i })).toHaveAttribute(
+      'href',
+      '/animals/a1/commercial-explanation',
+    )
   })
 
   it('mostra mensagem clara quando o animal não é encontrado (404)', async () => {
