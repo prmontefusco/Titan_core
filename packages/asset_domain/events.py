@@ -46,6 +46,10 @@ ASSET_CONFIGURATION_EVENT_TYPES = frozenset(
     }
 )
 
+SITE_REGISTERED = "asset.site.registered"
+
+ASSET_SITE_EVENT_TYPES = frozenset({SITE_REGISTERED})
+
 PART_REGISTERED = "asset.part.registered"
 PART_REVISION_ADDED = "asset.part.revision_added"
 PART_REVISION_SUPERSEDED = "asset.part.revision_superseded"
@@ -275,6 +279,24 @@ def configuration_baseline_superseded_payload(
             "baseline_id": _id(baseline_id),
             "reason": reason,
             "superseded_by_ref": _id(superseded_by_ref),
+        },
+    )
+
+
+def site_registered_payload(
+    *,
+    site_id: TypedId,
+    customer_ref: TypedId,
+    code: str,
+    kind: str,
+) -> CanonicalPayload:
+    return _payload(
+        SITE_REGISTERED,
+        {
+            "code": code,
+            "customer_ref": _id(customer_ref),
+            "kind": kind,
+            "site_id": _id(site_id),
         },
     )
 

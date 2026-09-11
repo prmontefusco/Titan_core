@@ -4901,3 +4901,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/asset_domain/test_inventory.py` (29 casos) — 122 testes verdes em `tests/asset_domain/` + `tests/architecture/` no total. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1558 passed, 323 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Sem persistencia (A3) — a coordenacao real `StockReservation` + `StockPosition.hold()` na mesma transacao (cenario A) ou como saga (cenario B) e responsabilidade de `asset_application` (A4), assim como o `SELECT ... FOR UPDATE` com ordem deterministica por `stock_position_id` que `docs/asset/09_COMMAND_MODEL.md` ja registrou como achado da revisao adversarial.
+
+### 11/09/2026 — A2 (parcial): `CustomerSite` — fecha o modulo `asset` do dominio
+
+**Estado:** EM EXECUCAO — quinto incremento de A2. `packages/asset_domain` cobre agora todos os agregados/entidades do modulo `asset` listados em `docs/asset/05_DOMAIN_MODEL.md` §1 (Vehicle, ConfigurationBaseline, Part/InterchangeabilityGroup, Applicability, StockLocation/StockPosition/StockReservation/StockTransfer, CustomerSite). Falta o modulo `sustainment` (`SLIContract`, `WorkOrder` — maquina de estados T1-T17 ja fixada na ADR do slice) para A2 estar completo.
+
+**Implementacao:** `packages/asset_domain/customer_site.py` — `CustomerSite` (entidade de referencia, OM/Site — decisao G), `SiteContact` (VO), `CustomerSiteKind` (enum: `OM`/`CIVIL_FLEET_SITE`/`OTHER`). Vive na vertical; nenhum conceito equivalente entra em `packages/core_*` (constituicao §18; `11_AUTHORIZATION_MODEL.md` G1). E o valor referenciado pelo `site_scope` do `AssetOperationContext` — a garantia de isolamento (I-SEC-2) e responsabilidade da camada de aplicacao/autorizacao (A4), nao deste modulo, que so valida forma (entity_type, campos obrigatorios).
+
+`packages/asset_domain/events.py` estendido com `asset.site.registered` (`08_DOMAIN_EVENTS.md` §1).
+
+**Portao:** `tests/asset_domain/test_customer_site.py` (6 casos) — 128 testes verdes em `tests/asset_domain/` + `tests/architecture/` no total. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1564 passed, 323 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Sem persistencia (A3), sem aplicacao (A4), sem API (A5). Proximo passo: modulo `sustainment` (`SLIContract`/`ContractVersion`/`CoverageLine` primeiro, depois `WorkOrder`/`WorkTask` com as 17 transicoes da ADR do slice).
