@@ -60,6 +60,42 @@ ASSET_SUSTAINMENT_CONTRACT_EVENT_TYPES = frozenset(
     }
 )
 
+SUSTAINMENT_ENTITLEMENT_RESOLVED = "asset.sustainment.entitlement_resolved"
+SUSTAINMENT_WORK_ORDER_OPENED = "asset.sustainment.work_order_opened"
+SUSTAINMENT_WORK_ORDER_TASK_ADDED = "asset.sustainment.work_order_task_added"
+SUSTAINMENT_MATERIAL_DEMANDED = "asset.sustainment.material_demanded"
+SUSTAINMENT_MATERIAL_RESERVED = "asset.sustainment.material_reserved"
+SUSTAINMENT_WORK_ORDER_STATE_CHANGED = "asset.sustainment.work_order_state_changed"
+SUSTAINMENT_WORK_ORDER_PRIORITY_RECALCULATED = "asset.sustainment.work_order_priority_recalculated"
+SUSTAINMENT_TASK_STARTED = "asset.sustainment.task_started"
+SUSTAINMENT_TASK_COMPLETED = "asset.sustainment.task_completed"
+SUSTAINMENT_COMPONENT_REMOVED = "asset.sustainment.component_removed"
+SUSTAINMENT_WORK_ORDER_TECHNICALLY_COMPLETE = "asset.sustainment.work_order_technically_complete"
+SUSTAINMENT_POST_MAINTENANCE_VALIDATED = "asset.sustainment.post_maintenance_validated"
+SUSTAINMENT_WORK_ORDER_COMPLETED = "asset.sustainment.work_order_completed"
+SUSTAINMENT_WORK_ORDER_CANCELLED = "asset.sustainment.work_order_cancelled"
+SUSTAINMENT_FAILURE_RECORDED = "asset.sustainment.failure_recorded"
+
+ASSET_WORK_ORDER_EVENT_TYPES = frozenset(
+    {
+        SUSTAINMENT_ENTITLEMENT_RESOLVED,
+        SUSTAINMENT_WORK_ORDER_OPENED,
+        SUSTAINMENT_WORK_ORDER_TASK_ADDED,
+        SUSTAINMENT_MATERIAL_DEMANDED,
+        SUSTAINMENT_MATERIAL_RESERVED,
+        SUSTAINMENT_WORK_ORDER_STATE_CHANGED,
+        SUSTAINMENT_WORK_ORDER_PRIORITY_RECALCULATED,
+        SUSTAINMENT_TASK_STARTED,
+        SUSTAINMENT_TASK_COMPLETED,
+        SUSTAINMENT_COMPONENT_REMOVED,
+        SUSTAINMENT_WORK_ORDER_TECHNICALLY_COMPLETE,
+        SUSTAINMENT_POST_MAINTENANCE_VALIDATED,
+        SUSTAINMENT_WORK_ORDER_COMPLETED,
+        SUSTAINMENT_WORK_ORDER_CANCELLED,
+        SUSTAINMENT_FAILURE_RECORDED,
+    }
+)
+
 PART_REGISTERED = "asset.part.registered"
 PART_REVISION_ADDED = "asset.part.revision_added"
 PART_REVISION_SUPERSEDED = "asset.part.revision_superseded"
@@ -289,6 +325,220 @@ def configuration_baseline_superseded_payload(
             "baseline_id": _id(baseline_id),
             "reason": reason,
             "superseded_by_ref": _id(superseded_by_ref),
+        },
+    )
+
+
+def sustainment_entitlement_resolved_payload(
+    *,
+    vehicle_ref: TypedId,
+    subject_ref: TypedId,
+    instant: datetime,
+    decision_ref: TypedId,
+    outcome: str,
+    breakdown: str,
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_ENTITLEMENT_RESOLVED,
+        {
+            "breakdown": breakdown,
+            "decision_ref": _id(decision_ref),
+            "instant": instant,
+            "outcome": outcome,
+            "subject_ref": _id(subject_ref),
+            "vehicle_ref": _id(vehicle_ref),
+        },
+    )
+
+
+def sustainment_work_order_opened_payload(
+    *,
+    work_order_id: TypedId,
+    vehicle_ref: TypedId,
+    site_ref: TypedId,
+    failure_mode: str,
+    contract_ref: TypedId,
+    contract_version_no: int,
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_WORK_ORDER_OPENED,
+        {
+            "contract_ref": _id(contract_ref),
+            "contract_version_no": contract_version_no,
+            "failure_mode": failure_mode,
+            "site_ref": _id(site_ref),
+            "vehicle_ref": _id(vehicle_ref),
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_work_order_task_added_payload(
+    *, work_order_id: TypedId, task_id: TypedId, mandatory: bool
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_WORK_ORDER_TASK_ADDED,
+        {"mandatory": mandatory, "task_id": _id(task_id), "work_order_id": _id(work_order_id)},
+    )
+
+
+def sustainment_material_demanded_payload(
+    *, work_order_id: TypedId, task_id: TypedId, part_ref: TypedId, qty: Decimal
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_MATERIAL_DEMANDED,
+        {
+            "part_ref": _id(part_ref),
+            "qty": _decimal(qty),
+            "task_id": _id(task_id),
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_material_reserved_payload(
+    *, work_order_id: TypedId, reservation_ref: TypedId, part_ref: TypedId, qty: Decimal
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_MATERIAL_RESERVED,
+        {
+            "part_ref": _id(part_ref),
+            "qty": _decimal(qty),
+            "reservation_ref": _id(reservation_ref),
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_work_order_state_changed_payload(
+    *, work_order_id: TypedId, from_state: str, to_state: str, reason: str | None
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_WORK_ORDER_STATE_CHANGED,
+        {
+            "from_state": from_state,
+            "reason": reason,
+            "to_state": to_state,
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_work_order_priority_recalculated_payload(
+    *, work_order_id: TypedId, score: int, breakdown: str, evaluation_ref: TypedId | None
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_WORK_ORDER_PRIORITY_RECALCULATED,
+        {
+            "breakdown": breakdown,
+            "evaluation_ref": _optional_id(evaluation_ref),
+            "score": score,
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_task_started_payload(
+    *, work_order_id: TypedId, task_id: TypedId
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_TASK_STARTED,
+        {"task_id": _id(task_id), "work_order_id": _id(work_order_id)},
+    )
+
+
+def sustainment_task_completed_payload(
+    *, work_order_id: TypedId, task_id: TypedId, labor_entry: str | None
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_TASK_COMPLETED,
+        {
+            "labor_entry": labor_entry,
+            "task_id": _id(task_id),
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_component_removed_payload(
+    *,
+    work_order_id: TypedId,
+    part_ref: TypedId,
+    serial: str | None,
+    disposition: str,
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_COMPONENT_REMOVED,
+        {
+            "disposition": disposition,
+            "part_ref": _id(part_ref),
+            "serial": serial,
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_work_order_technically_complete_payload(
+    *, work_order_id: TypedId, diagnosis: str, root_cause: str, resolution: str
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_WORK_ORDER_TECHNICALLY_COMPLETE,
+        {
+            "diagnosis": diagnosis,
+            "resolution": resolution,
+            "root_cause": root_cause,
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_post_maintenance_validated_payload(
+    *, work_order_id: TypedId, validation_ref: TypedId, result: str
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_POST_MAINTENANCE_VALIDATED,
+        {
+            "result": result,
+            "validation_ref": _id(validation_ref),
+            "work_order_id": _id(work_order_id),
+        },
+    )
+
+
+def sustainment_work_order_completed_payload(
+    *, work_order_id: TypedId, closed_at: datetime
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_WORK_ORDER_COMPLETED,
+        {"closed_at": closed_at, "work_order_id": _id(work_order_id)},
+    )
+
+
+def sustainment_work_order_cancelled_payload(
+    *, work_order_id: TypedId, from_state: str, reason: str
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_WORK_ORDER_CANCELLED,
+        {"from_state": from_state, "reason": reason, "work_order_id": _id(work_order_id)},
+    )
+
+
+def sustainment_failure_recorded_payload(
+    *,
+    work_order_id: TypedId,
+    vehicle_ref: TypedId,
+    mode: str,
+    affected_position: str | None,
+    observed_at: datetime,
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_FAILURE_RECORDED,
+        {
+            "affected_position": affected_position,
+            "mode": mode,
+            "observed_at": observed_at,
+            "vehicle_ref": _id(vehicle_ref),
+            "work_order_id": _id(work_order_id),
         },
     )
 
