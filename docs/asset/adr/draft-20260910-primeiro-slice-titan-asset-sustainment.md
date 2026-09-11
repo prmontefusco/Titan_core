@@ -1,9 +1,12 @@
 # ADR (RASCUNHO) — Primeiro slice de Titan Asset & Sustainment: corte de vertical, módulos, máquina de estados da Work Order e escopo de site
 
 **Número:** a alocar na integração (política D1 de `docs/architecture/AGENT_WORKTREE_SAFETY.md` §7).
-Não assumir número.
+Não assumir número; o arquivo permanece com o nome `draft-...` até lá.
 **Data:** 10/09/2026
-**Status:** RASCUNHO
+**Status:** ACEITA — aprovada pelo dono em 11/09/2026. A decisão em si (B1, máquina de estados da
+`WorkOrder`, G1 para o slice, layout de módulos, entitlement via `Evaluation → Decision`) é vinculante.
+Execução (A2 em diante) segue gated pelos itens em aberto de "Critérios de aceitação" — aceitar a ADR não
+os dispensa.
 **Estado operacional no MVP:** FUTURA_APROVADA (nenhum código; decisão de estrutura do primeiro slice)
 **Lane:** Asset (`vertical/asset/*`).
 **Decisão de Discovery:** `PROCEED` (ver `docs/asset/20_EXECUTION_ROADMAP.md` §2), **condicionada**
@@ -225,12 +228,20 @@ de evento e (se A3 decidir ambiente próprio) uma `migration_location` — via P
 
 ## Critérios de aceitação
 
-- SPEC `docs/asset/specs/proposed/2026-09-10-titan-asset-primeiro-slice.md` aprovada pelo dono.
-- Discovery (01–09, 11, 19, 20) revisada por Claude (adversarial) e Gemini (integração); sem BLOQUEADOR
-  aberto; `MULTI_AGENT_ARCHITECTURE_REVIEW.md` produzido (§49).
-- Decisões A, F, G aceitas em `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`; B fixada por esta ADR.
-- Os 16 pontos do §47 exprimíveis como asserções do teste ponta a ponta de A7.
-- Fica claro que A2 (código) só começa após P0 (merge da stack), P1 (decisões) e o ACCEPT desta ADR + SPEC.
+- [x] SPEC `docs/asset/specs/approved/2026-09-10-titan-asset-primeiro-slice.md` aprovada pelo dono
+  (11/09/2026).
+- [x] Esta ADR aprovada pelo dono (11/09/2026) — decisões B, máquina de estados, G1‑do‑slice e layout
+  fixadas.
+- [ ] Discovery (01–09, 11, 19, 20) revisada por Claude (adversarial) e Gemini (integração); sem BLOQUEADOR
+  aberto; `MULTI_AGENT_ARCHITECTURE_REVIEW.md` produzido (§49). **Pendente.**
+- [ ] Decisões A, F, G aceitas em `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`. **Pendente** — vivem na
+  stack `integration/core/parallel-vertical-foundation` (Lane C), não tocada por esta aprovação.
+- [ ] P0 — merge da stack `integration/core/parallel-vertical-foundation` (G1–G3, S‑M1–S‑M3). **Pendente.**
+- Os 16 pontos do §47 exprimíveis como asserções do teste ponta a ponta de A7 — propriedade do desenho,
+  já satisfeita pela SPEC; confirma‑se na prática em A7.
+- **A2 (primeiro código) só começa quando os itens `[ ]` acima também estiverem marcados.** A aprovação de
+  hoje cobre a *decisão*, não remove os pré‑requisitos de infraestrutura compartilhada (P0) nem as decisões
+  A/F/G que pertencem à Lane C.
 
 ## Plano de reversão
 

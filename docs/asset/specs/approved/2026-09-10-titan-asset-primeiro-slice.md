@@ -1,12 +1,13 @@
 # SPEC — Titan Asset & Sustainment: primeiro slice (Vehicle→Work Order→Reserva de material→Dashboard de oficina)
 
 - **Nível:** CRITICAL (tenancy, auditoria, integridade, entidades novas, API, migration, arquitetura de vertical)
-- **Estado:** proposta
+- **Estado:** aprovada (11/09/2026, pelo dono) — autoriza PLAN/BUILD; código (A2) segue gated pelos itens
+  em aberto abaixo (P0; decisões A/F/G)
 - **Decisão de Discovery:** PROCEED (condicionada às decisões A, F, G — ver §"Riscos, alternativas e perguntas abertas")
 - **Owner de produto:** Founder / Product Owner
-- **Data:** 2026-09-10
+- **Data:** 2026-09-10 (aprovada 2026-09-11)
 - **Vertical / lane:** `asset` (`vertical/asset/*`)
-- **ADR:** `docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (rascunho)
+- **ADR:** `docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (ACEITA)
 - **Discovery:** `docs/asset/01`…`09`, `11`, `19`, `20`
 
 ---
@@ -211,12 +212,15 @@ Principais para esta SPEC:
 
 **Decisões humanas ainda necessárias (bloqueiam A2 / código):**
 
-- **A** — aceitar a estratégia de migrations D→C (`docs/architecture/DECISIONS_REQUIRED_PHASE0.md`).
-- **B** — confirmar B1 (uma vertical, dois pacotes) — fixada nesta ADR, precisa do ACCEPT.
-- **F** — cadeia de integridade F1 + exigir o teste de concorrência (P2) antes de A2.
-- **G** — confirmar G1 para o slice.
-- **P0** — mergear a stack `integration/core/parallel-vertical-foundation`.
-- **P3** — `apps/api/_registry.py` aditivo (pré‑req de A5).
+- ~~**B** — confirmar B1 (uma vertical, dois pacotes)~~ — **RESOLVIDA.** ADR e esta SPEC aprovadas em
+  11/09/2026.
+- **A** — aceitar a estratégia de migrations D→C (`docs/architecture/DECISIONS_REQUIRED_PHASE0.md`). Ainda
+  pendente — vive na stack `integration/core/parallel-vertical-foundation` (Lane C).
+- **F** — cadeia de integridade F1 + exigir o teste de concorrência (P2) antes de A2. Pendente, idem.
+- **G** — confirmar G1 para o slice (o slice já assume G1; falta o ACCEPT formal da decisão em
+  `DECISIONS_REQUIRED_PHASE0.md`, que é Lane C). Pendente.
+- **P0** — mergear a stack `integration/core/parallel-vertical-foundation`. Pendente.
+- **P3** — `apps/api/_registry.py` aditivo (pré‑req de A5). Pendente.
 
 Perguntas abertas menores (resolver em A1/A3): `sustainment` compartilha o ambiente de migrations de `asset`?
 `Applicability` é agregado próprio ou entidade de `PartRevision`? `StockPosition` já com `lot`/`serial`
