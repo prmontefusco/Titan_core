@@ -109,6 +109,14 @@ def test_configuration_baseline_persistence_supersession_and_rls(
     assert reloaded_second.revision.supersedes_ref == first_baseline.baseline_id
     assert reloaded_second.view is ConfigurationView.AS_MAINTAINED
 
+    history = baseline_repo.list_by_model(model_ref, None)
+    assert {baseline.baseline_id for baseline in history} == {
+        first_baseline.baseline_id,
+        second_baseline.baseline_id,
+    }
+    other_model_history = baseline_repo.list_by_model(TypedId.new("vehicle_model"), None)
+    assert other_model_history == ()
+
     role_name = f"titan_rls_cfg_{uuid4().hex[:12]}"
     quoted_role = f'"{role_name}"'
     db_connection.execute(

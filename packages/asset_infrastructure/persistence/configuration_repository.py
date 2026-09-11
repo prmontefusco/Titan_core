@@ -154,6 +154,25 @@ class TransactionalConfigurationBaselineRepository:
             return None
         return self._map(row)
 
+    def list_by_model(
+        self, model_ref: TypedId, variant_ref: TypedId | None
+    ) -> tuple[ConfigurationBaseline, ...]:
+        """Histórico relevante para I-CFG-1 (`require_acyclic_revision_chain`) e
+        I-CFG-2 (`require_no_overlapping_effectivity`) — a aplicação busca aqui
+        antes de publicar uma baseline candidata, e passa o resultado para as
+        funções puras do domínio (`configuration.py`)."""
+        variant_column = configuration_baselines_table.c.variant_id
+        variant_predicate = (
+            variant_column.is_(None) if variant_ref is None else variant_column == variant_ref.value
+        )
+        rows = self.connection.execute(
+            select(configuration_baselines_table).where(
+                configuration_baselines_table.c.model_id == model_ref.value,
+                variant_predicate,
+            )
+        ).fetchall()
+        return tuple(self._map(row) for row in rows)
+
     def _map(self, row: Row[Any]) -> ConfigurationBaseline:
         def _tz(value: Any) -> Any:
             if value is not None and value.tzinfo is None:
