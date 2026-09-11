@@ -27,6 +27,11 @@ from alembic import context
 from packages.asset_infrastructure.persistence import (
     customer_site_contacts_table,
     customer_sites_table,
+    interchangeability_group_members_table,
+    interchangeability_groups_table,
+    part_revisions_table,
+    part_supersessions_table,
+    parts_table,
     stock_locations_table,
 )
 from packages.core_infrastructure.bootstrap import bootstrap_receipts_table
@@ -152,6 +157,11 @@ assert external_identities_table.metadata is target_metadata
 assert customer_sites_table.metadata is target_metadata
 assert customer_site_contacts_table.metadata is target_metadata
 assert stock_locations_table.metadata is target_metadata
+assert interchangeability_groups_table.metadata is target_metadata
+assert parts_table.metadata is target_metadata
+assert part_revisions_table.metadata is target_metadata
+assert part_supersessions_table.metadata is target_metadata
+assert interchangeability_group_members_table.metadata is target_metadata
 
 VERSION_TABLE = "alembic_version_asset"
 
