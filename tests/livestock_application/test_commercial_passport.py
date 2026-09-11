@@ -16,6 +16,8 @@ from packages.livestock_application.commercial_passport import (
     CommercialReadinessInterpretation,
     CommercialRequirementAssessment,
     PopulationEligibilitySummary,
+    PropertyCommercialPassportOpportunityInput,
+    PropertyCommercialPassportService,
     PropertyCommercialReadiness,
 )
 from packages.shared_kernel import OrganizationId, TypedId
@@ -259,5 +261,114 @@ def test_passport_rejects_duplicate_opportunities() -> None:
             opportunities=(
                 CommercialPassportOpportunityAssessment(opportunity, readiness),
                 CommercialPassportOpportunityAssessment(opportunity, readiness),
+            ),
+        )
+
+
+def test_property_passport_service_builds_dynamic_projection() -> None:
+    context = _context()
+    service = PropertyCommercialPassportService()
+
+    passport = service.build(
+        context=context,
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("synthetic-buyer"),
+                requirements=(
+                    _requirement(
+                        "property-document",
+                        CommercialPassportRequirementStatus.SATISFIED,
+                    ),
+                    _requirement(
+                        "environmental-evidence",
+                        CommercialPassportRequirementStatus.MISSING,
+                    ),
+                ),
+                limitations=("buyer-specific requirement represented in Livestock",),
+            ),
+        ),
+    )
+
+    assert passport.context is context
+    assert len(passport.opportunities) == 1
+    assessment = passport.opportunities[0]
+    assert assessment.opportunity.code == "synthetic-buyer"
+    assert assessment.population_eligibility is None
+    assert assessment.property_readiness.breakdown.satisfied == 1
+    assert assessment.property_readiness.breakdown.missing == 1
+    assert assessment.property_readiness.breakdown.interpretation is (
+        CommercialReadinessInterpretation.PARTIALLY_READY
+    )
+    assert "PROPERTY_COMMERCIAL_PASSPORT_IS_DYNAMIC_PROJECTION" in passport.limitations
+    assert "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE" in passport.limitations
+
+
+def test_property_passport_service_orders_opportunities_deterministically() -> None:
+    service = PropertyCommercialPassportService()
+
+    passport = service.build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("z-market"),
+                requirements=(
+                    _requirement("z-document", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("a-market"),
+                requirements=(
+                    _requirement("a-document", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+
+    assert [item.opportunity.code for item in passport.opportunities] == [
+        "a-market",
+        "z-market",
+    ]
+
+
+def test_property_passport_service_keeps_population_dimension_out_until_f4() -> None:
+    service = PropertyCommercialPassportService()
+
+    with pytest.raises(ValueError, match="propriedade"):
+        service.build(
+            context=_context(),
+            opportunities=(
+                PropertyCommercialPassportOpportunityInput(
+                    opportunity=_opportunity(),
+                    requirements=(
+                        _requirement(
+                            "animal-requirement",
+                            CommercialPassportRequirementStatus.SATISFIED,
+                            CommercialPassportRequirementDimension.POPULATION_ELIGIBILITY,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+
+def test_property_passport_service_rejects_duplicate_opportunity_codes() -> None:
+    service = PropertyCommercialPassportService()
+
+    with pytest.raises(ValueError, match="duplicada"):
+        service.build(
+            context=_context(),
+            opportunities=(
+                PropertyCommercialPassportOpportunityInput(
+                    opportunity=_opportunity("same-market"),
+                    requirements=(
+                        _requirement("first", CommercialPassportRequirementStatus.SATISFIED),
+                    ),
+                ),
+                PropertyCommercialPassportOpportunityInput(
+                    opportunity=_opportunity("same-market"),
+                    requirements=(
+                        _requirement("second", CommercialPassportRequirementStatus.SATISFIED),
+                    ),
+                ),
             ),
         )

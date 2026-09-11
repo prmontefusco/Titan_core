@@ -1,8 +1,9 @@
 """Commercial Passport application contracts for Titan Livestock.
 
-F1 is deliberately contract-only: these types compose existing evaluations,
-decisions and readiness outputs, but do not evaluate policies, emit Decisions,
-persist snapshots, expose APIs or create Dossiers/VerificationBundles.
+F1/F2/F3 are deliberately application-only: these types compose existing
+evaluations, decisions and readiness outputs, but do not evaluate policies,
+emit Decisions, persist snapshots, expose APIs or create Dossiers/
+VerificationBundles.
 """
 
 from collections import Counter
@@ -15,6 +16,12 @@ from types import MappingProxyType
 from packages.livestock_application.market_readiness import MARKET_ELIGIBILITY_RESULT_BOUNDARY
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
+
+PROPERTY_COMMERCIAL_PASSPORT_LIMITATIONS = (
+    "PROPERTY_COMMERCIAL_PASSPORT_IS_DYNAMIC_PROJECTION",
+    "PROPERTY_COMMERCIAL_PASSPORT_EXCLUDES_POPULATION_ELIGIBILITY_UNTIL_F4",
+    "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE",
+)
 
 
 class CommercialOpportunityKind(StrEnum):
@@ -301,6 +308,52 @@ class CommercialPassport:
         if len(set(codes)) != len(codes):
             raise ValueError("CommercialPassport nao aceita oportunidade duplicada.")
         _require_text_tuple(self.limitations, "limitations")
+
+
+@dataclass(frozen=True, slots=True)
+class PropertyCommercialPassportOpportunityInput:
+    """Application input for one property opportunity in the dynamic passport."""
+
+    opportunity: CommercialOpportunity
+    requirements: tuple[CommercialRequirementAssessment, ...]
+    limitations: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.requirements, tuple):
+            raise TypeError("requirements deve ser tuple.")
+        _require_text_tuple(self.limitations, "limitations")
+
+
+class PropertyCommercialPassportService:
+    """Build the dynamic property passport projection.
+
+    This service composes already-derived requirement assessments. It does not
+    resolve facts, evaluate Policy, emit Decision, include population summaries,
+    issue snapshots or authorize external disclosure.
+    """
+
+    def build(
+        self,
+        *,
+        context: CommercialPassportContext,
+        opportunities: tuple[PropertyCommercialPassportOpportunityInput, ...],
+    ) -> CommercialPassport:
+        if not opportunities:
+            raise ValueError("Property Commercial Passport exige ao menos uma oportunidade.")
+        assessments = tuple(
+            CommercialPassportOpportunityAssessment(
+                opportunity=item.opportunity,
+                property_readiness=PropertyCommercialReadiness(requirements=item.requirements),
+                population_eligibility=None,
+                limitations=item.limitations,
+            )
+            for item in sorted(opportunities, key=lambda item: item.opportunity.code)
+        )
+        return CommercialPassport(
+            context=context,
+            opportunities=assessments,
+            limitations=PROPERTY_COMMERCIAL_PASSPORT_LIMITATIONS,
+        )
 
 
 def _breakdown(

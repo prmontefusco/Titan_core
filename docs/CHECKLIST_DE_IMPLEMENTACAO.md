@@ -87,6 +87,32 @@ e `python -m uv run --locked ruff format --check ...`.
 **Próximo passo:** F3 — Property Commercial Passport, compondo oportunidades e readiness de propriedade sem
 misturar population eligibility e ainda sem API pública.
 
+### 11/09/2026 — Commercial Passport F3: Property Commercial Passport dinâmico
+
+**Estado:** CONCLUÍDO — terceiro incremento do Commercial Passport, ainda application-only e sem
+comportamento observável por API. `packages/livestock_application/commercial_passport.py` agora possui
+`PropertyCommercialPassportOpportunityInput` e `PropertyCommercialPassportService`, que compõem
+oportunidades comerciais e readiness de propriedade em um `CommercialPassport` dinâmico. A composição usa
+apenas requirement assessments já derivados; não avalia Policy, não emite `Decision`, não persiste
+snapshot, não cria `Dossier`/`VerificationBundle`, não consulta banco e não autoriza disclosure externo.
+
+**Decisões preservadas:** F3 formaliza o Property Commercial Passport como projection de aplicação, não
+como motor decisório. As oportunidades são ordenadas deterministicamente por código para evitar variação
+acidental de saída. `POPULATION_ELIGIBILITY` permanece fora do passaporte de propriedade neste corte:
+`population_eligibility=None` é preservado até F4, e requisitos de população continuam rejeitados dentro
+da readiness de propriedade.
+
+**Portão:** `tests/livestock_application/test_commercial_passport.py` cobre montagem da projection
+dinâmica de propriedade, limitações de emissão formal, ordenação determinística, rejeição de dimensão de
+população e rejeição de oportunidade duplicada. Verificações focadas executadas: `python -m uv run
+--locked pytest tests/livestock_application/test_commercial_passport.py` (13 passed), `python -m uv run
+--locked ruff check packages/livestock_application/commercial_passport.py
+tests/livestock_application/test_commercial_passport.py` e `python -m uv run --locked ruff format --check
+...`.
+
+**Próximo passo:** F4 — animal/lot/population eligibility summary, compondo resumo populacional sem
+colapsar `PROPERTY_READINESS` em `POPULATION_ELIGIBILITY`.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
