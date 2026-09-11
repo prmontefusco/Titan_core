@@ -5144,3 +5144,23 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/asset_application/test_sustainment_contract_service.py` (3 casos: registro; emitir primeira versao; emenda emite segunda versao com `amendment_ref`, confirma `current_version_no`) — 26 testes verdes em `tests/asset_application/`, sem banco. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1654 passed, 335 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `work_order_service.py` (o mais complexo — coordena Vehicle+SLIContract+Inventory) -> entitlement (`ResolveEntitlement`/`AuthorizeEntitlementException`, agora que `WorkOrder` vai existir) -> `workshop_dashboard.py` (fecha A4).
+
+### 11/09/2026 — A4 (parcial): servico `WorkOrder` — o mais complexo do slice
+
+**Estado:** EM EXECUCAO — oitavo incremento de A4. Coordena `Vehicle` (retorno ao servico), `SLIContract` (congela `ContractContext` na abertura) e `Inventory` (reserva/libera material) alem do proprio `WorkOrder` — primeiro servico que injeta outros **servicos** de aplicacao (nao so portas de repositorio) como colaboradores.
+
+**Implementacao:** `packages/asset_application/work_order_service.py` — `WorkOrderRepositoryPort`+`WorkOrderService`, cobrindo as 17 transicoes T1-T17 mais `add_task`/`demand_material`/`record_removed_component`/`recalculate_priority`. Metodos T2-T12/T14 (transicoes "simples") compartilham o mesmo evento generico `work_order_state_changed`, via helper `_record_state_change`; T13/T15/T16/T17 tem evento proprio.
+
+**Decisoes de modelagem resolvidas durante a implementacao:**
+- `open_work_order` le o `SLIContract` (`sli_contract_repository`, reaproveitando o `SLIContractRepositoryPort` ja definido em `sustainment_contract_service.py`, sem redefinir), resolve `resolve_version_at(at_instant)` e congela o `ContractContext` — a primeira vez que um servico de Asset le um agregado de outro modulo para compor a abertura de um terceiro.
+- `perform_post_maintenance_validation` cobre **so** o caminho `FAIL` (`fail_validation`, T15): o dominio nao tem um terceiro metodo "registrar validacao sem transicionar" — uma validacao `PASS` e `close_work_order`, que registra e fecha no mesmo ato (e o que `WorkOrder.close()` ja faz, coordenando tambem `Vehicle.return_to_service`, T16, I-VEH-3). Decisao registrada no docstring do modulo para nao parecer lacuna.
+- `WorkOrder.material_reservations` nao tem metodo de dominio proprio (`add_task`/`demand_material`/... existem, "adicionar reserva a tupla" nao) — `reserve_material_for_work_order` usa `dataclasses.replace()` diretamente, seguro porque o campo nao carrega invariante propria alem de ser uma tupla de `TypedId`.
+- `_reserved_qty_by_part` reconstroi o mapa que I-WO-2 (`require_reservations_do_not_exceed_demand`) precisa a partir de `material_reservations`, buscando cada `StockReservation` (via `InventoryService.get_reservation`) e sua `StockPosition` (via `get_stock_position`) para achar `part_ref` — nenhum dos dois agregados guarda essa associacao diretamente.
+- `cancel_work_order` libera toda reserva de material vinculada (`09_COMMAND_MODEL.md`: "+ libera reservas"), chamando `InventoryService.release_reservation` para cada `material_reservations` ainda nao liberada.
+- `recalculate_priority` aceita um `PriorityScore` ja calculado pelo chamador — o calculo via `Rule` governada do Core fica de fora, mesma razao de entitlement.
+
+**Escopo deliberadamente adiado (repetido do incremento anterior):** `ResolveEntitlement`/`AuthorizeEntitlementException` (I-SLI-4/5) continuam fora. Agora que `WorkOrder` existe, o proximo incremento natural e exatamente esse.
+
+**Portao:** `tests/asset_application/test_work_order_service.py` (4 casos: fluxo completo DRAFT->...->COMPLETED, incluindo reserva de material, execucao de tarefa e coordenacao real com `Vehicle` — confirma que o veiculo volta a `AVAILABLE` apos `close_work_order`; reservar alem do demandado levanta `MaterialReservadoExcedeDemanda`; `cancel_work_order` libera a reserva vinculada; `perform_post_maintenance_validation` com resultado `FAIL` volta a `TECHNICALLY_COMPLETE`) — 30 testes verdes em `tests/asset_application/`, sem banco. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1658 passed, 335 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: entitlement (`ResolveEntitlement`/`AuthorizeEntitlementException`, agora com `WorkOrder` disponivel para integrar de verdade) -> `workshop_dashboard.py` (projecao de leitura, fecha A4).
