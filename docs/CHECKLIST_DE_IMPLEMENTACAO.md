@@ -5110,3 +5110,13 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/integration/test_configuration_baseline_postgresql.py` estendido com um caso de `list_by_model` (historico do mesmo `model_ref` + confirmando que outro `model_ref` nao aparece) — verde contra Postgres real. `tests/asset_application/test_configuration_service.py` (3 casos: publicar primeira baseline; superseder sem `reason` recusa; superseder com `reason` emite os dois eventos, com o `aggregate_reference` do segundo apontando pra baseline antiga) — 18 testes verdes em `tests/asset_application/`, sem banco. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1646 passed, 335 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `inventory_service.py`/`reservation_service.py` -> `sustainment_contract_service.py` -> `work_order_service.py` -> `workshop_dashboard.py`.
+
+### 11/09/2026 — A4 (parcial): servico `CustomerSite`
+
+**Estado:** EM EXECUCAO — quinto incremento de A4. `packages/asset_application` cobre agora todos os agregados do modulo `asset` **exceto** `Inventory` (falta `StockPosition`/`StockReservation`/`StockTransfer`). Nao ha servico para `StockLocation`: `09_COMMAND_MODEL.md` nao lista nenhum comando de registro para ela (unico agregado do slice sem comando de escrita catalogado) — nada implementado ate um comando real precisar (constituicao §38).
+
+**Implementacao:** `packages/asset_application/customer_site_service.py` — `CustomerSiteRepositoryPort`+`CustomerSiteService.register_site`/`get_site`, unico comando catalogado para o agregado (`RegisterCustomerSite`). `authorization.py` ganha `ASSET_SITE.{REGISTER,READ}`.
+
+**Portao:** `tests/asset_application/test_customer_site_service.py` (1 caso: registro com contato, confirma round-trip em memoria e evento) — 19 testes verdes em `tests/asset_application/`, sem banco. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1647 passed, 335 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `inventory_service.py`/`reservation_service.py` (fecha o modulo `asset` de A4) -> `sustainment_contract_service.py` -> `work_order_service.py` -> `workshop_dashboard.py`.

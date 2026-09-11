@@ -49,7 +49,12 @@ CONFIG_PUBLISH: Final = "ASSET_CONFIG.PUBLISH"
 CONFIG_SUPERSEDE: Final = "ASSET_CONFIG.SUPERSEDE"
 CONFIG_READ: Final = "ASSET_CONFIG.READ"
 
-LEITURA: Final = frozenset({VEHICLE_READ, PART_READ, APPLICABILITY_READ, CONFIG_READ})
+# -- CustomerSite --------------------------------------------------------
+
+SITE_REGISTER: Final = "ASSET_SITE.REGISTER"
+SITE_READ: Final = "ASSET_SITE.READ"
+
+LEITURA: Final = frozenset({VEHICLE_READ, PART_READ, APPLICABILITY_READ, CONFIG_READ, SITE_READ})
 
 ESCRITA: Final = frozenset(
     {
@@ -66,6 +71,7 @@ ESCRITA: Final = frozenset(
         APPLICABILITY_WITHDRAW,
         CONFIG_PUBLISH,
         CONFIG_SUPERSEDE,
+        SITE_REGISTER,
     }
 )
 
