@@ -5,6 +5,10 @@ Reexporta as `Table` e os repositórios de cada agregado. Cresce incrementalment
 padrão de `packages/livestock_infrastructure/persistence/__init__.py`.
 """
 
+from packages.asset_infrastructure.persistence.applicability_repository import (
+    TransactionalApplicabilityRepository,
+    applicability_table,
+)
 from packages.asset_infrastructure.persistence.customer_site_repository import (
     TransactionalCustomerSiteRepository,
     customer_site_contacts_table,
@@ -25,10 +29,12 @@ from packages.asset_infrastructure.persistence.stock_location_repository import 
 )
 
 __all__ = [
+    "TransactionalApplicabilityRepository",
     "TransactionalCustomerSiteRepository",
     "TransactionalInterchangeabilityGroupRepository",
     "TransactionalPartRepository",
     "TransactionalStockLocationRepository",
+    "applicability_table",
     "customer_site_contacts_table",
     "customer_sites_table",
     "interchangeability_group_members_table",

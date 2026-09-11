@@ -4992,3 +4992,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/integration/test_part_postgresql.py` (2 casos: round-trip de `Part` com `add_revision`+`supersede_revision`, incluindo o cenario que expos o bug do FK; round-trip de `InterchangeabilityGroup` com `interchanges_with` e `Part.join_interchangeability_group`) verde contra Postgres real, incluindo isolamento RLS. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 327 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `Applicability` -> `ConfigurationBaseline` -> `Vehicle` -> `StockPosition`/`StockReservation`/`StockTransfer` -> `SLIContract` -> `WorkOrder`.
+
+### 11/09/2026 — A3: agregado `Applicability` (persistencia)
+
+**Estado:** EM EXECUCAO — quinto incremento de A3. Sem tabela filha — `target` (VO `ApplicabilityTarget`) e embutido como colunas `target_*` na propria tabela (e um unico VO por instancia, nao uma colecao).
+
+**Implementacao:** `packages/asset_infrastructure/persistence/applicability_repository.py` — `applicability_table` com FK para `parts`/`part_revisions` (segunda e terceira FK entre tabelas da propria vertical Asset). `evidence_ref`/`asserted_by` **sem** FK — sao referencias opacas para fora da vertical (evidencia e ator sao do Core; `docs/asset/DEPENDENCY_RULES.md` §5 nao exige FK real, so o `entity_type` validado no dominio).
+
+**Achado durante a implementacao:** `Applicability.asserted_by` e o primeiro `TypedId` encontrado nos agregados ja persistidos cujo `entity_type` **nao** e fixado por validacao de `__post_init__` do dominio (todos os outros — `part_ref`, `evidence_ref`, `model_ref`, etc. — tem o `entity_type` exato garantido pelo proprio agregado). Reconstruir com um `entity_type` fixo chumbado no repositorio (ex. `"user"`) corromperia silenciosamente o round-trip se algum chamador usasse outro tipo logico. Corrigido persistindo `asserted_by_entity_type` como coluna propria, lido de volta na reconstrucao — nenhum dado e assumido que o dominio nao garante.
+
+**Portao:** `tests/integration/test_applicability_postgresql.py` (round-trip incluindo FK para `Part`/`PartRevision`, `withdraw` e RLS) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 328 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `ConfigurationBaseline` -> `Vehicle` -> `StockPosition`/`StockReservation`/`StockTransfer` -> `SLIContract` -> `WorkOrder`.
