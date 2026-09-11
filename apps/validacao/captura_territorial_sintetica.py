@@ -38,7 +38,7 @@ def _preflight(database_url: str) -> None:
         if tabela is None:
             raise SystemExit(
                 f"{AMARELO}A migration de capturas territoriais nao esta aplicada.{FIM}\n"
-                "Execute: python -m uv run --locked alembic upgrade head"
+                "Execute: python -m uv run --locked alembic upgrade heads"
             )
         permissao = connection.execute(
             text("SELECT 1 FROM core_identity.permissions WHERE code = :code"),

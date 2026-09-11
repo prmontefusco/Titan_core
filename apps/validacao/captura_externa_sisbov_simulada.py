@@ -36,7 +36,7 @@ def _exigir_preflight(operador: Cliente, database_url: str) -> None:
     if table is None:
         raise SystemExit(
             "A migration da revisão de captura não está aplicada. Execute:\n"
-            "  python -m uv run --locked alembic upgrade head"
+            "  python -m uv run --locked alembic upgrade heads"
         )
     probes = [
         operador.get("/v1/livestock/external-source-captures"),
