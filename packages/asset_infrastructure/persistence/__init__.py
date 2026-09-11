@@ -9,6 +9,11 @@ from packages.asset_infrastructure.persistence.applicability_repository import (
     TransactionalApplicabilityRepository,
     applicability_table,
 )
+from packages.asset_infrastructure.persistence.configuration_repository import (
+    TransactionalConfigurationBaselineRepository,
+    configuration_baseline_positions_table,
+    configuration_baselines_table,
+)
 from packages.asset_infrastructure.persistence.customer_site_repository import (
     TransactionalCustomerSiteRepository,
     customer_site_contacts_table,
@@ -30,11 +35,14 @@ from packages.asset_infrastructure.persistence.stock_location_repository import 
 
 __all__ = [
     "TransactionalApplicabilityRepository",
+    "TransactionalConfigurationBaselineRepository",
     "TransactionalCustomerSiteRepository",
     "TransactionalInterchangeabilityGroupRepository",
     "TransactionalPartRepository",
     "TransactionalStockLocationRepository",
     "applicability_table",
+    "configuration_baseline_positions_table",
+    "configuration_baselines_table",
     "customer_site_contacts_table",
     "customer_sites_table",
     "interchangeability_group_members_table",

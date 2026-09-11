@@ -5004,3 +5004,13 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/integration/test_applicability_postgresql.py` (round-trip incluindo FK para `Part`/`PartRevision`, `withdraw` e RLS) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 328 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `ConfigurationBaseline` -> `Vehicle` -> `StockPosition`/`StockReservation`/`StockTransfer` -> `SLIContract` -> `WorkOrder`.
+
+### 11/09/2026 — A3: agregado `ConfigurationBaseline` (persistencia)
+
+**Estado:** EM EXECUCAO — sexto incremento de A3. Agregado imutavel (nenhum metodo do dominio retorna nova instancia do mesmo `baseline_id` — supersessao cria outra baseline via `revision.supersedes_ref`), entao o repositorio so tem `save`/`get_by_id`, sem `update` (nao ha operacao de dominio que o exija).
+
+**Implementacao:** `packages/asset_infrastructure/persistence/configuration_repository.py` — `configuration_baselines_table` com FK **auto-referente** (`supersedes_id -> configuration_baselines.baseline_id`, primeira FK self-referencial da vertical) e FK para `organizations`; `configuration_baseline_positions_table` (tabela filha com `ordinal` para ordem, FK para `parts`/`part_revisions`, `UniqueConstraint(baseline_id, position_code)` espelhando a checagem de duplicidade do `__post_init__` do dominio). `revision`/`effectivity` sao VOs unicos por instancia, embutidos como colunas (mesmo padrao de `Applicability.target`).
+
+**Portao:** `tests/integration/test_configuration_baseline_postgresql.py` (duas baselines do mesmo `model_ref`, a segunda superseder a primeira via `supersedes_ref`, com `positions`/FK para `Part`/`PartRevision`; RLS) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 329 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. `require_acyclic_revision_chain`/`require_no_overlapping_effectivity` (I-CFG-1/I-CFG-2) precisam de um metodo de consulta por `model_ref`/`variant_ref` que devolva o historico relevante — nao adicionado aqui (YAGNI: nada neste incremento o exercita); fica para quando `asset_application` (A4) precisar dele, testado no ponto de uso. Faltam: `Vehicle` -> `StockPosition`/`StockReservation`/`StockTransfer` -> `SLIContract` -> `WorkOrder`.

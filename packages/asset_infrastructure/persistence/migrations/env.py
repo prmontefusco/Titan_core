@@ -26,6 +26,8 @@ from alembic import context
 
 from packages.asset_infrastructure.persistence import (
     applicability_table,
+    configuration_baseline_positions_table,
+    configuration_baselines_table,
     customer_site_contacts_table,
     customer_sites_table,
     interchangeability_group_members_table,
@@ -164,6 +166,8 @@ assert part_revisions_table.metadata is target_metadata
 assert part_supersessions_table.metadata is target_metadata
 assert interchangeability_group_members_table.metadata is target_metadata
 assert applicability_table.metadata is target_metadata
+assert configuration_baselines_table.metadata is target_metadata
+assert configuration_baseline_positions_table.metadata is target_metadata
 
 VERSION_TABLE = "alembic_version_asset"
 
