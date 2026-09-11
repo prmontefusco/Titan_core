@@ -7,7 +7,7 @@ fabricar consenso.
 
 ---
 
-## DECISÃO A — Estratégia de concorrência de migrations
+## DECISÃO A — Estratégia de concorrência de migrations — **ACEITA, 10/09/2026**
 
 **Questão.** Como Livestock e Asset autoram schema concorrentemente sem serializar (restrição §9) e sem quebrar
 `alembic check`/`upgrade head` (BLOQUEADOR B1)?
@@ -27,11 +27,12 @@ upgrade produzem o mesmo schema; migration de vertical não toca tabela de outra
 não consultado.
 
 **Recomendação.** Opção **D → C**. **Confiança: ALTA** (evidência direta no `env.py`, `alembic.ini` e CI).
-**Owner decision required: YES.**
+**Owner decision required: YES — ACEITA.** Executada em S‑M1–S‑M3 (`integration/core/parallel-vertical-foundation`);
+A‑M1 (env.py de Asset no modelo C) segue como próximo passo da trilha Asset.
 
 ---
 
-## DECISÃO B — `sustainment` é o mesmo `vertical_id` de `asset` ou vertical irmã isolada?
+## DECISÃO B — `sustainment` é o mesmo `vertical_id` de `asset` ou vertical irmã isolada? — **ACEITA (B1), 11/09/2026**
 
 **Questão.** `ASSET_VERTICAL_BOOTSTRAP_PLAN.md` §2.1 deixa aberto; disso dependem `verticals.toml`, o teste
 vertical ⊥ vertical (M2), o namespace de evento e o `migration_owner`.
@@ -49,11 +50,15 @@ vendável sem Asset Management"). Codex/Gemini: não consultados.
 
 **Recomendação.** **B1**, decidida formalmente **na ADR do 1º slice**, a partir dos invariantes. Até lá, o
 Passo 1 do bootstrap registra só `("livestock", "asset")` e adia `sustainment` por escrito.
-**Confiança: MÉDIA.** **Owner decision required: YES** (na ADR do slice).
+**Confiança: MÉDIA.** **Owner decision required: YES — ACEITA** via aprovação de
+`docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (11/09/2026, Status ACEITA).
+`sustainment` segue **não registrado** em `verticals.toml` (correto sob B1 — evento sob o namespace
+`asset.sustainment.*`, sem `vertical_id` próprio); atualizar o manifesto é Shared Integration referenciando
+essa ADR.
 
 ---
 
-## DECISÃO C — Layout de worktree/branch e obrigatoriedade
+## DECISÃO C — Layout de worktree/branch e obrigatoriedade — **ACEITA, 10/09/2026**
 
 **Questão.** Tornar o layout multi‑worktree de [`AGENT_WORKTREE_SAFETY.md`](AGENT_WORKTREE_SAFETY.md)
 obrigatório para trabalho concorrente de verticais?
@@ -65,7 +70,12 @@ obrigatório para trabalho concorrente de verticais?
 
 **Posições.** Claude: **C1**. Codex/Gemini: não consultados.
 
-**Recomendação.** **C1**. **Confiança: ALTA.** **Owner decision required: YES.**
+**Recomendação.** **C1**. **Confiança: ALTA.** **Owner decision required: YES — ACEITA.** Aplicada como
+política: branch por lane é obrigatório (`vertical/asset/discovery`, `integration/core/parallel-vertical-foundation`
+já em uso, nunca commit direto na lane errada). O worktree físico separado (`Titan-asset/`,
+`Titan-core-integration/`) fica reservado para quando houver concorrência real entre agentes no mesmo
+checkout — nesta sessão, um agente por vez, a troca de branch no mesmo checkout mais o protocolo de
+pré‑edição (`AGENT_WORKTREE_SAFETY.md` §4) já cumprem a garantia de não misturar lanes.
 
 ---
 
@@ -81,8 +91,10 @@ obrigatório para trabalho concorrente de verticais?
 **Posições.** Claude: **D1** (detalhe em [`AGENT_WORKTREE_SAFETY.md`](AGENT_WORKTREE_SAFETY.md) §7). Codex/
 Gemini: não consultados.
 
-**Recomendação.** **D1**. **Confiança: ALTA.** **Owner decision required: YES** — e registrar em
-`docs/adr/README.md` (Shared Integration).
+**Recomendação.** **D1**. **Confiança: ALTA.** **Owner decision required: YES** — não houve ACCEPT explícito
+separado, mas D1 está **em uso de fato** desde G1 sem objeção (as duas ADRs desta stack usam
+`draft-<data>-<slug>.md` sem número). Falta o registro formal em `docs/adr/README.md` — Shared Integration
+pendente, não bloqueia execução.
 
 ---
 
@@ -98,7 +110,9 @@ Gemini: não consultados.
 **Posições.** Claude: **E1**, implementado no G1 de [`MULTI_VERTICAL_CI_GATES.md`](MULTI_VERTICAL_CI_GATES.md).
 Codex/Gemini: não consultados.
 
-**Recomendação.** **E1**. **Confiança: MÉDIA‑ALTA.** **Owner decision required: YES.**
+**Recomendação.** **E1**. **Confiança: MÉDIA‑ALTA.** **Owner decision required: YES** — não houve ACCEPT
+explícito separado, mas E1 está **implementada e em uso** desde G1
+(`docs/architecture/verticals.toml`, consumido por `tests/architecture/` e `scripts/check_file_ownership.py`).
 
 ---
 
@@ -135,7 +149,7 @@ factual (o design já é o que F1 pedia), registrada aqui para o rastro de audit
 
 ---
 
-## DECISÃO G — Autorização OM/Site (HIGH H2)
+## DECISÃO G — Autorização OM/Site (HIGH H2) — **ACEITA (G1), 11/09/2026**
 
 **Questão.** Asset pode precisar de escopo sub‑Organization (OM/Site). O Core oferece RLS por Organization.
 Decidir agora ou diferir?
@@ -152,16 +166,29 @@ Decidir agora ou diferir?
 horizontalidade; nenhum conceito `OM`/`MilitaryOrganization`/`Workshop`/`Vehicle` no Core.
 **Confiança: ALTA.** **Owner decision required: YES** (para registrar o diferimento como decisão consciente).
 
+**Fechamento (11/09/2026).** A discovery de domínio (`docs/asset/11_AUTHORIZATION_MODEL.md`) modelou os
+cenários reais de acesso e concluiu por um **G1 concreto para o 1º slice**: `CustomerSite` como entidade de
+`asset_domain`; `AssetOperationContext` estende o `OrganizationContext` do Core com `site_scope`; predicado
+de escopo aplicado **antes** da resolução do dado (I‑SEC‑2); RLS por Organization como barreira dura;
+nenhum conceito `OM`/`Vehicle`/`Workshop`/`CustomerSite` no Core. Aprovado via
+`docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (Status ACEITA). **G2** (OM como
+Organization própria) permanece registrada como opção para quando houver cliente com OM independente — não
+é o caso do 1º slice; ADR de continuação decide se e quando.
+
 ---
 
 ## Resumo
 
-| Decisão | Recomendação | Confiança | Bloqueia início de Asset? |
+| Decisão | Status | Confiança | Bloqueia início de Asset? |
 |---|---|---|---|
-| A — migrations | D → C | ALTA | **Sim** (para migrations de Asset); não para domínio/aplicação |
-| B — `sustainment` | B1, na ADR do slice | MÉDIA | Não (adiar no Passo 1) |
-| C — worktree/branch | C1 obrigatório | ALTA | Sim (para trabalho concorrente seguro) |
-| D — número de ADR | D1 | ALTA | Não |
-| E — manifesto | E1 | MÉDIA‑ALTA | Não |
-| F — cadeia de integridade | **RESOLVIDA** (F1 confirmado por teste real, 11/09/2026) | ALTA | Não |
-| G — OM/Site | G1 diferir | ALTA | Não |
+| A — migrations | **ACEITA** 10/09 — D→C executada (S‑M1–S‑M3) | ALTA | A‑M1 (env.py de Asset) ainda pendente |
+| B — `sustainment` | **ACEITA** 11/09 — B1, na ADR do slice | MÉDIA | Não — resolvida |
+| C — worktree/branch | **ACEITA** 10/09 — C1 (branch por lane obrigatório) | ALTA | Não — em uso |
+| D — número de ADR | Em uso de fato (D1); registro formal em `docs/adr/README.md` pendente | ALTA | Não |
+| E — manifesto | Implementada (E1) | MÉDIA‑ALTA | Não |
+| F — cadeia de integridade | **RESOLVIDA** 11/09 — F1 confirmado por teste real | ALTA | Não |
+| G — OM/Site | **ACEITA** 11/09 — G1 modelado e aprovado para o 1º slice | ALTA | Não — resolvida |
+
+**Restam para A2 começar:** P0 (merge desta stack), P3 (`apps/api/_registry.py`), revisão adversarial +
+integração da discovery com `MULTI_AGENT_ARCHITECTURE_REVIEW.md` (§49), e A‑M1 (ambiente de migrations
+próprio de Asset).
