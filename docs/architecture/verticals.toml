@@ -96,7 +96,7 @@ owned_path_prefixes  = [
     "apps/api/asset/",
     "apps/validacao/asset/",
     "apps/worker/asset_handlers.py",
-    "docs/asset-sustainment/",
+    "docs/asset/",
 ]
 event_namespaces     = ["asset"]
 migration_owner      = "asset"

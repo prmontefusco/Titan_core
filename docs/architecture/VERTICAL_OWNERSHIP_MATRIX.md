@@ -61,7 +61,7 @@ package_roots      = ["packages/asset_domain", "packages/asset_application", "pa
 test_roots         = ["tests/asset_domain", "tests/asset_application", "tests/asset_infrastructure"]
 api_paths          = ["apps/api/asset/"]
 worker_handlers    = ["apps/worker/asset_handlers.py"]
-doc_roots          = ["docs/asset-sustainment/"]
+doc_roots          = ["docs/asset/"]
 event_namespaces   = ["asset", "sustainment"]     # 'sustainment' aqui sse decisão B = "mesmo vertical_id"
 migration_owner    = "titan_asset"
 migration_locations = ["packages/asset_infrastructure/persistence/migrations/versions"]
@@ -91,7 +91,7 @@ Legenda de lane: **A** = Livestock · **B** = Asset · **C** = Shared Integratio
 | `packages/asset_*/**`, `packages/sustainment_*/**` | B | Somente‑leitura para Livestock. Criados incrementalmente. |
 | `tests/asset_*/**`, `tests/sustainment_*/**` | B | — |
 | `apps/api/asset/**`, `apps/validacao/asset/**`, `apps/worker/asset_handlers.py` | B | Nascem em subpacote próprio. |
-| `docs/asset-sustainment/**` | B | Docs de discovery de Asset. |
+| `docs/asset/**` | B | Docs de discovery de Asset. |
 | `apps/api/main.py` | C | Ponto de colisão hoje (importa cada router de Livestock por nome + *feature flags*). |
 | `apps/api/_registry.py`, `apps/worker/dispatch.py` | C | Ainda não existem; nascem em PR de Shared Integration. |
 | `apps/api/authentication.py`, `configuration.py`, `problem.py`, `pagination.py`, `verification.py`, `policy_governance.py` | C | Adapters HTTP do Core. |

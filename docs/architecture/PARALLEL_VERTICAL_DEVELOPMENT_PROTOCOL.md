@@ -38,7 +38,7 @@ desconhecidas em arquivos que não são seus.
 
 Este invariante tem prioridade arquitetural sobre conveniência de implementação (constituição §19). Ele
 **não** substitui as fronteiras de dependência já vigentes (ADR‑0001, `tests/architecture/`,
-`docs/asset-sustainment/DEPENDENCY_RULES.md`); acrescenta a regra vertical ⊥ vertical e a torna verificável
+`docs/asset/DEPENDENCY_RULES.md`); acrescenta a regra vertical ⊥ vertical e a torna verificável
 sob concorrência.
 
 ---
@@ -57,7 +57,7 @@ Agentes de Asset tratam estes caminhos como **somente‑leitura**.
 ### LANE B — Asset & Sustainment
 `packages/asset_*/**` e, se a discovery justificar, `packages/sustainment_*/**` · `tests/asset_*/**`,
 `tests/sustainment_*/**` · `apps/api/asset/**` · `apps/validacao/asset/**` · handlers de worker de Asset ·
-`docs/asset-sustainment/**`.
+`docs/asset/**`.
 Agentes de Livestock tratam estes caminhos como **somente‑leitura**.
 
 ### LANE C — Shared Integration

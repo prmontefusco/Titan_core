@@ -195,7 +195,7 @@ def test_guard_allows_clean_vertical_pr() -> None:
         changed_files=[
             "packages/asset_domain/vehicle.py",
             "tests/asset_domain/test_vehicle.py",
-            "docs/asset-sustainment/05_DOMAIN_MODEL.md",
+            "docs/asset/05_DOMAIN_MODEL.md",
             "docs/CHECKLIST_DE_IMPLEMENTACAO.md",
         ],
         lane="asset",

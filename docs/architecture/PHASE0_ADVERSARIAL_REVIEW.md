@@ -2,7 +2,7 @@
 
 **Autor:** Claude (Role B — arquiteto crítico / revisor adversarial, §31 da constituição multi‑agente)
 **Data:** 10 de setembro de 2026
-**Objeto:** `docs/asset-sustainment/` (6 documentos) + `docs/adr/0080-segunda-vertical-e-reutilizacao-do-core-sem-fork.md`
+**Objeto:** `docs/asset/` (6 documentos) + `docs/adr/0080-segunda-vertical-e-reutilizacao-do-core-sem-fork.md`
 **Estado:** Revisão registrada. Nenhum código alterado. Findings abertos até correção nos documentos‑alvo.
 
 Classificação por severidade conforme §31: **BLOQUEADOR / HIGH / MEDIUM / LOW / OBSERVAÇÃO**.
@@ -147,7 +147,7 @@ Integration Model, 3D Asset Model, SLI Contract Model, Inventory Model, Maintena
 Risk Register, Execution Roadmap). Aceitar a ADR‑0080 isolada pode passar a impressão de que a discovery
 terminou.
 
-**Evidência.** `ls docs/asset-sustainment/` (6 arquivos, nenhum 01–20); ausência de
+**Evidência.** `ls docs/asset/` (6 arquivos, nenhum 01–20); ausência de
 `MULTI_AGENT_ARCHITECTURE_REVIEW.md`; ADR‑0080 §"Critérios de aceitação".
 
 **Correção recomendada.** Enquadrar os 6 como **"Fase 0 — Prontidão do Core / estrutura de repositório"** e

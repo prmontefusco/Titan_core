@@ -187,7 +187,7 @@ de extração; autonomia da vertical continua lógica, não física (mitigação
 
 ## Critérios de aceitação
 
-- Os 6 documentos de `docs/asset-sustainment/` **e** os 8 de `docs/architecture/` (mais este rascunho)
+- Os 6 documentos de `docs/asset/` **e** os 8 de `docs/architecture/` (mais este rascunho)
   revisados.
 - Invariante `PARALLEL_VERTICAL_SAFETY` acordado como vinculante.
 - Decisões A e C de `DECISIONS_REQUIRED_PHASE0.md` aceitas; D, E registradas; B, F, G com caminho definido.

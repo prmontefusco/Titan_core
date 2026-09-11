@@ -12,7 +12,7 @@ de domínio de Titan Asset.
 ADR-0002/0003 (isolamento por Organization, RLS), ADR-0060 (extensões verticais
 de VerificationBundle), ADR-0077 (FKs compostas por Organization na vertical),
 ADR-0079 (assinatura de eventos). Documentos de apoio:
-`docs/asset-sustainment/` (seis artefatos de assessment).
+`docs/asset/` (seis artefatos de assessment).
 
 ---
 
@@ -25,7 +25,7 @@ até hoje, e alguns pontos do repositório assumem implicitamente "existe exatam
 uma vertical".
 
 Uma auditoria do Core (registrada em
-`docs/asset-sustainment/CORE_REUSE_ASSESSMENT.md`) constatou:
+`docs/asset/CORE_REUSE_ASSESSMENT.md`) constatou:
 
 1. O `Titan Core` (`packages/{shared_kernel,core_domain,core_application,core_infrastructure,core_integrity}`)
    **não contém nenhum conceito de Livestock** — zero vocabulário de vertical,
@@ -44,7 +44,7 @@ Uma auditoria do Core (registrada em
 
 A hipótese arquitetural sob avaliação era: *monorepo + monólito modular + Core
 compartilhado*. A comparação de opções
-(`docs/asset-sustainment/REPOSITORY_STRUCTURE_PROPOSAL.md`) — mesmo repo (A),
+(`docs/asset/REPOSITORY_STRUCTURE_PROPOSAL.md`) — mesmo repo (A),
 Core como pacote versionado (B), Core em repo próprio (C), subtree/submodule (D)
 — confirma a hipótese para a fase atual, na qual o Core co-evolui semanalmente
 com as verticais e não há consumidor que precise de releases independentes.
@@ -87,7 +87,7 @@ se algum dia necessária, ocorre por evento publicado ou contrato público.
 
 A matriz completa e a allowlist de quais módulos de `core_infrastructure` uma
 vertical pode importar estão em
-`docs/asset-sustainment/DEPENDENCY_RULES.md` (fonte normativa).
+`docs/asset/DEPENDENCY_RULES.md` (fonte normativa).
 
 ### 3. Ambiente de migrations por vertical
 
@@ -158,7 +158,7 @@ Engineering, Inventory, Logistics, Maintenance, SLI/Sustainment Contracts)
 **dois módulos** — `asset_*` (Vehicle, Part, Configuration, Inventory,
 Reservation) e `sustainment_*` (SLI Contract, Entitlement, Work Order, demanda de
 material) — com divisão adicional apenas quando um invariante transacional exigir.
-Detalhe em `docs/asset-sustainment/ASSET_VERTICAL_BOOTSTRAP_PLAN.md`.
+Detalhe em `docs/asset/ASSET_VERTICAL_BOOTSTRAP_PLAN.md`.
 
 ---
 
@@ -226,7 +226,7 @@ Detalhe em `docs/asset-sustainment/ASSET_VERTICAL_BOOTSTRAP_PLAN.md`.
 
 Esta ADR pode ser aceita quando:
 
-- os seis documentos de `docs/asset-sustainment/` estiverem revisados;
+- os seis documentos de `docs/asset/` estiverem revisados;
 - a regra vertical ⊥ vertical estiver acordada como vinculante;
 - a direção "ambiente de migrations por vertical, `MetaData` única" estiver
   aceita;
@@ -239,7 +239,7 @@ Esta ADR pode ser aceita quando:
 
 Enquanto nenhum código for movido, reverter é atualizar esta ADR para
 `DESCARTADA`. Depois de iniciada a execução, cada passo é um PR independente e
-revertível (ver `docs/asset-sustainment/CORE_EXTRACTION_RISKS.md` §4); o passo de
+revertível (ver `docs/asset/CORE_EXTRACTION_RISKS.md` §4); o passo de
 migrations é o único com cuidado extra e deve ser feito isolado.
 
 ---
