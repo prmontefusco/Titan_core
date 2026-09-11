@@ -3,7 +3,10 @@
 **Autor:** Claude (Role B — arquiteto crítico / revisor adversarial, §31 da constituição multi‑agente)
 **Data:** 10 de setembro de 2026
 **Objeto:** `docs/asset/` (6 documentos) + `docs/adr/0080-segunda-vertical-e-reutilizacao-do-core-sem-fork.md`
-**Estado:** Revisão registrada. Nenhum código alterado. Findings abertos até correção nos documentos‑alvo.
+**Estado:** Revisão registrada. Findings abertos até correção nos documentos‑alvo, exceto H1 (rebaixada para
+OBSERVAÇÃO em 11/09/2026, com dois testes de concorrência reais em
+`tests/integration/test_domain_events_postgresql.py` — únicos arquivos de código que este documento passou
+a referenciar como evidência fechada).
 
 Classificação por severidade conforme §31: **BLOQUEADOR / HIGH / MEDIUM / LOW / OBSERVAÇÃO**.
 Para BLOQUEADOR/HIGH: cenário · invariante afetado · consequência provável · evidência · correção recomendada · teste de regressão.
@@ -19,8 +22,10 @@ do Core em vez de lógica ad hoc. A tese central — "o Core já é reutilizáve
 substancialmente correta.
 
 Persistem: **um bloqueador técnico** (o mecanismo de "ambiente de migrations por vertical, `MetaData` única",
-como escrito, não funciona sem duas peças ausentes) e lacunas HIGH em acoplamento de integridade entre
-verticais, autorização sub‑Organization (OM/Site) e cobertura do entregável da §48.
+como escrito, não funciona sem duas peças ausentes — **resolvido** em S‑M1/S‑M2/S‑M3) e lacunas HIGH em
+autorização sub‑Organization (OM/Site) e cobertura do entregável da §48. A suspeita original de acoplamento
+de integridade entre verticais (H1) **não se confirmou**: o código já serializa por agregado, não por
+Organization — ver correção ao final de H1.
 
 > A restrição de desenvolvimento paralelo (Livestock ativo sob o Codex) introduzida após esta revisão
 > **agrava B1** e cria um requisito novo — autoria concorrente de schema — tratado em
@@ -105,6 +110,36 @@ qualquer mudança é Shared Integration com ADR própria.
 **Teste de regressão.** Concorrência com `ThreadPoolExecutor` + `Barrier` (padrão já usado em Livestock)
 fazendo `append` simultâneo de eventos de dois módulos para a mesma Organization; verificar integridade da
 cadeia e ausência de deadlock/hash órfão.
+
+---
+
+**CORREÇÃO (11/09/2026, decisão F fechada — evidência abaixo).** A premissa desta finding estava
+**errada**: `DomainEventRepository.append` (`events.py`, método completo — não só as linhas 247‑256 citadas
+acima, que vieram de uma leitura parcial) serializa via `pg_advisory_xact_lock` numa chave
+`f"{organization_id}:{aggregate_type}:{aggregate_id}"`, e a busca de `previous_hash` filtra por
+`(record_owner_organization_id, aggregate_type, aggregate_id, aggregate_version)` — **não** só por
+Organization. A cadeia de integridade é **por agregado**, não uma cadeia global por Organization. Duas
+verticais no mesmo tenant escrevendo em tipos de agregado diferentes (`WorkOrder` de Asset vs. `Animal` de
+Livestock) usam chaves de advisory lock diferentes e **não** esperam uma pela outra nem interleiam na mesma
+cadeia.
+
+Provado empiricamente por dois testes de concorrência reais (conexões/transações independentes por thread,
+sem mock) em `tests/integration/test_domain_events_postgresql.py`:
+`test_concurrent_appends_to_the_same_aggregate_serialize_via_advisory_lock` (mesmo agregado continua
+serializando corretamente sob concorrência real — sem essa trava, duas transações que veem
+"agregado vazio" ao mesmo tempo poderiam corromper a cadeia) e
+`test_concurrent_appends_to_different_aggregates_do_not_serialize` (agregados diferentes, mesma
+Organization, thread B commita antes de thread A apesar de A segurar a transação aberta — prova que não há
+espera cruzada).
+
+**H1 fica rebaixada para OBSERVAÇÃO**: o design já é a garantia que a correção original pedia; não há ação
+pendente além de manter os dois testes de concorrência no gate (`MULTI_VERTICAL_CI_GATES.md` Nível 2) e não
+introduzir, no futuro, um lock ou busca de `previous_hash` escopados só por Organization. Decisão **F**
+(`DECISIONS_REQUIRED_PHASE0.md`) fechada como **F1‑confirmado‑por‑teste**, não apenas F1‑por‑documentação.
+
+**Lição de processo:** este é um lembrete de que uma finding baseada em leitura parcial de código (só um
+trecho de uma função maior) pode inverter a conclusão. A revisão adversarial deve ler o método inteiro, não
+o trecho que o grep trouxe.
 
 ### H2 — O assessment conclui "Core fornece autorização, Asset só reutiliza" sem testar isso contra o escopo OM/Site (sub‑Organization) que §18/§26 implicam
 

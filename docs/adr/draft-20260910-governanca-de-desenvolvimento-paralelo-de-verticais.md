@@ -28,9 +28,9 @@ autoria concorrente de schema serializaria as duas verticais.
 
 A revisão adversarial da Fase 0 (`PHASE0_ADVERSARIAL_REVIEW.md`) identificou um BLOQUEADOR (B1 — o design de
 "ambiente de migrations por vertical" não funciona sem `include_object` por dono e sem resolver
-`head`/`heads`) e HIGHs (H1 cadeia de integridade por Organization; H2 escopo OM/Site; H3 cobertura do
-entregável §48). A restrição de desenvolvimento paralelo agrava B1 e adiciona o requisito "autoria concorrente
-de schema".
+`head`/`heads`) e HIGHs (H1 cadeia de integridade por Organization — **resolvida em 11/09/2026, era leitura
+parcial de código: a cadeia já é por agregado**; H2 escopo OM/Site; H3 cobertura do entregável §48). A
+restrição de desenvolvimento paralelo agrava B1 e adiciona o requisito "autoria concorrente de schema".
 
 ---
 
@@ -101,8 +101,9 @@ em Lane C, roda Core + todas as verticais), Nível 3 (portão completo pré‑me
 - Esta ADR **não** decide o modelo de domínio de Titan Asset (vai para a ADR do 1º slice).
 - **Não** decide se `sustainment` é o mesmo `vertical_id` de `asset` ou vertical irmã (decisão B —
   `DECISIONS_REQUIRED_PHASE0.md`).
-- **Não** decide o escopo definitivo da cadeia de integridade (decisão F) — recomenda F1 (garantia global do
-  Core por Organization) + teste de concorrência, com ADR própria se F2 for necessário.
+- Decisão F (escopo da cadeia de integridade) está **resolvida** desde 11/09/2026: a cadeia já é escopada
+  por agregado (`organization, aggregate_type, aggregate_id`), confirmado por teste de concorrência real
+  (`tests/integration/test_domain_events_postgresql.py`) — ver `DECISIONS_REQUIRED_PHASE0.md` decisão F.
 - **Não** decide a autorização OM/Site (decisão G) — diferida para a discovery de domínio; nenhum conceito de
   Asset entra no Core.
 - **Não** decide estratégia de frontend multi‑vertical (`apps/web`).
@@ -124,12 +125,16 @@ em Lane C, roda Core + todas as verticais), Nível 3 (portão completo pré‑me
 
 ## Impacto de Auditoria
 
-- **H1:** a cadeia de integridade (`event_integrity_table`) é hoje escopada por `record_owner_organization_id`.
-  Com duas verticais no mesmo tenant, os `append` interleavam numa cadeia e serializam. Esta ADR classifica
-  isso como **garantia global do Core**, não acoplamento vertical↔vertical (restrição §17), e exige um teste
-  de concorrência (`ThreadPoolExecutor` + `Barrier`) provando integridade da cadeia e ausência de deadlock com
-  `append` simultâneo de dois módulos. Qualquer alteração da semântica de integridade é Shared Integration com
-  ADR própria (candidata: seção nova em ADR‑0079).
+- **H1 (resolvida):** a suspeita original — cadeia de integridade escopada só por
+  `record_owner_organization_id`, interleavando `append` de duas verticais no mesmo tenant — não se
+  confirmou. `DomainEventRepository.append` (`events.py`) serializa via `pg_advisory_xact_lock` numa chave
+  `(organization, aggregate_type, aggregate_id)`; a cadeia é **por agregado**. Provado por dois testes de
+  concorrência real (`ThreadPoolExecutor`+`Barrier`, conexões independentes) em
+  `tests/integration/test_domain_events_postgresql.py`: mesmo agregado continua serializando corretamente;
+  agregados diferentes (simulando duas verticais) não esperam um pelo outro. É **garantia do Core por
+  agregado**, não acoplamento vertical↔vertical (restrição §17) — sem precisar de reinterpretação, porque o
+  design já era esse. Qualquer alteração futura dessa semântica é Shared Integration com ADR própria
+  (candidata: seção nova em ADR‑0079), e os dois testes acima quebram primeiro se alguém a estreitar.
 - **Ledger:** `docs/CHECKLIST_DE_IMPLEMENTACAO.md` permanece append‑only por lane; cada vertical registra sua
   entrada no mesmo commit da mudança, sem reescrever a da outra.
 - **ADRs:** a política de alocação de número na integração preserva o histórico (`docs/adr/README.md` —

@@ -102,23 +102,36 @@ Codex/Gemini: não consultados.
 
 ---
 
-## DECISÃO F — Escopo da cadeia de integridade de eventos (HIGH H1)
+## DECISÃO F — Escopo da cadeia de integridade de eventos (HIGH H1) — **RESOLVIDA, 11/09/2026**
 
-**Questão.** A cadeia de `event_integrity_table` é filtrada só por `record_owner_organization_id`
-(`events.py:247‑256`). Com duas verticais, os `append` de um mesmo tenant interleavam numa cadeia e
-serializam entre si. Isso é intencional?
+**Questão original.** A finding H1 partiu de uma leitura parcial de `events.py` (só as linhas do trecho
+grepado) e concluiu que a cadeia de `event_integrity_table` é filtrada só por
+`record_owner_organization_id`, logo verticais diferentes interleavam e serializam entre si numa mesma
+cadeia. **Essa premissa estava errada.**
 
-| Opção | Vantagens | Riscos |
-|---|---|---|
-| **F1** — declarar que a cadeia é **garantia global do Core por Organization**, interleave é esperado; validar concorrência | nada muda no Core; distinção clara "garantia do Core ≠ acoplamento vertical↔vertical" (restrição §17) | ponto de serialização de `append` cross‑vertical por tenant; dimensionar |
-| **F2** — reescopar a cadeia para `(organization, aggregate)` ou `(organization, vertical)` | remove a serialização cross‑vertical | mudança de semântica de integridade no Core; ADR própria; risco a Livestock; migration |
+**O que o código realmente faz** (`DomainEventRepository.append`, `events.py`): o `pg_advisory_xact_lock` é
+adquirido numa chave `f"{organization_id}:{aggregate_type}:{aggregate_id}"`, e a busca de `current_version`/
+`previous_hash` filtra por `(record_owner_organization_id, aggregate_type, aggregate_id[, aggregate_version])`
+— **a cadeia é por agregado**, não uma cadeia global por Organization. `WorkOrder` (Asset) e `Animal`
+(Livestock) na mesma Organization usam chaves de lock diferentes; não há disputa nem interleaving entre eles.
 
-**Posições.** Claude: **F1 agora** + teste de concorrência; reavaliar F2 se o dimensionamento doer. Codex/
-Gemini: não consultados.
+| Opção | Avaliação |
+|---|---|
+| **F1** — declarar que a cadeia é **garantia do Core por agregado** (não por Organization); confirmar por teste de concorrência real | **É o que o código já faz.** Nenhuma mudança de Core necessária. |
+| ~~F2 — reescopar a cadeia~~ | **Descartada** — não há o problema que resolveria. |
 
-**Recomendação.** **F1**, documentada em ADR de Shared Integration (ou seção nova na ADR‑0079). **Nenhum
-código de Asset toca integridade.** **Confiança: MÉDIA** (depende de confirmar a semântica completa de
-`build_event_chain_entry`/`checkpoints.py`). **Owner decision required: YES.**
+**Evidência de fechamento:** `tests/integration/test_domain_events_postgresql.py` ganhou dois testes com
+conexões/transações reais por thread (`ThreadPoolExecutor`+`Barrier`, sem mock):
+`test_concurrent_appends_to_the_same_aggregate_serialize_via_advisory_lock` (mesmo agregado — serialização
+correta preservada) e `test_concurrent_appends_to_different_aggregates_do_not_serialize` (agregados
+diferentes, mesma Organization — thread B termina/comita antes de thread A apesar de A segurar a transação
+aberta; prova ausência de espera cruzada). Ambos verdes, estáveis em execuções repetidas.
+
+**Decisão:** **F1‑confirmado‑por‑teste.** Nenhum código de Asset toca integridade; os dois testes entram no
+Nível 2 de CI (`MULTI_VERTICAL_CI_GATES.md`) como regressão permanente — se algum dia a busca de
+`previous_hash`/o lock forem re‑escopados só por Organization, esses testes quebram primeiro.
+**Confiança: ALTA** (empírica, não só leitura de código). **Owner decision required:** NÃO — a decisão é
+factual (o design já é o que F1 pedia), registrada aqui para o rastro de auditoria da revisão.
 
 ---
 
@@ -150,5 +163,5 @@ horizontalidade; nenhum conceito `OM`/`MilitaryOrganization`/`Workshop`/`Vehicle
 | C — worktree/branch | C1 obrigatório | ALTA | Sim (para trabalho concorrente seguro) |
 | D — número de ADR | D1 | ALTA | Não |
 | E — manifesto | E1 | MÉDIA‑ALTA | Não |
-| F — cadeia de integridade | F1 + teste | MÉDIA | Não (mas resolver antes do 1º slice) |
+| F — cadeia de integridade | **RESOLVIDA** (F1 confirmado por teste real, 11/09/2026) | ALTA | Não |
 | G — OM/Site | G1 diferir | ALTA | Não |
