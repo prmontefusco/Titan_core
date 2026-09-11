@@ -24,6 +24,10 @@ from logging.config import fileConfig
 
 from alembic import context
 
+from packages.asset_infrastructure.persistence import (
+    customer_site_contacts_table,
+    customer_sites_table,
+)
 from packages.core_infrastructure.bootstrap import bootstrap_receipts_table
 from packages.core_infrastructure.persistence import (
     DatabaseSettings,
@@ -143,9 +147,9 @@ assert shared_decisions_table.metadata is target_metadata
 assert shared_policy_access_log_table.metadata is target_metadata
 assert external_identities_table.metadata is target_metadata
 
-# Cresce incrementalmente: cada agregado novo de Asset acrescenta seu import de
-# packages.asset_infrastructure.persistence aqui + um `assert <tabela>.metadata
-# is target_metadata`. Nenhuma tabela de Asset existe ainda.
+# Tabelas de Asset (cresce incrementalmente, um agregado por vez):
+assert customer_sites_table.metadata is target_metadata
+assert customer_site_contacts_table.metadata is target_metadata
 
 VERSION_TABLE = "alembic_version_asset"
 

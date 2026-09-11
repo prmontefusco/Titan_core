@@ -41,6 +41,7 @@ from packages.core_infrastructure.persistence.evidence import (
 )
 from packages.core_infrastructure.persistence.external_identities import external_identities_table
 from packages.core_infrastructure.persistence.idempotency import idempotency_records_table
+from packages.core_infrastructure.persistence.migrations.module_owner import make_include_object
 from packages.core_infrastructure.persistence.nonconformity import nonconformities_table
 from packages.core_infrastructure.persistence.organizations import (
     CORE_IDENTITY_SCHEMA,
@@ -205,6 +206,26 @@ def include_managed_schema(
     return True
 
 
+# `core_audit` também hospeda tabelas de outras verticais (ex.: Asset, desde
+# A-M1). `include_managed_schema` só restringe por schema; sem filtro por dono
+# também, este `alembic check` reflete as tabelas de Asset na mesma
+# `core_audit` e propõe removê-las (não estão na `target_metadata` deste
+# ambiente). `include_object` resolve isso filtrando por `titan.module_owner`
+# — mesmo helper de `module_owner.py` que o `env.py` de Asset usa (S-M2).
+# `unowned_table_included=True` preserva o comportamento anterior a este fix
+# para a única tabela hoje sem o carimbo (`animal_exits`,
+# `livestock_infrastructure/persistence/exit_repository.py`) — corrigir o
+# carimbo ausente é mudança de Lane Livestock, fora de escopo aqui.
+CORE_AND_LIVESTOCK_OWNED_TOKENS = frozenset(
+    {"core_audit", "core_identity", "core_messaging", "livestock", "titan_livestock"}
+)
+
+include_object = make_include_object(
+    owned_tokens=CORE_AND_LIVESTOCK_OWNED_TOKENS,
+    unowned_table_included=True,
+)
+
+
 def run_migrations_offline() -> None:
     """Gera SQL sem estabelecer conexão."""
 
@@ -215,6 +236,7 @@ def run_migrations_offline() -> None:
         url=settings.url,
         target_metadata=target_metadata,
         include_name=include_managed_schema,
+        include_object=include_object,
         include_schemas=True,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -238,6 +260,7 @@ def run_migrations_online() -> None:
                 connection=connection,
                 target_metadata=target_metadata,
                 include_name=include_managed_schema,
+                include_object=include_object,
                 include_schemas=True,
             )
 
