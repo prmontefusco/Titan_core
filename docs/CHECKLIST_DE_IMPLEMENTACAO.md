@@ -1,6 +1,6 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 27 de agosto de 2026
+**Atualizado em:** 11 de setembro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** ver o **ponto de parada de 27 de agosto de 2026** logo abaixo — é onde a sessão corrente parou e o que a próxima retoma. Continua pendente, de frente distinta: adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
 
@@ -37,6 +37,31 @@
 >    (`PolicySharingService` × `revoke`). A suíte de integração fecha em **280 passed, 3 failed**.
 > 4. **`captura_territorial_sintetica` está no índice de roteiros, mas fora da suíte de fumaça.**
 >    Omissão antiga; não foi incluída porque não se verificou se a exclusão era deliberada.
+
+### 11/09/2026 — Commercial Passport F1: contratos de aplicação/domínio
+
+**Estado:** CONCLUÍDO — primeiro incremento do Commercial Passport, restrito a contratos puros em
+`packages/livestock_application/commercial_passport.py`. O incremento implementa somente a projection
+dinâmica e transiente: `CommercialOpportunity`, `CommercialPassportContext`,
+`CommercialRequirementAssessment`, `PropertyCommercialReadiness`, `PopulationEligibilitySummary`,
+`CommercialPassportOpportunityAssessment` e `CommercialPassport`. Não cria API, persistência, migration,
+Dossier, VerificationBundle, avaliação de regra, endpoint público ou disclosure externo.
+
+**Decisões preservadas:** `CommercialPassport` não é `Decision`, não é `MarketEligibility` e não é
+snapshot emitido. `PROPERTY_READINESS` permanece separada de `POPULATION_ELIGIBILITY`; `NOT_APPLICABLE`
+fica fora do denominador de readiness; blocker é visível como contagem derivada e não vira score opaco.
+O contexto exige `reference_time`, `knowledge_cutoff` e `evaluated_at` em UTC, preservando a separação
+temporal aprovada.
+
+**Portão:** `tests/livestock_application/test_commercial_passport.py` cobre temporalidade, contagem
+derivada, `NOT_APPLICABLE` fora do denominador, separação property/population, limitações da projection
+dinâmica e rejeição de oportunidades duplicadas. Verificações executadas: `python -m uv run --locked
+pytest tests/livestock_application/test_commercial_passport.py` (7 passed), `python -m uv run --locked
+ruff check packages/livestock_application/commercial_passport.py tests/livestock_application/test_commercial_passport.py`,
+`python -m uv run --locked ruff format --check ...` e `python -m uv run --locked mypy`.
+
+**Próximo passo:** F2 — requirement reasoning semantics (`SATISFIED`, `MISSING`, `UNKNOWN`, `FAILED`,
+`NOT_APPLICABLE`, `BLOCKED`) com agregação e testes dedicados, ainda sem API.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
