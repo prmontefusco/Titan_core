@@ -4823,3 +4823,25 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `pytest tests/integration/test_domain_events_postgresql.py` — 5 testes verdes (3 existentes + 2 novos), repetido 3x sem flakiness, contra Postgres real (`docker compose up -d postgres`). `ruff check`, `ruff format --check` e `mypy` limpos no arquivo.
 
 **Riscos e limites:** nenhuma mudanca de comportamento — so testes novos provando um comportamento que ja existia. Nao mexe em `packages/livestock_*` nem em codigo de Asset.
+
+### 11/09/2026 — Titan Asset & Sustainment: discovery do primeiro slice, ADR/SPEC aprovadas, revisao de arquitetura
+
+**Estado:** DISCOVERY CONCLUIDA — branch `vertical/asset/discovery`, sem push e sem PR. Nenhum codigo de producao; apenas documentacao (`docs/asset/**`). Modelo de equipe do projeto definido pelo dono em 11/09/2026: dono + Claude apenas, sem Codex/Gemini dedicados a esta vertical.
+
+**Escopo e evidencia:**
+
+- **Discovery (docs/asset/01-09, 11, 19, 20):** vision, domain discovery, ubiquitous language, bounded context map, domain model, aggregate analysis, invariants (23 invariantes I-VEH/CFG/PRT/APP/INV/SLI/WO/SEC), domain events (namespace `asset.*`), command model (comandos com autorizacao/versao/idempotencia/transacao/evento), authorization model (decisao G), risk register, execution roadmap. Reorganizados de `docs/asset-sustainment/` para `docs/asset/` (com `docs/asset/adr/` e `docs/asset/specs/`) por decisao do dono.
+- **A1 — ADR e SPEC do slice:** `docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (decide B1 - asset+sustainment uma vertical -, maquina de estados T1-T17 da WorkOrder, G1 para o slice, layout de modulos) e `docs/asset/specs/approved/2026-09-10-titan-asset-primeiro-slice.md` (CRITICAL, 16 pontos do §47 como criterio de aceite). Ambas **aprovadas pelo dono em 11/09/2026**.
+- **MULTI_AGENT_ARCHITECTURE_REVIEW.md:** revisao adversarial + integracao (papeis Claude/Gemini absorvidos por um agente, decisao do dono). 1 HIGH (`site_scope` nao podia ser recalculado por request via `Decision` do Core - corrigido, resolvido 1x por sessao) e 3 MEDIUM (cobertura de contrato ambigua sem invariante - I-SLI-6 novo; superficie de leitura incompleta para 3 personas - `GetWorkOrder`/`GetVehicle`/`GetContractSLASummary` adicionadas; transicao T7 sem comando - `AuthorizeEntitlementException` adicionado) encontrados e corrigidos nos proprios documentos. Sem BLOQUEADOR. Referencias obsoletas ao H1 original (cadeia de integridade "por Organization") corrigidas em `08`, `11` e `CORE_REUSE_ASSESSMENT.md` para refletir a decisao F real (por agregado).
+
+**Portao:** revisao de documentacao, sem gate automatizado aplicavel (nenhum codigo). Consistencia interna checada por grep (referencias cruzadas, decisao F propagada).
+
+**Riscos e limites:** nenhum codigo de `packages/asset_*`/`packages/sustainment_*` criado ainda. A2 (primeiro codigo) depende de P0 (merge da stack `integration/core/parallel-vertical-foundation`, Lane C, pronta e aguardando revisao do dono).
+
+### 11/09/2026 — P0: merge das duas stacks em `main`
+
+**Estado:** CONCLUIDO. Merge de `integration/core/parallel-vertical-foundation` (G1-G3, S-M1-S-M3, P2, decisoes A/B/C/F/G aceitas) e de `vertical/asset/discovery` (discovery completa do primeiro slice de Asset, ADR e SPEC aprovadas, `MULTI_AGENT_ARCHITECTURE_REVIEW.md`) em `main`, ambos `--no-ff`. Unico conflito: este arquivo (ledger, append-only por lane) — resolvido mantendo as tres entradas, em ordem cronologica.
+
+**Portao:** merge de Lane C — `ruff check`, `ruff format --check`, `mypy` limpos; `pytest` sem `TITAN_DATABASE_URL` (suite nao-DB) `1463 passed, 323 skipped`, sem falha. Suite de integracao com Postgres real ja validada antes do merge (Docker Desktop ficou indisponivel durante a sessao apos essa validacao; nao forcado a reiniciar). Merge de Lane B — so documentacao, sem gate de codigo aplicavel.
+
+**Riscos e limites:** P1 (decisoes) e P2 (teste de decisao F) ja estavam concluidos antes deste merge. A2 (primeiro codigo de `packages/asset_domain`) pode comecar agora — unico pre-requisito restante era este merge.
