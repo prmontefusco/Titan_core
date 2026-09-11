@@ -5090,3 +5090,13 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/asset_application/test_part_service.py` (2 casos: registro; `add_revision`+`supersede_revision` confirmando os dois eventos e a ordem de `aggregate_version`) + `tests/asset_application/test_interchangeability_group_service.py` (4 casos: criacao implicita no primeiro `add_member`, segundo membro atualiza grupo existente e `interchanges_with` fica simetrico, `remove_member`, `remove_member` em grupo inexistente levanta `InterchangeabilityGroupNaoEncontrado`) — 12 testes verdes em `tests/asset_application/`, sem banco. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1640 passed, 335 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `applicability_service.py` -> `configuration_service.py` -> `inventory_service.py`/`reservation_service.py` -> `sustainment_contract_service.py` -> `work_order_service.py` -> `workshop_dashboard.py`.
+
+### 11/09/2026 — A4 (parcial): servico `Applicability`
+
+**Estado:** EM EXECUCAO — terceiro incremento de A4. I-APP-1 (`evidence_ref` obrigatorio) e I-APP-2 (retirada e correcao, nunca delete) ja garantidos pelo proprio `Applicability.__post_init__`/`withdraw` — o servico so monta o agregado e grava o evento, mesmo padrao de `part_service.py`.
+
+**Implementacao:** `packages/asset_application/applicability_service.py` — `ApplicabilityRepositoryPort`+`ApplicabilityService` (`assert_applicability`/`withdraw_applicability`/`get_applicability`). `authorization.py` ganha `ASSET_APPLICABILITY.{ASSERT,WITHDRAW,READ}`.
+
+**Portao:** `tests/asset_application/test_applicability_service.py` (3 casos: assercao; retirada confirmando `state` `WITHDRAWN`; retirada de applicability inexistente levanta `ApplicabilidadeNaoEncontrada`) — 15 testes verdes em `tests/asset_application/`, sem banco. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1643 passed, 335 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `configuration_service.py` -> `inventory_service.py`/`reservation_service.py` -> `sustainment_contract_service.py` -> `work_order_service.py` -> `workshop_dashboard.py`.
