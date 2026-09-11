@@ -1,6 +1,6 @@
 """Commercial Passport application contracts for Titan Livestock.
 
-F1/F2/F3/F4 are deliberately application-only: these types compose existing
+F1-F5 are deliberately application-only: these types compose existing
 evaluations, decisions and readiness outputs, but do not evaluate policies,
 emit Decisions, persist snapshots, expose APIs or create Dossiers/
 VerificationBundles.
@@ -12,7 +12,9 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
+from typing import Any
 
+from packages.core_domain.dossier import VerticalSection
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MarketReadinessStatus,
@@ -25,6 +27,7 @@ PROPERTY_COMMERCIAL_PASSPORT_LIMITATIONS = (
     "POPULATION_ELIGIBILITY_IS_SEPARATE_FROM_PROPERTY_READINESS",
     "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE",
 )
+LIVESTOCK_COMMERCIAL_PASSPORT_SECTION_VERSION = 1
 
 
 class CommercialOpportunityKind(StrEnum):
@@ -384,6 +387,50 @@ class PropertyCommercialPassportService:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class CommercialPassportDossierSectionBuilder:
+    """Build a Livestock vertical section for formal Commercial Passport issuance.
+
+    The section is designed to travel inside the existing Core Dossier and
+    VerificationBundle. It freezes the dynamic passport projection supplied by
+    the caller; it does not create a new Decision, re-evaluate policies, persist
+    anything or disclose cross-tenant data by itself.
+    """
+
+    def build(self, *, passport: CommercialPassport, issued_at: datetime) -> VerticalSection:
+        require_utc(issued_at, field_name="issued_at")
+        if issued_at < passport.context.evaluated_at:
+            raise ValueError("issued_at nao pode ser anterior a evaluated_at.")
+        return VerticalSection(
+            namespace="livestock",
+            section_version=LIVESTOCK_COMMERCIAL_PASSPORT_SECTION_VERSION,
+            content={
+                "commercial_passport": {
+                    "status": "FORMAL_ISSUED_SNAPSHOT",
+                    "subject_scope": "property",
+                    "property_id": str(passport.context.property_id.value),
+                    "temporal_context": {
+                        "reference_time": passport.context.reference_time.isoformat(),
+                        "knowledge_cutoff": passport.context.knowledge_cutoff.isoformat(),
+                        "evaluated_at": passport.context.evaluated_at.isoformat(),
+                        "issued_at": issued_at.isoformat(),
+                    },
+                    "result_boundary": passport.context.result_boundary,
+                    "opportunities": [
+                        _opportunity_snapshot(item) for item in passport.opportunities
+                    ],
+                    "limitations": list(passport.limitations),
+                    "non_goals": [
+                        "not a Decision",
+                        "not MarketEligibility",
+                        "not export authorization",
+                        "not public disclosure without AuthorizationGrant",
+                    ],
+                }
+            },
+        )
+
+
 def _breakdown(
     requirements: tuple[CommercialRequirementAssessment, ...],
 ) -> CommercialReadinessBreakdown:
@@ -411,3 +458,96 @@ def _require_text_tuple(values: tuple[str, ...], field_name: str) -> None:
         raise TypeError(f"{field_name} deve ser tuple.")
     if any(not isinstance(item, str) or not item.strip() for item in values):
         raise ValueError(f"{field_name} nao aceita texto vazio.")
+
+
+def _opportunity_snapshot(item: CommercialPassportOpportunityAssessment) -> dict[str, Any]:
+    opportunity = item.opportunity
+    readiness = item.property_readiness
+    population = item.population_eligibility
+    return {
+        "opportunity": {
+            "code": opportunity.code,
+            "kind": opportunity.kind.value,
+            "name": opportunity.name,
+            "purpose": opportunity.purpose,
+            "policy_id": str(opportunity.policy_id.value),
+            "policy_version": opportunity.policy_version,
+            "effective_from": (
+                None
+                if opportunity.effective_from is None
+                else opportunity.effective_from.isoformat()
+            ),
+            "effective_until": (
+                None
+                if opportunity.effective_until is None
+                else opportunity.effective_until.isoformat()
+            ),
+        },
+        "property_readiness": {
+            "interpretation": readiness.breakdown.interpretation.value,
+            "breakdown": {
+                "satisfied": readiness.breakdown.satisfied,
+                "missing": readiness.breakdown.missing,
+                "unknown": readiness.breakdown.unknown,
+                "failed": readiness.breakdown.failed,
+                "not_applicable": readiness.breakdown.not_applicable,
+                "blocked": readiness.breakdown.blocked,
+                "applicable_count": readiness.breakdown.applicable_count,
+                "total_count": readiness.breakdown.total_count,
+                "derived_ratio": _readiness_ratio_snapshot(readiness.breakdown),
+            },
+            "requirements": [
+                _requirement_snapshot(requirement) for requirement in readiness.requirements
+            ],
+        },
+        "population_eligibility": None
+        if population is None
+        else {
+            "subject_type": population.subject_type,
+            "counts_by_status": dict(population.counts_by_status),
+            "total_count": population.total_count,
+            "source_report_reference": population.source_report_reference,
+            "limitations": list(population.limitations),
+        },
+        "limitations": list(item.limitations),
+    }
+
+
+def _requirement_snapshot(requirement: CommercialRequirementAssessment) -> dict[str, Any]:
+    return {
+        "requirement_code": requirement.requirement_code,
+        "label": requirement.label,
+        "dimension": requirement.dimension.value,
+        "status": requirement.status.value,
+        "reason": requirement.reason,
+        "reason_codes": list(requirement.reason_codes),
+        "evidence_references": [
+            {
+                "entity_type": reference.target_id.entity_type,
+                "id": str(reference.target_id.value),
+                "organization_id": (
+                    None
+                    if reference.organization_id is None
+                    else str(reference.organization_id.value)
+                ),
+                "contract_version": reference.contract_version,
+            }
+            for reference in requirement.evidence_references
+        ],
+        "evaluation_id": (
+            None if requirement.evaluation_id is None else str(requirement.evaluation_id.value)
+        ),
+        "decision_id": None
+        if requirement.decision_id is None
+        else str(requirement.decision_id.value),
+        "limitations": list(requirement.limitations),
+    }
+
+
+def _readiness_ratio_snapshot(breakdown: CommercialReadinessBreakdown) -> dict[str, int] | None:
+    if breakdown.applicable_count == 0:
+        return None
+    return {
+        "satisfied": breakdown.satisfied,
+        "applicable": breakdown.applicable_count,
+    }

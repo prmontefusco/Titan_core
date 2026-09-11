@@ -60,6 +60,23 @@ class LivestockVerificationBundleInterpreter:
                 gaps.append(
                     "Market optionality section is explanatory and does not include forecast."
                 )
+        passport = content.get("commercial_passport")
+        if isinstance(passport, Mapping):
+            scopes.append("commercial_passport_snapshot")
+            result_boundary = passport.get("result_boundary")
+            if isinstance(result_boundary, str) and result_boundary:
+                scopes.append(f"commercial_passport_boundary:{result_boundary}")
+            limitations = passport.get("limitations")
+            if isinstance(limitations, Sequence) and not isinstance(limitations, (str, bytes)):
+                gaps.extend(item for item in limitations if isinstance(item, str))
+            non_goals = passport.get("non_goals")
+            if (
+                isinstance(non_goals, Sequence)
+                and "not public disclosure without AuthorizationGrant" in non_goals
+            ):
+                gaps.append(
+                    "Commercial Passport snapshot does not authorize public disclosure by itself."
+                )
         limitations = content.get("declared_limitations")
         if isinstance(limitations, Sequence) and not isinstance(limitations, (str, bytes)):
             gaps.extend(item for item in limitations if isinstance(item, str))

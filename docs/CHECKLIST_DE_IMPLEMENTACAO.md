@@ -140,6 +140,35 @@ tests/livestock_application/test_commercial_passport.py` e `python -m uv run --l
 **Próximo passo:** F5 — formal issuance via `Dossier`/`VerificationBundle`, criando snapshot somente no
 fluxo de emissão/compartilhamento e preservando a projection dinâmica para consultas comuns.
 
+### 11/09/2026 — Commercial Passport F5: emissão formal via Dossier/VerificationBundle
+
+**Estado:** CONCLUÍDO — quinto incremento do Commercial Passport, ainda sem API, persistência nova,
+migration ou endpoint público. `CommercialPassportDossierSectionBuilder` monta uma `VerticalSection`
+Livestock autocontida para emissão formal do Commercial Passport, congelando a projection dinâmica
+fornecida pelo chamador como `FORMAL_ISSUED_SNAPSHOT`. O material viaja pelo `Dossier` existente e pelo
+`VerificationBundleService` existente; não cria `trust_engine`, novo tipo de Dossier, verificador paralelo
+ou tabela de snapshot própria.
+
+**Decisões preservadas:** emissão formal é separada da consulta dinâmica. A seção declara explicitamente
+que Commercial Passport não é `Decision`, não é `MarketEligibility`, não é autorização de exportação e não
+autoriza disclosure público sem `AuthorizationGrant`. O ratio de readiness não é serializado como `float`
+nem score opaco; o snapshot formal preserva numerador/denominador deriváveis. O interpretador Livestock de
+VerificationBundle declara o escopo `commercial_passport_snapshot` e propaga limitações como gaps
+verificáveis.
+
+**Portão:** `tests/livestock_application/test_commercial_passport.py` cobre congelamento da projection
+dinâmica, recusa de `issued_at` anterior a `evaluated_at`, ausência de score opaco em formato não
+canônico e transporte dentro do `VerificationBundleService` existente com
+`LivestockVerificationBundleInterpreter`. Verificações focadas executadas: `python -m uv run --locked
+pytest tests/livestock_application/test_commercial_passport.py tests/application/test_verification_bundle.py`
+(35 passed), `python -m uv run --locked ruff check packages/livestock_application/commercial_passport.py
+packages/livestock_application/verification_bundle_interpreter.py
+tests/livestock_application/test_commercial_passport.py` e `python -m uv run --locked ruff format --check
+...`.
+
+**Próximo passo:** F6 — API, expondo a projection dinâmica e o fluxo de emissão sem abrir disclosure
+cross-tenant ou endpoint público.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;

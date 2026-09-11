@@ -4,11 +4,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from packages.core_application.verification_service import VerificationBundleService
+from packages.core_domain.dossier import Dossier, compute_dossier_hash
 from packages.livestock_application.commercial_passport import (
     CommercialOpportunity,
     CommercialOpportunityKind,
     CommercialPassport,
     CommercialPassportContext,
+    CommercialPassportDossierSectionBuilder,
     CommercialPassportOpportunityAssessment,
     CommercialPassportRequirementDimension,
     CommercialPassportRequirementStatus,
@@ -21,7 +24,10 @@ from packages.livestock_application.commercial_passport import (
     PropertyCommercialReadiness,
 )
 from packages.livestock_application.market_readiness import MarketReadinessStatus
-from packages.shared_kernel import OrganizationId, TypedId
+from packages.livestock_application.verification_bundle_interpreter import (
+    LivestockVerificationBundleInterpreter,
+)
+from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 NOW = datetime(2026, 9, 11, tzinfo=UTC)
 
@@ -446,3 +452,124 @@ def test_property_passport_service_rejects_duplicate_opportunity_codes() -> None
                 ),
             ),
         )
+
+
+def test_commercial_passport_dossier_section_freezes_dynamic_projection() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("synthetic-eu"),
+                requirements=(
+                    _requirement("traceability", CommercialPassportRequirementStatus.SATISFIED),
+                    _requirement("environment", CommercialPassportRequirementStatus.MISSING),
+                ),
+                population_eligibility=PopulationEligibilitySummary(
+                    subject_type="animal",
+                    counts_by_status={MarketReadinessStatus.READY.value: 10},
+                ),
+            ),
+        ),
+    )
+
+    section = CommercialPassportDossierSectionBuilder().build(
+        passport=passport,
+        issued_at=NOW,
+    )
+
+    snapshot = section.content["commercial_passport"]
+    assert section.namespace == "livestock"
+    assert snapshot["status"] == "FORMAL_ISSUED_SNAPSHOT"
+    assert snapshot["subject_scope"] == "property"
+    assert snapshot["temporal_context"] == {
+        "reference_time": NOW.isoformat(),
+        "knowledge_cutoff": NOW.isoformat(),
+        "evaluated_at": NOW.isoformat(),
+        "issued_at": NOW.isoformat(),
+    }
+    assert snapshot["opportunities"][0]["opportunity"]["code"] == "synthetic-eu"
+    assert snapshot["opportunities"][0]["property_readiness"]["breakdown"]["satisfied"] == 1
+    assert snapshot["opportunities"][0]["property_readiness"]["breakdown"]["missing"] == 1
+    assert snapshot["opportunities"][0]["population_eligibility"]["total_count"] == 10
+    assert "not a Decision" in snapshot["non_goals"]
+
+
+def test_commercial_passport_section_refuses_issuance_before_evaluation() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity(),
+                requirements=(
+                    _requirement("traceability", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="issued_at"):
+        CommercialPassportDossierSectionBuilder().build(
+            passport=passport,
+            issued_at=NOW - timedelta(seconds=1),
+        )
+
+
+def test_commercial_passport_section_travels_inside_existing_verification_bundle() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("synthetic-eu"),
+                requirements=(
+                    _requirement("traceability", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+    section = CommercialPassportDossierSectionBuilder().build(
+        passport=passport,
+        issued_at=NOW,
+    )
+    document = {
+        "document_version": 5,
+        "serialization": "titan-json-v1",
+        "generated_at": NOW.isoformat(),
+        "organization_id": str(passport.context.organization_id.value),
+        "subject": {
+            "entity_type": passport.context.property_id.entity_type,
+            "id": str(passport.context.property_id.value),
+        },
+        "purpose": "commercial-passport",
+        "vertical": section.to_dict(),
+    }
+    dossier = Dossier(
+        dossier_id=TypedId.new("dossier"),
+        organization_id=passport.context.organization_id,
+        subject_reference=UniversalReference(
+            passport.context.property_id, passport.context.organization_id, 1
+        ),
+        purpose="commercial-passport",
+        decision_id=TypedId.new("decision"),
+        evaluation_id=TypedId.new("evaluation"),
+        generated_at=NOW,
+        document=document,
+        dossier_hash=compute_dossier_hash(document),
+    )
+
+    bundle = VerificationBundleService(
+        dossier_interpreters=(LivestockVerificationBundleInterpreter(),),
+    ).build_from_dossier(
+        dossier=dossier,
+        audience="commercial-audit",
+        created_at=NOW,
+    )
+
+    assert dossier.verify()
+    assert "commercial_passport_snapshot" in bundle.manifest.declared_scopes
+    assert (
+        "commercial_passport_boundary:MARKET_ELIGIBILITY_ASSESSMENT_NOT_EXPORT_AUTHORIZATION"
+        in bundle.manifest.declared_scopes
+    )
+    assert any(
+        "does not authorize public disclosure" in gap for gap in bundle.manifest.declared_gaps
+    )
