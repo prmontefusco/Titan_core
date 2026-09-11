@@ -4,14 +4,38 @@ Ver `docs/asset/05_DOMAIN_MODEL.md`. Cresce incrementalmente por agregado — na
 aqui existe antes do agregado que o usa (constituição §38).
 """
 
+from packages.asset_domain.applicability import (
+    AplicabilidadeJaRetirada,
+    Applicability,
+    ApplicabilityState,
+    ApplicabilityTarget,
+)
 from packages.asset_domain.events import (
+    APPLICABILITY_ASSERTED,
+    APPLICABILITY_WITHDRAWN,
+    ASSET_PART_EVENT_TYPES,
     ASSET_VEHICLE_EVENT_TYPES,
+    PART_INTERCHANGEABILITY_GROUP_CHANGED,
+    PART_LIFECYCLE_STATE_CHANGED,
+    PART_REGISTERED,
+    PART_REVISION_ADDED,
+    PART_REVISION_SUPERSEDED,
     VEHICLE_CONFIGURATION_BASELINE_SET,
     VEHICLE_LIFECYCLE_STATE_CHANGED,
     VEHICLE_METER_READING_CORRECTED,
     VEHICLE_METER_READING_RECORDED,
     VEHICLE_REGISTERED,
     VEHICLE_RETURNED_TO_SERVICE,
+)
+from packages.asset_domain.part import (
+    InterchangeabilityGroup,
+    Part,
+    PartIdentity,
+    PartLifecycleState,
+    PartRevision,
+    RevisaoNaoEncontrada,
+    SupersessaoCiclica,
+    Supersession,
 )
 from packages.asset_domain.vehicle import (
     AssetOwnership,
@@ -27,19 +51,39 @@ from packages.asset_domain.vehicle import (
 )
 
 __all__ = [
+    "APPLICABILITY_ASSERTED",
+    "APPLICABILITY_WITHDRAWN",
+    "ASSET_PART_EVENT_TYPES",
     "ASSET_VEHICLE_EVENT_TYPES",
+    "PART_INTERCHANGEABILITY_GROUP_CHANGED",
+    "PART_LIFECYCLE_STATE_CHANGED",
+    "PART_REGISTERED",
+    "PART_REVISION_ADDED",
+    "PART_REVISION_SUPERSEDED",
     "VEHICLE_CONFIGURATION_BASELINE_SET",
     "VEHICLE_LIFECYCLE_STATE_CHANGED",
     "VEHICLE_METER_READING_CORRECTED",
     "VEHICLE_METER_READING_RECORDED",
     "VEHICLE_REGISTERED",
     "VEHICLE_RETURNED_TO_SERVICE",
+    "AplicabilidadeJaRetirada",
+    "Applicability",
+    "ApplicabilityState",
+    "ApplicabilityTarget",
     "AssetOwnership",
+    "InterchangeabilityGroup",
     "LeituraDeMedidorRetrocedeu",
     "MeterCorrection",
     "MeterKind",
     "MeterReading",
+    "Part",
+    "PartIdentity",
+    "PartLifecycleState",
+    "PartRevision",
     "RetornoAoServicoInvalido",
+    "RevisaoNaoEncontrada",
+    "Supersession",
+    "SupersessaoCiclica",
     "TransicaoDeCicloDeVidaInvalida",
     "Vehicle",
     "VehicleIdentifiers",
