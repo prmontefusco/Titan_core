@@ -1,0 +1,43 @@
+"""Permissões da vertical Titan Asset & Sustainment (A4).
+
+**Permissão, nunca papel, é o que um comando/query exige**
+(`docs/asset/11_AUTHORIZATION_MODEL.md` §3; mesmo princípio de
+`livestock_application.authorization`). O catálogo completo já está definido
+em `docs/asset/09_COMMAND_MODEL.md`/`11_AUTHORIZATION_MODEL.md` §3, mas as
+constantes só entram aqui quando o serviço correspondente existe
+(constituição §38) — cresce incrementalmente por agregado, igual ao restante
+de `asset_application`/`asset_infrastructure`.
+
+`ROLE_PERMISSIONS` fica de fora deliberadamente por ora: a vertical ainda não
+tem um fluxo de onboarding análogo a `EntityTypeRequest` de Livestock que
+concederia um Role a partir de um pedido — inventar papéis sem esse
+consumidor seria antecipar design sem uso real (constituição §38). A
+atribuição papel→permissão, quando existir, é dado de seed/bootstrap, não
+constante de código (mesmo argumento usado para `FRIGORIFICO`/`VETERINARIO`
+em Livestock: "Role sem Permission é honesto").
+"""
+
+from typing import Final
+
+# -- Vehicle -------------------------------------------------------------
+
+VEHICLE_REGISTER: Final = "ASSET_VEHICLE.REGISTER"
+VEHICLE_SET_BASELINE: Final = "ASSET_VEHICLE.SET_BASELINE"
+VEHICLE_RECORD_METER: Final = "ASSET_VEHICLE.RECORD_METER"
+VEHICLE_CORRECT_METER: Final = "ASSET_VEHICLE.CORRECT_METER"
+VEHICLE_TRANSITION: Final = "ASSET_VEHICLE.TRANSITION"
+VEHICLE_READ: Final = "ASSET_VEHICLE.READ"
+
+LEITURA: Final = frozenset({VEHICLE_READ})
+
+ESCRITA: Final = frozenset(
+    {
+        VEHICLE_REGISTER,
+        VEHICLE_SET_BASELINE,
+        VEHICLE_RECORD_METER,
+        VEHICLE_CORRECT_METER,
+        VEHICLE_TRANSITION,
+    }
+)
+
+ASSET_PERMISSIONS: Final = LEITURA | ESCRITA
