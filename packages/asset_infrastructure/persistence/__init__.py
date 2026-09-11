@@ -41,6 +41,12 @@ from packages.asset_infrastructure.persistence.stock_location_repository import 
     TransactionalStockLocationRepository,
     stock_locations_table,
 )
+from packages.asset_infrastructure.persistence.sustainment_contract_repository import (
+    TransactionalSLIContractRepository,
+    contract_version_coverage_lines_table,
+    contract_versions_table,
+    sli_contracts_table,
+)
 from packages.asset_infrastructure.persistence.vehicle_repository import (
     TransactionalVehicleRepository,
     vehicle_meter_corrections_table,
@@ -57,6 +63,7 @@ __all__ = [
     "TransactionalStockLocationRepository",
     "TransactionalStockPositionRepository",
     "TransactionalStockReservationRepository",
+    "TransactionalSLIContractRepository",
     "TransactionalStockTransferRepository",
     "TransactionalVehicleRepository",
     "applicability_table",
@@ -74,6 +81,9 @@ __all__ = [
     "stock_positions_table",
     "stock_reservations_table",
     "stock_transfers_table",
+    "contract_version_coverage_lines_table",
+    "contract_versions_table",
+    "sli_contracts_table",
     "vehicle_meter_corrections_table",
     "vehicle_meter_readings_table",
     "vehicles_table",

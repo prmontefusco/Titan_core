@@ -28,6 +28,8 @@ from packages.asset_infrastructure.persistence import (
     applicability_table,
     configuration_baseline_positions_table,
     configuration_baselines_table,
+    contract_version_coverage_lines_table,
+    contract_versions_table,
     customer_site_contacts_table,
     customer_sites_table,
     interchangeability_group_members_table,
@@ -35,6 +37,7 @@ from packages.asset_infrastructure.persistence import (
     part_revisions_table,
     part_supersessions_table,
     parts_table,
+    sli_contracts_table,
     stock_locations_table,
     stock_position_reservations_table,
     stock_positions_table,
@@ -182,6 +185,9 @@ assert stock_positions_table.metadata is target_metadata
 assert stock_reservations_table.metadata is target_metadata
 assert stock_transfers_table.metadata is target_metadata
 assert stock_position_reservations_table.metadata is target_metadata
+assert sli_contracts_table.metadata is target_metadata
+assert contract_versions_table.metadata is target_metadata
+assert contract_version_coverage_lines_table.metadata is target_metadata
 
 VERSION_TABLE = "alembic_version_asset"
 

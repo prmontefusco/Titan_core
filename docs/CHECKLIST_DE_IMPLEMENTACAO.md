@@ -5038,3 +5038,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/integration/test_inventory_postgresql.py` (3 casos: `StockPosition.hold`/`release` com RLS; maquina de estados de `StockReservation` HELD->ALLOCATED->CONSUMED; `StockTransfer.dispatch`+`receive` parcial e completo) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 333 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `SLIContract` -> `WorkOrder` (fecha A3).
+
+### 11/09/2026 — A3: agregado `SLIContract` (persistencia), inicia o modulo `sustainment` da persistencia
+
+**Estado:** EM EXECUCAO — nono incremento de A3, primeiro do modulo `sustainment`. Falta so `WorkOrder` para A3 estar completo.
+
+**Implementacao:** `packages/asset_infrastructure/persistence/sustainment_contract_repository.py` — tres tabelas em cadeia: `sli_contracts` -> `contract_versions` (filha, chave natural `(contract_id, version_no)` — `version_no` ja e a ordem, sem precisar de `ordinal` proprio) -> `contract_version_coverage_lines` (neta, FK composta para `(contract_id, version_no)`). `response_sla`/`repair_sla`/`service_limits` sao VOs unicos por versao, embutidos como colunas prefixadas; `duration: timedelta` usa o tipo `Interval` do SQLAlchemy (mapeia para `INTERVAL` nativo do Postgres, primeiro uso na vertical). `covered_services`/`covered_parts`/`excluded_parts` sao `ARRAY` (mesmo padrao de `external_classifications`); `covered_parts`/`excluded_parts` assumem `entity_type="part"` na reconstrucao — ao contrario de `asserted_by`, aqui o proprio nome do campo ja fixa o tipo referenciado (usados por `CoverageLine.covers_part(part_ref)`), entao nao precisou de coluna `*_entity_type` extra.
+
+**Aplicacao da regra append-only:** `versions` e append-only por I-SLI-3 (`ContractVersion` imutavel apos emissao — `issue_version` so acrescenta). `version_no` ja e a chave natural, entao `update()` so insere as versoes cujo `version_no` ainda nao esta persistido — nem precisou do padrao upsert de `Part`, insert puro basta (nada edita uma versao existente).
+
+**Portao:** `tests/integration/test_sustainment_contract_postgresql.py` (round-trip com SLA/service_limits/coverage_lines; `issue_version` emendando o contrato e provando o cenario E da constituicao §41 — resolucao historica nao muda apos a emenda; RLS) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 334 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Falta so `WorkOrder` para fechar A3 (o agregado mais complexo — maquina de estados T1-T17, ja modelada em A2).
