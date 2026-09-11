@@ -35,7 +35,8 @@ confirma o risco H2.
 | **Tenant (hard)** | RLS por `titan.organization_id` sob role `NOLOGIN NOSUPERUSER NOBYPASSRLS`; FKs compostas por Organization (ADR‑0002/0003/0077). Inalterado. |
 | **Contexto da vertical** | `AssetOperationContext` (espelha `LivestockOperationContext` — `ASSET_VERTICAL_BOOTSTRAP_PLAN.md` §3) envolve o `OrganizationContext` do Core e adiciona `site_scope: SiteScope` — `ALL` ou `frozenset[CustomerSiteId]`, e `location_scope`/`contract_scope` análogos quando relevantes. |
 | **Derivação do escopo** | uma `Policy`/`Rule` **governada** do Core resolve, a partir das memberships/grants do principal, **quais sites/localizações/contratos** ele pode ver → produz um `Decision` auditável ("site A: concedido via grant G; site B: negado"). O `site_scope` é o resultado dessa decisão, não um campo solto. |
-| **Aplicação do escopo** | todo comando/query da vertical valida permissão **e** `site_scope` **antes** de resolver dado de negócio (I‑SEC‑2). Repositórios recebem o contexto e acrescentam o predicado (`WHERE site_id IN (...)`, `WHERE location_id IN (...)`); `ALL` = sem predicado adicional. |
+| **Frequência da derivação (achado da revisão de integração — `MULTI_AGENT_ARCHITECTURE_REVIEW.md`)** | a `Decision` de escopo **não** é recalculada a cada comando/query — seria reexecutar o pipeline de `Evaluation`/`Decision`/auditoria do Core em toda leitura, incorreto tanto em performance quanto em semântica (`Decision` representa decisão de negócio, não cache de ACL). O `site_scope` é resolvido **uma vez por sessão/token de autenticação** (ao montar o `AssetOperationContext`, junto com o `OrganizationContext`) e fica embutido no contexto pelo resto da requisição/sessão; recalcula‑se só quando a sessão é renovada ou um evento de mudança de membership/grant invalida o cache. O `Decision` correspondente é o registro auditável de **quando** o escopo foi concedido, não de cada uso dele. |
+| **Aplicação do escopo** | todo comando/query da vertical valida permissão **e** `site_scope` (já resolvido no contexto) **antes** de resolver dado de negócio (I‑SEC‑2). Repositórios recebem o contexto e acrescentam o predicado (`WHERE site_id IN (...)`, `WHERE location_id IN (...)`); `ALL` = sem predicado adicional. |
 | **Defesa em profundidade** | além do predicado de aplicação, RLS por Organization continua sendo a barreira que nenhum bug de query fura entre tenants. |
 
 **Nenhum conceito `OM`/`MilitaryOrganization`/`CustomerSite`/`Workshop`/`Vehicle` entra em `packages/core_*`
@@ -47,8 +48,9 @@ Se, para um cliente específico, cada OM é uma entidade independente com usuár
 como uma `Organization` do Core, e a cobertura do contrato da operadora sobre veículos da OM usa
 **compartilhamento cross‑Organization** (primitivas que o Core já tem: `core_domain.policy_sharing`,
 `shared_decision`, `shared_policy_access_log` — `CORE_REUSE_ASSESSMENT.md`). Impacto: identidade/memberships
-por OM; cadeia de integridade por Organization passa a ser por OM (interage com **H1**/decisão F). Não é o
-padrão; é uma opção que A1 escolhe conforme a estrutura real do cliente.
+por OM passam a existir (uma Organization por OM). A cadeia de integridade **não** é afetada por essa escolha
+— ela já é por agregado, não por Organization (decisão F resolvida), então G2 não introduz nem resolve nada
+em relação a H1. Não é o padrão; é uma opção que A1 escolhe conforme a estrutura real do cliente.
 
 ### G3 (rejeitada agora) — primitiva genérica de sub‑escopo no Core
 
@@ -73,8 +75,8 @@ Novas permissões entram no catálogo do Core (`core_identity.permissions`, RLS 
 | Inventory | `ASSET_INVENTORY.{OPEN_POSITION,ADJUST,RESERVE,RELEASE,ALLOCATE,CONSUME,TRANSFER_REQUEST,TRANSFER_DISPATCH,TRANSFER_RECEIVE,READ}` |
 | Site | `ASSET_SITE.{REGISTER,READ}` |
 | Contract | `SUSTAINMENT_CONTRACT.{REGISTER,ISSUE_VERSION,AMEND,READ}` |
-| Entitlement | `SUSTAINMENT_ENTITLEMENT.RESOLVE` |
-| Work Order | `SUSTAINMENT_WO.{OPEN,ADD_TASK,DEMAND_MATERIAL,RESERVE_MATERIAL,RECALC_PRIORITY,TRANSITION,EXECUTE,RECORD_REMOVAL,TECH_COMPLETE,VALIDATE,CLOSE,CANCEL,RECORD_FAILURE}` |
+| Entitlement | `SUSTAINMENT_ENTITLEMENT.{RESOLVE,AUTHORIZE_EXCEPTION}` |
+| Work Order | `SUSTAINMENT_WO.{OPEN,ADD_TASK,DEMAND_MATERIAL,RESERVE_MATERIAL,RECALC_PRIORITY,TRANSITION,EXECUTE,RECORD_REMOVAL,TECH_COMPLETE,VALIDATE,CLOSE,CANCEL,RECORD_FAILURE,READ}` |
 | Dashboard | `SUSTAINMENT_DASHBOARD.READ` |
 
 Papéis (ex.: "Técnico de oficina", "Gestor de contrato") são **agrupamentos de permissões** na camada de

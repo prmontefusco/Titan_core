@@ -2,8 +2,10 @@
 
 **Status:** Discovery. **Data:** 10/09/2026. **Lane:** Asset.
 Eventos de domínio append‑only emitidos pelos agregados de `05_DOMAIN_MODEL.md`. Persistidos via
-`core_infrastructure.persistence.events` (cadeia de integridade por Organization — decisão F); entregues via
-`outbox`. Cada evento carrega `organization_id`, `occurred_at`, `known_at`, `actor_ref`, `aggregate_ref`,
+`core_infrastructure.persistence.events` (cadeia de integridade **por agregado** —
+`(organization, aggregate_type, aggregate_id)`, decisão F resolvida e confirmada por teste de concorrência
+real em `tests/integration/test_domain_events_postgresql.py`; nenhuma serialização entre agregados
+diferentes, mesmo na mesma Organization); entregues via `outbox`. Cada evento carrega `organization_id`, `occurred_at`, `known_at`, `actor_ref`, `aggregate_ref`,
 `aggregate_version`, `correlation_id` (constituição §44).
 
 **Namespace** (`MULTI_VERTICAL_CI_GATES.md` §7; manifesto `verticals.toml`): prefixo `asset.` para a
@@ -94,7 +96,7 @@ vertical; sub‑namespaces `asset.inventory.*` e `asset.sustainment.*`. Enquanto
 - **Correção não destrói histórico** (constituição §24): eventos `*_corrected` / `*_withdrawn` /
   `*_cancelled` **acrescentam**; nunca há `UPDATE`/`DELETE` de evento.
 - **Idempotência de entrega**: consumidores usam `core_application.inbox` + chave de idempotência.
-- **Ordem**: a cadeia de integridade é por Organization; consumidores não assumem ordem total entre
-  agregados distintos, só por `aggregate_ref` + `aggregate_version`.
+- **Ordem**: a cadeia de integridade é por agregado (decisão F); consumidores não assumem ordem total entre
+  agregados distintos — a garantia de ordem só vale dentro de um `aggregate_ref` (por `aggregate_version`).
 - **Colisão de namespace**: teste de `MULTI_VERTICAL_CI_GATES.md` §7 garante que nenhum `message_type`
   `asset.*` colide com `livestock.*` nem tem dono duplo.

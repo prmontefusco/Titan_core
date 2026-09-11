@@ -49,10 +49,12 @@ Fonte dos itens herdados: `docs/architecture/PHASE0_ADVERSARIAL_REVIEW.md` e
 | PR‑03 | LOW | Commit base `f6cc85b` da stack Lane C mistura `docs/asset/` (Lane B) | ao fatiar em PRs reais, `docs/asset/` sai de `f6cc85b`; esta branch `vertical/asset/discovery` é a origem correta |
 | PR‑04 | MEDIUM | ADR do slice (A1) e teste vertical⊥vertical (Passo 1) têm dependência circular via decisão B | A1 **precede** o registro de `sustainment` no manifesto; Passo 1 fica com `("livestock","asset")` |
 
-## 4. Itens que exigem decisão do dono antes de A2 (código)
+## 4. Itens que exigiam decisão do dono antes de A2 (código) — todas ACEITAS em 10–11/09/2026
 
-- **Decisão A** (migrations D→C) — aceitar como oficial.
-- **Decisão B** (`sustainment` = mesma vertical / irmã) — na ADR de A1.
-- **Decisão F** (escopo da cadeia de integridade) — F1 + teste de concorrência.
-- **Decisão G** (OM/Site) — G1 recomendado; A1 confirma G1/G2.
-- **Decisão C** (worktrees) — já aceita; criar `Titan-asset/`.
+- **Decisão A** (migrations D→C) — ✅ aceita, executada (S‑M1–S‑M3).
+- **Decisão B** (`sustainment` = mesma vertical, B1) — ✅ aceita na ADR de A1.
+- **Decisão F** (escopo da cadeia de integridade) — ✅ resolvida: é por agregado, confirmado por teste real (P2).
+- **Decisão G** (OM/Site) — ✅ aceita: G1 modelado e aprovado para o slice.
+- **Decisão C** (worktrees/branch por lane) — ✅ já aceita; branch por lane em uso.
+
+Restam apenas itens de execução (P0 merge, P3 `_registry.py`), não decisões.

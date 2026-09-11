@@ -201,6 +201,16 @@ Alimentado por eventos de `WorkOrder`, `StockReservation`, `Vehicle`, `SLIContra
 oficina faz a seguir" ordenando por `PriorityScore` com o breakdown visível. **Não cria agregado nem
 contexto** (constituição §21B, §45).
 
+### 2.6 FleetView *(read model — projeção, não agregado)*
+Segundo read model do slice, citado em `08_DOMAIN_EVENTS.md` §3 e servido por `GetFleetView`
+(`09_COMMAND_MODEL.md` §3) — nomeado aqui explicitamente após a revisão de integração ter notado que só
+aparecia nos documentos de eventos/comandos, não no modelo de domínio. Serviço de projeção em
+`asset_application` + repositório de leitura em `asset_infrastructure`. Alimentado por eventos de `Vehicle`
+(`lifecycle_state_changed`) e `WorkOrder` (para o sinal `WAITING_MATERIAL`/risco de SLA). Responde "como está
+a frota" por estado (disponível/degradado/manutenção/indisponível), opcionalmente filtrado por `site` — é
+como a persona "planejador"/"representante da OM" de `11_AUTHORIZATION_MODEL.md` §1 enxerga a frota sob seu
+`site_scope`. **Não cria agregado nem contexto.**
+
 ---
 
 ## 3. Máquina de estados da `WorkOrder` (candidata — a derivar em `07`/A1, não copiada de Maximo — §16)

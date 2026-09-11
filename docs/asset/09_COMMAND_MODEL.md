@@ -37,7 +37,7 @@ Legenda de colunas: **Autz** = permissão exigida (`<MODULE>.<AÇÃO>`, nunca po
 
 ### Inventory
 | `OpenStockPosition` | `ASSET_INVENTORY.OPEN_POSITION` | — | ✔ | `StockPosition` | `(part, location, purpose)` inédita | `inventory.stock_position_opened` |
-| `AdjustStock` | `ASSET_INVENTORY.ADJUST` | ✔ | ✔ | `StockPosition` (FOR UPDATE) | `reason` + `actor`; quantidade resultante ≥ 0 | `inventory.stock_adjusted` (I‑INV‑3) |
+| `AdjustStock` | `ASSET_INVENTORY.ADJUST` | ✔ | ✔ | `StockPosition` (FOR UPDATE) | `reason` + `actor`; `delta_by_status` nomeia o(s) bucket(s) alvo (`on_hand`/`in_transit`/`quarantine`/`inspection`/`damaged`) explicitamente — nunca "ajuste genérico"; cada bucket resultante ≥ 0 individualmente, e `available(purpose)` recalculado ≥ 0 | `inventory.stock_adjusted` (I‑INV‑3) |
 | `ReserveStock` | `ASSET_INVENTORY.RESERVE` | ✔ | ✔ | `StockPosition` (FOR UPDATE) + `StockReservation` | `available(purpose) ≥ qty`; propósito compatível **ou** `Decision` de disputa; demanda existe | `inventory.stock_reserved` (+ `allocation_decided` se disputa) (I‑INV‑1/2) |
 | `ReleaseStockReservation` | `ASSET_INVENTORY.RELEASE` | ✔ | ✔ | `StockReservation` + `StockPosition` | reserva em `HELD`/`ALLOCATED` | `inventory.stock_reservation_released` |
 | `AllocateStockReservation` | `ASSET_INVENTORY.ALLOCATE` | ✔ | ✔ | `StockReservation` | reserva `HELD` | `inventory.stock_reservation_allocated` |
@@ -63,13 +63,21 @@ Legenda de colunas: **Autz** = permissão exigida (`<MODULE>.<AÇÃO>`, nunca po
 `decision_service` (+ `decision_governance_service` quando exigido). O `decision_ref` volta e é anexado ao
 comando da WO que o consome.
 
+| `AuthorizeEntitlementException` | `SUSTAINMENT_ENTITLEMENT.AUTHORIZE_EXCEPTION` | — | ✔ | `Decision` do Core (`decision_governance_service`) + `WorkOrder` (T7) | entitlement original = `DENIED`; `reason` obrigatório; ator tem `SUSTAINMENT_ENTITLEMENT.AUTHORIZE_EXCEPTION` (gestor de contrato, não o mesmo papel que abriu a WO) | `entitlement_resolved` (outcome `GRANTED_WITH_EXCEPTION`) |
+
+Achado da revisão adversarial (`MULTI_AGENT_ARCHITECTURE_REVIEW.md`): a máquina de estados da WO
+(`docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` §2, transição T7) referenciava
+"gestor de contrato autoriza exceção" sem comando correspondente — `AuthorizeEntitlementException` fecha essa
+lacuna. É ele quem produz o `Decision` de exceção que T7 exige e que `ReserveMaterialForWorkOrder`/
+`I‑SLI‑5` verificam antes de aceitar um entitlement `GRANTED_WITH_EXCEPTION`.
+
 ### WorkOrder
 | Comando | Autz | Ver | Idem | Tx | Valida | Emite |
 |---|---|---|---|---|---|---|
 | `OpenWorkOrder` | `SUSTAINMENT_WO.OPEN` | — | ✔ | `WorkOrder` (+ leitura de `SLIContract` p/ congelar contexto) | veículo existe e é autorizado (I‑SEC‑2); resolve **1** `ContractVersion`+`CoverageLine` ativa → congela `ContractContext` | `work_order_opened` (I‑SLI‑1) |
 | `AddWorkOrderTask` | `SUSTAINMENT_WO.ADD_TASK` | ✔ | ✔ | `WorkOrder` | WO não terminal | `work_order_task_added` |
 | `DemandMaterial` | `SUSTAINMENT_WO.DEMAND_MATERIAL` | ✔ | ✔ | `WorkOrder` | tarefa existe; `part_ref` existe | `material_demanded` |
-| `ReserveMaterialForWorkOrder` | `SUSTAINMENT_WO.RESERVE_MATERIAL` | ✔ | ✔ | **operação coordenada** `sustainment`+`asset` (B1: mesma tx; B2: saga por evento) | entitlement da peça = `GRANTED*` (I‑SLI‑4); chama `asset_application.ReserveStock`; `Σ reservado ≤ demandado` (I‑WO‑2) | `material_reserved` (+ `inventory.stock_reserved`) |
+| `ReserveMaterialForWorkOrder` | `SUSTAINMENT_WO.RESERVE_MATERIAL` | ✔ | ✔ | **operação coordenada** `sustainment`+`asset` (B1: mesma tx; B2: saga por evento). Quando a WO demanda **mais de uma** `StockPosition`, os `FOR UPDATE` são adquiridos em ordem determinística (`stock_position_id` crescente) para não depender de detecção de deadlock do Postgres entre duas `WorkOrder`s com demandas sobrepostas em ordens diferentes — achado da revisão adversarial | entitlement da peça = `GRANTED*` (I‑SLI‑4); chama `asset_application.ReserveStock`; `Σ reservado ≤ demandado` (I‑WO‑2) | `material_reserved` (+ `inventory.stock_reserved`) |
 | `RecalculateWorkOrderPriority` | `SUSTAINMENT_WO.RECALC_PRIORITY` (ou automático por evento) | ✔ | ✔ | `WorkOrder` + `Evaluation` (Rule governada) | fatores como fatos | `work_order_priority_recalculated` (I‑WO‑5) |
 | `TransitionWorkOrder` | `SUSTAINMENT_WO.TRANSITION` | ✔ | ✔ | `WorkOrder` | transição permitida; `reason` se exigido; guarda de `WAITING_MATERIAL` (I‑WO‑4) | `work_order_state_changed` |
 | `StartTask` / `CompleteTask` | `SUSTAINMENT_WO.EXECUTE` | ✔ | ✔ | `WorkOrder` | WO em `IN_PROGRESS`; tarefa no estado certo | `task_started` / `task_completed` |
@@ -84,12 +92,15 @@ comando da WO que o consome.
 
 | Query | Autz | Responde |
 |---|---|---|
+| `GetVehicle(vehicle_id)` | `ASSET_VEHICLE.READ` | detalhe de um veículo (identifiers, baseline vigente, estado, leituras recentes, cobertura) — **achado da revisão de integração**: sem esta query um técnico/planejador não abre a tela de um veículo específico, só a lista (`GetFleetView`) |
 | `GetVehicleConfigurationAt(vehicle, instant)` | `ASSET_VEHICLE.READ` | baseline vigente no instante (constituição §25) |
 | `ResolvePartApplicability(part, vehicle, instant)` | `ASSET_APPLICABILITY.READ` | asserção(ões) + `evidence_ref`, nunca só `true` (I‑APP‑1, cenário F) |
 | `GetAvailability(part, location, purpose)` | `ASSET_INVENTORY.READ` | `AvailabilityBreakdown` (on_hand, reservado por demanda, quarantine, …) |
+| `GetWorkOrder(work_order_id)` | `SUSTAINMENT_WO.READ` | detalhe de uma Work Order (tarefas, demanda/reserva de material, contexto contratual congelado, breakdown de prioridade, o que bloqueia) — **achado da revisão de integração**: mesma lacuna de `GetVehicle`, mas para WO; o dashboard lista, esta query abre |
 | `GetWorkshopDashboard(site, workshop)` | `SUSTAINMENT_DASHBOARD.READ` | fila de WO ordenada por `PriorityScore` **com breakdown** e o que bloqueia cada uma |
-| `GetFleetView(site?)` | `ASSET_VEHICLE.READ` | frota por estado (disponível/degradado/manutenção/indisponível/aguardando material/risco de SLA) |
-| `GetContractContextForVehicle(vehicle, instant)` | `SUSTAINMENT_CONTRACT.READ` | contrato → versão → cobertura → SLA aplicável no instante |
+| `GetFleetView(site?)` | `ASSET_VEHICLE.READ` | frota por estado (disponível/degradado/manutenção/indisponível/aguardando material/risco de SLA) — read model citado em `05_DOMAIN_MODEL.md` §1.1 ao lado do `WorkshopDashboard` |
+| `GetContractContextForVehicle(vehicle, instant)` | `SUSTAINMENT_CONTRACT.READ` | contrato → versão → cobertura → SLA aplicável no instante, para **um** veículo |
+| `GetContractSLASummary(contract_ref)` | `SUSTAINMENT_CONTRACT.READ` | frota coberta, WOs abertas e status de SLA agregado **sob um contrato** — **achado da revisão de integração**: sem esta query, o gestor de contrato SLI (persona de `11_AUTHORIZATION_MODEL.md` §1: "acompanha SLA/cobertura... de tudo sob aqueles contratos") só teria a versão per‑veículo, não a visão que o papel realmente precisa |
 
 ## 4. Semântica transversal (constituição §28, §35)
 

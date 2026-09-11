@@ -164,6 +164,6 @@ FALHA → WORK ORDER → DIAGNÓSTICO → CAUSA → REPARO → PEÇAS/MÃO DE OB
 - Autorização e a decisão G → `11_AUTHORIZATION_MODEL.md`
 - Riscos e sequência → `19_RISK_REGISTER.md`, `20_EXECUTION_ROADMAP.md`
 
-**Recomendação de discovery:** `PROCEED` para o corte do slice, **condicionado** a: decisão B
-(`sustainment` = mesma vertical ou irmã), decisão F (teste de concorrência da cadeia de integridade), e
-decisão G (escopo OM/Site) — todas em `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`.
+**Recomendação de discovery:** `PROCEED` para o corte do slice. As condições — decisão B (`sustainment` =
+mesma vertical), decisão F (teste de concorrência da cadeia de integridade) e decisão G (escopo OM/Site) —
+foram todas **aceitas em 10–11/09/2026** (`docs/architecture/DECISIONS_REQUIRED_PHASE0.md`).

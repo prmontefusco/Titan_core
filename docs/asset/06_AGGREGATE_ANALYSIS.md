@@ -34,6 +34,7 @@ Entre agregados: referência por id, consistência eventual, concorrência otimi
 | `MaterialDemand` | VO de `WorkOrder` | agregado `WorkOrder` |
 | `Entitlement` | **não é persistido como verdade** — é o `Decision` do Core + projeção de leitura | Core (`Decision`) + read model |
 | `WorkshopDashboard` | **read model / projeção** | `sustainment_application` + repo de leitura |
+| `FleetView` | **read model / projeção** | `asset_application` + repo de leitura (`05` §2.6) |
 | `PriorityScore` | VO calculado (com `evaluation_ref`) | dentro de `WorkOrder` / projeção do dashboard |
 | `FailureRecord` | VO leve dentro de `WorkOrder` no slice (vira agregado próprio quando confiabilidade entrar — constituição §19) | agregado `WorkOrder` |
 | `StockLocation` | entidade de referência (CRUD), sem invariante transacional forte | tabela simples |

@@ -176,6 +176,25 @@ entitlement retornado tem `decision_ref` com breakdown.
 **NUNCA:** conceder além do contratado sem uma `Decision` de exceção explícita e autorizada.
 **Teste:** consumir o teto; próxima concessão recusada com `−limite de serviço atingido`.
 
+### I‑SLI‑6 — Cobertura de contratos concorrentes sobre o mesmo veículo não é ambígua
+**Enunciado:** para um dado `(vehicle, instant)`, no máximo **uma** `CoverageLine` de **um** `SLIContract`
+resolve como aplicável ao serviço solicitado. Se duas `CoverageLine`s de contratos diferentes casarem com o
+mesmo veículo/serviço no mesmo instante, a resolução de entitlement (I‑SLI‑1) **não tem base determinística**
+para escolher — condição de erro, não escolha silenciosa da primeira encontrada.
+**Escopo:** cross‑agregado, entre `SLIContract`s da mesma Organization.
+**Camada:** GOV (a `Rule` de resolução detecta e recusa) + A (validação na emissão/emenda de uma
+`ContractVersion`: nova `CoverageLine` não pode sobrepor, para o mesmo veículo/serviço/instante, uma
+`CoverageLine` já ativa de outro contrato).
+**NUNCA:** `ResolveEntitlement`/`OpenWorkOrder` escolher silenciosamente entre duas coberturas concorrentes
+(ex.: "a mais recente" sem isso ser uma regra de negócio explícita e auditada).
+**Teste:** emitir uma `ContractVersion` cuja `CoverageLine` sobrepõe uma cobertura ativa de outro contrato
+para o mesmo veículo → recusa na emissão (`−cobertura ambígua`, com os dois contratos citados); se a
+sobreposição já existir por dado legado, `OpenWorkOrder`/`ResolveEntitlement` recusam com o mesmo motivo em
+vez de escolher.
+**Achado da revisão adversarial** (`MULTI_AGENT_ARCHITECTURE_REVIEW.md`): I‑SLI‑1 original assumia
+"exatamente uma linha ativa" sem nenhum invariante garantindo que duas nunca coexistem — este invariante
+fecha a lacuna.
+
 ## Work Order
 
 ### I‑WO‑1 — Não fecha com obrigação aberta nem sem validação
@@ -247,5 +266,5 @@ de B → 404 sem vazar existência. Ver `11_AUTHORIZATION_MODEL.md`.
 | B (sem estoque local) | I‑INV‑4, I‑WO‑4, I‑INV‑1/3, I‑SLI‑1 |
 | C (disputa produção×SLI×venda) | I‑INV‑2, I‑INV‑1, I‑SLI‑5 |
 | D (supersessão) | I‑PRT‑1, I‑APP‑2, I‑CFG‑1 |
-| E (contrato expira com WO aberta) | I‑SLI‑1/2/3, I‑WO‑3 |
+| E (contrato expira com WO aberta) | I‑SLI‑1/2/3/6, I‑WO‑3 |
 | F (catálogo 3D) | I‑APP‑1 (frontend não decide aplicabilidade) |

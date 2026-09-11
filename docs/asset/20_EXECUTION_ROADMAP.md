@@ -14,12 +14,12 @@ Este roadmap cobre de DECISION a ACCEPT do primeiro slice.
 
 | # | Item | Lane | Estado |
 |---|---|---|---|
-| P0 | Mergear a stack `integration/core/parallel-vertical-foundation` (G1–G3, S‑M1–S‑M3) | Shared Integration | pronta; aguarda revisão do dono |
-| P1 | Aceitar decisões **A** (migrations D→C), **F** (cadeia de integridade F1 + teste), **G** (OM/Site — G1 como padrão). **B** fica para A1. | Dono | pendente |
-| P2 | Teste de concorrência da cadeia de integridade (decisão F): `append` simultâneo de dois módulos para a mesma Organization, sem deadlock nem hash órfão | Shared Integration | pendente |
+| P0 | Mergear a stack `integration/core/parallel-vertical-foundation` (G1–G3, S‑M1–S‑M3, P2) | Shared Integration | pronta (10 commits); aguarda revisão do dono |
+| P1 | Aceitar decisões **A** (migrations D→C), **B** (`sustainment`=`asset`, B1), **F** (cadeia de integridade), **G** (OM/Site — G1 para o slice) | Dono | **✅ ACEITAS** 10–11/09/2026 (`DECISIONS_REQUIRED_PHASE0.md`) |
+| P2 | Teste de concorrência da cadeia de integridade (decisão F): `append` concorrente de agregados diferentes não serializa entre si | Shared Integration | **✅ CONCLUÍDO** — `tests/integration/test_domain_events_postgresql.py` (2 testes novos, verdes) |
 | P3 | `apps/api/_registry.py` iterado por `main.py` **sem mover** os routers de Livestock (aditivo) | Shared Integration | pendente (pré‑req de A5) |
 | P4 | `apps/worker/dispatch.py` despacho real keyed por `message_type` (só se o slice tiver mensagem assíncrona — B2) | Shared Integration | condicional |
-| P5 | Criar worktree `Titan-asset/` em `vertical/asset/*` (decisão C) | Asset | ao iniciar A2 |
+| P5 | Criar worktree `Titan-asset/` em `vertical/asset/*` (decisão C) | Asset | branch por lane em uso (`vertical/asset/discovery`); worktree físico reservado para concorrência real (`DECISIONS_REQUIRED_PHASE0.md` C) |
 
 ## 2. Discovery — estado
 
@@ -31,9 +31,9 @@ Este roadmap cobre de DECISION a ACCEPT do primeiro slice.
 | 11 Authorization Model (resolve decisão G) | ✅ |
 | 19 Risk Register · 20 Execution Roadmap | ✅ |
 | 10 Temporal · 12 Audit · 13 Integration · 14 3D · 15 SLI Contract (detalhe) · 16 Inventory (detalhe) · 17 Maintenance (detalhe) · 18 UX Operating Model | **diferidos** — §4 |
-| `MULTI_AGENT_ARCHITECTURE_REVIEW.md` (§49) | pendente — após revisão adversarial (Claude) e de integração (Gemini) deste conjunto |
+| `MULTI_AGENT_ARCHITECTURE_REVIEW.md` (§49) | ✅ — equipe do projeto é dono + Claude (sem Codex/Gemini dedicados a Asset); revisão adversarial e de integração feitas por um único agente de engenharia, registradas em `MULTI_AGENT_ARCHITECTURE_REVIEW.md` |
 
-**Recomendação de Discovery:** `PROCEED` para o slice, condicionado a P1.
+**Recomendação de Discovery:** `PROCEED` para o slice. P1 **aceito**; P0/P2/P3 restantes descritos acima.
 
 ## 3. Trilha Asset — o primeiro slice
 
@@ -43,7 +43,7 @@ ponta a ponta e exercendo **C/D/E** por teste.
 
 | Passo | Conteúdo | Pré‑req | Critério de aceite (constituição §37) |
 |---|---|---|---|
-| **A1** | ADR do slice: decide **B** (`sustainment` mesma vertical / irmã) a partir dos invariantes; fixa a máquina de estados da `WorkOrder`; fixa G1/G2; SPEC do slice com os 16 pontos do §47 como critérios | P1, Discovery | ADR aceita; sem BLOQUEADOR de Claude; máquina de estados com todas as transições especificadas (`05` §3) |
+| **A1** | ADR do slice: decide **B** (`sustainment` mesma vertical / irmã) a partir dos invariantes; fixa a máquina de estados da `WorkOrder`; fixa G1/G2; SPEC do slice com os 16 pontos do §47 como critérios | P1, Discovery | **✅ CONCLUÍDO** — ADR (`docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md`, Status ACEITA) e SPEC (`docs/asset/specs/approved/2026-09-10-titan-asset-primeiro-slice.md`) aprovadas pelo dono 11/09/2026; máquina de estados T1–T17 especificada; sem BLOQUEADOR na revisão adversarial (`MULTI_AGENT_ARCHITECTURE_REVIEW.md`) |
 | **A2** | `packages/asset_domain` — só entidades/VOs/eventos do slice (`05` §1). Testes de invariante I‑VEH/CFG/PRT/APP/INV (domínio) | A1, P0 | invariantes com teste; `grep livestock` vazio em `packages/asset_*`; `tests/architecture` verde varrendo `asset` |
 | **A3** | `packages/asset_infrastructure/persistence` — tabelas do slice (schema `core_audit`, FK composta por Organization, RLS, carimbo `titan.module_owner=asset`) + **A‑M1**: `env.py` próprio de Asset com `make_include_object(owned_tokens={"asset"}, fk_allowlist={("core_identity","organizations")})`, *branch label* `asset`, 1ª revisão `depends_on` → revisão do Core que cria `organizations` | A2, P0 (S‑M1–S‑M3) | `alembic upgrade heads` do zero cria o schema completo; `alembic check` com o `env.py` de Asset → "no changes"; `pg_dump` do schema de Livestock inalterado; RLS provada sob role restrita |
 | **A4** | `packages/asset_application` — serviços dos comandos de `09`. `authorization.py` (permissões de `11` §3) e `AssetOperationContext` (`site_scope`, `11` §2). **`sustainment_*`** (ou o namespace decidido em A1) para `SLIContract`, `Entitlement` via `Evaluation→Decision` do Core, `WorkOrder` workflow, `WorkshopDashboard` projeção | A2, A3 | I‑SLI‑1..5 e I‑WO‑1..5 com teste; entitlement tem `decision_ref` (não `if`); disputa de estoque (cenário C) produz `Decision`; concorrência de estoque provada contra Postgres real |

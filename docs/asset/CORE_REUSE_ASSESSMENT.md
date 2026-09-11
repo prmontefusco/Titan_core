@@ -287,10 +287,13 @@ Core) permanecem. Ajustes sob desenvolvimento paralelo e após a revisão advers
   o Codex usa. Preferir mecanismo aditivo (`_registry.py` iterado por `main.py` sem mover os módulos de
   Livestock); a reorganização física fica para janela de integração. Asset nasce em `apps/api/asset/` sem
   depender disso.
-- **§H1 (cadeia de integridade).** Confirmado: `event_integrity_table` é escopada por
-  `record_owner_organization_id` (`events.py:247‑256`). Com duas verticais no mesmo tenant, os `append`
-  interleavam e serializam. Classificado como **garantia global do Core**, não acoplamento vertical↔vertical
-  (decisão F — `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`); exige teste de concorrência.
+- **§H1 (cadeia de integridade) — CORRIGIDO, 11/09/2026.** A leitura anterior desta linha (baseada num
+  trecho parcial de `events.py`) estava errada: `event_integrity_table`/`DomainEventRepository.append`
+  serializam por **agregado** `(organization_id, aggregate_type, aggregate_id)`, não só por
+  `record_owner_organization_id`. Duas verticais no mesmo tenant escrevendo em tipos de agregado diferentes
+  não interleavam nem esperam uma pela outra. Decisão F **resolvida e confirmada** por teste de concorrência
+  real (`tests/integration/test_domain_events_postgresql.py`) — ver
+  `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`.
 - **§H2 (OM/Site).** A linha "Identidade/Organizations/`OrganizationContext`" da §1.4 assume que RLS por
   Organization basta para Asset. Isso **não foi testado** contra o escopo OM/Site da §18 da constituição.
   Questão diferida para a discovery de domínio (decisão G); nenhum conceito de Asset entra no Core.

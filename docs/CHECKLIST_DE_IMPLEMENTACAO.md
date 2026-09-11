@@ -4792,3 +4792,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** teste focado aprovado com `5 passed`: `npm run test -- MarketRuleGovernance`. Frontend completo aprovado com `npm run test` (`113 passed`), `npm run build` e `npm run lint`. Suite canonica completa aprovada: `pytest` com `1753 passed`, `ruff check .`, `ruff format --check .`, `mypy` e `alembic check` sem novas operacoes.
 
 **Riscos e limites:** este corte nao altera API, backend, regras, policies, adoptions, permissao ou semantica de governanca. A limpeza e apenas estado visual local para evitar acao sobre informacao obsoleta.
+
+### 11/09/2026 — Titan Asset & Sustainment: discovery do primeiro slice, ADR/SPEC aprovadas, revisao de arquitetura
+
+**Estado:** DISCOVERY CONCLUIDA — branch `vertical/asset/discovery`, sem push e sem PR. Nenhum codigo de producao; apenas documentacao (`docs/asset/**`). Modelo de equipe do projeto definido pelo dono em 11/09/2026: dono + Claude apenas, sem Codex/Gemini dedicados a esta vertical.
+
+**Escopo e evidencia:**
+
+- **Discovery (docs/asset/01-09, 11, 19, 20):** vision, domain discovery, ubiquitous language, bounded context map, domain model, aggregate analysis, invariants (23 invariantes I-VEH/CFG/PRT/APP/INV/SLI/WO/SEC), domain events (namespace `asset.*`), command model (comandos com autorizacao/versao/idempotencia/transacao/evento), authorization model (decisao G), risk register, execution roadmap. Reorganizados de `docs/asset-sustainment/` para `docs/asset/` (com `docs/asset/adr/` e `docs/asset/specs/`) por decisao do dono.
+- **A1 — ADR e SPEC do slice:** `docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (decide B1 - asset+sustainment uma vertical -, maquina de estados T1-T17 da WorkOrder, G1 para o slice, layout de modulos) e `docs/asset/specs/approved/2026-09-10-titan-asset-primeiro-slice.md` (CRITICAL, 16 pontos do §47 como criterio de aceite). Ambas **aprovadas pelo dono em 11/09/2026**.
+- **MULTI_AGENT_ARCHITECTURE_REVIEW.md:** revisao adversarial + integracao (papeis Claude/Gemini absorvidos por um agente, decisao do dono). 1 HIGH (`site_scope` nao podia ser recalculado por request via `Decision` do Core - corrigido, resolvido 1x por sessao) e 3 MEDIUM (cobertura de contrato ambigua sem invariante - I-SLI-6 novo; superficie de leitura incompleta para 3 personas - `GetWorkOrder`/`GetVehicle`/`GetContractSLASummary` adicionadas; transicao T7 sem comando - `AuthorizeEntitlementException` adicionado) encontrados e corrigidos nos proprios documentos. Sem BLOQUEADOR. Referencias obsoletas ao H1 original (cadeia de integridade "por Organization") corrigidas em `08`, `11` e `CORE_REUSE_ASSESSMENT.md` para refletir a decisao F real (por agregado).
+
+**Portao:** revisao de documentacao, sem gate automatizado aplicavel (nenhum codigo). Consistencia interna checada por grep (referencias cruzadas, decisao F propagada).
+
+**Riscos e limites:** nenhum codigo de `packages/asset_*`/`packages/sustainment_*` criado ainda. A2 (primeiro codigo) depende de P0 (merge da stack `integration/core/parallel-vertical-foundation`, Lane C, pronta e aguardando revisao do dono).

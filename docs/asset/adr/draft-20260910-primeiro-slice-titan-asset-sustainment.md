@@ -232,16 +232,17 @@ de evento e (se A3 decidir ambiente próprio) uma `migration_location` — via P
   (11/09/2026).
 - [x] Esta ADR aprovada pelo dono (11/09/2026) — decisões B, máquina de estados, G1‑do‑slice e layout
   fixadas.
-- [ ] Discovery (01–09, 11, 19, 20) revisada por Claude (adversarial) e Gemini (integração); sem BLOQUEADOR
-  aberto; `MULTI_AGENT_ARCHITECTURE_REVIEW.md` produzido (§49). **Pendente.**
-- [ ] Decisões A, F, G aceitas em `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`. **Pendente** — vivem na
-  stack `integration/core/parallel-vertical-foundation` (Lane C), não tocada por esta aprovação.
-- [ ] P0 — merge da stack `integration/core/parallel-vertical-foundation` (G1–G3, S‑M1–S‑M3). **Pendente.**
+- [x] Discovery (01–09, 11, 19, 20) revisada por um único agente de engenharia (papéis adversarial +
+  integração — o dono decidiu em 11/09/2026 que o projeto opera com dono+Claude, sem Codex/Gemini dedicados
+  a esta vertical); sem BLOQUEADOR aberto; `MULTI_AGENT_ARCHITECTURE_REVIEW.md` produzido (§49), com 1 HIGH
+  e 3 MEDIUM encontrados e corrigidos nos próprios documentos de discovery.
+- [x] Decisões A, F, G aceitas em `docs/architecture/DECISIONS_REQUIRED_PHASE0.md` (10–11/09/2026).
+- [ ] P0 — merge da stack `integration/core/parallel-vertical-foundation` (G1–G3, S‑M1–S‑M3, P2). **Pendente**
+  — stack pronta (10 commits verdes), aguarda revisão/merge do dono.
 - Os 16 pontos do §47 exprimíveis como asserções do teste ponta a ponta de A7 — propriedade do desenho,
   já satisfeita pela SPEC; confirma‑se na prática em A7.
-- **A2 (primeiro código) só começa quando os itens `[ ]` acima também estiverem marcados.** A aprovação de
-  hoje cobre a *decisão*, não remove os pré‑requisitos de infraestrutura compartilhada (P0) nem as decisões
-  A/F/G que pertencem à Lane C.
+- **A2 (primeiro código) começa quando P0 (merge) estiver feito** — é o único item ainda pendente. Discovery,
+  revisão e decisões A/B/F/G já estão fechadas.
 
 ## Plano de reversão
 
