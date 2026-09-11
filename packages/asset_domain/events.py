@@ -36,6 +36,16 @@ ASSET_VEHICLE_EVENT_TYPES = frozenset(
     }
 )
 
+CONFIGURATION_BASELINE_PUBLISHED = "asset.configuration.baseline_published"
+CONFIGURATION_BASELINE_SUPERSEDED = "asset.configuration.baseline_superseded"
+
+ASSET_CONFIGURATION_EVENT_TYPES = frozenset(
+    {
+        CONFIGURATION_BASELINE_PUBLISHED,
+        CONFIGURATION_BASELINE_SUPERSEDED,
+    }
+)
+
 PART_REGISTERED = "asset.part.registered"
 PART_REVISION_ADDED = "asset.part.revision_added"
 PART_REVISION_SUPERSEDED = "asset.part.revision_superseded"
@@ -197,6 +207,44 @@ def vehicle_returned_to_service_payload(
             "validation_ref": _id(validation_ref),
             "vehicle_id": _id(vehicle_id),
             "work_order_ref": _id(work_order_ref),
+        },
+    )
+
+
+def configuration_baseline_published_payload(
+    *,
+    baseline_id: TypedId,
+    model_ref: TypedId,
+    variant_ref: TypedId | None,
+    revision_number: int,
+    supersedes_ref: TypedId | None,
+    valid_from: datetime,
+) -> CanonicalPayload:
+    return _payload(
+        CONFIGURATION_BASELINE_PUBLISHED,
+        {
+            "baseline_id": _id(baseline_id),
+            "model_ref": _id(model_ref),
+            "revision_number": revision_number,
+            "supersedes_ref": _optional_id(supersedes_ref),
+            "valid_from": valid_from,
+            "variant_ref": _optional_id(variant_ref),
+        },
+    )
+
+
+def configuration_baseline_superseded_payload(
+    *,
+    baseline_id: TypedId,
+    superseded_by_ref: TypedId,
+    reason: str,
+) -> CanonicalPayload:
+    return _payload(
+        CONFIGURATION_BASELINE_SUPERSEDED,
+        {
+            "baseline_id": _id(baseline_id),
+            "reason": reason,
+            "superseded_by_ref": _id(superseded_by_ref),
         },
     )
 

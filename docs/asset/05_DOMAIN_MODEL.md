@@ -44,8 +44,8 @@ hierarquia profunda no slice.
 | `baseline_id` | `ConfigurationBaselineId` | — |
 | `organization_id` | →id `Organization` | — |
 | `model` / `variant` | →id | a que se aplica |
-| `revision` | `ConfigurationRevision` (VO) | `number`, `supersedes_ref` \| null — cadeia **acíclica** (I‑CFG‑2) |
-| `effectivity` | `Effectivity` (VO) | `serial_range` (VO: `from`/`to` \| open), `valid_from`/`valid_to` (tempo válido); intervalos **não sobrepõem** para a mesma `position` (I‑CFG‑3) |
+| `revision` | `ConfigurationRevision` (VO) | `number`, `supersedes_ref` \| null — cadeia **acíclica** (I‑CFG‑1) |
+| `effectivity` | `Effectivity` (VO) | `serial_range` (VO: `from`/`to` \| open), `valid_from`/`valid_to` (tempo válido); intervalos **não sobrepõem** para a mesma `position` (I‑CFG‑2) |
 | `positions` | lista de `BaselinePosition` (VO) | `position_code`, `part_ref` →id `Part`, `part_revision_ref` →id `PartRevision` |
 | `view` | `ConfigurationView` (VO enum) | `AS_DESIGNED` / `AS_BUILT` / `AS_MAINTAINED` |
 | `version` | `int` | — |
