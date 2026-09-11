@@ -50,6 +50,16 @@ SITE_REGISTERED = "asset.site.registered"
 
 ASSET_SITE_EVENT_TYPES = frozenset({SITE_REGISTERED})
 
+SUSTAINMENT_CONTRACT_REGISTERED = "asset.sustainment.contract_registered"
+SUSTAINMENT_CONTRACT_VERSION_ISSUED = "asset.sustainment.contract_version_issued"
+
+ASSET_SUSTAINMENT_CONTRACT_EVENT_TYPES = frozenset(
+    {
+        SUSTAINMENT_CONTRACT_REGISTERED,
+        SUSTAINMENT_CONTRACT_VERSION_ISSUED,
+    }
+)
+
 PART_REGISTERED = "asset.part.registered"
 PART_REVISION_ADDED = "asset.part.revision_added"
 PART_REVISION_SUPERSEDED = "asset.part.revision_superseded"
@@ -279,6 +289,35 @@ def configuration_baseline_superseded_payload(
             "baseline_id": _id(baseline_id),
             "reason": reason,
             "superseded_by_ref": _id(superseded_by_ref),
+        },
+    )
+
+
+def sustainment_contract_registered_payload(
+    *, contract_id: TypedId, customer_ref: TypedId
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_CONTRACT_REGISTERED,
+        {"contract_id": _id(contract_id), "customer_ref": _id(customer_ref)},
+    )
+
+
+def sustainment_contract_version_issued_payload(
+    *,
+    contract_id: TypedId,
+    version_no: int,
+    valid_from: datetime,
+    coverage_summary: str,
+    amendment_ref: TypedId | None,
+) -> CanonicalPayload:
+    return _payload(
+        SUSTAINMENT_CONTRACT_VERSION_ISSUED,
+        {
+            "amendment_ref": _optional_id(amendment_ref),
+            "contract_id": _id(contract_id),
+            "coverage_summary": coverage_summary,
+            "valid_from": valid_from,
+            "version_no": version_no,
         },
     )
 

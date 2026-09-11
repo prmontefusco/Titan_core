@@ -4913,3 +4913,20 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/asset_domain/test_customer_site.py` (6 casos) — 128 testes verdes em `tests/asset_domain/` + `tests/architecture/` no total. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1564 passed, 323 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Sem persistencia (A3), sem aplicacao (A4), sem API (A5). Proximo passo: modulo `sustainment` (`SLIContract`/`ContractVersion`/`CoverageLine` primeiro, depois `WorkOrder`/`WorkTask` com as 17 transicoes da ADR do slice).
+
+### 11/09/2026 — A2 (parcial): agregado `SLIContract`, inicia o modulo `sustainment`
+
+**Estado:** EM EXECUCAO — sexto incremento de A2, primeiro do modulo `sustainment`. Decisao B1 confirmada na pratica: `sustainment_contract.py` importa `packages.asset_domain` sem violar nenhuma fronteira (e o mesmo pacote Python — `vertical_id=asset`). Falta `WorkOrder`/`WorkTask` (o maior, 17 transicoes) para A2 estar completo.
+
+**Implementacao:** `packages/asset_domain/sustainment_contract.py` — `SLIContract` (raiz de agregado), `ContractVersion` (entidade interna, append-only), `CoverageLine`/`SLA`/`ServiceLimits`/`KnownValidInterval` (VOs). `Entitlement` deliberadamente **nao** modelado aqui — e resultado de `Evaluation -> Decision` do Core (`05_DOMAIN_MODEL.md` §2.3), nao uma classe propria da vertical (I-SLI-4).
+
+- I-SLI-3: `versions` so cresce por `issue_version()`, que exige `version_no` = proximo exato (sem lacuna nem repeticao, verificado tambem na construcao) e recusa `valid_from` retroativo. Nenhum metodo edita uma `ContractVersion` existente - imutabilidade estrutural, nao So convencao.
+- I-SLI-1/I-SLI-2: `resolve_version_at(instant, known_at=None)` e a selecao temporal isolada de qualquer regra de cobertura - devolve a versao de maior `version_no` cujo `valid_from` (e `known_at`, se informado) ja valia no instante consultado. Deterministico por construcao (no maximo uma tem o maior `version_no` entre as candidatas). Testado contra o cenario E da constituicao §41 (contrato emendado depois que a WO abriu - a resolucao historica nao muda).
+- I-SLI-6: `require_unambiguous_coverage(candidate, others, at)` - mesmo padrao cross-agregado de `configuration.py` (funcao pura + dados injetados pela aplicacao); recusa duas `CoverageLine`s de contratos DIFERENTES cobrindo o mesmo `(scope, scope_value)`.
+- `CoverageLine.covers_part()`: peca excluida nunca e coberta; sem allowlist (`covered_parts` vazio), cobertura e por exclusao apenas.
+
+`packages/asset_domain/events.py` estendido: `sustainment.contract_registered`, `sustainment.contract_version_issued`.
+
+**Portao:** `tests/asset_domain/test_sustainment_contract.py` (16 casos, inclui cenario E) — 144 testes verdes em `tests/asset_domain/`+`tests/architecture/`. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1580 passed, 323 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. `ServiceLimits` so guarda o teto; o consumo acumulado contra ele (I-SLI-5) e fato da aplicacao (A4), assim como a montagem dos fatos tipados que vao para a `Rule` governada do Core (I-SLI-4).
