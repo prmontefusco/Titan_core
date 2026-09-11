@@ -379,7 +379,22 @@ class GeodataCarClient(CarLookupPort):
         state: str,
     ) -> TerritorialOverlapAssessment:
         """Consulta a sobreposicao territorial atual da FUNAI para um imovel."""
-        for layer in self.fetch_farm_summary(cod_imovel, state):
+        bruto = self._pedir_farm_summary(cod_imovel, state)
+        try:
+            dados = json.loads(bruto)
+        except json.JSONDecodeError as erro:
+            raise GeodataIndisponivel("O provider nao devolveu JSON.") from erro
+        if not isinstance(dados, dict):
+            raise GeodataIndisponivel("O resumo da fazenda nao veio como objeto.")
+        if _coverage_nao_carregada(dados.get("coverage"), layer="FUNAI_TI"):
+            raise BaseEstadualNaoCarregada(
+                f"A camada FUNAI_TI de {state.strip().upper()} ainda nao foi carregada "
+                "no Titan_geodata."
+            )
+        layers = dados.get("layers")
+        if not isinstance(layers, list):
+            raise GeodataIndisponivel("A lista resumida de camadas nao veio como lista.")
+        for layer in [interpretar_camada_resumida(item) for item in layers]:
             if layer.layer == "FUNAI_TI":
                 return TerritorialOverlapAssessment(
                     source="FUNAI",
@@ -627,6 +642,21 @@ def interpretar_camada_resumida(item: Any) -> FarmSummaryLayer:
         source_area_hectares=float(area_fonte) if isinstance(area_fonte, int | float) else None,
         version_ids=tuple(versoes),
     )
+
+
+def _coverage_nao_carregada(coverage: Any, *, layer: str) -> bool:
+    """Distingue ausencia verificada de base/camada ainda nao carregada."""
+    if not isinstance(coverage, list):
+        return False
+    camada = layer.strip().upper()
+    for item in coverage:
+        if not isinstance(item, dict):
+            continue
+        item_layer = str(item.get("layer") or item.get("dataset") or "").strip().upper()
+        status = str(item.get("status") or "").strip().lower()
+        if status == "not_loaded" and (not item_layer or item_layer == camada):
+            return True
+    return False
 
 
 def interpretar_resposta(bruto: bytes) -> CarProperty:

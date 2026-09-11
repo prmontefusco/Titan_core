@@ -671,6 +671,40 @@ def test_resumo_funai_distingue_uf_nao_carregada(
         )
 
 
+def test_resumo_funai_nao_converte_coverage_nao_carregado_em_ausencia(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resposta = dict(RESPOSTA_FARM_SUMMARY)
+    resposta["layers"] = [
+        item
+        for item in cast(list[dict[str, object]], resposta["layers"])
+        if item["layer"] != "FUNAI_TI"
+    ]
+    resposta["coverage"] = [{"layer": "FUNAI_TI", "status": "not_loaded"}]
+
+    class _Resposta:
+        def __enter__(self) -> "_Resposta":
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            return None
+
+        def read(self) -> bytes:
+            return _bruto_farm_summary(resposta)
+
+    def _urlopen(request: object, timeout: int) -> _Resposta:
+        return _Resposta()
+
+    monkeypatch.setattr("urllib.request.urlopen", _urlopen)
+    cliente = GeodataCarClient(base_url="http://provider.invalido", api_key="chave")
+
+    with pytest.raises(BaseEstadualNaoCarregada, match="FUNAI_TI"):
+        cliente.fetch_funai_overlap(
+            cod_imovel="MS-5007554-1EF4AA06D08041829247C61FE4412C4F",
+            state="MS",
+        )
+
+
 def test_cliente_consulta_timeline_do_prodes(monkeypatch: pytest.MonkeyPatch) -> None:
     pedido_capturado: dict[str, object] = {}
 
