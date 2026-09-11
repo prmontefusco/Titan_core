@@ -241,6 +241,11 @@ MARKET_OPTIONALITY_AI_EXPLANATION_ROTAS_BLOQUEADAS = {
     ("/v1/livestock/animals/{animal_id}/market-optionality/explanation", "post"),
 }
 
+COMMERCIAL_PASSPORT_ROTAS_BLOQUEADAS = {
+    ("/v1/livestock/properties/{property_id}/commercial-passport", "get"),
+    ("/v1/livestock/properties/{property_id}/commercial-passport/issue", "post"),
+}
+
 
 def _esquema() -> dict[str, Any]:
     esquema: dict[str, Any] = client.get("/openapi.json").json()
@@ -308,6 +313,36 @@ def test_market_optionality_ai_explanation_recebe_404_uniforme_sem_feature_flag(
         instancia,
         json={
             "reference_time": "2026-09-08T00:00:00Z",
+        },
+    )
+
+    assert resposta.status_code == 404
+    assert resposta.headers["content-type"].startswith("application/problem+json")
+    assert resposta.json() == {
+        "type": "urn:titan:problema:rota-nao-encontrada",
+        "title": "Rota não encontrada",
+        "status": 404,
+        "detail": "O recurso solicitado não existe.",
+        "instance": instancia,
+        "reason_code": "ROTA_NAO_ENCONTRADA",
+    }
+
+
+def test_commercial_passport_sem_rota_publica_sem_feature_flag() -> None:
+    expostas = COMMERCIAL_PASSPORT_ROTAS_BLOQUEADAS & _operacoes()
+
+    assert not expostas, "Commercial Passport exposto sem feature flag: " + ", ".join(
+        f"{metodo.upper()} {caminho}" for caminho, metodo in sorted(expostas)
+    )
+
+
+def test_commercial_passport_recebe_404_uniforme_sem_feature_flag() -> None:
+    instancia = "/v1/livestock/properties/00000000-0000-0000-0000-000000000001/commercial-passport"
+    resposta = client.get(
+        instancia,
+        params={
+            "reference_time": "2026-09-11T00:00:00Z",
+            "knowledge_cutoff": "2026-09-11T00:00:00Z",
         },
     )
 

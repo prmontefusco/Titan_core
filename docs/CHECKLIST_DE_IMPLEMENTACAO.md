@@ -169,6 +169,33 @@ tests/livestock_application/test_commercial_passport.py` e `python -m uv run --l
 **Próximo passo:** F6 — API, expondo a projection dinâmica e o fluxo de emissão sem abrir disclosure
 cross-tenant ou endpoint público.
 
+### 11/09/2026 — Commercial Passport F6: API release-gated
+
+**Estado:** CONCLUÍDO — sexto incremento do Commercial Passport, restrito a contrato HTTP protegido por
+feature flag. `apps/api/livestock_commercial_passport.py` declara `GET
+/v1/livestock/properties/{property_id}/commercial-passport` e `POST
+/v1/livestock/properties/{property_id}/commercial-passport/issue`, ambos incluídos somente quando
+`TITAN_COMMERCIAL_PASSPORT_API_ENABLED=true`. Por padrão, as rotas permanecem ausentes e respondem 404
+uniforme via superfície pública congelada.
+
+**Decisões preservadas:** a API não fabrica passaporte a partir de payload do cliente e não expõe
+disclosure público. Quando feature-flagged, as rotas autenticam, exigem permissões existentes
+(`LIVESTOCK_PROPERTY.LER` para projection dinâmica e `DOSSIER.LER` para emissão formal), validam
+`property_id`, `reference_time` e `knowledge_cutoff`, preservam `reference_time != knowledge_cutoff` e
+falham fechadas em 503 até a pipeline produtiva de avaliação/emissão ser ligada. Não há migration,
+persistência nova, endpoint cross-tenant, marketplace, matching, score opaco ou autorização externa.
+
+**Portão:** `tests/api/test_commercial_passport_api_release_gate.py` cobre ausência por padrão, proteção
+por autenticação, fail-closed de projection e emissão, UTC obrigatório e rejeição de `knowledge_cutoff`
+anterior a `reference_time`. `tests/api/test_core_public_surface.py` cobre a rota ausente sem feature
+flag. Verificações focadas executadas: `python -m uv run --locked pytest
+tests/api/test_commercial_passport_api_release_gate.py tests/api/test_core_public_surface.py` (21 passed)
+e `python -m uv run --locked ruff check apps/api/livestock_commercial_passport.py apps/api/main.py
+tests/api/test_commercial_passport_api_release_gate.py tests/api/test_core_public_surface.py`.
+
+**Próximo passo:** F7 — UI projection, somente depois de a experiência de frontend conseguir consumir uma
+projection real ou uma camada de apresentação claramente marcada como release-gated.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;

@@ -16,6 +16,7 @@ from apps.api.authentication import (
 )
 from apps.api.configuration import exigir_configuracao
 from apps.api.livestock_animals import router as livestock_animals_router
+from apps.api.livestock_commercial_passport import router as livestock_commercial_passport_router
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
 from apps.api.livestock_entity_type_requests import router as livestock_entity_type_requests_router
 from apps.api.livestock_market_optionality_explanation import (
@@ -136,6 +137,9 @@ if os.environ.get("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "").casefold() ==
 
 if os.environ.get("TITAN_MARKET_OPTIONALITY_AI_EXPLANATION_API_ENABLED", "").casefold() == "true":
     app.include_router(livestock_market_optionality_explanation_router)
+
+if os.environ.get("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "").casefold() == "true":
+    app.include_router(livestock_commercial_passport_router)
 
 app.add_exception_handler(DomainProblem, domain_problem_handler)
 app.add_exception_handler(RequestValidationError, validation_problem_handler)
