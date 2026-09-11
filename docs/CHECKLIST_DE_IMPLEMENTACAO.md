@@ -4881,3 +4881,23 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/asset_domain/test_configuration.py` (12 casos, inclui ciclo direto/transitivo entre baselines distintas e sobreposicao/nao-sobreposicao de efetividade) — 66 testes verdes em `tests/asset_domain/` no total. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1529 passed, 323 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Sem persistencia (A3). O padrao "funcao pura + historico injetado" para invariantes cross-agregado e novo neste incremento — vale revisitar em A4 se a mesma necessidade aparecer em `SLIContract`/`WorkOrder` (decisao I-SLI-6, ja prevista em `07_INVARIANTS.md`, tem a mesma natureza cross-agregado).
+
+### 11/09/2026 — A2 (parcial): `StockPosition`, `StockReservation`, `StockTransfer`, `StockLocation`
+
+**Estado:** EM EXECUCAO — quarto incremento de A2, fecha o modulo `asset` do dominio. Falta so `CustomerSite` (pequeno, proximo) e entao o modulo `sustainment` (`SLIContract`, `WorkOrder` - o maior, com a maquina de estados T1-T17 ja fixada na ADR do slice).
+
+**Implementacao:** `packages/asset_domain/inventory.py` — `StockLocation` (entidade de referencia), `StockPosition` (raiz de agregado), `StockReservation` (raiz de agregado **separada**, nao aninhada — `06_AGGREGATE_ANALYSIS.md` §3: a reserva tem ciclo de vida proprio, e assincrona no cenario B), `StockTransfer` (raiz de agregado). VOs: `StockQuantities`, `AvailabilityBreakdown`, `StockReservationLine` (a projecao que `StockPosition.reservations` guarda — nao a `StockReservation` inteira), `DemandRef`.
+
+- I-INV-0: estrutural, ja garantido por `Part` nao ter campo de quantidade (part.py); testado por ausencia de atributo.
+- I-INV-1: `StockPosition.available` e `@property` calculada (nunca campo armazenado); `availability_breakdown()` devolve `AvailabilityBreakdown` explicavel; `hold()` recusa exceder o disponivel; construcao tambem valida (reservas nao podem exceder headroom mesmo vindas prontas de fora).
+- I-INV-2: `hold()` recusa propósito de reserva divergente do da posicao SEM `cross_purpose_decision_ref` (`PropositoIncompativel`) — a decisao em si (qual Decision do Core autoriza) e responsabilidade da aplicacao/GOV, nao deste metodo.
+- I-INV-3: `StockQuantities` recusa bucket negativo na construcao; `adjust()`/`adjust_quantities()` nomeiam o(s) bucket(s) alvo (acompanha o achado ja registrado em `09_COMMAND_MODEL.md` sobre `AdjustStock`) e recusam bucket desconhecido ou resultado negativo.
+- I-INV-4: `StockTransfer.receive()` acumula `qty_received` e recusa exceder `qty` despachada (`RecebimentoExcedeDespacho`); parcial vs completo determinado pela soma; construcao tambem valida `qty_received <= qty`.
+- `StockReservation`: maquina de estados HELD->ALLOCATED->CONSUMED, com RELEASED a partir de HELD ou ALLOCATED; `to_line()` projeta para `StockPosition.reservations`.
+- `TransferState` unifica `DISPATCHED`/`IN_TRANSIT` de `05_DOMAIN_MODEL.md` §1.10 numa unica transicao (`dispatch()` vai direto para `IN_TRANSIT`) — achado desta implementacao: `08_DOMAIN_EVENTS.md` so declara `transfer_dispatched`/`transfer_received`, sem evento para um momento "em transito" distinto do despacho; documentado no docstring do modulo, revisitar se a distincao for necessaria.
+
+`packages/asset_domain/events.py` estendido com os 10 eventos de Inventory de `08_DOMAIN_EVENTS.md` §1 (namespace `asset.inventory.*`).
+
+**Portao:** `tests/asset_domain/test_inventory.py` (29 casos) — 122 testes verdes em `tests/asset_domain/` + `tests/architecture/` no total. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1558 passed, 323 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Sem persistencia (A3) — a coordenacao real `StockReservation` + `StockPosition.hold()` na mesma transacao (cenario A) ou como saga (cenario B) e responsabilidade de `asset_application` (A4), assim como o `SELECT ... FOR UPDATE` com ordem deterministica por `stock_position_id` que `docs/asset/09_COMMAND_MODEL.md` ja registrou como achado da revisao adversarial.

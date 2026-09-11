@@ -66,6 +66,32 @@ ASSET_PART_EVENT_TYPES = frozenset(
     }
 )
 
+INVENTORY_STOCK_POSITION_OPENED = "asset.inventory.stock_position_opened"
+INVENTORY_STOCK_ADJUSTED = "asset.inventory.stock_adjusted"
+INVENTORY_STOCK_RESERVED = "asset.inventory.stock_reserved"
+INVENTORY_STOCK_RESERVATION_ALLOCATED = "asset.inventory.stock_reservation_allocated"
+INVENTORY_STOCK_RESERVATION_RELEASED = "asset.inventory.stock_reservation_released"
+INVENTORY_STOCK_CONSUMED = "asset.inventory.stock_consumed"
+INVENTORY_ALLOCATION_DECIDED = "asset.inventory.allocation_decided"
+INVENTORY_TRANSFER_REQUESTED = "asset.inventory.transfer_requested"
+INVENTORY_TRANSFER_DISPATCHED = "asset.inventory.transfer_dispatched"
+INVENTORY_TRANSFER_RECEIVED = "asset.inventory.transfer_received"
+
+ASSET_INVENTORY_EVENT_TYPES = frozenset(
+    {
+        INVENTORY_STOCK_POSITION_OPENED,
+        INVENTORY_STOCK_ADJUSTED,
+        INVENTORY_STOCK_RESERVED,
+        INVENTORY_STOCK_RESERVATION_ALLOCATED,
+        INVENTORY_STOCK_RESERVATION_RELEASED,
+        INVENTORY_STOCK_CONSUMED,
+        INVENTORY_ALLOCATION_DECIDED,
+        INVENTORY_TRANSFER_REQUESTED,
+        INVENTORY_TRANSFER_DISPATCHED,
+        INVENTORY_TRANSFER_RECEIVED,
+    }
+)
+
 PAYLOAD_VERSION = 1
 
 
@@ -85,6 +111,10 @@ def _optional_id(value: TypedId | None) -> str | None:
 def _decimal(value: Decimal | float | None) -> Decimal | None:
     """O serializador canônico recusa float; área/quantidade viram Decimal."""
     return None if value is None else Decimal(str(value))
+
+
+def _ids(values: tuple[TypedId, ...]) -> list[str]:
+    return [_id(value) for value in values]
 
 
 def vehicle_registered_payload(
@@ -245,6 +275,181 @@ def configuration_baseline_superseded_payload(
             "baseline_id": _id(baseline_id),
             "reason": reason,
             "superseded_by_ref": _id(superseded_by_ref),
+        },
+    )
+
+
+def inventory_stock_position_opened_payload(
+    *,
+    stock_position_id: TypedId,
+    part_ref: TypedId,
+    location_ref: TypedId,
+    purpose: str,
+    ownership: str,
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_STOCK_POSITION_OPENED,
+        {
+            "location_ref": _id(location_ref),
+            "ownership": ownership,
+            "part_ref": _id(part_ref),
+            "purpose": purpose,
+            "stock_position_id": _id(stock_position_id),
+        },
+    )
+
+
+def inventory_stock_adjusted_payload(
+    *,
+    stock_position_id: TypedId,
+    delta_by_status: Mapping[str, Decimal],
+    reason: str,
+    actor_ref: TypedId,
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_STOCK_ADJUSTED,
+        {
+            "actor_ref": _id(actor_ref),
+            "delta_by_status": {
+                bucket: _decimal(delta) for bucket, delta in delta_by_status.items()
+            },
+            "reason": reason,
+            "stock_position_id": _id(stock_position_id),
+        },
+    )
+
+
+def inventory_stock_reserved_payload(
+    *,
+    reservation_id: TypedId,
+    stock_position_ref: TypedId,
+    demand_kind: str,
+    demand_ref: TypedId,
+    qty: Decimal,
+    purpose: str,
+    priority: int,
+    decision_ref: TypedId | None,
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_STOCK_RESERVED,
+        {
+            "decision_ref": _optional_id(decision_ref),
+            "demand_kind": demand_kind,
+            "demand_ref": _id(demand_ref),
+            "priority": priority,
+            "purpose": purpose,
+            "qty": _decimal(qty),
+            "reservation_id": _id(reservation_id),
+            "stock_position_ref": _id(stock_position_ref),
+        },
+    )
+
+
+def inventory_stock_reservation_allocated_payload(*, reservation_id: TypedId) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_STOCK_RESERVATION_ALLOCATED,
+        {"reservation_id": _id(reservation_id)},
+    )
+
+
+def inventory_stock_reservation_released_payload(
+    *, reservation_id: TypedId, reason: str
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_STOCK_RESERVATION_RELEASED,
+        {"reason": reason, "reservation_id": _id(reservation_id)},
+    )
+
+
+def inventory_stock_consumed_payload(
+    *,
+    reservation_id: TypedId,
+    work_order_ref: TypedId,
+    qty: Decimal,
+    lot: str | None,
+    serial: str | None,
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_STOCK_CONSUMED,
+        {
+            "lot": lot,
+            "qty": _decimal(qty),
+            "reservation_id": _id(reservation_id),
+            "serial": serial,
+            "work_order_ref": _id(work_order_ref),
+        },
+    )
+
+
+def inventory_allocation_decided_payload(
+    *,
+    part_ref: TypedId,
+    location_ref: TypedId,
+    winning_demand_ref: TypedId,
+    losing_demand_refs: tuple[TypedId, ...],
+    decision_ref: TypedId,
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_ALLOCATION_DECIDED,
+        {
+            "decision_ref": _id(decision_ref),
+            "location_ref": _id(location_ref),
+            "losing_demand_refs": _ids(losing_demand_refs),
+            "part_ref": _id(part_ref),
+            "winning_demand_ref": _id(winning_demand_ref),
+        },
+    )
+
+
+def inventory_transfer_requested_payload(
+    *,
+    transfer_id: TypedId,
+    part_ref: TypedId,
+    from_location_ref: TypedId,
+    to_location_ref: TypedId,
+    qty: Decimal,
+    linked_reservation_ref: TypedId | None,
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_TRANSFER_REQUESTED,
+        {
+            "from_location_ref": _id(from_location_ref),
+            "linked_reservation_ref": _optional_id(linked_reservation_ref),
+            "part_ref": _id(part_ref),
+            "qty": _decimal(qty),
+            "to_location_ref": _id(to_location_ref),
+            "transfer_id": _id(transfer_id),
+        },
+    )
+
+
+def inventory_transfer_dispatched_payload(
+    *, transfer_id: TypedId, qty: Decimal, from_location_ref: TypedId
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_TRANSFER_DISPATCHED,
+        {
+            "from_location_ref": _id(from_location_ref),
+            "qty": _decimal(qty),
+            "transfer_id": _id(transfer_id),
+        },
+    )
+
+
+def inventory_transfer_received_payload(
+    *,
+    transfer_id: TypedId,
+    qty_received: Decimal,
+    to_location_ref: TypedId,
+    partial: bool,
+) -> CanonicalPayload:
+    return _payload(
+        INVENTORY_TRANSFER_RECEIVED,
+        {
+            "partial": partial,
+            "qty_received": _decimal(qty_received),
+            "to_location_ref": _id(to_location_ref),
+            "transfer_id": _id(transfer_id),
         },
     )
 
