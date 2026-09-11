@@ -19,6 +19,15 @@ from packages.asset_infrastructure.persistence.customer_site_repository import (
     customer_site_contacts_table,
     customer_sites_table,
 )
+from packages.asset_infrastructure.persistence.inventory_repository import (
+    TransactionalStockPositionRepository,
+    TransactionalStockReservationRepository,
+    TransactionalStockTransferRepository,
+    stock_position_reservations_table,
+    stock_positions_table,
+    stock_reservations_table,
+    stock_transfers_table,
+)
 from packages.asset_infrastructure.persistence.part_repository import (
     TransactionalInterchangeabilityGroupRepository,
     TransactionalPartRepository,
@@ -46,6 +55,9 @@ __all__ = [
     "TransactionalInterchangeabilityGroupRepository",
     "TransactionalPartRepository",
     "TransactionalStockLocationRepository",
+    "TransactionalStockPositionRepository",
+    "TransactionalStockReservationRepository",
+    "TransactionalStockTransferRepository",
     "TransactionalVehicleRepository",
     "applicability_table",
     "configuration_baseline_positions_table",
@@ -58,6 +70,10 @@ __all__ = [
     "part_supersessions_table",
     "parts_table",
     "stock_locations_table",
+    "stock_position_reservations_table",
+    "stock_positions_table",
+    "stock_reservations_table",
+    "stock_transfers_table",
     "vehicle_meter_corrections_table",
     "vehicle_meter_readings_table",
     "vehicles_table",

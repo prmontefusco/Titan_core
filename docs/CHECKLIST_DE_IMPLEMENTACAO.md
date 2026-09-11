@@ -5026,3 +5026,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/integration/test_vehicle_postgresql.py` (round-trip; `record_meter_reading` seguido de `correct_meter_reading`, provando que a leitura original permanece apos a correcao — exercita exatamente o caminho que teria quebrado com delete+reinsert; RLS) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 330 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `StockPosition`/`StockReservation`/`StockTransfer` -> `SLIContract` -> `WorkOrder` (fecha A3).
+
+### 11/09/2026 — A3: `StockPosition`, `StockReservation`, `StockTransfer` (persistencia), fecha o modulo `asset` da persistencia
+
+**Estado:** EM EXECUCAO — oitavo incremento de A3. Falta so o modulo `sustainment` (`SLIContract`, `WorkOrder`) para A3 estar completo.
+
+**Implementacao:** `packages/asset_infrastructure/persistence/inventory_repository.py` — `stock_positions_table`, `stock_reservations_table` (agregado separado, FK para `stock_positions`), `stock_transfers_table`, `stock_position_reservations_table` (a projecao que `StockPosition.reservations` guarda).
+
+**Decisao de design (documentada no docstring do modulo):** `StockReservationLine.demand_ref`, `StockReservation.demand.ref`, `StockReservation.decision_ref` e `StockTransfer.linked_reservation_ref` sao `TypedId` sem `entity_type` fixado por validacao do dominio — mesmo caso de `Applicability.asserted_by` ja resolvido no incremento anterior; cada um ganha coluna `*_entity_type` propria. `stock_position_reservations` **nao** tem FK para `stock_reservations.reservation_id` de proposito: `06_AGGREGATE_ANALYSIS.md` §3 registra que a coordenacao entre os dois agregados pode ser assincrona (cenario B, saga) — uma FK rigida impediria a projecao de existir antes da `StockReservation` estar duravel. E referencia logica, nao de integridade referencial, mesmo padrao de `evidence_ref`. Como consequencia, nada aponta FK para `stock_position_reservations`, entao `update()` da posicao pode seguir delete+reinsert com seguranca — ao contrario do que se descobriu em `Part`/`Vehicle`, aqui a analise "quem tem FK para esta tabela filha" confirmou que era seguro em vez de exigir upsert.
+
+**Portao:** `tests/integration/test_inventory_postgresql.py` (3 casos: `StockPosition.hold`/`release` com RLS; maquina de estados de `StockReservation` HELD->ALLOCATED->CONSUMED; `StockTransfer.dispatch`+`receive` parcial e completo) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 333 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `SLIContract` -> `WorkOrder` (fecha A3).

@@ -36,6 +36,10 @@ from packages.asset_infrastructure.persistence import (
     part_supersessions_table,
     parts_table,
     stock_locations_table,
+    stock_position_reservations_table,
+    stock_positions_table,
+    stock_reservations_table,
+    stock_transfers_table,
     vehicle_meter_corrections_table,
     vehicle_meter_readings_table,
     vehicles_table,
@@ -174,6 +178,10 @@ assert configuration_baseline_positions_table.metadata is target_metadata
 assert vehicles_table.metadata is target_metadata
 assert vehicle_meter_readings_table.metadata is target_metadata
 assert vehicle_meter_corrections_table.metadata is target_metadata
+assert stock_positions_table.metadata is target_metadata
+assert stock_reservations_table.metadata is target_metadata
+assert stock_transfers_table.metadata is target_metadata
+assert stock_position_reservations_table.metadata is target_metadata
 
 VERSION_TABLE = "alembic_version_asset"
 
