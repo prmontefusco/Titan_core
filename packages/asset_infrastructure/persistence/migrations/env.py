@@ -46,6 +46,10 @@ from packages.asset_infrastructure.persistence import (
     vehicle_meter_corrections_table,
     vehicle_meter_readings_table,
     vehicles_table,
+    work_order_material_demands_table,
+    work_order_removed_components_table,
+    work_order_tasks_table,
+    work_orders_table,
 )
 from packages.core_infrastructure.bootstrap import bootstrap_receipts_table
 from packages.core_infrastructure.persistence import (
@@ -188,6 +192,10 @@ assert stock_position_reservations_table.metadata is target_metadata
 assert sli_contracts_table.metadata is target_metadata
 assert contract_versions_table.metadata is target_metadata
 assert contract_version_coverage_lines_table.metadata is target_metadata
+assert work_orders_table.metadata is target_metadata
+assert work_order_tasks_table.metadata is target_metadata
+assert work_order_material_demands_table.metadata is target_metadata
+assert work_order_removed_components_table.metadata is target_metadata
 
 VERSION_TABLE = "alembic_version_asset"
 

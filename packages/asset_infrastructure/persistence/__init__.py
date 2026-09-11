@@ -53,6 +53,13 @@ from packages.asset_infrastructure.persistence.vehicle_repository import (
     vehicle_meter_readings_table,
     vehicles_table,
 )
+from packages.asset_infrastructure.persistence.work_order_repository import (
+    TransactionalWorkOrderRepository,
+    work_order_material_demands_table,
+    work_order_removed_components_table,
+    work_order_tasks_table,
+    work_orders_table,
+)
 
 __all__ = [
     "TransactionalApplicabilityRepository",
@@ -66,6 +73,7 @@ __all__ = [
     "TransactionalSLIContractRepository",
     "TransactionalStockTransferRepository",
     "TransactionalVehicleRepository",
+    "TransactionalWorkOrderRepository",
     "applicability_table",
     "configuration_baseline_positions_table",
     "configuration_baselines_table",
@@ -87,4 +95,8 @@ __all__ = [
     "vehicle_meter_corrections_table",
     "vehicle_meter_readings_table",
     "vehicles_table",
+    "work_order_material_demands_table",
+    "work_order_removed_components_table",
+    "work_order_tasks_table",
+    "work_orders_table",
 ]
