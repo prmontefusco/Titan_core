@@ -113,6 +113,33 @@ tests/livestock_application/test_commercial_passport.py` e `python -m uv run --l
 **Próximo passo:** F4 — animal/lot/population eligibility summary, compondo resumo populacional sem
 colapsar `PROPERTY_READINESS` em `POPULATION_ELIGIBILITY`.
 
+### 11/09/2026 — Commercial Passport F4: resumo de elegibilidade populacional
+
+**Estado:** CONCLUÍDO — quarto incremento do Commercial Passport, ainda restrito à camada de aplicação e
+sem API, persistência, migration ou emissão formal. `PopulationEligibilitySummary` agora expõe contagens
+derivadas para os status de `MarketReadinessStatus` (`READY`, `NOT_READY`, `CONDITIONED`,
+`INDETERMINATE`, `REASSESSMENT_REQUIRED`, `NOT_EVALUATED`) e o
+`PropertyCommercialPassportService` aceita um resumo populacional opcional por oportunidade. O serviço
+continua sem resolver população, sem consultar rebanho, sem reavaliar `Policy` e sem emitir `Decision`.
+
+**Decisões preservadas:** `PROPERTY_READINESS` e `POPULATION_ELIGIBILITY` permanecem dimensões separadas.
+Uma propriedade pode estar `AVAILABLE` enquanto sua população contém animais `NOT_READY`,
+`INDETERMINATE` ou bloqueados por status específico da vertical; do mesmo modo, animais podem estar
+`READY` enquanto a propriedade segue `PARTIALLY_READY` por evidência ausente. O resumo populacional é
+projection derivada e não altera a interpretação da readiness de propriedade.
+
+**Portão:** `tests/livestock_application/test_commercial_passport.py` cobre inclusão de resumo
+populacional sem colapsar readiness, propriedade incompleta com animais aptos, contagens derivadas de
+`MarketReadinessStatus`, rejeição de requisitos populacionais dentro de readiness de propriedade e
+continuidade das garantias anteriores. Verificações focadas executadas: `python -m uv run --locked pytest
+tests/livestock_application/test_commercial_passport.py` (15 passed), `python -m uv run --locked ruff
+check packages/livestock_application/commercial_passport.py
+tests/livestock_application/test_commercial_passport.py` e `python -m uv run --locked ruff format --check
+...`.
+
+**Próximo passo:** F5 — formal issuance via `Dossier`/`VerificationBundle`, criando snapshot somente no
+fluxo de emissão/compartilhamento e preservando a projection dinâmica para consultas comuns.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;

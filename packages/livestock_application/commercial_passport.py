@@ -1,6 +1,6 @@
 """Commercial Passport application contracts for Titan Livestock.
 
-F1/F2/F3 are deliberately application-only: these types compose existing
+F1/F2/F3/F4 are deliberately application-only: these types compose existing
 evaluations, decisions and readiness outputs, but do not evaluate policies,
 emit Decisions, persist snapshots, expose APIs or create Dossiers/
 VerificationBundles.
@@ -13,13 +13,16 @@ from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
 
-from packages.livestock_application.market_readiness import MARKET_ELIGIBILITY_RESULT_BOUNDARY
+from packages.livestock_application.market_readiness import (
+    MARKET_ELIGIBILITY_RESULT_BOUNDARY,
+    MarketReadinessStatus,
+)
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 from packages.shared_kernel.temporal import require_utc
 
 PROPERTY_COMMERCIAL_PASSPORT_LIMITATIONS = (
     "PROPERTY_COMMERCIAL_PASSPORT_IS_DYNAMIC_PROJECTION",
-    "PROPERTY_COMMERCIAL_PASSPORT_EXCLUDES_POPULATION_ELIGIBILITY_UNTIL_F4",
+    "POPULATION_ELIGIBILITY_IS_SEPARATE_FROM_PROPERTY_READINESS",
     "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE",
 )
 
@@ -269,6 +272,30 @@ class PopulationEligibilitySummary:
     def total_count(self) -> int:
         return sum(self.counts_by_status.values())
 
+    @property
+    def ready_count(self) -> int:
+        return self.counts_by_status.get(MarketReadinessStatus.READY.value, 0)
+
+    @property
+    def not_ready_count(self) -> int:
+        return self.counts_by_status.get(MarketReadinessStatus.NOT_READY.value, 0)
+
+    @property
+    def conditioned_count(self) -> int:
+        return self.counts_by_status.get(MarketReadinessStatus.CONDITIONED.value, 0)
+
+    @property
+    def indeterminate_count(self) -> int:
+        return self.counts_by_status.get(MarketReadinessStatus.INDETERMINATE.value, 0)
+
+    @property
+    def reassessment_required_count(self) -> int:
+        return self.counts_by_status.get(MarketReadinessStatus.REASSESSMENT_REQUIRED.value, 0)
+
+    @property
+    def not_evaluated_count(self) -> int:
+        return self.counts_by_status.get(MarketReadinessStatus.NOT_EVALUATED.value, 0)
+
 
 @dataclass(frozen=True, slots=True)
 class CommercialPassportOpportunityAssessment:
@@ -316,6 +343,7 @@ class PropertyCommercialPassportOpportunityInput:
 
     opportunity: CommercialOpportunity
     requirements: tuple[CommercialRequirementAssessment, ...]
+    population_eligibility: PopulationEligibilitySummary | None = None
     limitations: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
@@ -328,7 +356,7 @@ class PropertyCommercialPassportService:
     """Build the dynamic property passport projection.
 
     This service composes already-derived requirement assessments. It does not
-    resolve facts, evaluate Policy, emit Decision, include population summaries,
+    resolve facts, evaluate Policy, emit Decision, derive population eligibility,
     issue snapshots or authorize external disclosure.
     """
 
@@ -344,7 +372,7 @@ class PropertyCommercialPassportService:
             CommercialPassportOpportunityAssessment(
                 opportunity=item.opportunity,
                 property_readiness=PropertyCommercialReadiness(requirements=item.requirements),
-                population_eligibility=None,
+                population_eligibility=item.population_eligibility,
                 limitations=item.limitations,
             )
             for item in sorted(opportunities, key=lambda item: item.opportunity.code)

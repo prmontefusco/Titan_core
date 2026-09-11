@@ -20,6 +20,7 @@ from packages.livestock_application.commercial_passport import (
     PropertyCommercialPassportService,
     PropertyCommercialReadiness,
 )
+from packages.livestock_application.market_readiness import MarketReadinessStatus
 from packages.shared_kernel import OrganizationId, TypedId
 
 NOW = datetime(2026, 9, 11, tzinfo=UTC)
@@ -222,6 +223,8 @@ def test_population_eligibility_is_separate_from_property_readiness() -> None:
     assert assessment.property_readiness.breakdown.satisfied == 1
     assert assessment.population_eligibility is not None
     assert assessment.population_eligibility.total_count == 1250
+    assert assessment.population_eligibility.ready_count == 742
+    assert assessment.population_eligibility.not_ready_count == 377
 
 
 def test_dynamic_passport_is_projection_not_issued_snapshot() -> None:
@@ -330,7 +333,7 @@ def test_property_passport_service_orders_opportunities_deterministically() -> N
     ]
 
 
-def test_property_passport_service_keeps_population_dimension_out_until_f4() -> None:
+def test_property_passport_service_rejects_population_requirements_in_property_readiness() -> None:
     service = PropertyCommercialPassportService()
 
     with pytest.raises(ValueError, match="propriedade"):
@@ -349,6 +352,77 @@ def test_property_passport_service_keeps_population_dimension_out_until_f4() -> 
                 ),
             ),
         )
+
+
+def test_property_passport_service_includes_population_summary_separately() -> None:
+    service = PropertyCommercialPassportService()
+    population = PopulationEligibilitySummary(
+        subject_type="animal",
+        counts_by_status={
+            MarketReadinessStatus.READY.value: 742,
+            MarketReadinessStatus.INDETERMINATE.value: 103,
+            MarketReadinessStatus.NOT_READY.value: 377,
+            "BLOCKED": 28,
+        },
+        limitations=("derived from MarketReadiness; not a Decision",),
+        source_report_reference="market-readiness-report:synthetic-eu:2026-09-11",
+    )
+
+    passport = service.build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("synthetic-eu"),
+                requirements=(
+                    _requirement(
+                        "property-document",
+                        CommercialPassportRequirementStatus.SATISFIED,
+                    ),
+                ),
+                population_eligibility=population,
+            ),
+        ),
+    )
+
+    assessment = passport.opportunities[0]
+    assert assessment.property_readiness.breakdown.interpretation is (
+        CommercialReadinessInterpretation.AVAILABLE
+    )
+    assert assessment.population_eligibility is not None
+    assert assessment.population_eligibility.ready_count == 742
+    assert assessment.population_eligibility.indeterminate_count == 103
+    assert assessment.population_eligibility.not_ready_count == 377
+    assert assessment.population_eligibility.total_count == 1250
+    assert "POPULATION_ELIGIBILITY_IS_SEPARATE_FROM_PROPERTY_READINESS" in passport.limitations
+
+
+def test_population_summary_does_not_make_incomplete_property_ready() -> None:
+    service = PropertyCommercialPassportService()
+    population = PopulationEligibilitySummary(
+        subject_type="animal",
+        counts_by_status={MarketReadinessStatus.READY.value: 10},
+    )
+
+    passport = service.build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("property-gap-market"),
+                requirements=(
+                    _requirement("property-document", CommercialPassportRequirementStatus.MISSING),
+                ),
+                population_eligibility=population,
+            ),
+        ),
+    )
+
+    assessment = passport.opportunities[0]
+    assert assessment.population_eligibility is not None
+    assert assessment.population_eligibility.ready_count == 10
+    assert assessment.property_readiness.breakdown.missing == 1
+    assert assessment.property_readiness.breakdown.interpretation is (
+        CommercialReadinessInterpretation.PARTIALLY_READY
+    )
 
 
 def test_property_passport_service_rejects_duplicate_opportunity_codes() -> None:
