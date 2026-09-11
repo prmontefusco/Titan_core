@@ -41,6 +41,61 @@ class CommercialPassportRequirementStatus(StrEnum):
     NOT_APPLICABLE = "NOT_APPLICABLE"
     BLOCKED = "BLOCKED"
 
+    @property
+    def semantic_description(self) -> str:
+        return _REQUIREMENT_STATUS_DESCRIPTIONS[self]
+
+    @property
+    def applies_to_readiness_denominator(self) -> bool:
+        return self is not CommercialPassportRequirementStatus.NOT_APPLICABLE
+
+    @property
+    def is_missing_evidence(self) -> bool:
+        return self is CommercialPassportRequirementStatus.MISSING
+
+    @property
+    def is_unknown(self) -> bool:
+        return self is CommercialPassportRequirementStatus.UNKNOWN
+
+    @property
+    def is_failed(self) -> bool:
+        return self is CommercialPassportRequirementStatus.FAILED
+
+    @property
+    def blocks_opportunity(self) -> bool:
+        return self is CommercialPassportRequirementStatus.BLOCKED
+
+
+_REQUIREMENT_STATUS_DESCRIPTIONS: Mapping[CommercialPassportRequirementStatus, str] = {
+    CommercialPassportRequirementStatus.SATISFIED: (
+        "Requirement applies and is satisfied by the assessed material."
+    ),
+    CommercialPassportRequirementStatus.MISSING: (
+        "Required evidence or data was not supplied or is absent from known material."
+    ),
+    CommercialPassportRequirementStatus.UNKNOWN: (
+        "Titan cannot conclude with available knowledge; this is not false."
+    ),
+    CommercialPassportRequirementStatus.FAILED: (
+        "Requirement applies, was evaluated and was not satisfied."
+    ),
+    CommercialPassportRequirementStatus.NOT_APPLICABLE: (
+        "Requirement does not apply to this subject or context and does not reduce readiness."
+    ),
+    CommercialPassportRequirementStatus.BLOCKED: (
+        "A current blocking condition prevents the opportunity regardless of other readiness."
+    ),
+}
+
+
+class CommercialReadinessInterpretation(StrEnum):
+    AVAILABLE = "AVAILABLE"
+    PARTIALLY_READY = "PARTIALLY_READY"
+    UNAVAILABLE_BLOCKED = "UNAVAILABLE_BLOCKED"
+    UNAVAILABLE_FAILED = "UNAVAILABLE_FAILED"
+    UNKNOWN = "UNKNOWN"
+    NOT_ASSESSED = "NOT_ASSESSED"
+
 
 @dataclass(frozen=True, slots=True)
 class CommercialPassportContext:
@@ -120,11 +175,11 @@ class CommercialRequirementAssessment:
 
     @property
     def applies_to_readiness_denominator(self) -> bool:
-        return self.status is not CommercialPassportRequirementStatus.NOT_APPLICABLE
+        return self.status.applies_to_readiness_denominator
 
     @property
     def blocks_opportunity(self) -> bool:
-        return self.status is CommercialPassportRequirementStatus.BLOCKED
+        return self.status.blocks_opportunity
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +209,21 @@ class CommercialReadinessBreakdown:
         if self.applicable_count == 0:
             return None
         return self.satisfied / self.applicable_count
+
+    @property
+    def interpretation(self) -> CommercialReadinessInterpretation:
+        """Operational interpretation of requirement counts; not a Decision."""
+        if self.applicable_count == 0:
+            return CommercialReadinessInterpretation.NOT_ASSESSED
+        if self.blocked > 0:
+            return CommercialReadinessInterpretation.UNAVAILABLE_BLOCKED
+        if self.failed > 0:
+            return CommercialReadinessInterpretation.UNAVAILABLE_FAILED
+        if self.unknown > 0:
+            return CommercialReadinessInterpretation.UNKNOWN
+        if self.missing > 0:
+            return CommercialReadinessInterpretation.PARTIALLY_READY
+        return CommercialReadinessInterpretation.AVAILABLE
 
 
 @dataclass(frozen=True, slots=True)

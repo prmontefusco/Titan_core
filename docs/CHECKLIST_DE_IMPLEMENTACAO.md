@@ -63,6 +63,30 @@ ruff check packages/livestock_application/commercial_passport.py tests/livestock
 **Próximo passo:** F2 — requirement reasoning semantics (`SATISFIED`, `MISSING`, `UNKNOWN`, `FAILED`,
 `NOT_APPLICABLE`, `BLOCKED`) com agregação e testes dedicados, ainda sem API.
 
+### 11/09/2026 — Commercial Passport F2: semântica de requirement reasoning
+
+**Estado:** CONCLUÍDO — segundo incremento do Commercial Passport, ainda restrito a contratos puros e
+sem comportamento observável por API. `CommercialPassportRequirementStatus` agora declara sua semântica:
+descrição normativa, participação no denominador de readiness, distinção de evidência ausente, unknown,
+falha avaliada e blocker. `CommercialReadinessBreakdown` ganhou `interpretation` derivada, com precedência
+explícita de blocker.
+
+**Decisões preservadas:** `MISSING != UNKNOWN`, `FAILED != MISSING`, `BLOCKED != FAILED` e
+`NOT_APPLICABLE` não reduz readiness. A interpretação agregada é projection operacional, não `Decision`.
+Um blocker torna a oportunidade operacionalmente indisponível mesmo quando o ratio derivado parece alto;
+o ratio permanece projection secundária (`satisfied/applicable`) e não score decisório.
+
+**Portão:** `tests/livestock_application/test_commercial_passport.py` cobre as seis semânticas, as
+distinções obrigatórias, `NOT_APPLICABLE` fora do denominador, precedência de blocker e interpretações
+derivadas (`AVAILABLE`, `PARTIALLY_READY`, `UNAVAILABLE_BLOCKED`, `UNAVAILABLE_FAILED`, `UNKNOWN`,
+`NOT_ASSESSED`). Verificações focadas executadas: `python -m uv run --locked pytest
+tests/livestock_application/test_commercial_passport.py` (9 passed), `python -m uv run --locked ruff check
+packages/livestock_application/commercial_passport.py tests/livestock_application/test_commercial_passport.py`
+e `python -m uv run --locked ruff format --check ...`.
+
+**Próximo passo:** F3 — Property Commercial Passport, compondo oportunidades e readiness de propriedade sem
+misturar population eligibility e ainda sem API pública.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;

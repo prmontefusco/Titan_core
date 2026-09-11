@@ -13,6 +13,7 @@ from packages.livestock_application.commercial_passport import (
     CommercialPassportRequirementDimension,
     CommercialPassportRequirementStatus,
     CommercialReadinessBreakdown,
+    CommercialReadinessInterpretation,
     CommercialRequirementAssessment,
     PopulationEligibilitySummary,
     PropertyCommercialReadiness,
@@ -100,6 +101,9 @@ def test_property_readiness_counts_are_derived_and_not_single_score() -> None:
     assert readiness.breakdown.total_count == 6
     assert readiness.breakdown.derived_ratio == 1 / 5
     assert readiness.breakdown.has_blocker is True
+    assert readiness.breakdown.interpretation is (
+        CommercialReadinessInterpretation.UNAVAILABLE_BLOCKED
+    )
 
 
 def test_not_applicable_stays_out_of_readiness_denominator() -> None:
@@ -112,6 +116,70 @@ def test_not_applicable_stays_out_of_readiness_denominator() -> None:
 
     assert readiness.breakdown.applicable_count == 1
     assert readiness.breakdown.derived_ratio == 1.0
+
+
+def test_requirement_status_semantics_preserve_distinctions() -> None:
+    missing = CommercialPassportRequirementStatus.MISSING
+    unknown = CommercialPassportRequirementStatus.UNKNOWN
+    failed = CommercialPassportRequirementStatus.FAILED
+    blocked = CommercialPassportRequirementStatus.BLOCKED
+    not_applicable = CommercialPassportRequirementStatus.NOT_APPLICABLE
+
+    assert missing.is_missing_evidence is True
+    assert missing.is_unknown is False
+    assert unknown.is_unknown is True
+    assert unknown.is_missing_evidence is False
+    assert failed.is_failed is True
+    assert failed.is_missing_evidence is False
+    assert blocked.blocks_opportunity is True
+    assert blocked.is_failed is False
+    assert not_applicable.applies_to_readiness_denominator is False
+    assert "not false" in unknown.semantic_description
+
+
+def test_readiness_interpretation_is_derived_with_blocker_precedence() -> None:
+    blocked = PropertyCommercialReadiness(
+        requirements=(
+            _requirement("satisfied", CommercialPassportRequirementStatus.SATISFIED),
+            _requirement("blocker", CommercialPassportRequirementStatus.BLOCKED),
+        ),
+    )
+    failed = PropertyCommercialReadiness(
+        requirements=(
+            _requirement("satisfied", CommercialPassportRequirementStatus.SATISFIED),
+            _requirement("failed", CommercialPassportRequirementStatus.FAILED),
+        ),
+    )
+    unknown = PropertyCommercialReadiness(
+        requirements=(
+            _requirement("satisfied", CommercialPassportRequirementStatus.SATISFIED),
+            _requirement("unknown", CommercialPassportRequirementStatus.UNKNOWN),
+        ),
+    )
+    missing = PropertyCommercialReadiness(
+        requirements=(
+            _requirement("satisfied", CommercialPassportRequirementStatus.SATISFIED),
+            _requirement("missing", CommercialPassportRequirementStatus.MISSING),
+        ),
+    )
+    available = PropertyCommercialReadiness(
+        requirements=(_requirement("satisfied", CommercialPassportRequirementStatus.SATISFIED),),
+    )
+    not_assessed = PropertyCommercialReadiness(
+        requirements=(
+            _requirement("not-applicable", CommercialPassportRequirementStatus.NOT_APPLICABLE),
+        ),
+    )
+
+    assert blocked.breakdown.derived_ratio == 0.5
+    assert blocked.breakdown.interpretation is (
+        CommercialReadinessInterpretation.UNAVAILABLE_BLOCKED
+    )
+    assert failed.breakdown.interpretation is (CommercialReadinessInterpretation.UNAVAILABLE_FAILED)
+    assert unknown.breakdown.interpretation is CommercialReadinessInterpretation.UNKNOWN
+    assert missing.breakdown.interpretation is CommercialReadinessInterpretation.PARTIALLY_READY
+    assert available.breakdown.interpretation is CommercialReadinessInterpretation.AVAILABLE
+    assert not_assessed.breakdown.interpretation is CommercialReadinessInterpretation.NOT_ASSESSED
 
 
 def test_property_readiness_refuses_population_dimension() -> None:
