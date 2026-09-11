@@ -102,8 +102,11 @@ jobs:
       - name: Sincronizar ambiente
         run: uv sync --locked
 
-      - name: Aplicar migrations
+      - name: Aplicar migrations (Core + Livestock)
         run: uv run --locked alembic upgrade heads
+
+      - name: Aplicar migrations (Asset)
+        run: uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini upgrade heads
 
       - name: Provisionar role de runtime restrita
         env:
@@ -122,5 +125,8 @@ jobs:
       - name: Executar Mypy
         run: uv run --locked mypy
 
-      - name: Verificar paridade do schema com as migrations
+      - name: Verificar paridade do schema com as migrations (Core + Livestock)
         run: uv run --locked alembic check
+
+      - name: Verificar paridade do schema com as migrations (Asset)
+        run: uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini check

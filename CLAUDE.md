@@ -24,7 +24,10 @@ $env:TITAN_RUNTIME_DATABASE_PASSWORD="titan_local_runtime_password"
 python -m uv run --locked python -m apps.provision_runtime_database_role
 $env:TITAN_DATABASE_URL="postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
 python -m uv run --locked python -m alembic upgrade heads
+python -m uv run --locked python -m alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini upgrade heads
 ```
+
+Asset tem ambiente Alembic próprio (`-c packages/asset_infrastructure/persistence/migrations/alembic.ini`), separado do de Core+Livestock — ver `docs/architecture/MIGRATION_CONCURRENCY_STRATEGY.md`.
 
 Portão de verificação completo:
 
@@ -48,6 +51,7 @@ python -m uv run --locked mypy
 ```powershell
 $env:TITAN_MIGRATION_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
 python -m uv run --locked python -m alembic check
+python -m uv run --locked python -m alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini check
 ```
 
 Os testes de integração leem `TITAN_DATABASE_URL`. Sem ela, os testes de integração

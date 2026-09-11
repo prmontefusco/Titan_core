@@ -146,7 +146,7 @@ Regras de coordenação:
 
 Executar a suíte completa de verificações e testes:
 
-`python -m uv run --locked pytest; python -m uv run --locked ruff check .; python -m uv run --locked ruff format --check .; python -m uv run --locked mypy; python -m uv run --locked alembic check`
+`python -m uv run --locked pytest; python -m uv run --locked ruff check .; python -m uv run --locked ruff format --check .; python -m uv run --locked mypy; python -m uv run --locked alembic check; python -m uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini check`
 
 Após os testes manuais e a aprovação da funcionalidade, realizar obrigatoriamente o commit no Git das alterações finalizadas.
 
@@ -262,7 +262,10 @@ O ambiente local roda em contêineres. Antes de qualquer teste de integração, 
 docker compose up -d
 $env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
 python -m uv run --locked alembic upgrade heads
+python -m uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini upgrade heads
 ```
+
+Asset tem ambiente Alembic próprio (env.py, `versions/` e tabela de rastreio `alembic_version_asset` separados de Core+Livestock) — ver `docs/architecture/MIGRATION_CONCURRENCY_STRATEGY.md`.
 
 Verificações:
 
@@ -273,6 +276,7 @@ python -m uv run --locked ruff check .
 python -m uv run --locked ruff format --check .
 python -m uv run --locked mypy
 python -m uv run --locked alembic check
+python -m uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini check
 ```
 
 Encerrar o ambiente: `docker compose down`.

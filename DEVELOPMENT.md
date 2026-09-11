@@ -153,6 +153,7 @@ python -m uv run --locked ruff check .
 python -m uv run --locked ruff format --check .
 python -m uv run --locked mypy
 python -m uv run --locked alembic check
+python -m uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini check
 ```
 
 Revisar Diff.
@@ -390,7 +391,11 @@ python -m uv run --locked python -m apps.provision_runtime_database_role
 $env:TITAN_DATABASE_URL="postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
 python -m uv run --locked alembic upgrade heads
 python -m uv run --locked alembic current
+python -m uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini upgrade heads
+python -m uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini current
 ```
+
+Asset tem ambiente Alembic próprio (`-c packages/asset_infrastructure/persistence/migrations/alembic.ini`), com histórico e tabela de rastreio (`alembic_version_asset`) separados de Core+Livestock — ver `docs/architecture/MIGRATION_CONCURRENCY_STRATEGY.md`.
 
 Bootstrap mínimo da Organization operadora, após `alembic upgrade heads`:
 
