@@ -6,8 +6,8 @@
 - **Owner de produto:** Founder / Product Owner
 - **Data:** 2026-09-10
 - **Vertical / lane:** `asset` (`vertical/asset/*`)
-- **ADR:** `docs/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (rascunho)
-- **Discovery:** `docs/asset-sustainment/01`…`09`, `11`, `19`, `20`
+- **ADR:** `docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md` (rascunho)
+- **Discovery:** `docs/asset/01`…`09`, `11`, `19`, `20`
 
 ---
 
@@ -19,10 +19,10 @@ vigente à época, nem a ordem de serviço com prioridade explicável. Sem isso,
 contrato operam por planilha e não conseguem responder, com evidência, o que fazer a seguir e por quê.
 
 Afetados: técnico de oficina, planejador, logístico, gestor de contrato SLI, engenharia, representante da OM
-(`docs/asset-sustainment/11_AUTHORIZATION_MODEL.md` §1).
+(`docs/asset/11_AUTHORIZATION_MODEL.md` §1).
 
 Evidência de que vale resolver: a constituição multi‑agente define este marco (§46–§47); a Fase 0
-(`docs/asset-sustainment/CORE_REUSE_ASSESSMENT.md`) confirma que o Core já fornece identidade, autorização,
+(`docs/asset/CORE_REUSE_ASSESSMENT.md`) confirma que o Core já fornece identidade, autorização,
 evento append‑only, integridade, outbox, política/regra/avaliação/decisão explicável e dossiê — a vertical
 só precisa do domínio de Asset.
 
@@ -53,7 +53,7 @@ Material Reservation + Workshop Dashboard**.
 
 ## Comportamento e regras de negócio
 
-Detalhe completo em `docs/asset-sustainment/05`…`09`. Resumo do comportamento esperado:
+Detalhe completo em `docs/asset/05`…`09`. Resumo do comportamento esperado:
 
 ### Cenário A — corretiva com estoque local (fluxo feliz)
 
@@ -187,17 +187,18 @@ inalterado; rollback por *branch label* `asset`.
 
 ## Documentação afetada
 
-- ADR do slice (`draft-20260910-primeiro-slice-titan-asset-sustainment.md`) → alocar número na integração.
+- ADR do slice (`docs/asset/adr/draft-20260910-primeiro-slice-titan-asset-sustainment.md`) → alocar número na integração.
 - `docs/architecture/verticals.toml` → adicionar `sustainment` como sub‑namespace de evento de `asset` e, se
   A3 decidir, `migration_location` de `sustainment` (**PR de Shared Integration** separado).
 - `docs/CHECKLIST_DE_IMPLEMENTACAO.md` → entrada por passo A2–A7 no mesmo commit.
-- `docs/asset-sustainment/` → documentos diferidos (10, 12–18) produzidos conforme `20` §4.
+- `docs/asset/` → documentos diferidos (10, 12–18) produzidos conforme `20` §4.
 - `MULTI_AGENT_ARCHITECTURE_REVIEW.md` (§49) → produzir após revisões de Claude e Gemini.
-- Esta SPEC → `docs/specs/approved/` no ACCEPT; `docs/specs/implemented/` ao fim de A7.
+- Esta SPEC → `docs/asset/specs/approved/` no ACCEPT; `docs/asset/specs/implemented/` ao fim de A7 (mesmo
+  lifecycle de `docs/specs/README.md`, namespaced por vertical).
 
 ## Riscos, alternativas e perguntas abertas
 
-Riscos completos em `docs/asset-sustainment/19_RISK_REGISTER.md` (B1, H1–H3, AR‑01..15, PR‑01..04).
+Riscos completos em `docs/asset/19_RISK_REGISTER.md` (B1, H1–H3, AR‑01..15, PR‑01..04).
 Principais para esta SPEC:
 
 | Risco | Trade‑off | Recomendação |

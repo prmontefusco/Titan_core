@@ -6,7 +6,7 @@
 **Escopo:** Auditoria do Titan Core existente e avaliação de sua reutilização por uma segunda vertical, sem fork e sem contaminação de conceitos de Asset no Core.
 
 > Este documento é a Fase 1 (auditoria) e alimenta os demais artefatos em
-> `docs/asset-sustainment/`. Ele **não autoriza** mover pacotes, criar migrations
+> `docs/asset/`. Ele **não autoriza** mover pacotes, criar migrations
 > ou implementar Titan Asset. Ver `STOP CONDITION` no final.
 
 ---
@@ -265,7 +265,7 @@ nas duas.
 
 ## STOP CONDITION
 
-Ao concluir os seis documentos de `docs/asset-sustainment/` + ADR:
+Ao concluir os seis documentos de `docs/asset/` + ADR:
 
 **PARAR.** Não mover pacotes. Não implementar Titan Asset. Não criar migrations,
 entidades ou endpoints. A implementação só ocorre após revisão e ACCEPT

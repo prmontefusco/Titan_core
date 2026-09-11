@@ -46,7 +46,7 @@ Fonte dos itens herdados: `docs/architecture/PHASE0_ADVERSARIAL_REVIEW.md` e
 |---|---|---|---|
 | PR‑01 | MEDIUM | Trabalho de Asset produz *diff* em arquivo que o Codex edita (Livestock) | `PARALLEL_VERTICAL_SAFETY` + File Ownership Guard + worktree `Titan-asset/` em `vertical/asset/*` |
 | PR‑02 | MEDIUM | `_registry.py` / `dispatch.py` (Shared Integration) viram gargalo entre lanes | são PRs aditivos pequenos, serializados; não movem routers de Livestock (janela de integração) |
-| PR‑03 | LOW | Commit base `f6cc85b` da stack Lane C mistura `docs/asset-sustainment/` (Lane B) | ao fatiar em PRs reais, `docs/asset-sustainment/` sai de `f6cc85b`; esta branch `vertical/asset/discovery` é a origem correta |
+| PR‑03 | LOW | Commit base `f6cc85b` da stack Lane C mistura `docs/asset/` (Lane B) | ao fatiar em PRs reais, `docs/asset/` sai de `f6cc85b`; esta branch `vertical/asset/discovery` é a origem correta |
 | PR‑04 | MEDIUM | ADR do slice (A1) e teste vertical⊥vertical (Passo 1) têm dependência circular via decisão B | A1 **precede** o registro de `sustainment` no manifesto; Passo 1 fica com `("livestock","asset")` |
 
 ## 4. Itens que exigem decisão do dono antes de A2 (código)

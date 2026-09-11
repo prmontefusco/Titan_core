@@ -6,11 +6,11 @@ Não assumir número.
 **Status:** RASCUNHO
 **Estado operacional no MVP:** FUTURA_APROVADA (nenhum código; decisão de estrutura do primeiro slice)
 **Lane:** Asset (`vertical/asset/*`).
-**Decisão de Discovery:** `PROCEED` (ver `docs/asset-sustainment/20_EXECUTION_ROADMAP.md` §2), **condicionada**
+**Decisão de Discovery:** `PROCEED` (ver `docs/asset/20_EXECUTION_ROADMAP.md` §2), **condicionada**
 às decisões A, F, G de `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`.
 **Complementa:** ADR‑0080 e o rascunho `draft-20260910-governanca-de-desenvolvimento-paralelo-de-verticais.md`
 (estrutura de repositório e paralelismo). **Não** os substitui.
-**Documentos de apoio (fonte do detalhe):** `docs/asset-sustainment/01`…`09`, `11`, `19`, `20`.
+**Documentos de apoio (fonte do detalhe):** `docs/asset/01`…`09`, `11`, `19`, `20`.
 
 ---
 
@@ -225,7 +225,7 @@ de evento e (se A3 decidir ambiente próprio) uma `migration_location` — via P
 
 ## Critérios de aceitação
 
-- SPEC `docs/specs/proposed/2026-09-10-titan-asset-primeiro-slice.md` aprovada pelo dono.
+- SPEC `docs/asset/specs/proposed/2026-09-10-titan-asset-primeiro-slice.md` aprovada pelo dono.
 - Discovery (01–09, 11, 19, 20) revisada por Claude (adversarial) e Gemini (integração); sem BLOQUEADOR
   aberto; `MULTI_AGENT_ARCHITECTURE_REVIEW.md` produzido (§49).
 - Decisões A, F, G aceitas em `docs/architecture/DECISIONS_REQUIRED_PHASE0.md`; B fixada por esta ADR.
