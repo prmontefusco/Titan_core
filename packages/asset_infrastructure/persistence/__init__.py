@@ -32,6 +32,12 @@ from packages.asset_infrastructure.persistence.stock_location_repository import 
     TransactionalStockLocationRepository,
     stock_locations_table,
 )
+from packages.asset_infrastructure.persistence.vehicle_repository import (
+    TransactionalVehicleRepository,
+    vehicle_meter_corrections_table,
+    vehicle_meter_readings_table,
+    vehicles_table,
+)
 
 __all__ = [
     "TransactionalApplicabilityRepository",
@@ -40,6 +46,7 @@ __all__ = [
     "TransactionalInterchangeabilityGroupRepository",
     "TransactionalPartRepository",
     "TransactionalStockLocationRepository",
+    "TransactionalVehicleRepository",
     "applicability_table",
     "configuration_baseline_positions_table",
     "configuration_baselines_table",
@@ -51,4 +58,7 @@ __all__ = [
     "part_supersessions_table",
     "parts_table",
     "stock_locations_table",
+    "vehicle_meter_corrections_table",
+    "vehicle_meter_readings_table",
+    "vehicles_table",
 ]

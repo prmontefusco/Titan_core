@@ -36,6 +36,9 @@ from packages.asset_infrastructure.persistence import (
     part_supersessions_table,
     parts_table,
     stock_locations_table,
+    vehicle_meter_corrections_table,
+    vehicle_meter_readings_table,
+    vehicles_table,
 )
 from packages.core_infrastructure.bootstrap import bootstrap_receipts_table
 from packages.core_infrastructure.persistence import (
@@ -168,6 +171,9 @@ assert interchangeability_group_members_table.metadata is target_metadata
 assert applicability_table.metadata is target_metadata
 assert configuration_baselines_table.metadata is target_metadata
 assert configuration_baseline_positions_table.metadata is target_metadata
+assert vehicles_table.metadata is target_metadata
+assert vehicle_meter_readings_table.metadata is target_metadata
+assert vehicle_meter_corrections_table.metadata is target_metadata
 
 VERSION_TABLE = "alembic_version_asset"
 

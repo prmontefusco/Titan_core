@@ -5014,3 +5014,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/integration/test_configuration_baseline_postgresql.py` (duas baselines do mesmo `model_ref`, a segunda superseder a primeira via `supersedes_ref`, com `positions`/FK para `Part`/`PartRevision`; RLS) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 329 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. `require_acyclic_revision_chain`/`require_no_overlapping_effectivity` (I-CFG-1/I-CFG-2) precisam de um metodo de consulta por `model_ref`/`variant_ref` que devolva o historico relevante — nao adicionado aqui (YAGNI: nada neste incremento o exercita); fica para quando `asset_application` (A4) precisar dele, testado no ponto de uso. Faltam: `Vehicle` -> `StockPosition`/`StockReservation`/`StockTransfer` -> `SLIContract` -> `WorkOrder`.
+
+### 11/09/2026 — A3: agregado `Vehicle` (persistencia)
+
+**Estado:** EM EXECUCAO — setimo incremento de A3, fecha o modulo `asset` da persistencia (falta so `Inventory` e o modulo `sustainment`).
+
+**Implementacao:** `packages/asset_infrastructure/persistence/vehicle_repository.py` — `vehicles_table` (FK para `organizations`, `customer_sites.site_id` e `configuration_baselines.baseline_id`), `vehicle_meter_readings_table`/`vehicle_meter_corrections_table` (tabelas filhas; `corrections` tem FK para `readings`). `identifiers` (VO unico) embutido como colunas, mesmo padrao de `Applicability.target`.
+
+**Aplicacao direta da licao do incremento de `Part`:** `meter_readings`/`meter_corrections` sao append-only no dominio (I-VEH-2: correcao nunca apaga a leitura original) e `corrections` tem FK para `readings` — por isso `update()` nunca faz delete+reinsert dessas tabelas; so insere o que ainda nao existe (`reading_id`/`correction_id` sao estaveis, nunca regenerados). Generaliza a regra ja registrada no incremento de `Part`: tabelas append-only com FK de outra tabela apontando para elas usam "insere o que falta", nunca "apaga e reinsere tudo".
+
+**Portao:** `tests/integration/test_vehicle_postgresql.py` (round-trip; `record_meter_reading` seguido de `correct_meter_reading`, provando que a leitura original permanece apos a correcao — exercita exatamente o caminho que teria quebrado com delete+reinsert; RLS) verde contra Postgres real. `alembic -c .../alembic.ini check` (Asset) "No new upgrade operations detected." `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1628 passed, 330 skipped`.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: `StockPosition`/`StockReservation`/`StockTransfer` -> `SLIContract` -> `WorkOrder` (fecha A3).
