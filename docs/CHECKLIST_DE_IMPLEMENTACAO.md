@@ -245,14 +245,38 @@ Verificações focadas executadas: `python -m uv run --locked pytest
 tests/livestock_application/test_commercial_passport.py tests/api/test_commercial_passport_api_release_gate.py`
 (25 passed).
 
-**Próximos passos:** (1) implementar a primeira pipeline produtiva de requisitos de propriedade,
+**Próximo passo:** F9 — implementar a primeira pipeline produtiva de requisitos de propriedade,
 resolvendo um conjunto inicial de oportunidades e requisitos a partir de fontes já existentes, sem criar
-outro policy engine e sem colapsar readiness de propriedade com elegibilidade populacional; (2) conectar
-a rota de emissão formal a material canônico real e emitir/persistir via `DossierService` e
-`VerificationBundleService`, reaproveitando a seção vertical criada em F5; (3) criar roteiro executável em
-`apps/validacao` assim que houver fluxo manual testável, porque F6 acrescentou comportamento observável
-por API; (4) habilitar `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma controlada, depois da
-pipeline produtiva e da validação. Até lá, a feature flag permanece desligada por padrão.
+outro policy engine e sem colapsar readiness de propriedade com elegibilidade populacional.
+
+### 12/09/2026 — Commercial Passport F9: pipeline produtiva inicial a partir de MarketReadiness
+
+**Estado:** CONCLUÍDO — nono incremento do Commercial Passport, restrito à camada de aplicação.
+`PropertyCommercialPassportMarketReadinessPipeline` implementa a primeira pipeline produtiva plugável na
+porta criada em F8: ela recebe oportunidades comerciais Livestock e `MarketReadinessReport` canônico já
+produzido pelos mecanismos existentes, valida Organization, purpose, Policy/version, `reference_time`,
+`knowledge_cutoff` e boundary, e então compõe `CommercialPassport` dinâmico via
+`PropertyCommercialPassportService`.
+
+**Decisões preservadas:** a pipeline não avalia Policy, não emite `Decision`, não consulta banco, não
+resolve população, não cria outro engine e não cria snapshot formal. O requisito de propriedade deste
+primeiro corte é a disponibilidade de material canônico de MarketReadiness para a oportunidade; quando o
+report está ausente, isso vira `MISSING`, não `UNKNOWN` nem falso. A elegibilidade de animais continua em
+`PopulationEligibilitySummary`, derivada de contagens do `MarketReadinessReport`, sem alterar a readiness
+da propriedade.
+
+**Portão:** `tests/livestock_application/test_commercial_passport.py` cobre report compatível gerando
+requirement satisfeito e summary populacional separado, report ausente como gap de propriedade, e rejeição
+de divergência temporal para evitar consulta frágil ao estado atual. Verificações focadas executadas:
+`python -m uv run --locked pytest tests/livestock_application/test_commercial_passport.py
+tests/api/test_commercial_passport_api_release_gate.py` (28 passed).
+
+**Próximos passos:** (1) conectar a rota de emissão formal a material canônico real e emitir/persistir
+via `DossierService` e `VerificationBundleService`, reaproveitando a seção vertical criada em F5; (2)
+criar roteiro executável em `apps/validacao` assim que houver fluxo manual testável, porque F6 acrescentou
+comportamento observável por API; (3) habilitar `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma
+controlada, depois da pipeline produtiva, emissão formal e validação. Até lá, a feature flag permanece
+desligada por padrão.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:

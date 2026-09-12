@@ -17,6 +17,7 @@ from typing import Any, Protocol
 from packages.core_domain.dossier import VerticalSection
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
+    MarketReadinessReport,
     MarketReadinessStatus,
 )
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
@@ -398,6 +399,112 @@ class PropertyCommercialPassportProjectionPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class CommercialPassportMarketReadinessSource:
+    """Canonical MarketReadiness material for one commercial opportunity."""
+
+    opportunity: CommercialOpportunity
+    report: MarketReadinessReport | None = None
+    limitations: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        _require_text_tuple(self.limitations, "limitations")
+
+
+@dataclass(frozen=True, slots=True)
+class PropertyCommercialPassportMarketReadinessPipeline:
+    """Initial productive pipeline for dynamic Property Commercial Passport.
+
+    This pipeline consumes existing MarketReadiness material. It does not
+    evaluate Policy, issue Decisions, resolve animal populations or persist
+    snapshots by itself.
+    """
+
+    sources: tuple[CommercialPassportMarketReadinessSource, ...]
+    passport_service: PropertyCommercialPassportService = field(
+        default_factory=PropertyCommercialPassportService,
+    )
+
+    def __post_init__(self) -> None:
+        if not self.sources:
+            raise ValueError("Commercial Passport exige ao menos uma fonte de oportunidade.")
+        codes = [source.opportunity.code for source in self.sources]
+        if len(set(codes)) != len(codes):
+            raise ValueError("Commercial Passport nao aceita fonte de oportunidade duplicada.")
+
+    def build_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+    ) -> CommercialPassport:
+        return self.passport_service.build(
+            context=context,
+            opportunities=tuple(
+                self._opportunity_input(context=context, source=source) for source in self.sources
+            ),
+        )
+
+    def _opportunity_input(
+        self,
+        *,
+        context: CommercialPassportContext,
+        source: CommercialPassportMarketReadinessSource,
+    ) -> PropertyCommercialPassportOpportunityInput:
+        report = source.report
+        if report is None:
+            return PropertyCommercialPassportOpportunityInput(
+                opportunity=source.opportunity,
+                requirements=(
+                    _market_readiness_material_requirement(
+                        source.opportunity,
+                        CommercialPassportRequirementStatus.MISSING,
+                        "MarketReadiness report has not been supplied for this opportunity.",
+                        ("MARKET_READINESS_REPORT_MISSING",),
+                    ),
+                ),
+                limitations=(
+                    *source.limitations,
+                    "market readiness report unavailable",
+                ),
+            )
+        _assert_report_matches_opportunity(
+            context=context,
+            opportunity=source.opportunity,
+            report=report,
+        )
+        return PropertyCommercialPassportOpportunityInput(
+            opportunity=source.opportunity,
+            requirements=(
+                _market_readiness_material_requirement(
+                    source.opportunity,
+                    CommercialPassportRequirementStatus.SATISFIED,
+                    "MarketReadiness report matches the Commercial Passport context.",
+                    ("MARKET_READINESS_REPORT_AVAILABLE",),
+                ),
+            ),
+            population_eligibility=PopulationEligibilitySummary(
+                subject_type="animal",
+                counts_by_status={
+                    status.value: report.counts.get(status, 0) for status in MarketReadinessStatus
+                },
+                limitations=(
+                    "derived from MarketReadiness; not a Decision",
+                    *tuple(
+                        sorted(
+                            {
+                                limitation
+                                for entry in report.entries
+                                for limitation in entry.limitations
+                            }
+                        )
+                    ),
+                ),
+                source_report_reference=_market_readiness_report_reference(report),
+            ),
+            limitations=source.limitations,
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class CommercialPassportDossierSectionBuilder:
     """Build a Livestock vertical section for formal Commercial Passport issuance.
 
@@ -570,6 +677,59 @@ def _requirement_snapshot(requirement: CommercialRequirementAssessment) -> dict[
         else str(requirement.decision_id.value),
         "limitations": list(requirement.limitations),
     }
+
+
+def _market_readiness_material_requirement(
+    opportunity: CommercialOpportunity,
+    status: CommercialPassportRequirementStatus,
+    reason: str,
+    reason_codes: tuple[str, ...],
+) -> CommercialRequirementAssessment:
+    return CommercialRequirementAssessment(
+        requirement_code=f"{opportunity.code}:market-readiness-material",
+        label="Market readiness material",
+        dimension=CommercialPassportRequirementDimension.PROPERTY_READINESS,
+        status=status,
+        reason=reason,
+        reason_codes=reason_codes,
+        limitations=("does not evaluate policy during Commercial Passport projection",),
+    )
+
+
+def _assert_report_matches_opportunity(
+    *,
+    context: CommercialPassportContext,
+    opportunity: CommercialOpportunity,
+    report: MarketReadinessReport,
+) -> None:
+    report_context = report.context
+    if report_context.organization_id != context.organization_id:
+        raise ValueError("MarketReadinessReport pertence a outra Organization.")
+    if report_context.purpose != opportunity.purpose:
+        raise ValueError("MarketReadinessReport diverge do purpose da oportunidade.")
+    if report_context.policy_id != opportunity.policy_id:
+        raise ValueError("MarketReadinessReport diverge da policy da oportunidade.")
+    if report_context.policy_version != opportunity.policy_version:
+        raise ValueError("MarketReadinessReport diverge da policy_version da oportunidade.")
+    if report_context.reference_time != context.reference_time:
+        raise ValueError("MarketReadinessReport diverge do reference_time do passaporte.")
+    if report_context.knowledge_cutoff != context.knowledge_cutoff:
+        raise ValueError("MarketReadinessReport diverge do knowledge_cutoff do passaporte.")
+    if report_context.result_boundary != context.result_boundary:
+        raise ValueError("MarketReadinessReport diverge do result_boundary do passaporte.")
+
+
+def _market_readiness_report_reference(report: MarketReadinessReport) -> str:
+    context = report.context
+    return ":".join(
+        (
+            "market-readiness-report",
+            str(context.policy_id.value),
+            str(context.policy_version),
+            context.reference_time.isoformat(),
+            context.knowledge_cutoff.isoformat(),
+        )
+    )
 
 
 def _readiness_ratio_snapshot(breakdown: CommercialReadinessBreakdown) -> dict[str, int] | None:

@@ -12,6 +12,7 @@ from packages.livestock_application.commercial_passport import (
     CommercialPassport,
     CommercialPassportContext,
     CommercialPassportDossierSectionBuilder,
+    CommercialPassportMarketReadinessSource,
     CommercialPassportOpportunityAssessment,
     CommercialPassportRequirementDimension,
     CommercialPassportRequirementStatus,
@@ -19,11 +20,18 @@ from packages.livestock_application.commercial_passport import (
     CommercialReadinessInterpretation,
     CommercialRequirementAssessment,
     PopulationEligibilitySummary,
+    PropertyCommercialPassportMarketReadinessPipeline,
     PropertyCommercialPassportOpportunityInput,
     PropertyCommercialPassportService,
     PropertyCommercialReadiness,
 )
-from packages.livestock_application.market_readiness import MarketReadinessStatus
+from packages.livestock_application.market_readiness import (
+    MarketReadinessContext,
+    MarketReadinessEntry,
+    MarketReadinessGapSummary,
+    MarketReadinessReport,
+    MarketReadinessStatus,
+)
 from packages.livestock_application.verification_bundle_interpreter import (
     LivestockVerificationBundleInterpreter,
 )
@@ -50,6 +58,77 @@ def _opportunity(code: str = "synthetic-eu") -> CommercialOpportunity:
         purpose="exportacao-uniao-europeia",
         policy_id=TypedId.new("policy"),
         policy_version=1,
+    )
+
+
+def _market_readiness_report(
+    *,
+    context: CommercialPassportContext,
+    opportunity: CommercialOpportunity,
+    ready: int = 1,
+    not_ready: int = 0,
+    indeterminate: int = 0,
+) -> MarketReadinessReport:
+    entries = (
+        *(
+            MarketReadinessEntry(
+                subject_id=TypedId.new("animal"),
+                status=MarketReadinessStatus.READY,
+                decision_id=TypedId.new("decision"),
+                evaluation_id=TypedId.new("evaluation"),
+                reason_codes=("APPROVED",),
+                limitations=(),
+            )
+            for _ in range(ready)
+        ),
+        *(
+            MarketReadinessEntry(
+                subject_id=TypedId.new("animal"),
+                status=MarketReadinessStatus.NOT_READY,
+                decision_id=TypedId.new("decision"),
+                evaluation_id=TypedId.new("evaluation"),
+                reason_codes=("BLOCKING_GAP",),
+                limitations=(),
+            )
+            for _ in range(not_ready)
+        ),
+        *(
+            MarketReadinessEntry(
+                subject_id=TypedId.new("animal"),
+                status=MarketReadinessStatus.INDETERMINATE,
+                decision_id=None,
+                evaluation_id=None,
+                reason_codes=("UNKNOWN_EVIDENCE",),
+                limitations=("knowledge limitation",),
+            )
+            for _ in range(indeterminate)
+        ),
+    )
+    return MarketReadinessReport(
+        context=MarketReadinessContext(
+            organization_id=context.organization_id,
+            purpose=opportunity.purpose,
+            policy_id=opportunity.policy_id,
+            policy_version=opportunity.policy_version,
+            reference_time=context.reference_time,
+            knowledge_cutoff=context.knowledge_cutoff,
+        ),
+        entries=entries,
+        counts={
+            status: sum(1 for entry in entries if entry.status is status)
+            for status in MarketReadinessStatus
+        },
+        gap_summary=(
+            MarketReadinessGapSummary(
+                code="BLOCKING_GAP",
+                count=not_ready,
+                example_subject_ids=tuple(
+                    entry.subject_id
+                    for entry in entries
+                    if entry.status is MarketReadinessStatus.NOT_READY
+                )[:3],
+            ),
+        ),
     )
 
 
@@ -573,3 +652,85 @@ def test_commercial_passport_section_travels_inside_existing_verification_bundle
     assert any(
         "does not authorize public disclosure" in gap for gap in bundle.manifest.declared_gaps
     )
+
+
+def test_market_readiness_pipeline_builds_property_passport_from_existing_report() -> None:
+    context = _context()
+    opportunity = _opportunity("eu")
+    report = _market_readiness_report(
+        context=context,
+        opportunity=opportunity,
+        ready=2,
+        not_ready=1,
+        indeterminate=1,
+    )
+
+    passport = PropertyCommercialPassportMarketReadinessPipeline(
+        sources=(
+            CommercialPassportMarketReadinessSource(
+                opportunity=opportunity,
+                report=report,
+            ),
+        ),
+    ).build_property_passport(context=context)
+
+    assessment = passport.opportunities[0]
+    assert assessment.property_readiness.breakdown.satisfied == 1
+    assert assessment.property_readiness.breakdown.interpretation is (
+        CommercialReadinessInterpretation.AVAILABLE
+    )
+    requirement = assessment.property_readiness.requirements[0]
+    assert requirement.status is CommercialPassportRequirementStatus.SATISFIED
+    assert requirement.reason_codes == ("MARKET_READINESS_REPORT_AVAILABLE",)
+    assert assessment.population_eligibility is not None
+    assert assessment.population_eligibility.ready_count == 2
+    assert assessment.population_eligibility.not_ready_count == 1
+    assert assessment.population_eligibility.indeterminate_count == 1
+    assert "derived from MarketReadiness; not a Decision" in (
+        assessment.population_eligibility.limitations
+    )
+
+
+def test_market_readiness_pipeline_keeps_missing_report_as_property_gap() -> None:
+    context = _context()
+    opportunity = _opportunity("buyer-x")
+
+    passport = PropertyCommercialPassportMarketReadinessPipeline(
+        sources=(
+            CommercialPassportMarketReadinessSource(
+                opportunity=opportunity,
+                report=None,
+            ),
+        ),
+    ).build_property_passport(context=context)
+
+    assessment = passport.opportunities[0]
+    assert assessment.population_eligibility is None
+    assert assessment.property_readiness.breakdown.missing == 1
+    assert assessment.property_readiness.requirements[0].status is (
+        CommercialPassportRequirementStatus.MISSING
+    )
+    assert "market readiness report unavailable" in assessment.limitations
+
+
+def test_market_readiness_pipeline_rejects_temporal_context_mismatch() -> None:
+    context = _context()
+    opportunity = _opportunity("eu")
+    divergent_context = CommercialPassportContext(
+        organization_id=context.organization_id,
+        property_id=context.property_id,
+        reference_time=context.reference_time - timedelta(days=1),
+        knowledge_cutoff=context.knowledge_cutoff,
+        evaluated_at=context.evaluated_at,
+    )
+    report = _market_readiness_report(context=divergent_context, opportunity=opportunity)
+
+    with pytest.raises(ValueError, match="reference_time"):
+        PropertyCommercialPassportMarketReadinessPipeline(
+            sources=(
+                CommercialPassportMarketReadinessSource(
+                    opportunity=opportunity,
+                    report=report,
+                ),
+            ),
+        ).build_property_passport(context=context)

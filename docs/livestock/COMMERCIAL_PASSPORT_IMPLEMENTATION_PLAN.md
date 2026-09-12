@@ -1,7 +1,7 @@
 # Commercial Passport Implementation Plan
 
 **Data:** 2026-09-11
-**Status:** Plano aprovado; F1-F8 implementados. Proximos cortes: pipeline produtiva inicial, emissao formal produtiva, roteiro executavel e habilitacao controlada da feature flag.
+**Status:** Plano aprovado; F1-F9 implementados. Proximos cortes: emissao formal produtiva, roteiro executavel e habilitacao controlada da feature flag.
 
 ## Objetivo
 
@@ -149,6 +149,8 @@ Regras:
 ### F9 — pipeline produtiva inicial
 
 Implementar a primeira pipeline produtiva de requisitos de propriedade.
+
+Status: implementado em 12/09/2026 como pipeline inicial baseada em `MarketReadinessReport` canonico.
 
 Objetivo:
 
