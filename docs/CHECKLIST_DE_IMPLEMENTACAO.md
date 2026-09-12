@@ -220,6 +220,35 @@ src/pages/CommercialPassport.test.tsx` (5 passed).
 resolver oportunidades/requisitos a partir de políticas existentes, compor a projection dinâmica com
 evidências reais e manter emissão formal separada via `Dossier`/`VerificationBundle`.
 
+### 12/09/2026 — Commercial Passport F8: boundary de pipeline dinâmica
+
+**Estado:** CONCLUÍDO — oitavo incremento do Commercial Passport, conectando a API release-gated a uma
+porta de aplicação para projection dinâmica sem introduzir dados sintéticos nem motor paralelo.
+`PropertyCommercialPassportProjectionPort` define o contrato mínimo para um builder produtivo de
+Property Commercial Passport; `commercial_passport_projection()` expõe a serialização HTTP canônica da
+projection dinâmica; e a rota `GET /v1/livestock/properties/{property_id}/commercial-passport` passa a
+retornar 200 somente quando uma pipeline real é injetada pela composição da aplicação. Sem pipeline, o
+comportamento padrão continua fail-closed em 503.
+
+**Decisões preservadas:** `CommercialPassport` permanece projection, não `Decision`, não
+`MarketEligibility` e não snapshot formal emitido. A rota não aceita payload do cliente para fabricar
+passaporte, não consulta cross-tenant, não cria `Dossier`/`VerificationBundle` em consulta dinâmica, não
+liga marketplace e não altera a emissão formal, que continua separada e fail-closed até receber sua
+pipeline própria. A porta vive em Livestock porque oportunidades comerciais, requisitos comerciais e
+population eligibility continuam semântica da vertical.
+
+**Portão:** `tests/api/test_commercial_passport_api_release_gate.py` cobre o padrão 503 sem pipeline e o
+retorno 200 quando uma `PropertyCommercialPassportProjectionPort` é injetada, preservando tenant,
+temporalidade, no-store headers, breakdown derivável e limitações da projection dinâmica.
+`tests/livestock_application/test_commercial_passport.py` continua cobrindo as invariantes de domínio.
+Verificações focadas executadas: `python -m uv run --locked pytest
+tests/livestock_application/test_commercial_passport.py tests/api/test_commercial_passport_api_release_gate.py`
+(25 passed).
+
+**Próximo passo:** implementar a primeira pipeline produtiva de requisitos de propriedade, resolvendo um
+conjunto inicial de oportunidades e requisitos a partir de fontes já existentes, sem criar outro policy
+engine e sem colapsar readiness de propriedade com elegibilidade populacional.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;

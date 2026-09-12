@@ -12,6 +12,18 @@ import apps.api.main as main_module
 from apps.api import livestock_commercial_passport as commercial_passport_api
 from packages.core_domain import AuthenticatedPrincipal, OrganizationContext, PrincipalType
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
+from packages.livestock_application.commercial_passport import (
+    CommercialOpportunity,
+    CommercialOpportunityKind,
+    CommercialPassport,
+    CommercialPassportContext,
+    CommercialPassportRequirementDimension,
+    CommercialPassportRequirementStatus,
+    CommercialRequirementAssessment,
+    PropertyCommercialPassportOpportunityInput,
+    PropertyCommercialPassportProjectionPort,
+    PropertyCommercialPassportService,
+)
 from packages.shared_kernel import OrganizationId, TypedId
 
 PROPERTY_ID = "00000000-0000-0000-0000-000000000001"
@@ -69,6 +81,50 @@ def _valid_issue_body() -> dict[str, object]:
     }
 
 
+class _ProjectionPipelineStub(PropertyCommercialPassportProjectionPort):
+    seen_context: CommercialPassportContext | None = None
+
+    def build_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+    ) -> CommercialPassport:
+        self.seen_context = context
+        return PropertyCommercialPassportService().build(
+            context=context,
+            opportunities=(
+                PropertyCommercialPassportOpportunityInput(
+                    opportunity=CommercialOpportunity(
+                        code="eu",
+                        kind=CommercialOpportunityKind.ECONOMIC_BLOCK,
+                        name="European Union",
+                        purpose="export-eu",
+                        policy_id=TypedId.new("policy"),
+                        policy_version=3,
+                    ),
+                    requirements=(
+                        CommercialRequirementAssessment(
+                            requirement_code="traceability",
+                            label="Traceability",
+                            dimension=CommercialPassportRequirementDimension.PROPERTY_READINESS,
+                            status=CommercialPassportRequirementStatus.SATISFIED,
+                            reason="Evidence is available.",
+                            reason_codes=("TRACEABILITY_OK",),
+                        ),
+                        CommercialRequirementAssessment(
+                            requirement_code="environmental-evidence",
+                            label="Environmental evidence",
+                            dimension=CommercialPassportRequirementDimension.PROPERTY_READINESS,
+                            status=CommercialPassportRequirementStatus.MISSING,
+                            reason="Required evidence was not supplied.",
+                            reason_codes=("MISSING_EVIDENCE",),
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+
 def test_commercial_passport_routes_are_absent_by_default(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.delenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", raising=False)
     importlib.reload(main_module)
@@ -107,6 +163,45 @@ def test_dynamic_commercial_passport_route_fails_closed_until_pipeline_is_enable
     assert response.headers["pragma"] == "no-cache"
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.json()["reason_code"] == "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"
+
+
+def test_dynamic_commercial_passport_route_returns_projection_from_pipeline(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+    contexto = _context()
+    pipeline = _ProjectionPipelineStub()
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_read
+    ] = lambda: contexto
+    main_module.app.dependency_overrides[
+        commercial_passport_api.get_commercial_passport_projection_pipeline
+    ] = lambda: pipeline
+
+    response = TestClient(main_module.app).get(GET_ROUTE, params=_valid_query())
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["property_id"] == PROPERTY_ID
+    assert payload["reference_time"] == "2026-09-11T00:00:00+00:00"
+    assert payload["knowledge_cutoff"] == "2026-09-11T00:00:00+00:00"
+    assert payload["opportunities"][0]["opportunity"]["code"] == "eu"
+    assert payload["opportunities"][0]["property_readiness"]["interpretation"] == (
+        "PARTIALLY_READY"
+    )
+    assert payload["opportunities"][0]["property_readiness"]["breakdown"]["derived_ratio"] == {
+        "satisfied": 1,
+        "applicable": 2,
+    }
+    assert payload["limitations"] == [
+        "PROPERTY_COMMERCIAL_PASSPORT_IS_DYNAMIC_PROJECTION",
+        "POPULATION_ELIGIBILITY_IS_SEPARATE_FROM_PROPERTY_READINESS",
+        "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE",
+    ]
+    assert pipeline.seen_context is not None
+    assert pipeline.seen_context.organization_id == contexto.organization_id
 
 
 def test_issue_commercial_passport_route_fails_closed_until_issuance_is_enabled(

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Protocol
 
 from packages.core_domain.dossier import VerticalSection
 from packages.livestock_application.market_readiness import (
@@ -387,6 +387,16 @@ class PropertyCommercialPassportService:
         )
 
 
+class PropertyCommercialPassportProjectionPort(Protocol):
+    """Builds a dynamic Property Commercial Passport from productive sources."""
+
+    def build_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+    ) -> CommercialPassport: ...
+
+
 @dataclass(frozen=True, slots=True)
 class CommercialPassportDossierSectionBuilder:
     """Build a Livestock vertical section for formal Commercial Passport issuance.
@@ -429,6 +439,24 @@ class CommercialPassportDossierSectionBuilder:
                 }
             },
         )
+
+
+def commercial_passport_projection(passport: CommercialPassport) -> dict[str, Any]:
+    """HTTP-ready projection of a dynamic Commercial Passport.
+
+    The payload is derived from the application projection. It is not a
+    Decision, not MarketEligibility and not a formal issued snapshot.
+    """
+
+    return {
+        "property_id": str(passport.context.property_id.value),
+        "reference_time": passport.context.reference_time.isoformat(),
+        "knowledge_cutoff": passport.context.knowledge_cutoff.isoformat(),
+        "evaluated_at": passport.context.evaluated_at.isoformat(),
+        "result_boundary": passport.context.result_boundary,
+        "opportunities": [_opportunity_snapshot(item) for item in passport.opportunities],
+        "limitations": list(passport.limitations),
+    }
 
 
 def _breakdown(

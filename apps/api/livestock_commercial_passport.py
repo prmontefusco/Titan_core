@@ -6,7 +6,7 @@ declares the contract and guards the boundary without fabricating passport data
 from request payloads.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -17,6 +17,11 @@ from apps.api.livestock_dependencies import require_permission, typed_id_or_prob
 from apps.api.problem import DomainProblem
 from packages.core_domain import OrganizationContext
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
+from packages.livestock_application.commercial_passport import (
+    CommercialPassportContext,
+    PropertyCommercialPassportProjectionPort,
+    commercial_passport_projection,
+)
 from packages.livestock_application.market_supply_response import MARKET_SUPPLY_NO_STORE_HEADERS
 from packages.shared_kernel.temporal import require_utc
 
@@ -30,6 +35,12 @@ class CommercialPassportIssueRequest(BaseModel):
     reference_time: datetime
     knowledge_cutoff: datetime
     audience: str = "internal"
+
+
+def get_commercial_passport_projection_pipeline() -> (
+    PropertyCommercialPassportProjectionPort | None
+):
+    return None
 
 
 @router.get(
@@ -47,13 +58,46 @@ def get_property_commercial_passport(
     property_id: str,
     reference_time: datetime,
     knowledge_cutoff: datetime,
-    _: Annotated[OrganizationContext, Depends(require_commercial_passport_read)],
+    context: Annotated[OrganizationContext, Depends(require_commercial_passport_read)],
+    projection_pipeline: Annotated[
+        PropertyCommercialPassportProjectionPort | None,
+        Depends(get_commercial_passport_projection_pipeline),
+    ],
 ) -> JSONResponse:
-    typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    property_ref = typed_id_or_problem(
+        property_id,
+        entity_type="rural_property",
+        campo="property_id",
+    )
     _validate_temporal_coordinates(reference_time, knowledge_cutoff)
-    return _not_enabled_response(
-        reason_code="COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO",
-        detail="A projection produtiva do Commercial Passport ainda não está habilitada.",
+    if projection_pipeline is None:
+        return _not_enabled_response(
+            reason_code="COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO",
+            detail="A projection produtiva do Commercial Passport ainda não está habilitada.",
+        )
+
+    try:
+        passport = projection_pipeline.build_property_passport(
+            context=CommercialPassportContext(
+                organization_id=context.organization_id,
+                property_id=property_ref,
+                reference_time=reference_time,
+                knowledge_cutoff=knowledge_cutoff,
+                evaluated_at=datetime.now(UTC),
+            ),
+        )
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="COMMERCIAL_PASSPORT_REQUEST_INVALIDA",
+            title="Requisição de Commercial Passport inválida",
+            detail=str(error),
+        ) from error
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        headers=dict(MARKET_SUPPLY_NO_STORE_HEADERS),
+        content=commercial_passport_projection(passport),
     )
 
 
