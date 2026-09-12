@@ -245,9 +245,14 @@ Verificações focadas executadas: `python -m uv run --locked pytest
 tests/livestock_application/test_commercial_passport.py tests/api/test_commercial_passport_api_release_gate.py`
 (25 passed).
 
-**Próximo passo:** implementar a primeira pipeline produtiva de requisitos de propriedade, resolvendo um
-conjunto inicial de oportunidades e requisitos a partir de fontes já existentes, sem criar outro policy
-engine e sem colapsar readiness de propriedade com elegibilidade populacional.
+**Próximos passos:** (1) implementar a primeira pipeline produtiva de requisitos de propriedade,
+resolvendo um conjunto inicial de oportunidades e requisitos a partir de fontes já existentes, sem criar
+outro policy engine e sem colapsar readiness de propriedade com elegibilidade populacional; (2) conectar
+a rota de emissão formal a material canônico real e emitir/persistir via `DossierService` e
+`VerificationBundleService`, reaproveitando a seção vertical criada em F5; (3) criar roteiro executável em
+`apps/validacao` assim que houver fluxo manual testável, porque F6 acrescentou comportamento observável
+por API; (4) habilitar `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma controlada, depois da
+pipeline produtiva e da validação. Até lá, a feature flag permanece desligada por padrão.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:

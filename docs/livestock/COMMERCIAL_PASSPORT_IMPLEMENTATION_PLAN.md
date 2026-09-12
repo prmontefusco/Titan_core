@@ -1,7 +1,7 @@
 # Commercial Passport Implementation Plan
 
 **Data:** 2026-09-11
-**Status:** Plano proposto; F1-F7 ainda nao implementados.
+**Status:** Plano aprovado; F1-F8 implementados. Proximos cortes: pipeline produtiva inicial, emissao formal produtiva, roteiro executavel e habilitacao controlada da feature flag.
 
 ## Objetivo
 
@@ -132,6 +132,70 @@ Objetivos da UI:
 - quando bloqueios temporarios cessam, se derivavel.
 
 UI nao implementa regra de negocio, autorizacao ou score.
+
+### F8 — boundary de pipeline dinamica
+
+Conectar a rota release-gated de consulta dinamica a uma porta de aplicacao.
+
+Regras:
+
+- sem pipeline produtiva injetada, a rota continua fail-closed;
+- com pipeline injetada, a rota retorna somente projection derivada;
+- o payload HTTP deve ser serializacao canonica do `CommercialPassport`;
+- nao criar dados sinteticos;
+- nao emitir Dossier/VerificationBundle no GET dinamico;
+- nao habilitar feature flag por padrao.
+
+### F9 — pipeline produtiva inicial
+
+Implementar a primeira pipeline produtiva de requisitos de propriedade.
+
+Objetivo:
+
+- resolver um conjunto inicial de oportunidades/requisitos a partir de fontes existentes;
+- reutilizar Policy/Evaluation/Decision/MarketReadiness quando aplicavel;
+- preservar `reference_time` e `knowledge_cutoff`;
+- produzir reasons/gaps/limitations explicaveis;
+- manter `PROPERTY_READINESS` separada de `POPULATION_ELIGIBILITY`.
+
+Nao implementar marketplace, buyer matching, public disclosure ou outro policy engine.
+
+### F10 — emissao formal produtiva
+
+Conectar a rota release-gated de emissao ao material canonico real.
+
+Fluxo esperado:
+
+- projection dinamica produtiva;
+- congelamento formal somente quando solicitado;
+- `DossierService`;
+- `VerificationBundleService`;
+- audit/autorizacao quando houver compartilhamento externo.
+
+Regras:
+
+- nao emitir Dossier/VerificationBundle em cada consulta dinamica;
+- nao criar segundo framework de snapshot;
+- nao persistir disclosure externo sem grant apropriado;
+- manter emissao formal diferente de readiness dinamica.
+
+### F11 — roteiro executavel em `apps/validacao`
+
+Criar roteiro manual executavel quando houver fluxo testavel.
+
+O roteiro deve:
+
+- descobrir Organization e entidades necessarias sem copia manual de IDs;
+- mostrar requisicao e resposta de cada passo;
+- explicar por que cada passo existe;
+- sondar ambiente/autenticacao/permissao antes do primeiro passo;
+- cobrir consulta dinamica, emissao formal e comportamento fail-closed quando aplicavel.
+
+### F12 — habilitacao controlada da feature flag
+
+Somente apos pipeline produtiva, emissao formal e validacao manual.
+
+`TITAN_COMMERCIAL_PASSPORT_API_ENABLED` permanece desligada por padrao ate la.
 
 ## Domain
 
