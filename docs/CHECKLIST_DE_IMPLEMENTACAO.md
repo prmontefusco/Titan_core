@@ -1,6 +1,6 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 11 de setembro de 2026
+**Atualizado em:** 12 de setembro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** ver o **ponto de parada de 27 de agosto de 2026** logo abaixo — é onde a sessão corrente parou e o que a próxima retoma. Continua pendente, de frente distinta: adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
 
@@ -195,6 +195,30 @@ tests/api/test_commercial_passport_api_release_gate.py tests/api/test_core_publi
 
 **Próximo passo:** F7 — UI projection, somente depois de a experiência de frontend conseguir consumir uma
 projection real ou uma camada de apresentação claramente marcada como release-gated.
+
+### 12/09/2026 — Commercial Passport F7: UI projection release-gated
+
+**Estado:** CONCLUÍDO — sétimo incremento do Commercial Passport, restrito à superfície web. `apps/web`
+agora possui client tipado para `GET /v1/livestock/properties/{property_id}/commercial-passport`, rota
+autenticada `/commercial-passport` e página de consulta por propriedade com `reference_time` e
+`knowledge_cutoff` explícitos. A tela renderiza somente projections reais retornadas pela API e trata o
+503 release-gated como capacidade ainda indisponível no ambiente, sem expor detalhe operacional bruto.
+
+**Decisões preservadas:** a UI não cria dados sintéticos, não habilita feature flag, não emite
+`Dossier`/`VerificationBundle`, não duplica a pipeline de avaliação e não transforma readiness em
+`Decision`. A apresentação mantém `PROPERTY_READINESS` separada de `POPULATION_ELIGIBILITY`: requisitos
+da propriedade aparecem como breakdown/reasons; contagens populacionais aparecem em bloco próprio quando
+forem fornecidas pela API. Consulta dinâmica continua diferente de emissão formal.
+
+**Portão:** `apps/web/src/api/commercialPassport.test.ts` cobre tenant, token e coordenadas temporais no
+client; `apps/web/src/pages/CommercialPassport.test.tsx` cobre a consulta release-gated, o tratamento
+seguro de 503 e a renderização futura de uma projection real separando readiness de propriedade e
+população. Verificações focadas executadas: `npm test -- src/api/commercialPassport.test.ts
+src/pages/CommercialPassport.test.tsx` (5 passed).
+
+**Próximo passo:** ligar a pipeline produtiva mínima por trás da API, ainda sem disclosure externo:
+resolver oportunidades/requisitos a partir de políticas existentes, compor a projection dinâmica com
+evidências reais e manter emissão formal separada via `Dossier`/`VerificationBundle`.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:

@@ -1105,6 +1105,51 @@ body {
   color: var(--color-text-muted);
 }
 
+.commercial-passport-page {
+  max-width: 980px;
+}
+
+.commercial-passport-opportunity-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+.commercial-passport-opportunity-card {
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.commercial-passport-opportunity-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.commercial-passport-opportunity-card h3,
+.commercial-passport-opportunity-card h4 {
+  margin: 0;
+  color: #ffffff;
+}
+
+.commercial-passport-opportunity-card header p {
+  margin: 0.25rem 0 0;
+  color: var(--color-text-muted);
+}
+
+.commercial-passport-opportunity-card header span {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  border-radius: var(--radius-sm);
+  color: #f59e0b;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .detail-description-list {
   display: grid;
   grid-template-columns: minmax(10rem, max-content) minmax(0, 1fr);
