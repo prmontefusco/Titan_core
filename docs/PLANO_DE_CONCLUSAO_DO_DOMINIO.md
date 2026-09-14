@@ -5,6 +5,18 @@
 **Estado:** APROVADO COMO ORDEM DE TRABALHO — interface fica adiada até o backend estabilizar
 **Relação com o plano anterior:** o `PLANO_DE_IMPLEMENTACAO_VALIDADO.md` encerrou-se no Marco 10 e declara que expansões exigem decomposição própria. Este documento começou como decomposição dos Marcos 13 a 16 e agora também registra a ordem de fechamento do backend antes da interface Titan Livestock.
 
+> **⚠️ ATUALIZAÇÃO EM 14/09/2026 — a ordem abaixo não foi a seguida.** O "Critério para iniciar frontend"
+> (item abaixo, "itens 1 a 4 implementados e validados") nunca foi satisfeito nesses termos: Marco 14
+> (manejo sanitário/vacina), Marco 15 (manejo zootécnico) e Marco 16 (reprodução restante — cobertura,
+> diagnóstico de gestação, desmame) não aparecem como concluídos em `docs/CHECKLIST_DE_IMPLEMENTACAO.md`.
+> Em vez disso, o responsável autorizou diretamente outras frentes fora desta sequência — conformidade
+> sanitária vitalícia (Marco 18, via `docs/plans/LIVESTOCK_LIFETIME_COMPLIANCE_PLAN.md`) e o primeiro
+> produto de frontend do Livestock (Marco 19, via `docs/plans/LIVESTOCK_PRODUCT_EXECUTION_PACKAGE.md`),
+> concluído em 06/08/2026. Este documento permanece como registro da decisão de sequência tomada em
+> 25-26/07/2026, mas não descreve a ordem real de execução a partir daí. Ver
+> `docs/CHECKLIST_DE_IMPLEMENTACAO.md` para o estado atual e
+> `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md` (14/09/2026) para um retrato consolidado.
+
 ---
 
 ## 1. Decisão de sequência
