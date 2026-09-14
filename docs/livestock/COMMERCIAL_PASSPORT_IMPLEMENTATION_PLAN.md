@@ -1,7 +1,7 @@
 # Commercial Passport Implementation Plan
 
 **Data:** 2026-09-11
-**Status:** Plano aprovado; F1-F12 implementados. Proximo corte: validacao autenticada em ambiente controlado.
+**Status:** Plano aprovado; F1-F13 implementados. Proximo corte: decisao de produto sobre habilitacao em ambiente compartilhado/staging.
 
 ## Objetivo
 
@@ -204,6 +204,13 @@ Somente apos pipeline produtiva, emissao formal e validacao manual.
 Status: validado localmente em 14/09/2026. Com a flag ausente, as rotas ficam fora do OpenAPI e respondem
 404. Com `TITAN_COMMERCIAL_PASSPORT_API_ENABLED=true`, as rotas aparecem no OpenAPI e chamadas anonimas
 respondem 401 sem disclosure de dados. A flag permanece desligada por padrao.
+
+### F13 — validacao autenticada em ambiente controlado
+
+Status: validado localmente em 14/09/2026 com `apps/validacao/commercial_passport_api.py --autenticado`.
+O roteiro usa usuarios locais semeados, descobre a Organization pelo banco e descobre a propriedade pela
+API. Chamadas anonimas permanecem em 401; chamadas autenticadas/autorizadas chegam ao boundary e retornam
+503 fail-closed enquanto a pipeline produtiva nao estiver explicitamente injetada.
 
 ## Domain
 

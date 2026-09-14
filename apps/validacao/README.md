@@ -71,7 +71,7 @@ provedor, não com sintoma genérico.
 | `explicacao_comercial` | Explicação comercial orientada a mercado |
 | `simulacao_comercial` | Simulação comercial ponta a ponta até o frigorífico |
 | `lote_comercial` | Lote com tratamento heterogêneo até o frigorífico |
-| `commercial_passport_api` | Superfície HTTP protegida do Commercial Passport: rotas default-off ou autenticadas quando feature-flagged |
+| `commercial_passport_api` | Superfície HTTP protegida do Commercial Passport: rotas default-off, 401 anônimo e, com `--autenticado`, 503 fail-closed após autorização |
 
 ### Contraparte externa e continuidade documental
 | Roteiro | Valida |

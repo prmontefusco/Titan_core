@@ -356,8 +356,45 @@ controlado compartilhado.
 **Portão:** `apps/validacao/commercial_passport_api.py` executado com sucesso contra os dois modos do
 release gate. Nenhum arquivo de código de produção foi alterado neste incremento.
 
-**Próximo passo:** decidir, fora do código, em qual ambiente controlado a flag poderá ser ligada para
-validação autenticada com permissões reais e pipeline de emissão formal.
+**Próximo passo:** F13 — executar validação autenticada com usuários locais semeados, permissões reais e a
+pipeline ainda deliberadamente fail-closed.
+
+### 14/09/2026 — Commercial Passport F13: validação autenticada do release gate
+
+**Estado:** CONCLUÍDO — décimo terceiro incremento do Commercial Passport, restrito ao roteiro executável e
+à evidência operacional de autenticação/autorização. `apps/validacao/commercial_passport_api.py` ganhou o
+modo `--autenticado`, que mantém os passos anônimos de segurança e acrescenta validação com usuários locais
+semeados, Organization descoberta no banco e propriedade descoberta pela API.
+
+**Evidência executada:** como a porta local `8080` estava ocupada por um processo Java externo ao compose,
+o Keycloak do Titan foi iniciado temporariamente com `TITAN_OIDC_PORT=18080`, sem alterar configuração
+versionada. A seed local criou usuários, vínculo, papéis e propriedade para o issuer
+`http://localhost:18080/realms/titan`. A API foi iniciada em `http://127.0.0.1:8012` com
+`TITAN_COMMERCIAL_PASSPORT_API_ENABLED=true`, issuer `18080`, Organization operadora da seed e credencial
+runtime `titan_app` para preservar RLS. O roteiro
+`python -m uv run --locked python -m apps.validacao.commercial_passport_api --autenticado` passou.
+
+**Resultado validado:** chamadas anônimas continuam em `401 NAO_AUTENTICADO`. Com token e Organization
+válidos, o operador semeado consultou a projection dinâmica e recebeu `503
+COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO`; o auditor semeado solicitou emissão formal e recebeu `503
+COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA`. Isso prova que autenticação e autorização atravessam o gate,
+mas a API não fabrica projection, Dossier ou VerificationBundle sem pipeline produtiva explicitamente
+injetada.
+
+**Decisões preservadas:** a feature flag permanece desligada por padrão; não houve disclosure externo,
+atalho cross-tenant, bypass de autorização, mudança de configuração versionada ou criação de segundo
+framework de emissão. A primeira tentativa de API autenticada com credencial `titan` foi recusada pela
+proteção de runtime contra SUPERUSER/BYPASSRLS/owner de tabela protegida; a validação final usou a
+credencial runtime correta.
+
+**Portão:** `apps/validacao/README.md` atualizado para documentar o modo autenticado. Verificações
+passaram: `python -m uv run --locked pytest -q` (1692 passed, 335 skipped), `python -m uv run --locked
+ruff check .`, `python -m uv run --locked ruff format --check .`, `python -m uv run --locked mypy`,
+`python -m uv run --locked alembic check` e `python -m uv run --locked alembic -c
+packages/asset_infrastructure/persistence/migrations/alembic.ini check`.
+
+**Próximo passo:** definir se haverá habilitação em ambiente compartilhado/staging com pipeline produtiva
+injetada ou se o Commercial Passport permanece pronto, porém release-gated, até decisão de produto.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
