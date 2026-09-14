@@ -7,6 +7,11 @@
 
 Este documento não substitui o checklist. Ele é o corte: uma leitura de cima para baixo do que existe, não o histórico passo a passo de como chegou lá.
 
+> **⚠️ ATUALIZAÇÃO EM 14/09/2026 — este documento é uma fotografia congelada em 30/07/2026 e está desatualizado.**
+> Ele foi escrito e travado antes de uma quantidade grande de trabalho subsequente: Marco 18 (conformidade sanitária vitalícia), Marco 19 (primeiro produto de frontend do Livestock, mais ~15 incrementos de UI), NEXT-01 a NEXT-12 (coverage/admissibilidade sanitária, Policy temporal, autoridade por requisito, Market Eligibility Dossier, Market Readiness, Market Change Impact, BuyerPolicy Fases 1-3, Market Supply & Lifetime Compliance), Commercial Passport F1-F13, Market Optionality e AI Explanation Governance, e a rodada completa de remediação de auditoria adversarial (FINDING-001 a FINDING-013). **A seção "O que está fora do MVP" abaixo também continha um erro factual**, corrigido no próprio texto (ver item 5): o Marco 11 (abate/desossa, `TransformationEvent`, fan-out/fan-in de produto, ADR-0046/0047) já estava **concluído desde 28/07/2026** — dois dias antes da última atualização registrada aqui — e este documento afirmava o contrário.
+>
+> A fonte de verdade do estado atual é sempre `docs/CHECKLIST_DE_IMPLEMENTACAO.md`. Este documento permanece como registro histórico do fechamento funcional de 30/07/2026 e não deve ser usado para decidir escopo de trabalho novo sem conferir o checklist primeiro. Ver também `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md` (14/09/2026) para um retrato consolidado do estado atual da vertical.
+
 ---
 
 ## Fechamento do MVP (30/07/2026)
@@ -116,7 +121,9 @@ As ressalvas que permanecem abertas são concretas. A ADR-0052 ficou **parcial**
 Fazenda de origem → recria → engorda é hoje um cadastro local por Organization. A cadeia cria→recria→engorda completa (GTA estadual, heterogênea) não está integrada — é a lacuna que a ADR-0042 deixou explícita desde o início.
 
 ### 5. Rastreabilidade de produto (abate, cortes, produtos mistos)
-Nada do Marco 11 em diante (abate, EPCIS/GS1, `TransformationEvent`, fan-out/fan-in de produto) está implementado. A `RelationService`/`RecallService` já suportam travessia de grafo, e a recomendação registrada (NR-2) é mapear para o vocabulário EPCIS quando chegar, não desenhar um grafo próprio — mas isso é trabalho não iniciado.
+**Correção de 14/09/2026: este item estava errado.** O Marco 11 (abate, `TransformationEvent`, fan-out/fan-in de produto, ADR-0046/0047) **foi implementado e validado em 28/07/2026** — dois dias antes deste documento ter sido atualizado pela última vez, e a atualização não refletiu o fato. `packages/livestock_domain/transformation.py`, `packages/livestock_application/transformation_service.py` (`SlaughterService`, `DeboningService`), endpoints `POST /v1/livestock/transformations/{slaughter,deboning}` (e suas rotas de correção), correção append-only de evento publicado (`corrects_transformation_id`), bloqueio pessimista provado contra PostgreSQL real, dossiê e recall de `TraceableItem` reaproveitando `RecallService`/`LivestockTimelineService` do Core sem alteração. Validado em 28/28 passos via `apps/validacao/transformacao_industrial.py` contra API, PostgreSQL e Keycloak reais. Ver `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, entradas dos Passos 11.2 a 11.7.
+
+**O que de fato permanece fora:** alinhamento formal ao vocabulário GS1 EPCIS (`TransformationEvent`/CTE/KDE) — a `RelationService`/`RecallService` já suportam a travessia de grafo necessária, e a recomendação registrada (NR-2) é mapear para EPCIS quando houver necessidade de troca de dados com sistemas de terceiros, não desenhar um grafo próprio. Esse mapeamento específico não foi iniciado.
 
 ### 6. Autoria de regra por administrador não-programador (NR-5)
 `RuleCondition` já é declarativa (fact_type/payload_key/operator/expected_value), o que resolve a maior parte do problema sem precisar de sandbox. Mas não existe interface para um administrador compor essas condições sem tocar em código — hoje só a API de governança faz isso, e é consumida programaticamente. O caminho caro (ADR-0036, Wasm determinístico) está aceito e não implementado; a suspeita registrada é que a maior parte da regulação real caiba nas primitivas declarativas, sem precisar dele.
