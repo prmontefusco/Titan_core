@@ -426,6 +426,27 @@ commit `fbfe0ee` (branch `main`, enviado a `origin/main`).
 **Portão:** revisão documental. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e
 Alembic não aplicáveis a este incremento.
 
+### 14/09/2026 — Correção de menção obsoleta ao Marco 11 em `MANUAL_DO_USUARIO_E_INTEGRADOR.md`
+
+**Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.
+
+**O que foi entregue:** varredura de todo o diretório `docs/` por menções obsoletas ao Marco 11, motivada
+pela correção já registrada em `docs/CORTE_MVP_BACKEND.md` acima. Encontrada uma segunda ocorrência em
+`docs/MANUAL_DO_USUARIO_E_INTEGRADOR.md` (§6.4, "Padrões e regulação que valem conhecer"): o texto afirmava
+que `DEBONING` (desossa, fan-in) "está desenhado no mesmo contrato, mas ainda não implementado" — falso,
+está em produção desde 28/07/2026 (Passo 11.6), no mesmo dia em que `SLAUGHTER` (Passo 11.2) e a correção de
+`TransformationEvent` publicado (Passo 11.7, ADR-0047) também foram concluídos. Corrigido o parágrafo para
+refletir os três. `docs/adr/0046-transformacao-industrial-e-rastreabilidade-de-produto.md` e
+`docs/adr/0047-correcao-de-transformationevent-publicado.md` foram conferidos e já declaram `Status: ACEITA`
+corretamente — nenhuma alteração neles. Busca por padrão (abate/desossa/`TransformationEvent`/fan-out/fan-in
+associados a "não implementado"/"não iniciado") não encontrou nenhuma outra ocorrência em `docs/`.
+
+**Evidência:** `docs/MANUAL_DO_USUARIO_E_INTEGRADOR.md` (diff); commit `558aa97` (branch `main`, enviado a
+`origin/main`).
+
+**Portão:** revisão documental e busca por padrão em todo `docs/`. Nenhum arquivo de código, teste,
+migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
