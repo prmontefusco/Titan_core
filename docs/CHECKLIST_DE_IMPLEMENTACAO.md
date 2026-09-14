@@ -295,7 +295,11 @@ em repositório de Dossier, bundle com escopo Livestock, recusa de âncora que n
 audience obrigatória. `tests/api/test_commercial_passport_api_release_gate.py` cobre o envelope HTTP de
 emissão quando uma porta real é injetada e mantém o default 503. Verificações focadas executadas:
 `python -m uv run --locked pytest tests/livestock_application/test_commercial_passport.py
-tests/api/test_commercial_passport_api_release_gate.py` (32 passed).
+tests/api/test_commercial_passport_api_release_gate.py` (32 passed). Verificação completa executada:
+`python -m uv run --locked pytest` (1692 passed, 335 skipped), `ruff check .`, `ruff format --check .` e
+`mypy`. Em 14/09/2026, após Docker ficar disponível, `alembic check` e `alembic -c
+packages/asset_infrastructure/persistence/migrations/alembic.ini check` também passaram com "No new
+upgrade operations detected".
 
 **Próximos passos:** (1) criar roteiro executável em `apps/validacao` para o fluxo manual testável de
 Commercial Passport, cobrindo consulta dinâmica, emissão formal e comportamento fail-closed; (2) habilitar
