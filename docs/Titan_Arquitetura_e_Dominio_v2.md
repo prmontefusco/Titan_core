@@ -5,6 +5,14 @@
 > Toda decisão deve ser reproduzível.  
 > Toda conclusão deve ser justificável.**
 
+> **⚠️ DOCUMENTO SUPERADO — pré-implementação.** Este documento (Versão 2.0) é anterior à reconstrução
+> "greenfield" do Titan a partir do primeiro commit e antecede `DOMAIN.md` e `ARCHITECTURE.md`, que são hoje
+> os documentos de autoridade da linguagem de domínio e da arquitetura (`AGENTS.md`). Ele não é atualizado
+> desde então e não reflete decisões, invariantes ou nomenclatura posteriores. Mantido apenas como registro
+> histórico de como a visão do produto evoluiu; não usar como referência de domínio, arquitetura ou escopo
+> atual. Para o estado real do código, ver `docs/CHECKLIST_DE_IMPLEMENTACAO.md` e, para a vertical
+> Livestock especificamente, `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md`.
+
 ---
 
 ## 1. Propósito

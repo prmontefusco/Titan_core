@@ -5,6 +5,15 @@
 **Arquitetura:** Titan Core + verticais independentes  
 **Primeira vertical:** Titan Livestock
 
+> **⚠️ DOCUMENTO SUPERADO — plano pré-implementação.** Este plano (Versão 3.0) descreve a intenção de
+> reconstrução "greenfield" antes de o primeiro commit existir. A reconstrução foi executada e avançou muito
+> além do que este documento antecipa; ele foi substituído, na prática, por `DEVELOPMENT.md` (fluxo canônico
+> `IDEA → DISCOVERY → DECISION → SPEC → PLAN → BUILD → VERIFY → ACCEPT`) e por
+> `docs/CHECKLIST_DE_IMPLEMENTACAO.md` (ledger real de entrega, marco a marco). Mantido apenas como registro
+> histórico da estratégia original; não usar como plano de trabalho ou referência de escopo atual. Ver
+> `docs/CHECKLIST_DE_IMPLEMENTACAO.md` para o estado real e `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md`
+> para um retrato consolidado da vertical Livestock.
+
 ## 1. Objetivo
 
 Construir o Titan desde o primeiro commit como uma plataforma de decisões auditáveis, sem carregar acoplamentos, estruturas ou limitações da implementação anterior.
