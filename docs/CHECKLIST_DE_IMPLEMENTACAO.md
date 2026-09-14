@@ -271,12 +271,36 @@ de divergência temporal para evitar consulta frágil ao estado atual. Verifica�
 `python -m uv run --locked pytest tests/livestock_application/test_commercial_passport.py
 tests/api/test_commercial_passport_api_release_gate.py` (28 passed).
 
-**Próximos passos:** (1) conectar a rota de emissão formal a material canônico real e emitir/persistir
-via `DossierService` e `VerificationBundleService`, reaproveitando a seção vertical criada em F5; (2)
-criar roteiro executável em `apps/validacao` assim que houver fluxo manual testável, porque F6 acrescentou
-comportamento observável por API; (3) habilitar `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma
-controlada, depois da pipeline produtiva, emissão formal e validação. Até lá, a feature flag permanece
-desligada por padrão.
+**Próximo passo:** F10 — conectar a rota de emissão formal a material canônico real e emitir/persistir
+via `DossierService` e `VerificationBundleService`, reaproveitando a seção vertical criada em F5.
+
+### 14/09/2026 — Commercial Passport F10: emissão formal produtiva via Dossier/VerificationBundle
+
+**Estado:** CONCLUÍDO — décimo incremento do Commercial Passport, conectando emissão formal ao caminho
+existente do Core. `CommercialPassportFormalIssuanceService` congela um `CommercialPassport` dinâmico com
+`CommercialPassportDossierSectionBuilder`, persiste o Dossier via `DossierService.build_and_store()` e
+gera `VerificationBundle` via `VerificationBundleService.build_from_dossier()`. A rota
+`POST /v1/livestock/properties/{property_id}/commercial-passport/issue` agora chama uma porta de emissão
+quando ela é injetada; sem pipeline, permanece fail-closed em 503.
+
+**Decisões preservadas:** emissão formal continua separada da consulta dinâmica. O serviço exige uma
+`Decision`/`Evaluation` âncora reproduzível da própria propriedade para usar o Dossier existente sem
+transformar o Passport em `Decision`. Não há novo framework de snapshot, nova tabela, emissão automática
+em GET, disclosure público, marketplace ou habilitação default da feature flag. A resposta HTTP de emissão
+retorna envelope de IDs/digests (`dossier_id`, `dossier_hash`, `verification_bundle_id`,
+`verification_manifest_digest`) e não payload público irrestrito.
+
+**Portão:** `tests/livestock_application/test_commercial_passport.py` cobre emissão formal com persistência
+em repositório de Dossier, bundle com escopo Livestock, recusa de âncora que não seja a propriedade e
+audience obrigatória. `tests/api/test_commercial_passport_api_release_gate.py` cobre o envelope HTTP de
+emissão quando uma porta real é injetada e mantém o default 503. Verificações focadas executadas:
+`python -m uv run --locked pytest tests/livestock_application/test_commercial_passport.py
+tests/api/test_commercial_passport_api_release_gate.py` (32 passed).
+
+**Próximos passos:** (1) criar roteiro executável em `apps/validacao` para o fluxo manual testável de
+Commercial Passport, cobrindo consulta dinâmica, emissão formal e comportamento fail-closed; (2) habilitar
+`TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma controlada, depois da validação. Até lá, a feature
+flag permanece desligada por padrão.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:

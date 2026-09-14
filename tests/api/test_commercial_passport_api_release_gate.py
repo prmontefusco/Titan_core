@@ -3,6 +3,8 @@
 import importlib
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,9 +19,11 @@ from packages.livestock_application.commercial_passport import (
     CommercialOpportunityKind,
     CommercialPassport,
     CommercialPassportContext,
+    CommercialPassportFormalIssuance,
     CommercialPassportRequirementDimension,
     CommercialPassportRequirementStatus,
     CommercialRequirementAssessment,
+    PropertyCommercialPassportIssuancePort,
     PropertyCommercialPassportOpportunityInput,
     PropertyCommercialPassportProjectionPort,
     PropertyCommercialPassportService,
@@ -125,6 +129,42 @@ class _ProjectionPipelineStub(PropertyCommercialPassportProjectionPort):
         )
 
 
+class _IssuancePipelineStub(PropertyCommercialPassportIssuancePort):
+    seen_context: CommercialPassportContext | None = None
+    seen_audience: str | None = None
+
+    def issue_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+        audience: str,
+        issued_at: datetime,
+    ) -> CommercialPassportFormalIssuance:
+        self.seen_context = context
+        self.seen_audience = audience
+        return cast(
+            CommercialPassportFormalIssuance,
+            SimpleNamespace(
+                dossier=SimpleNamespace(
+                    dossier_id=TypedId.parse(
+                        "dossier",
+                        "10000000-0000-0000-0000-000000000001",
+                    ),
+                    dossier_hash="dossier-hash",
+                ),
+                verification_bundle=SimpleNamespace(
+                    manifest=SimpleNamespace(
+                        bundle_id=TypedId.parse(
+                            "verification_bundle",
+                            "20000000-0000-0000-0000-000000000001",
+                        ),
+                        manifest_digest="manifest-digest",
+                    ),
+                ),
+            ),
+        )
+
+
 def test_commercial_passport_routes_are_absent_by_default(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.delenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", raising=False)
     importlib.reload(main_module)
@@ -219,6 +259,36 @@ def test_issue_commercial_passport_route_fails_closed_until_issuance_is_enabled(
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["pragma"] == "no-cache"
     assert response.json()["reason_code"] == "COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA"
+
+
+def test_issue_commercial_passport_route_returns_formal_issuance_envelope(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+    contexto = _context()
+    pipeline = _IssuancePipelineStub()
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_issue
+    ] = lambda: contexto
+    main_module.app.dependency_overrides[
+        commercial_passport_api.get_commercial_passport_issuance_pipeline
+    ] = lambda: pipeline
+
+    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=_valid_issue_body())
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-store"
+    payload = response.json()
+    assert payload["property_id"] == PROPERTY_ID
+    assert payload["dossier_id"] == "10000000-0000-0000-0000-000000000001"
+    assert payload["dossier_hash"] == "dossier-hash"
+    assert payload["verification_bundle_id"] == "20000000-0000-0000-0000-000000000001"
+    assert payload["verification_manifest_digest"] == "manifest-digest"
+    assert payload["audience"] == "internal-audit"
+    assert pipeline.seen_context is not None
+    assert pipeline.seen_context.organization_id == contexto.organization_id
+    assert pipeline.seen_audience == "internal-audit"
 
 
 def test_commercial_passport_routes_require_utc_temporal_coordinates(

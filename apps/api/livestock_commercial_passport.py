@@ -19,6 +19,7 @@ from packages.core_domain import OrganizationContext
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
 from packages.livestock_application.commercial_passport import (
     CommercialPassportContext,
+    PropertyCommercialPassportIssuancePort,
     PropertyCommercialPassportProjectionPort,
     commercial_passport_projection,
 )
@@ -40,6 +41,10 @@ class CommercialPassportIssueRequest(BaseModel):
 def get_commercial_passport_projection_pipeline() -> (
     PropertyCommercialPassportProjectionPort | None
 ):
+    return None
+
+
+def get_commercial_passport_issuance_pipeline() -> PropertyCommercialPassportIssuancePort | None:
     return None
 
 
@@ -115,9 +120,17 @@ def get_property_commercial_passport(
 def issue_property_commercial_passport(
     property_id: str,
     body: CommercialPassportIssueRequest,
-    _: Annotated[OrganizationContext, Depends(require_commercial_passport_issue)],
+    context: Annotated[OrganizationContext, Depends(require_commercial_passport_issue)],
+    issuance_pipeline: Annotated[
+        PropertyCommercialPassportIssuancePort | None,
+        Depends(get_commercial_passport_issuance_pipeline),
+    ],
 ) -> JSONResponse:
-    typed_id_or_problem(property_id, entity_type="rural_property", campo="property_id")
+    property_ref = typed_id_or_problem(
+        property_id,
+        entity_type="rural_property",
+        campo="property_id",
+    )
     if not body.audience.strip():
         raise DomainProblem(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -126,9 +139,45 @@ def issue_property_commercial_passport(
             detail="audience deve ser texto não vazio.",
         )
     _validate_temporal_coordinates(body.reference_time, body.knowledge_cutoff)
-    return _not_enabled_response(
-        reason_code="COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA",
-        detail="A emissão formal do Commercial Passport ainda não está habilitada.",
+    if issuance_pipeline is None:
+        return _not_enabled_response(
+            reason_code="COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA",
+            detail="A emissão formal do Commercial Passport ainda não está habilitada.",
+        )
+
+    issued_at = datetime.now(UTC)
+    try:
+        issuance = issuance_pipeline.issue_property_passport(
+            context=CommercialPassportContext(
+                organization_id=context.organization_id,
+                property_id=property_ref,
+                reference_time=body.reference_time,
+                knowledge_cutoff=body.knowledge_cutoff,
+                evaluated_at=issued_at,
+            ),
+            audience=body.audience,
+            issued_at=issued_at,
+        )
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="COMMERCIAL_PASSPORT_REQUEST_INVALIDA",
+            title="Requisição de Commercial Passport inválida",
+            detail=str(error),
+        ) from error
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        headers=dict(MARKET_SUPPLY_NO_STORE_HEADERS),
+        content={
+            "property_id": str(property_ref.value),
+            "dossier_id": str(issuance.dossier.dossier_id.value),
+            "dossier_hash": issuance.dossier.dossier_hash,
+            "verification_bundle_id": str(issuance.verification_bundle.manifest.bundle_id.value),
+            "verification_manifest_digest": (issuance.verification_bundle.manifest.manifest_digest),
+            "issued_at": issued_at.isoformat(),
+            "audience": body.audience,
+        },
     )
 
 

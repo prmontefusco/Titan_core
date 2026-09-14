@@ -7,14 +7,21 @@ VerificationBundles.
 """
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Protocol
 
-from packages.core_domain.dossier import VerticalSection
+from packages.core_application.dossier_service import DossierService
+from packages.core_application.verification_service import VerificationBundleService
+from packages.core_domain.decision import Decision
+from packages.core_domain.dossier import Dossier, VerticalSection
+from packages.core_domain.evaluation import Evaluation
+from packages.core_domain.policy import Policy
+from packages.core_domain.rule import Rule
+from packages.core_domain.verification import VerificationBundle
 from packages.livestock_application.market_readiness import (
     MARKET_ELIGIBILITY_RESULT_BOUNDARY,
     MarketReadinessReport,
@@ -399,6 +406,25 @@ class PropertyCommercialPassportProjectionPort(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class CommercialPassportFormalIssuance:
+    passport: CommercialPassport
+    dossier: Dossier
+    verification_bundle: VerificationBundle
+
+
+class PropertyCommercialPassportIssuancePort(Protocol):
+    """Issues a formal Commercial Passport snapshot using canonical material."""
+
+    def issue_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+        audience: str,
+        issued_at: datetime,
+    ) -> CommercialPassportFormalIssuance: ...
+
+
+@dataclass(frozen=True, slots=True)
 class CommercialPassportMarketReadinessSource:
     """Canonical MarketReadiness material for one commercial opportunity."""
 
@@ -545,6 +571,54 @@ class CommercialPassportDossierSectionBuilder:
                     ],
                 }
             },
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CommercialPassportFormalIssuanceService:
+    """Issue a formal Commercial Passport snapshot via existing Core services."""
+
+    dossier_service: DossierService
+    verification_bundle_service: VerificationBundleService
+    section_builder: CommercialPassportDossierSectionBuilder = field(
+        default_factory=CommercialPassportDossierSectionBuilder,
+    )
+
+    def issue(
+        self,
+        *,
+        passport: CommercialPassport,
+        decision: Decision,
+        evaluation: Evaluation,
+        policy: Policy,
+        audience: str,
+        issued_at: datetime,
+        rules: Sequence[Rule] = (),
+    ) -> CommercialPassportFormalIssuance:
+        if not audience.strip():
+            raise ValueError("audience deve ser texto nao vazio.")
+        if decision.organization_id != passport.context.organization_id:
+            raise ValueError("Decision pertence a outra Organization.")
+        if decision.subject_id != passport.context.property_id:
+            raise ValueError("Decision deve ter a propriedade do Commercial Passport como subject.")
+        section = self.section_builder.build(passport=passport, issued_at=issued_at)
+        dossier = self.dossier_service.build_and_store(
+            decision=decision,
+            evaluation=evaluation,
+            policy=policy,
+            rules=rules,
+            generated_at=issued_at,
+            vertical_section=section,
+        )
+        bundle = self.verification_bundle_service.build_from_dossier(
+            dossier=dossier,
+            audience=audience,
+            created_at=issued_at,
+        )
+        return CommercialPassportFormalIssuance(
+            passport=passport,
+            dossier=dossier,
+            verification_bundle=bundle,
         )
 
 

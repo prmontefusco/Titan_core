@@ -4,14 +4,40 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from packages.core_application.dossier_service import DossierService
 from packages.core_application.verification_service import VerificationBundleService
+from packages.core_domain.decision import (
+    Decision,
+    DecisionReason,
+    DecisionReasonCode,
+    DecisionResult,
+    compute_decision_hash,
+)
+from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.dossier import Dossier, compute_dossier_hash
+from packages.core_domain.evaluation import (
+    Evaluation,
+    EvaluationOutcome,
+    RuleResult,
+    RuleResultStatus,
+    compute_context_hash,
+    compute_evaluation_hash,
+)
+from packages.core_domain.facts import Fact, FactSnapshot
+from packages.core_domain.normative import (
+    NormativeBasisSnapshot,
+    NormativeReferenceSnapshot,
+    NormativeSourceClassification,
+)
+from packages.core_domain.policy import Policy, PolicyStatus
+from packages.core_domain.rule import SeverityLevel
 from packages.livestock_application.commercial_passport import (
     CommercialOpportunity,
     CommercialOpportunityKind,
     CommercialPassport,
     CommercialPassportContext,
     CommercialPassportDossierSectionBuilder,
+    CommercialPassportFormalIssuanceService,
     CommercialPassportMarketReadinessSource,
     CommercialPassportOpportunityAssessment,
     CommercialPassportRequirementDimension,
@@ -38,6 +64,30 @@ from packages.livestock_application.verification_bundle_interpreter import (
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 NOW = datetime(2026, 9, 11, tzinfo=UTC)
+PASSPORT_PURPOSE = "commercial-passport"
+
+
+class _DossierRepository:
+    def __init__(self) -> None:
+        self.saved: list[Dossier] = []
+
+    def save(self, dossier: Dossier) -> None:
+        self.saved.append(dossier)
+
+    def get_by_id(self, dossier_id: TypedId) -> Dossier | None:
+        return next((item for item in self.saved if item.dossier_id == dossier_id), None)
+
+    def list_by_subject(
+        self,
+        organization_id: OrganizationId,
+        subject_id: TypedId,
+    ) -> list[Dossier]:
+        return [
+            item
+            for item in self.saved
+            if item.organization_id == organization_id
+            and item.subject_reference.target_id == subject_id
+        ]
 
 
 def _context() -> CommercialPassportContext:
@@ -59,6 +109,154 @@ def _opportunity(code: str = "synthetic-eu") -> CommercialOpportunity:
         policy_id=TypedId.new("policy"),
         policy_version=1,
     )
+
+
+def _issuance_artifacts(
+    context: CommercialPassportContext,
+    *,
+    subject_id: TypedId | None = None,
+) -> tuple[Decision, Evaluation, Policy]:
+    subject_id = subject_id or context.property_id
+    policy = Policy(
+        policy_id=TypedId.new("policy"),
+        organization_id=context.organization_id,
+        code="commercial-passport-anchor",
+        name="Commercial Passport anchor policy",
+        description="Policy anchor for Commercial Passport formal issuance.",
+        version=1,
+        status=PolicyStatus.PUBLISHED,
+        published_at=NOW,
+    )
+    fact = Fact.create(
+        fact_type="livestock.commercial_passport.anchor",
+        payload={"property_id": str(context.property_id.value)},
+        observed_at=NOW,
+    )
+    snapshot = FactSnapshot.create(
+        organization_id=context.organization_id,
+        target_id=subject_id,
+        as_of=NOW,
+        facts=(fact,),
+        reference_time=context.reference_time,
+        knowledge_cutoff=context.knowledge_cutoff,
+    )
+    rule_versions = (("commercial-passport-anchor", 1),)
+    normative = NormativeBasisSnapshot(
+        schema_version=1,
+        normative_basis_id=TypedId.new("normative_basis"),
+        normative_basis_code="COMMERCIAL_PASSPORT_ANCHOR",
+        normative_basis_version=1,
+        policy_id=policy.policy_id,
+        policy_code=policy.code,
+        policy_version=policy.version,
+        rule_versions=rule_versions,
+        purpose=PASSPORT_PURPOSE,
+        jurisdiction="INTERNAL_TEST",
+        intended_use="COMMERCIAL_PASSPORT_FORMAL_ISSUANCE",
+        reference_time=context.reference_time,
+        knowledge_cutoff=context.knowledge_cutoff,
+        approved_by="SYSTEM:TEST",
+        approval_authority="INTERNAL_TEST",
+        approved_at=NOW,
+        references=(
+            NormativeReferenceSnapshot(
+                instrument_code="COMMERCIAL-PASSPORT-ANCHOR",
+                instrument_version="1",
+                provision="formal-issuance",
+                content_digest="c" * 64,
+                digest_algorithm="sha256",
+                source_classification=NormativeSourceClassification.INTERNAL_TEST,
+            ),
+        ),
+    )
+    context_hash = compute_context_hash(
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        purpose=PASSPORT_PURPOSE,
+        engine_version=1,
+        rule_versions=rule_versions,
+        normative_basis_snapshot_digest=normative.snapshot_digest,
+    )
+    result = RuleResult(
+        result_id=TypedId.new("rule_result"),
+        rule_id=TypedId.new("rule"),
+        rule_version=1,
+        organization_id=context.organization_id,
+        subject_id=subject_id,
+        status=RuleResultStatus.ATENDIDA,
+        severity=SeverityLevel.INFO,
+        reason="Commercial Passport formal issuance anchor satisfied.",
+        corrective_action="Nenhuma ação necessária.",
+        missing_evidence_types=(),
+        evaluated_at=NOW,
+        snapshot_hash=snapshot.snapshot_hash,
+        inputs_hash="d" * 64,
+        rule_code=rule_versions[0][0],
+    )
+    evaluation_hash = compute_evaluation_hash(
+        context_hash=context_hash,
+        subject_id=subject_id,
+        snapshot_hash=snapshot.snapshot_hash,
+        rule_results=(result,),
+        outcome=EvaluationOutcome.CONDICOES_SATISFEITAS,
+    )
+    evaluation = Evaluation(
+        evaluation_id=TypedId.new("evaluation"),
+        organization_id=context.organization_id,
+        subject_id=subject_id,
+        purpose=PASSPORT_PURPOSE,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        fact_snapshot=snapshot,
+        rule_results=(result,),
+        outcome=EvaluationOutcome.CONDICOES_SATISFEITAS,
+        evaluated_at=NOW,
+        engine_version=1,
+        evaluation_hash=evaluation_hash,
+        context_hash=context_hash,
+        normative_basis_snapshot=normative,
+        rule_versions=rule_versions,
+    )
+    reason = DecisionReason(
+        code=DecisionReasonCode.REGRA_ATENDIDA,
+        message="Commercial Passport formal issuance anchor approved.",
+        rule_code=result.rule_code,
+        rule_id=result.rule_id,
+        rule_version=result.rule_version,
+    )
+    authority_profile_id = TypedId.new("authority_profile")
+    decision = Decision(
+        decision_id=TypedId.new("decision"),
+        organization_id=context.organization_id,
+        subject_id=subject_id,
+        purpose=PASSPORT_PURPOSE,
+        evaluation_id=evaluation.evaluation_id,
+        evaluation_hash=evaluation.evaluation_hash,
+        policy_id=policy.policy_id,
+        policy_version=policy.version,
+        result=DecisionResult.APROVADA,
+        reasons=(reason,),
+        snapshot_hash=snapshot.snapshot_hash,
+        issued_at=NOW,
+        engine_version=1,
+        decision_hash=compute_decision_hash(
+            evaluation_hash=evaluation_hash,
+            subject_id=subject_id,
+            purpose=PASSPORT_PURPOSE,
+            result=DecisionResult.APROVADA,
+            reasons=(reason,),
+            authority_profile_id=authority_profile_id,
+            emission_method=DecisionEmissionMethod.AUTOMATED,
+        ),
+        authority_profile_id=authority_profile_id,
+        authority_reference=UniversalReference(
+            TypedId.new("service_identity"),
+            context.organization_id,
+            1,
+        ),
+        emission_method=DecisionEmissionMethod.AUTOMATED,
+    )
+    return decision, evaluation, policy
 
 
 def _market_readiness_report(
@@ -734,3 +932,105 @@ def test_market_readiness_pipeline_rejects_temporal_context_mismatch() -> None:
                 ),
             ),
         ).build_property_passport(context=context)
+
+
+def test_formal_issuance_uses_dossier_service_and_verification_bundle_service() -> None:
+    context = _context()
+    passport = PropertyCommercialPassportService().build(
+        context=context,
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("formal-eu"),
+                requirements=(
+                    _requirement("traceability", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+    decision, evaluation, policy = _issuance_artifacts(context)
+    repository = _DossierRepository()
+
+    issued = CommercialPassportFormalIssuanceService(
+        dossier_service=DossierService(repository=repository),
+        verification_bundle_service=VerificationBundleService(
+            dossier_interpreters=(LivestockVerificationBundleInterpreter(),),
+        ),
+    ).issue(
+        passport=passport,
+        decision=decision,
+        evaluation=evaluation,
+        policy=policy,
+        audience="commercial-audit",
+        issued_at=NOW,
+    )
+
+    assert repository.saved == [issued.dossier]
+    assert issued.dossier.verify()
+    assert issued.dossier.subject_reference.target_id == context.property_id
+    snapshot = issued.dossier.document["vertical"]["content"]["commercial_passport"]
+    assert snapshot["status"] == "FORMAL_ISSUED_SNAPSHOT"
+    assert snapshot["opportunities"][0]["opportunity"]["code"] == "formal-eu"
+    assert issued.verification_bundle.manifest.audience == "commercial-audit"
+    assert "commercial_passport_snapshot" in (issued.verification_bundle.manifest.declared_scopes)
+    assert issued.verification_bundle.payloads["dossier.json"]
+
+
+def test_formal_issuance_requires_property_anchor_decision() -> None:
+    context = _context()
+    passport = PropertyCommercialPassportService().build(
+        context=context,
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("formal-eu"),
+                requirements=(
+                    _requirement("traceability", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+    decision, evaluation, policy = _issuance_artifacts(
+        context,
+        subject_id=TypedId.new("animal"),
+    )
+
+    with pytest.raises(ValueError, match="propriedade"):
+        CommercialPassportFormalIssuanceService(
+            dossier_service=DossierService(repository=_DossierRepository()),
+            verification_bundle_service=VerificationBundleService(),
+        ).issue(
+            passport=passport,
+            decision=decision,
+            evaluation=evaluation,
+            policy=policy,
+            audience="commercial-audit",
+            issued_at=NOW,
+        )
+
+
+def test_formal_issuance_requires_non_empty_audience() -> None:
+    context = _context()
+    passport = PropertyCommercialPassportService().build(
+        context=context,
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("formal-eu"),
+                requirements=(
+                    _requirement("traceability", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+    decision, evaluation, policy = _issuance_artifacts(context)
+
+    with pytest.raises(ValueError, match="audience"):
+        CommercialPassportFormalIssuanceService(
+            dossier_service=DossierService(repository=_DossierRepository()),
+            verification_bundle_service=VerificationBundleService(),
+        ).issue(
+            passport=passport,
+            decision=decision,
+            evaluation=evaluation,
+            policy=policy,
+            audience=" ",
+            issued_at=NOW,
+        )

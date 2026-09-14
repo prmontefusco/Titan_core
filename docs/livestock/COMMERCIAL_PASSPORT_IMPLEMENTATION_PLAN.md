@@ -1,7 +1,7 @@
 # Commercial Passport Implementation Plan
 
 **Data:** 2026-09-11
-**Status:** Plano aprovado; F1-F9 implementados. Proximos cortes: emissao formal produtiva, roteiro executavel e habilitacao controlada da feature flag.
+**Status:** Plano aprovado; F1-F10 implementados. Proximos cortes: roteiro executavel e habilitacao controlada da feature flag.
 
 ## Objetivo
 
@@ -165,6 +165,8 @@ Nao implementar marketplace, buyer matching, public disclosure ou outro policy e
 ### F10 — emissao formal produtiva
 
 Conectar a rota release-gated de emissao ao material canonico real.
+
+Status: implementado em 14/09/2026 via `CommercialPassportFormalIssuanceService`, `DossierService` e `VerificationBundleService`.
 
 Fluxo esperado:
 
