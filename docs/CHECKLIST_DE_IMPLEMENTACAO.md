@@ -396,6 +396,36 @@ packages/asset_infrastructure/persistence/migrations/alembic.ini check`.
 **Próximo passo:** definir se haverá habilitação em ambiente compartilhado/staging com pipeline produtiva
 injetada ou se o Commercial Passport permanece pronto, porém release-gated, até decisão de produto.
 
+### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
+
+**Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.
+
+**O que foi entregue:** `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md` (novo), um levantamento de
+reconhecimento da vertical Livestock — estado atual, capacidades existentes por área (Property, Animal,
+Lot, Movement, Treatments, Medications, Withdrawal periods, Sanitary campaigns, Genealogy/reproduction,
+saída/abate, Timeline, Evidence, Eligibility, Market readiness, integração com Commercial Passport, uso de
+Dossier/VerificationBundle, Audit/provenance, Authorization/Organization boundaries, UI e roteiros de
+`apps/validacao`), fluxos ponta a ponta já implementados, componentes por camada, lacunas reais, riscos
+arquiteturais/de produto, prioridades recomendadas e plano incremental proposto. Encomendado como fase 0 de
+uma nova frente ("como continuar a evolução do Livestock de forma incremental, fortalecendo os fatos
+operacionais e a reutilização por produtos como Commercial Passport"), sem autorizar BUILD. Nenhum conflito
+entre `DOMAIN.md`/`ARCHITECTURE.md`/`DEVELOPMENT.md` e o código foi encontrado. Recomendação registrada:
+**PROCEED**.
+
+**Correção em `docs/CORTE_MVP_BACKEND.md`:** o documento estava congelado em 30/07/2026 e afirmava, na
+seção "O que está fora do MVP" item 5, que "nada do Marco 11 em diante... está implementado" — falso: o
+Marco 11 (abate/desossa, `TransformationEvent`, ADR-0046/0047) foi concluído e validado em 28/07/2026, dois
+dias antes da última atualização registrada naquele documento (ver Passos 11.2-11.7 acima). Corrigido o
+item 5 e acrescentado aviso no topo do documento de que ele é uma fotografia histórica congelada em
+30/07/2026, apontando para este checklist como fonte de verdade do estado atual e para o novo assessment
+como retrato consolidado.
+
+**Evidência:** `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md`; diff de `docs/CORTE_MVP_BACKEND.md`;
+commit `fbfe0ee` (branch `main`, enviado a `origin/main`).
+
+**Portão:** revisão documental. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e
+Alembic não aplicáveis a este incremento.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
