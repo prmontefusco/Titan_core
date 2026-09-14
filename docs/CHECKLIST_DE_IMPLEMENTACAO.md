@@ -544,6 +544,37 @@ validados em 27/08/2026; Incrementos 3 (composição com matriz) e 4 (snapshot p
 entrada NEXT-11. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e Alembic não
 aplicáveis a este incremento.
 
+### 14/09/2026 — Prompt de pesquisa para base normativa real de mercado (China/EUA/UE/Indonésia)
+
+**Estado:** CONCLUÍDO — apenas material de pesquisa e um guia de validação; nenhuma `NormativeBasis`,
+`Policy`, `Rule`, migration, código de produção ou mudança de comportamento do sistema.
+
+**Contexto da decisão:** ao ser solicitada uma decisão sobre a lacuna registrada em
+`docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md` §6.2 (mercados reais retornam `INDETERMINADO` desde a
+ADR-0061 por ausência de `NormativeBasisSnapshot` real), a resposta foi recusar fabricar conteúdo
+regulatório — `NormativeBasis` exige instrumento identificado, autoridade e evidência de competência
+(`DOMAIN.md`), e a própria ADR-0061 proíbe inferir base normativa de qualquer atalho. Inventar uma base
+"mínima" para destravar os mercados replicaria exatamente o risco que o motor de contradições (ADR-0035) e
+toda a cadeia Evidence→Policy→Decision existem para impedir.
+
+**O que foi entregue:** `docs/livestock/MARKET_NORMATIVE_BASIS_RESEARCH_PROMPT.md`, um prompt estruturado
+e com instruções anti-alucinação explícitas (exigir busca com fonte, marcar "NÃO VERIFICADO" em vez de
+inventar, distinguir vigente de proposto, citar instrumento/autoridade/jurisdição/vigência/URL), cobrindo
+status sanitário, rastreabilidade individual, resíduo de medicamentos/carência, exigências ambientais
+(inclusive EUDR para UE), habilitação de estabelecimento e tabela de instrumentos normativos, para os
+quatro mercados solicitados — China, Estados Unidos, União Europeia e Indonésia (esta última ainda fora da
+matriz de `market_eligibility.py`, registrado como decisão de produto separada). `docs/livestock/
+MARKET_NORMATIVE_BASIS_INTAKE_GUIDE.md` explica por que o resultado de uma pesquisa de IA é uma `Claim`
+(`DOMAIN.md`: "Modelo estatístico ou IA pode produzir Claim... não recebe autoridade decisória"), não uma
+`NormativeBasis`, e os passos de revisão humana com competência declarada, preservação de fonte/Evidence e
+fluxo canônico (`DISCOVERY → DECISION → SPEC → PLAN → BUILD`) exigidos antes de qualquer mercado sair de
+`INDETERMINADO`. Ambos entregues ao responsável via arquivo.
+
+**Evidência:** commit `e8d3325` (branch `main`, enviado a `origin/main`).
+
+**Portão:** revisão documental. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e
+Alembic não aplicáveis a este incremento.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
