@@ -575,6 +575,38 @@ fluxo canônico (`DISCOVERY → DECISION → SPEC → PLAN → BUILD`) exigidos 
 **Portão:** revisão documental. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e
 Alembic não aplicáveis a este incremento.
 
+### 14/09/2026 — Resultado da pesquisa Gemini recebido e checado por amostragem independente
+
+**Estado:** CONCLUÍDO — recebimento e checagem preliminar apenas. Nenhuma `NormativeBasis`, `Policy`,
+`Rule`, migration, código de produção ou comportamento do sistema foi criado ou alterado; nenhum mercado
+saiu de `INDETERMINADO`.
+
+**O que foi entregue:** o usuário rodou o prompt de `MARKET_NORMATIVE_BASIS_RESEARCH_PROMPT.md` no Gemini
+e colou o resultado para China, EUA, UE e Indonésia. Capturado integralmente em
+`docs/livestock/MARKET_NORMATIVE_BASIS_RESEARCH_RESULT_2026-09-14.md`, rotulado explicitamente como
+**Claim não validada**, conforme `MARKET_NORMATIVE_BASIS_INTAKE_GUIDE.md`. Como primeira camada de
+checagem (não substitui a revisão humana com competência regulatória exigida pelo guia), cinco das
+afirmações mais consequentes foram checadas por busca web independente: reconhecimento OMSA do Brasil
+livre de aftosa sem vacinação (29/05/2025), reconhecimento bilateral da China (declaração 29/05/2026,
+comunicada 02/06/2026), suspensão da UE às importações de carne do Brasil (03/09/2026, por garantias de
+controle de antimicrobianos — não contaminação), adiamento do EUDR para 30/12/2026 (Regulamento (UE)
+2025/2650, publicado 23/12/2025) e o prazo de certificação Halal da Indonésia (17/10/2026, sem prorrogação
+para carne/laticínios). Todas as cinco corroboradas por fontes independentes, incluindo o próprio MAPA
+(`gov.br/agricultura`) e a Agência Brasil. **Permanecem não verificadas** as citações técnicas granulares
+(números exatos de decreto/regulamento, limites numéricos de LMR, a contagem de "73 plantas habilitadas"
+pela Indonésia) — exigem revisão humana contra fonte primária antes de qualquer uso.
+
+**Evidência:** `docs/livestock/MARKET_NORMATIVE_BASIS_RESEARCH_RESULT_2026-09-14.md`; commit `247486f`
+(branch `main`, enviado a `origin/main`).
+
+**Portão:** revisão documental e cinco buscas web independentes de checagem. Nenhum arquivo de código,
+teste, migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
+
+**Próximo passo:** revisão humana com competência regulatória declarada sobre a tabela de instrumentos
+normativos de cada mercado, decisão de escopo por mercado e decisão separada sobre Indonésia entrar na
+matriz (`market_eligibility.py`), conforme os passos 1-5 de `MARKET_NORMATIVE_BASIS_INTAKE_GUIDE.md`. Não
+autorizado por este registro.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
