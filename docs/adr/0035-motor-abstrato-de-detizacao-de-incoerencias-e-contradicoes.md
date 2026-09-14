@@ -1,6 +1,14 @@
 # ADR-0035: Motor Abstrato de Detecção de Incoerências e Contradições
 
 * **Status:** Aceita
+* **Estado operacional no MVP:** FUTURA_APROVADA — nenhuma implementação de `ContradictionAssessment`,
+  `InconsistencyRule`, `DomainConstraint` ou `PhysicalBoundAssertion` existe no repositório atual (conferido
+  em 14/09/2026 em `packages/` e `apps/`). Esta ADR não recebeu a anotação de estado operacional quando a
+  ADR-0078 reconciliou capacidades aspiracionais em 09/09/2026, porque o escopo declarado da ADR-0078
+  (FINDING-006) cobria explicitamente apenas Wasm Sandbox, ZKP e `SingleFileVerificationBundle` — não esta
+  decisão. A direção arquitetural permanece aceita; não deve ser citada como capacidade entregue, controle
+  de segurança vigente ou requisito cumprido enquanto não houver implementação, migration, testes e
+  registro no checklist.
 * **Data:** 2026-07-22
 * **Decisor:** Fundador / Engenheiro Principal
 * **Domínio Afetado:** Titan Core (`core_domain`, `core_integrity`, `core_application`)

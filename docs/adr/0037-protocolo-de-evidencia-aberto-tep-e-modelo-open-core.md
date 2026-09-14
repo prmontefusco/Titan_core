@@ -1,6 +1,15 @@
 # ADR-0037: Protocolo de Evidência Aberto (TEP) e Modelo Open-Core
 
 * **Status:** Aceita
+* **Estado operacional no MVP:** FUTURA_APROVADA — não há especificação do TEP publicada, biblioteca de
+  verificação offline aberta, nem separação Open-Core efetiva no repositório atual (conferido em 14/09/2026;
+  nenhuma referência a `TitanEvidenceProtocolSpec`, "Titan Evidence Protocol" ou TEP encontrada em `packages/`
+  ou `apps/`). Esta ADR não recebeu a anotação de estado operacional quando a ADR-0078 reconciliou
+  capacidades aspiracionais em 09/09/2026, porque o escopo declarado da ADR-0078 (FINDING-006) cobria
+  explicitamente apenas Wasm Sandbox, ZKP e `SingleFileVerificationBundle` — não esta decisão. O modelo de
+  negócio e a direção de especificação aberta permanecem aceitos; não devem ser citados como capacidade
+  publicada, licença já distribuída ou requisito cumprido enquanto não houver especificação publicada,
+  biblioteca de verificação, testes e registro no checklist.
 * **Data:** 2026-07-22
 * **Decisor:** Fundador / Engenheiro Principal
 * **Domínio Afetado:** Titan Core (`docs`, `packages/shared_kernel`, `packages/core_integrity`)
