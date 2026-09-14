@@ -447,6 +447,41 @@ associados a "não implementado"/"não iniciado") não encontrou nenhuma outra o
 **Portão:** revisão documental e busca por padrão em todo `docs/`. Nenhum arquivo de código, teste,
 migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
 
+### 14/09/2026 — Varredura completa de documentação obsoleta em `docs/`
+
+**Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.
+
+**O que foi entregue:** continuação da varredura por documentação obsoleta iniciada nas duas entradas
+acima, agora cobrindo todo o diretório `docs/` (documentos de topo, `product/`, `strategy/`, `verticals/`,
+`discoveries/`, `integration/`, `concepts/` e os dois ADRs de transformação). Resultado:
+
+- `docs/PLANO_DE_CONCLUSAO_DO_DOMINIO.md` — condicionava o início do frontend Livestock à conclusão dos
+  Marcos 14/15/16 (manejo sanitário com vacina, manejo zootécnico, reprodução restante), que nunca foram
+  concluídos nesses termos. O Marco 19 (frontend) foi autorizado e concluído por caminho diferente. Aviso
+  de supersessão acrescentado, apontando para este checklist; plano original preservado sem reescrita.
+  Commit `d6c1b2f`.
+- `docs/Titan_Arquitetura_e_Dominio_v2.md` e `docs/Plano_Implementacao_Titan_Greenfield_v3.md` —
+  identificados como documentos pré-implementação (anteriores ao primeiro commit do Titan atual, não
+  referenciados por `AGENTS.md` como documento de autoridade). Avisos de supersessão acrescentados no topo
+  de ambos, apontando para `DOMAIN.md`/`ARCHITECTURE.md`/`DEVELOPMENT.md` e para este checklist; conteúdo
+  histórico preservado sem alteração. Commit `c9a46b7`.
+- Conferidos e confirmados **sem** obsolescência: `docs/product/CAPABILITY_MAP.md` (14/08/2026 — completo
+  e correto, apenas não lista Commercial Passport/Market Supply/AI Explanation como linhas próprias, decisão
+  de curação e não erro factual), `docs/strategy/TITAN_TRUST_PLATFORM_CAPABILITY_MAP.md` (11/09/2026),
+  `docs/product/MARKET_SUPPLY_INTELLIGENCE_CONCEPT.md`, `docs/verticals/titan_zfm_logistics.md`,
+  `docs/discoveries/BUYERPOLICY_FASE2_DISCOVERY.md` (DISCOVERY congelada por natureza, conforme o próprio
+  fluxo de `DEVELOPMENT.md`), os dez arquivos de `docs/integration/`, `docs/REQUISITOS_DE_PRODUCAO.md` e
+  `docs/CONHECA_O_TITAN.md`.
+- Deliberadamente fora desta varredura: os mais de 80 arquivos de `docs/adr/`, `docs/plans/` e
+  `docs/specs/` (registros de decisão datados por natureza, não destinados a acompanhamento de status
+  contínuo) e `docs/asset/` (fora da fronteira de propriedade da Lane Livestock, ver
+  `docs/architecture/VERTICAL_OWNERSHIP_MATRIX.md`).
+
+**Evidência:** commits `d6c1b2f` e `c9a46b7` (branch `main`, enviados a `origin/main`).
+
+**Portão:** revisão documental e busca por padrão em todo `docs/`. Nenhum arquivo de código, teste,
+migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
