@@ -522,6 +522,28 @@ arquivos de `docs/adr/`, conferindo o cabeçalho `Status`/`Estado` de cada um co
 `packages/`/`apps/` para as duas ADRs corrigidas. Nenhum arquivo de código, teste, migration ou API foi
 tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
 
+### 14/09/2026 — Reconstrução de `docs/adr/0066-buyerpolicy-fase-3-feedback-estruturado-composicao-e-rate-limiting.md`
+
+**Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.
+
+**O que foi entregue:** por decisão explícita do responsável, `docs/adr/0066-*.md` (citada como decisão
+aceita e implementada em `docs/adr/0068-avaliacao-compartilhada-e-propriedade-da-evaluation.md` e na
+entrada `NEXT-11` acima, mas nunca commitada — achado registrado na entrada anterior) foi reconstruída
+fielmente a partir de `docs/plans/BUYERPOLICY_FASE3_DISCOVERY.md`, `_REQUIREMENTS.md`, `_BUILD_PLAN.md` e
+`_LAUNCH.md`, sem inventar decisão, alternativa ou justificativa não documentada nesses arquivos ou nesta
+própria entrada NEXT-11. A ADR registra as decisões D1-D5, a inversão de Fluxo A (recomendado no
+REQUIREMENTS) para Fluxo B de composição com a matriz (decidida em 27/08/2026, já narrada acima) e marca
+honestamente **Estado operacional no MVP: PARCIALMENTE_IMPLEMENTADA** — Incrementos 1 e 2 construídos e
+validados em 27/08/2026; Incrementos 3 (composição com matriz) e 4 (snapshot pós-expiração) decididos mas
+**nunca construídos**, conforme o próprio "Ponto de parada — 27 de agosto de 2026" no topo deste checklist.
+
+**Evidência:** `docs/adr/0066-buyerpolicy-fase-3-feedback-estruturado-composicao-e-rate-limiting.md`
+(novo); commit `314b858` (branch `main`, enviado a `origin/main`).
+
+**Portão:** revisão documental, fidelidade conferida contra os quatro documentos de origem e contra esta
+entrada NEXT-11. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e Alembic não
+aplicáveis a este incremento.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
