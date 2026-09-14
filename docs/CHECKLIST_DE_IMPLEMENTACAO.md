@@ -327,8 +327,37 @@ packages/asset_infrastructure/persistence/migrations/alembic.ini check`. A tenta
 local não estava ouvindo em `127.0.0.1:8000`; o roteiro falhou explicitamente com instrução para subir a
 API antes de rodar.
 
-**Próximo passo:** habilitar `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma controlada, depois de
-rodar a validação manual no ambiente preparado. Até lá, a feature flag permanece desligada por padrão.
+**Próximo passo:** F12 — validar a habilitação controlada de `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` em
+ambiente local preparado. Até lá, a feature flag permanece desligada por padrão.
+
+### 14/09/2026 — Commercial Passport F12: habilitação controlada validada localmente
+
+**Estado:** CONCLUÍDO — décimo segundo incremento do Commercial Passport, restrito ao portão operacional de
+release gate. A validação subiu a API local duas vezes, sem alterar configuração versionada nem ligar a
+feature flag por padrão.
+
+**Evidência default-off:** API em `http://127.0.0.1:8010` com
+`TITAN_COMMERCIAL_PASSPORT_API_ENABLED` ausente. O roteiro
+`python -m uv run --locked python -m apps.validacao.commercial_passport_api` confirmou OpenAPI sem as rotas
+de Commercial Passport; `GET /v1/livestock/properties/{property_id}/commercial-passport` e `POST
+/v1/livestock/properties/{property_id}/commercial-passport/issue` responderam `404
+ROTA_NAO_ENCONTRADA`.
+
+**Evidência feature-flagged:** API em `http://127.0.0.1:8011` com
+`TITAN_COMMERCIAL_PASSPORT_API_ENABLED=true`. O mesmo roteiro confirmou rotas publicadas por feature flag;
+as chamadas anônimas de consulta dinâmica e emissão formal responderam `401 NAO_AUTENTICADO`, sem revelar
+dados de produtor, propriedade, animais, readiness, gaps, Dossier ou VerificationBundle.
+
+**Decisões preservadas:** a flag continua desligada por padrão; não houve emissão formal produtiva, criação
+de dados persistidos, atalho de autenticação, bypass de autorização ou disclosure cross-tenant. A validação
+comprova somente o comportamento fail-closed necessário antes de qualquer habilitação em ambiente
+controlado compartilhado.
+
+**Portão:** `apps/validacao/commercial_passport_api.py` executado com sucesso contra os dois modos do
+release gate. Nenhum arquivo de código de produção foi alterado neste incremento.
+
+**Próximo passo:** decidir, fora do código, em qual ambiente controlado a flag poderá ser ligada para
+validação autenticada com permissões reais e pipeline de emissão formal.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:

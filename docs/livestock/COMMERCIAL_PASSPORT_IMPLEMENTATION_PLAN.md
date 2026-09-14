@@ -1,7 +1,7 @@
 # Commercial Passport Implementation Plan
 
 **Data:** 2026-09-11
-**Status:** Plano aprovado; F1-F11 implementados. Proximo corte: habilitacao controlada da feature flag.
+**Status:** Plano aprovado; F1-F12 implementados. Proximo corte: validacao autenticada em ambiente controlado.
 
 ## Objetivo
 
@@ -201,7 +201,9 @@ O roteiro deve:
 
 Somente apos pipeline produtiva, emissao formal e validacao manual.
 
-`TITAN_COMMERCIAL_PASSPORT_API_ENABLED` permanece desligada por padrao ate la.
+Status: validado localmente em 14/09/2026. Com a flag ausente, as rotas ficam fora do OpenAPI e respondem
+404. Com `TITAN_COMMERCIAL_PASSPORT_API_ENABLED=true`, as rotas aparecem no OpenAPI e chamadas anonimas
+respondem 401 sem disclosure de dados. A flag permanece desligada por padrao.
 
 ## Domain
 
