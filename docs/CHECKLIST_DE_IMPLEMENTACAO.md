@@ -482,6 +482,46 @@ acima, agora cobrindo todo o diretório `docs/` (documentos de topo, `product/`,
 **Portão:** revisão documental e busca por padrão em todo `docs/`. Nenhum arquivo de código, teste,
 migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
 
+### 14/09/2026 — Varredura de documentação obsoleta estendida a `docs/adr/`
+
+**Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.
+
+**O que foi entregue:** extensão da varredura de documentação obsoleta (entradas acima) para os 80+
+arquivos de `docs/adr/`, conferindo o cabeçalho `Status`/`Estado` de cada um contra
+`docs/CHECKLIST_DE_IMPLEMENTACAO.md` e, quando necessário, contra o código real em `packages/`/`apps/`.
+
+- **Corrigidas:** `docs/adr/0035-motor-abstrato-de-detizacao-de-incoerencias-e-contradicoes.md` e
+  `docs/adr/0037-protocolo-de-evidencia-aberto-tep-e-modelo-open-core.md` estavam marcadas apenas `Aceita`,
+  sem a anotação de "Estado operacional no MVP" que `docs/adr/README.md` exige para decisões ainda não
+  implementadas. Nenhuma das duas tem código correspondente (`ContradictionAssessment`/`InconsistencyRule`/
+  `DomainConstraint`/`PhysicalBoundAssertion` para a 0035; especificação TEP/biblioteca de verificação
+  aberta para a 0037 — busca textual em `packages/` e `apps/` sem resultado). A ADR-0078 (FINDING-006) já
+  havia feito essa mesma reconciliação para as ADRs 0033/0034/0036/0050, mas seu escopo declarado cobria
+  apenas Wasm Sandbox, ZKP e `SingleFileVerificationBundle` — não estas duas. Estendida a mesma anotação
+  (`FUTURA_APROVADA`), sem alterar a decisão em si. Commit `6edc675`.
+- **Achado sem correção possível por edição — referência quebrada:** `docs/adr/0066-*.md` **não existe e
+  nunca existiu no histórico do git** (`git log --all` confirmou), mas é citada como decisão aceita e
+  implementada tanto em `docs/adr/0068-avaliacao-compartilhada-e-propriedade-da-evaluation.md` (linhas 5 e
+  165) quanto no título da entrada `NEXT-11 — BuyerPolicy Fase 3: Feedback estruturado, composição e
+  rate-limiting (ADR-0066)` acima. Material de origem existe em `docs/plans/BUYERPOLICY_FASE3_DISCOVERY.md`,
+  `BUYERPOLICY_FASE3_REQUIREMENTS.md`, `BUYERPOLICY_FASE3_BUILD_PLAN.md` e `BUYERPOLICY_FASE3_LAUNCH.md`,
+  então a decisão não é inventada do zero — mas escrever a ADR retroativamente ou apenas marcar o número
+  como perdido/reservado é decisão do responsável, não de varredura documental. Registrado aqui sem ação
+  até decisão explícita.
+- **Conferidos e confirmados sem obsolescência:** todos os status de ADR-0001 a 0032 e 0038 a 0065;
+  ADR-0057 e ADR-0067 (`PROPOSTA`/pendente de revisão humana — ainda correto, nenhuma aceitação posterior
+  encontrada); ADR-0069/0070/0071 (`ACCEPTED`/`ACCEPTED WITH CHANGES` — corretos); ADR-0072 (alarme falso do
+  grep — o cabeçalho já diz `ACCEPTED WITH CHANGES`; a ocorrência de "Status: rejeitada" pega por padrão
+  pertence a uma alternativa rejeitada dentro do corpo, não ao estado da própria ADR); ADR-0080/0081
+  (`PROPOSTA`, consistente com as notas internas de cada uma — não alterado, pois mudar o status decisório
+  de uma ADR é ato do decisor, não correção documental).
+
+**Evidência:** commit `6edc675` (branch `main`, enviado a `origin/main`).
+
+**Portão:** revisão documental, busca de cabeçalho `Status`/`Estado` em `docs/adr/*.md` e busca textual em
+`packages/`/`apps/` para as duas ADRs corrigidas. Nenhum arquivo de código, teste, migration ou API foi
+tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
