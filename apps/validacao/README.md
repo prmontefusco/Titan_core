@@ -7,7 +7,7 @@ de que precisa, mostra requisição e resposta lado a lado, e diz por que cada
 passo existe. Nenhum deles decide sozinho se o comportamento está correto —
 isso continua sendo julgamento de quem valida.
 
-Este índice existe porque nenhum outro documento lista os 31 roteiros. Sem
+Este índice existe porque nenhum outro documento lista os roteiros. Sem
 ele, descobrir que um roteiro existe depende de vasculhar este diretório ou o
 histórico de commits — o que esta lista resolve para quem audita o sistema de
 fora.
@@ -71,6 +71,7 @@ provedor, não com sintoma genérico.
 | `explicacao_comercial` | Explicação comercial orientada a mercado |
 | `simulacao_comercial` | Simulação comercial ponta a ponta até o frigorífico |
 | `lote_comercial` | Lote com tratamento heterogêneo até o frigorífico |
+| `commercial_passport_api` | Superfície HTTP protegida do Commercial Passport: rotas default-off ou autenticadas quando feature-flagged |
 
 ### Contraparte externa e continuidade documental
 | Roteiro | Valida |
@@ -108,7 +109,7 @@ provedor, não com sintoma genérico.
 python -m uv run --locked python -m apps.validacao.fumaca
 ```
 
-Roda em sequência os 30 roteiros listados em `fumaca.py` (cada um como
+Roda em sequência os roteiros listados em `fumaca.py` (cada um como
 processo separado, sem mudar nenhum deles) e devolve um resumo: quantos
 passaram, quais falharam e as últimas linhas da saída de cada um que
 falhou. É uma primeira leitura de saúde do sistema em minutos — não

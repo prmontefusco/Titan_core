@@ -301,10 +301,34 @@ tests/api/test_commercial_passport_api_release_gate.py` (32 passed). Verificaç�
 packages/asset_infrastructure/persistence/migrations/alembic.ini check` também passaram com "No new
 upgrade operations detected".
 
-**Próximos passos:** (1) criar roteiro executável em `apps/validacao` para o fluxo manual testável de
-Commercial Passport, cobrindo consulta dinâmica, emissão formal e comportamento fail-closed; (2) habilitar
-`TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma controlada, depois da validação. Até lá, a feature
-flag permanece desligada por padrão.
+**Próximo passo:** F11 — criar roteiro executável em `apps/validacao` para o fluxo manual testável de
+Commercial Passport, cobrindo consulta dinâmica, emissão formal e comportamento fail-closed.
+
+### 14/09/2026 — Commercial Passport F11: roteiro executável de validação HTTP
+
+**Estado:** CONCLUÍDO — décimo primeiro incremento do Commercial Passport, restrito a validação manual
+executável. `apps/validacao/commercial_passport_api.py` valida a superfície HTTP de consulta dinâmica e
+emissão formal: descobre via OpenAPI se as rotas estão default-off ou publicadas por feature flag, chama
+`GET /v1/livestock/properties/{property_id}/commercial-passport` e `POST
+/v1/livestock/properties/{property_id}/commercial-passport/issue` sem autenticação, mostra requisição e
+resposta, explica o motivo de cada passo e aceita `--pausar`.
+
+**Decisões preservadas:** o roteiro não cria dados sintéticos persistidos, não exige copiar IDs reais, não
+habilita feature flag, não emite Dossier/VerificationBundle e não tenta simular autorização externa. Ele
+prova a propriedade mínima esperada antes da habilitação controlada: sem credencial, nenhuma informação de
+produtor, propriedade, animais, readiness, gaps, Dossier ou VerificationBundle pode ser liberada.
+
+**Portão:** `apps/validacao/README.md` foi atualizado para listar o roteiro. Verificações automatizadas
+passaram: `python -m uv run --locked pytest -q` (1692 passed, 335 skipped), `python -m uv run --locked
+ruff check .`, `python -m uv run --locked ruff format --check .`, `python -m uv run --locked mypy`,
+`python -m uv run --locked alembic check` e `python -m uv run --locked alembic -c
+packages/asset_infrastructure/persistence/migrations/alembic.ini check`. A tentativa de execução manual de
+`python -m uv run --locked python -m apps.validacao.commercial_passport_api` foi bloqueada porque a API
+local não estava ouvindo em `127.0.0.1:8000`; o roteiro falhou explicitamente com instrução para subir a
+API antes de rodar.
+
+**Próximo passo:** habilitar `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` apenas de forma controlada, depois de
+rodar a validação manual no ambiente preparado. Até lá, a feature flag permanece desligada por padrão.
 
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:

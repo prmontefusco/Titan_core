@@ -1,7 +1,7 @@
 # Commercial Passport Implementation Plan
 
 **Data:** 2026-09-11
-**Status:** Plano aprovado; F1-F10 implementados. Proximos cortes: roteiro executavel e habilitacao controlada da feature flag.
+**Status:** Plano aprovado; F1-F11 implementados. Proximo corte: habilitacao controlada da feature flag.
 
 ## Objetivo
 
@@ -186,6 +186,8 @@ Regras:
 ### F11 — roteiro executavel em `apps/validacao`
 
 Criar roteiro manual executavel quando houver fluxo testavel.
+
+Status: implementado em 14/09/2026 como `apps/validacao/commercial_passport_api.py`.
 
 O roteiro deve:
 
