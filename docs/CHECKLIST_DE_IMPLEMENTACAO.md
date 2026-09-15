@@ -640,6 +640,39 @@ Alembic não aplicáveis a este incremento.
 `Titan_geodata` (trabalho e decisão daquele repositório, não deste) é o único caminho para desbloquear esta
 Discovery para SPEC.
 
+### 15/09/2026 — GTA: Discovery encerrada em PROCEED (Opção A)
+
+**Estado:** CONCLUÍDO — Discovery apenas. Nenhum código, migration ou API criada.
+
+**O que foi entregue:** `docs/plans/GTA_DISCOVERY.md`, investigando a ingestão de GTA como fonte de
+proveniência para fornecedor indireto — o maior gap de valor comercial apontado por NR-6, NR-8 e
+`docs/CORTE_MVP_BACKEND.md` item 4. Confirmado que `ADR-0042` (`ExternalCounterparty`,
+`ReceivedTransferArtifact`, `ImportedLivestockFact`) já fornece toda a máquina estrutural necessária —
+`ImportedLivestockFact.fact_type` é `str` livre, não enum fechado, exatamente a forma que uma GTA precisa;
+falta apenas o `fact_type`/payload específico de GTA, não mecanismo novo. Achado de pesquisa novo, não
+registrado antes em nenhum documento do Titan: a Nota Técnica 2024.003 do ENCAT está integrando GTA à NF-e
+a partir de março/2026 (prazo já adiado duas vezes), mas carrega apenas número/data/órgão emissor — uma
+referência, não o conteúdo completo da guia (propriedade de origem/destino, animais cobertos, finalidade,
+condições sanitárias) — portanto não substitui declaração manual do documento.
+
+**Recomendação: PROCEED na Opção A** (declaração manual de GTA reaproveitando ADR-0042 integralmente, sem
+integração externa, funciona hoje para qualquer estado). **DEFER** nas Opções B (aguardar NF-e/NT 2024.003,
+dependente de data externa e só entrega referência) e C (integração direta com sistema estadual de e-GTA,
+provavelmente pertence ao `Titan_geodata` — mesma fronteira já identificada pela Discovery de MapBiomas).
+Quatro decisões de domínio ficaram explícitas para a SPEC (payload mínimo, granularidade por
+animal/lote, a guia como `Evidence`, quem declara) — nenhuma delas resolvida por este registro.
+
+**Evidência:** `docs/plans/GTA_DISCOVERY.md`; commit `a64f87f` (branch `main`, enviado a `origin/main`).
+
+**Portão:** revisão documental, leitura cruzada de `packages/livestock_domain/external_counterparty.py`,
+`transfer_artifact.py`, `imported_fact.py` e `packages/livestock_application/
+transfer_artifact_service.py`, e pesquisa externa sobre emissão de GTA e NT 2024.003 (não confirmada por
+fonte jurídica primária — mesmo tratamento recomendado por `MARKET_NORMATIVE_BASIS_INTAKE_GUIDE.md`).
+Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este
+incremento.
+
+**Decisão necessária, não tomada por este registro:** autorizar a Opção A para avançar a SPEC.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
