@@ -71,6 +71,11 @@ from packages.livestock_application.external_source_capture_service import (
     ExternalSourceCaptureReviewService,
 )
 from packages.livestock_application.geometry_service import PropertyGeometryService
+from packages.livestock_application.gta_declaration import (
+    GTA_DECLARED_FACT_TYPE,
+    GtaPayloadInvalido,
+    validar_payload_gta,
+)
 from packages.livestock_application.imported_fact_service import ImportedLivestockFactService
 from packages.livestock_application.lot_service import LotService
 from packages.livestock_application.movement_service import MovementService
@@ -1049,6 +1054,18 @@ def registrar_aquisicao_documental(
     contexto: Annotated[OrganizationContext, Depends(require_permission(ANIMAL_REGISTRAR_SAIDA))],
     connection: ConnectionDependency,
 ) -> AquisicaoDocumentalResponse:
+    for item in corpo.imported_facts:
+        if item.fact_type == GTA_DECLARED_FACT_TYPE:
+            try:
+                validar_payload_gta(item.payload)
+            except GtaPayloadInvalido as error:
+                raise DomainProblem(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    reason_code="PAYLOAD_GTA_INVALIDO",
+                    title="Payload de GTA invalido",
+                    detail=str(error),
+                ) from error
+
     artifact_service = ReceivedTransferArtifactService(
         repository=TransactionalReceivedTransferArtifactRepository(connection=connection),
         animal_repository=TransactionalAnimalRepository(connection=connection),

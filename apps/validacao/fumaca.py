@@ -34,6 +34,7 @@ ROTEIROS: tuple[tuple[str, list[str]], ...] = (
     ("ADR-0042 — aquisição documental", ["apps.validacao.aquisicao_documental"]),
     ("ADR-0042 — artefato de transferência", ["apps.validacao.artefato_transferencia"]),
     ("ADR-0042 — fato importado", ["apps.validacao.fato_importado"]),
+    ("SPEC 2026-09-15 — declaração documental de GTA", ["apps.validacao.declaracao_gta"]),
     ("Corte 2B — captura SISBOV simulada", ["apps.validacao.captura_externa_sisbov_simulada"]),
     ("NR-4 — prescrição veterinária", ["apps.validacao.prescricao_veterinaria"]),
     (

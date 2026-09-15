@@ -673,6 +673,60 @@ incremento.
 
 **Decisão necessária, não tomada por este registro:** autorizar a Opção A para avançar a SPEC.
 
+### 15/09/2026 — Declaração documental de GTA implementada (SPEC 2026-09-15)
+
+**Estado:** CONCLUÍDO. SPEC (`docs/specs/implemented/2026-09-15-declaracao-gta-documental.md`) aprovada
+como proposta, PLAN (`docs/plans/GTA_DECLARACAO_BUILD_PLAN.md`) resolveu a única pergunta aberta, BUILD
+entregue no mesmo dia.
+
+**O que foi entregue:** `packages/livestock_application/gta_declaration.py` (novo) — validação pura, sem
+I/O, do payload de fato importado tipo `"livestock.gta_declared"` (`GTA_DECLARED_FACT_TYPE`), exigindo
+`gta_number`, `issuing_agency`, `origin_description`, `destination_description`, `purpose` (strings não
+vazias), `issuing_state` (2 letras maiúsculas — mesmo critério de `RuralProperty.state_code`, com a mesma
+característica herdada: "M1" passa por não distinguir letra de dígito no `isupper()`, registrado como
+limite conhecido, não corrigido para não divergir do padrão já usado no resto da vertical), `issued_at`
+(data ISO 8601) e `animal_count` (inteiro positivo, com `bool` explicitamente excluído por ser subclasse de
+`int` em Python). `apps/api/livestock_writes.py` (`registrar_aquisicao_documental`) passou a validar cada
+item de `imported_facts` cujo `fact_type` seja de GTA **antes** de instanciar qualquer serviço, levantando
+`DomainProblem(422, reason_code="PAYLOAD_GTA_INVALIDO")` — evitando o `except ValueError: raise
+_conflito(...)` já existente na função, que mapearia para `409` (errado para entrada malformada). Nenhuma
+mudança em domínio, serviço genérico (`ImportedLivestockFactService`, `ReceivedTransferArtifactService`,
+`DocumentaryAcquisitionService`) ou persistência — `payload` já era `JSONB` livre; nenhuma migration.
+
+**Testes:** `tests/livestock_application/test_gta_declaration.py` (novo, 28 casos, puro) cobre payload
+válido, cada campo obrigatório ausente/vazio individualmente, `issuing_state` inválido, `issued_at` não-ISO,
+`animal_count` ausente/string/zero/negativo/booleano. `tests/integration/test_livestock_api_saida.py`
+ganhou `test_gta_declarada_com_payload_completo_e_aceita`, `test_gta_com_campo_obrigatorio_ausente_e_recusada_sem_persistir`
+(parametrizado, confirma que nada é persistido — nem artefato, nem fato — quando a validação recusa) e
+`test_gta_mesmo_numero_em_dois_animais_nao_conflita`.
+
+**Roteiro executável:** `apps/validacao/declaracao_gta.py` (novo), 8 passos — cenário com dois animais e uma
+contraparte, declaração válida, três recusas nomeando o campo (`gta_number` ausente, `issuing_state`
+minúsculo, `animal_count` zero), leitura confirmando a proveniência, segunda declaração da mesma GTA sem
+conflito, e negação ao auditor sem permissão de escrita. Registrado em `apps/validacao/README.md` e
+`apps/validacao/fumaca.py`.
+
+**Portão verificado nesta sessão (sem Docker/PostgreSQL disponível — ver ressalva abaixo):**
+`python -m uv run --locked pytest` — `1720 passed, 341 skipped` (as 341 são as suítes de integração
+puladas por ausência de `TITAN_DATABASE_URL`, comportamento documentado em `DEVELOPMENT.md`, não falha);
+`python -m uv run --locked ruff check .` e `ruff format --check .` — limpos; `python -m uv run --locked
+mypy` — limpo (800 arquivos).
+
+**Ressalva registrada, não escondida:** `alembic check` e os três novos testes de integração HTTP
+(`test_gta_declarada_com_payload_completo_e_aceita` e os dois que o acompanham) **não foram executados**
+nesta sessão — o ambiente não tinha Docker/PostgreSQL disponível (`docker compose ps` falhou por daemon
+inacessível). Como não há migration nesta entrega, `alembic check` deve continuar "No new upgrade
+operations detected", mas isso não foi confirmado localmente. Os três testes de integração foram escritos
+seguindo rigorosamente o mesmo padrão dos testes vizinhos já existentes no mesmo arquivo (mesmas fixtures,
+mesmo cliente, mesmos endpoints já em produção), e a suíte completa com `TITAN_DATABASE_URL` configurada
+deve ser executada antes de considerar este incremento aceito em ambiente com banco disponível.
+
+**Evidência:** commits a registrar no push desta sessão (branch `main`).
+
+**Fora de escopo, reafirmado:** integração estadual de e-GTA, NF-e/NT 2024.003, referência tipada de
+propriedade externa, reconciliação com `AnimalMovement`/`PropertyStay`, consumo por
+`fact_provider.py`/`Policy`/`Rule`/elegibilidade de mercado — nenhum destes foi tocado.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;

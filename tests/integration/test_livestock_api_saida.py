@@ -203,6 +203,150 @@ def test_aquisicao_documental_orquestra_artefato_e_fatos_importados(
     assert fatos.json()["items"][0]["asserted_by"] == "Fazenda Origem"
 
 
+def _payload_gta_valido(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "gta_number": "MS-000123456",
+        "issuing_state": "MS",
+        "issuing_agency": "IAGRO",
+        "issued_at": "2026-09-10",
+        "origin_description": "Fazenda Santa Rita, Ribas do Rio Pardo/MS",
+        "destination_description": "Fazenda Boa Vista, Campo Grande/MS",
+        "purpose": "recria",
+        "animal_count": 40,
+    }
+    base.update(overrides)
+    return base
+
+
+def _registrar_gta(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    animal_id: str,
+    contraparte_id: str,
+    payload: dict[str, object],
+    *,
+    bundle_digest: str = "e" * 64,
+) -> Any:
+    transferencia = datetime.now(UTC) - timedelta(days=1)
+    return operador.post(
+        f"/v1/livestock/animals/{animal_id}/documentary-acquisitions",
+        json={
+            "source_counterparty_id": contraparte_id,
+            "bundle_digest": bundle_digest,
+            "bundle_issued_at": transferencia.isoformat(),
+            "transfer_effective_at": transferencia.isoformat(),
+            "coverage_known_from": (transferencia - timedelta(days=180)).isoformat(),
+            "coverage_known_until": transferencia.isoformat(),
+            "issuer_name": "IAGRO",
+            "imported_facts": [
+                {
+                    "fact_type": "livestock.gta_declared",
+                    "occurred_at": transferencia.isoformat(),
+                    "asserted_by": "IAGRO",
+                    "confidence_tier": "DOCUMENTED",
+                    "payload": payload,
+                }
+            ],
+        },
+        headers=_cabecalho(ambiente),
+    )
+
+
+def test_gta_declarada_com_payload_completo_e_aceita(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={
+            "name": "Fazenda Santa Rita",
+            "counterparty_type": "FARM",
+            "identifiers": ["CAR:MS-5401200-0000"],
+        },
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+
+    resposta = _registrar_gta(
+        ambiente, operador, animal_id, contraparte.json()["counterparty_id"], _payload_gta_valido()
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    fato = resposta.json()["imported_facts"][0]
+    assert fato["fact_type"] == "livestock.gta_declared"
+    assert fato["payload"]["gta_number"] == "MS-000123456"
+
+    fatos = operador.get(
+        f"/v1/livestock/animals/{animal_id}/imported-facts",
+        headers=_cabecalho(ambiente),
+    )
+    assert fatos.status_code == 200, fatos.text
+    assert any(item["fact_type"] == "livestock.gta_declared" for item in fatos.json()["items"])
+
+
+@pytest.mark.parametrize(
+    "campo",
+    ["gta_number", "issuing_state", "issued_at", "animal_count"],
+)
+def test_gta_com_campo_obrigatorio_ausente_e_recusada_sem_persistir(
+    ambiente: Ambiente, operador: ClienteAutenticado, campo: str
+) -> None:
+    animal_id = _criar_animal(ambiente, operador)
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={"name": "Fazenda Origem", "counterparty_type": "FARM"},
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+    payload = _payload_gta_valido()
+    del payload[campo]
+
+    resposta = _registrar_gta(
+        ambiente, operador, animal_id, contraparte.json()["counterparty_id"], payload
+    )
+
+    assert resposta.status_code == 422, resposta.text
+    assert resposta.json()["reason_code"] == "PAYLOAD_GTA_INVALIDO"
+    assert campo in resposta.json()["detail"]
+
+    fatos = operador.get(
+        f"/v1/livestock/animals/{animal_id}/imported-facts",
+        headers=_cabecalho(ambiente),
+    )
+    assert fatos.json()["items"] == []
+    artefatos = operador.get(
+        f"/v1/livestock/animals/{animal_id}/received-transfer-artifacts",
+        headers=_cabecalho(ambiente),
+    )
+    assert artefatos.json()["items"] == []
+
+
+def test_gta_mesmo_numero_em_dois_animais_nao_conflita(
+    ambiente: Ambiente, operador: ClienteAutenticado
+) -> None:
+    contraparte = operador.post(
+        "/v1/livestock/external-counterparties",
+        json={"name": "Fazenda Origem", "counterparty_type": "FARM"},
+        headers=_cabecalho(ambiente),
+    )
+    assert contraparte.status_code == 201, contraparte.text
+    contraparte_id = contraparte.json()["counterparty_id"]
+
+    animal_1 = _criar_animal(ambiente, operador)
+    animal_2 = _criar_animal(ambiente, operador)
+    payload = _payload_gta_valido()
+
+    resposta_1 = _registrar_gta(
+        ambiente, operador, animal_1, contraparte_id, payload, bundle_digest="f" * 64
+    )
+    resposta_2 = _registrar_gta(
+        ambiente, operador, animal_2, contraparte_id, payload, bundle_digest="f" * 64
+    )
+
+    assert resposta_1.status_code == 201, resposta_1.text
+    assert resposta_2.status_code == 201, resposta_2.text
+
+
 def test_fato_importado_preserva_origem_externa(
     ambiente: Ambiente, operador: ClienteAutenticado
 ) -> None:

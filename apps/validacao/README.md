@@ -80,6 +80,7 @@ provedor, não com sintoma genérico.
 | `aquisicao_documental` | Aquisição documental composta (ADR-0042) |
 | `artefato_transferencia` | Artefato recebido e lacuna de cobertura (ADR-0042) |
 | `fato_importado` | Fato importado com autoria preservada (ADR-0042) |
+| `declaracao_gta` | Declaração documental de GTA com validação de payload (SPEC 2026-09-15) |
 | `captura_externa_sisbov_simulada` | Leitura e revisão de captura SISBOV simulada (Corte 2B) |
 | `captura_territorial_sintetica` | Captura territorial sintética via API (T-05D, Corte 4) |
 
