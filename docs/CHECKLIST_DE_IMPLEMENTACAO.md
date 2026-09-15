@@ -770,6 +770,34 @@ aplicáveis a este incremento.
 **Decisão necessária, não tomada por este registro:** opção A/B/C; se A ou C, quem decide os valores reais
 do perfil de privacidade e se há comprador/produtor reais já identificados para o piloto.
 
+### 15/09/2026 — Market Supply: Opção C escolhida, bloqueada por duas pré-condições
+
+**Estado:** CONCLUÍDO — documentação de decisão apenas. Nenhum código, migration, API, feature flag ou
+permissão alterada.
+
+**O que foi decidido:** respondendo às duas perguntas em aberto da entrada anterior, **piloto estreito
+(Opção C)** foi escolhido como direção — mas nem comprador/produtores reais foram confirmados (ainda
+depende de validação comercial fora deste repositório), nem há decisor designado para os valores do perfil
+de privacidade. Por `AGENTS.md` ("nunca criar abstração para necessidade futura sem uso atual"), **SPEC/
+BUILD não foram iniciados**: diferente de GTA (reaproveita capacidade já existente, usável por qualquer
+operador hoje, sem contraparte pré-condicionante), o piloto estreito de Market Supply depende
+estruturalmente de uma contraparte real para ter qualquer uso — desenhar o mecanismo de consentimento
+manual/auditável agora seria construir para um comprador e produtores que ainda não existem.
+
+**Estado resultante: PARQUEADO COM DIREÇÃO DEFINIDA**, distinto de um DEFER genérico — quando as duas
+pré-condições existirem (comprador+produtor real confirmados **e** decisor de privacidade designado), a
+Opção C está pronta para ir direto a SPEC, sem nova Discovery/decisão.
+
+**Evidência:** `docs/plans/MARKET_SUPPLY_PILOT_DECISION.md` (atualizado); commit `fe425b3` (branch `main`,
+enviado a `origin/main`).
+
+**Portão:** revisão documental. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e
+Alembic não aplicáveis a este incremento.
+
+**Gatilho de retomada, registrado para sessão futura:** (1) comprador e ao menos um produtor real
+confirmados fora deste repositório; (2) pessoa/processo designado para decidir os valores do perfil de
+privacidade. Nenhuma implementação autorizada até os dois existirem.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
