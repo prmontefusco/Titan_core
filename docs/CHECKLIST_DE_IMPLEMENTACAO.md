@@ -831,6 +831,36 @@ migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este increm
 o Corte 3 pode ser reaberto diretamente contra a Policy real de elegibilidade UE, em vez de um Fact
 simulado sem consumidor legítimo.
 
+### 15/09/2026 — NormativeBasis real para China/EUA/UE: decisão tomada, `INDETERMINADO` aceito
+
+**Estado:** CONCLUÍDO — documentação de decisão apenas. Nenhum código, Policy, Rule ou `NormativeBasis`
+alterado.
+
+**O que foi decidido:** entre as três opções apresentadas (A: revisão humana com competência regulatória
+declarada; B: registrar `NormativeBasis` mínima com as narrativas já corroboradas por esta sessão; C:
+aceitar/comunicar `INDETERMINADO`), a Opção B foi recusada pelo próprio agente sem autorização humana — usar
+checagem de busca web deste agente como base de uma `Decision` real de exportação seria a "aprovação privada
+apresentada como entendimento oficial" que `DOMAIN.md` proíbe. Perguntado se há revisor designado (Opção A),
+a resposta foi "ainda não sei quem". **Opção C confirmada:** China, EUA e UE permanecem formalmente
+`INDETERMINADO` em `MarketEligibilityService` — agora como estado documentado e aceito, fechando o risco de
+"regressão silenciosa" nomeado em `LIVESTOCK_CONTINUITY_ASSESSMENT.md` §6.2/§7, com causa raiz precisa: falta
+autoridade real, não falta pesquisa nem mecanismo (o padrão técnico reutilizável já existe e está provado,
+`packages/livestock_application/internal_test_normative_basis.py`).
+
+**Achado crítico registrado para retomada:** a UE suspendeu a importação de carnes/produtos de origem animal
+do Brasil desde 03/09/2026 (garantias insuficientes de controle de antimicrobianos, corroborado por fonte
+independente) — qualquer trabalho futuro de UE precisa modelar esse embargo geral como regra própria, não
+apenas registrar `NormativeBasis` ausente.
+
+**Evidência:** `docs/plans/MARKET_NORMATIVE_BASIS_DECISION.md` (novo).
+
+**Portão:** revisão documental. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e
+Alembic não aplicáveis a este incremento.
+
+**Gatilho de retomada:** designar alguém com competência regulatória declarada para validar as citações
+técnicas granulares da pesquisa e decidir o desenho real de Policy/Rule por mercado, incluindo o tratamento
+do embargo de UE.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
