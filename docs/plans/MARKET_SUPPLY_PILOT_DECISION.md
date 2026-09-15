@@ -98,3 +98,30 @@ decisão humana sobre privacidade (item 2) antes de qualquer linha de código no
    de engenharia.
 3. Se A ou C: existe already um comprador/produtor reais para o piloto, ou isso ainda depende de validação
    comercial fora deste repositório?
+
+---
+
+## Decisão tomada em 15/09/2026
+
+**Opção C (piloto estreito) escolhida como direção**, mas com as duas perguntas de acompanhamento
+respondidas de um jeito que impede o início de SPEC/BUILD agora:
+
+- **Contraparte real:** ainda não existe comprador nem produtores identificados — depende de validação
+  comercial fora deste repositório.
+- **Decisor de privacidade:** ainda não definido quem decide os valores reais do perfil.
+
+**Consequência, por `AGENTS.md` ("nunca criar abstração para necessidade futura sem uso atual"):**
+desenhar ou construir o mecanismo de consentimento manual/auditável agora seria exatamente essa abstração
+especulativa — não há comprador, não há produtor, não há valores de privacidade para o mecanismo servir.
+Diferente de GTA (reaproveita capacidade já existente, usável por qualquer operador hoje), o piloto estreito
+de Market Supply **depende estruturalmente** de uma contraparte real para ter qualquer uso.
+
+**Estado resultante: PARQUEADO COM DIREÇÃO DEFINIDA, não DEFER genérico.** A diferença importa: não é "não
+sabemos o que fazer" (isso seria B) — é "sabemos que quando a validação comercial confirmar comprador e
+produtores, e alguém for designado para decidir privacidade, a Opção C é o caminho, e o código para o
+piloto estreito de consentimento manual pode começar direto em SPEC, sem nova Discovery."
+
+**Gatilho explícito para retomar:** (1) comprador e ao menos um produtor real confirmados fora deste
+repositório, **e** (2) uma pessoa/processo designado para decidir os valores do perfil de privacidade. Os
+dois precisam existir antes de reabrir esta frente — nenhuma implementação é autorizada por este registro
+até lá.
