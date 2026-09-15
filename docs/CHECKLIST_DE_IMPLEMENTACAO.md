@@ -721,7 +721,7 @@ seguindo rigorosamente o mesmo padrão dos testes vizinhos já existentes no mes
 mesmo cliente, mesmos endpoints já em produção), e a suíte completa com `TITAN_DATABASE_URL` configurada
 deve ser executada antes de considerar este incremento aceito em ambiente com banco disponível.
 
-**Evidência:** commits a registrar no push desta sessão (branch `main`).
+**Evidência:** commit `8706b93` (branch `main`, enviado a `origin/main`).
 
 **Fora de escopo, reafirmado:** integração estadual de e-GTA, NF-e/NT 2024.003, referência tipada de
 propriedade externa, reconciliação com `AnimalMovement`/`PropertyStay`, consumo por
