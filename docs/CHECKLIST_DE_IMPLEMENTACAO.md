@@ -738,6 +738,38 @@ verificação).
 propriedade externa, reconciliação com `AnimalMovement`/`PropertyStay`, consumo por
 `fact_provider.py`/`Policy`/`Rule`/elegibilidade de mercado — nenhum destes foi tocado.
 
+### 15/09/2026 — Market Supply: decisão de piloto preparada, não tomada
+
+**Estado:** CONCLUÍDO — documentação de decisão apenas. Nenhum código, migration, API, feature flag ou
+permissão alterada.
+
+**O que foi entregue:** `docs/plans/MARKET_SUPPLY_PILOT_DECISION.md`, preparando a decisão de produto
+registrada como prioridade 5 em `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md` §8 (piloto buyer-facing
+vs. parque consciente). Diferente de GTA/MapBiomas, Market Supply já tem Discovery/SPEC/BUILD extensos
+(NEXT-12, CUT A a F3.5V) — o documento não é uma Discovery nova, é a preparação da decisão que a engenharia
+já deixada pronta ainda não recebeu. Verificado agora no código, não só no histórico do checklist: as duas
+feature flags do endpoint (`TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED`,
+`TITAN_MARKET_SUPPLY_AGGREGATE_PIPELINE_ENABLED`) seguem desligadas por padrão; nenhum mecanismo de opt-in
+do produtor existe em código nenhum, apesar de ser princípio declarado na ADR-0070; `load_aggregation_
+privacy_profile()` recusa rodar sem configuração explícita de produção (decisão deliberada de F3.5D);
+`MARKET_SUPPLY.AGGREGATE_ASSESS` não está em nenhum papel padrão de semeadura. Nenhuma das três lacunas é
+resolvível apenas ligando a feature flag — são decisões de privacidade/produto, não parâmetros técnicos.
+
+Três opções apresentadas (piloto completo, parque consciente, piloto estreito sem opt-in genérico), sem
+recomendar uma sobre as outras — é decisão comercial que depende de informação (demanda de comprador real)
+que não está no repositório.
+
+**Evidência:** `docs/plans/MARKET_SUPPLY_PILOT_DECISION.md`; commit `ba1643a` (branch `main`, enviado a
+`origin/main`).
+
+**Portão:** revisão documental e busca textual em `packages/livestock_application/market_supply*.py`,
+`apps/web/src/pages/MarketSupplyAggregate.tsx`, `apps/api/main.py`, `apps/api/livestock_market_supply.py`
+e `apps/seed/*.py`. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e Alembic não
+aplicáveis a este incremento.
+
+**Decisão necessária, não tomada por este registro:** opção A/B/C; se A ou C, quem decide os valores reais
+do perfil de privacidade e se há comprador/produtor reais já identificados para o piloto.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
