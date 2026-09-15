@@ -607,6 +607,39 @@ normativos de cada mercado, decisão de escopo por mercado e decisão separada s
 matriz (`market_eligibility.py`), conforme os passos 1-5 de `MARKET_NORMATIVE_BASIS_INTAKE_GUIDE.md`. Não
 autorizado por este registro.
 
+### 15/09/2026 — MapBiomas: Discovery encerrada em DEFER
+
+**Estado:** CONCLUÍDO — Discovery apenas. Nenhum código, migration ou API criada.
+
+**O que foi entregue:** `docs/plans/MAPBIOMAS_DISCOVERY.md`, investigando a priorização de MapBiomas como
+quarta camada territorial (prioridade registrada em `docs/livestock/LIVESTOCK_CONTINUITY_ASSESSMENT.md`
+§8). Achado central: diferente de FUNAI/PRODES/DETER/IBAMA, cujo provedor (`Titan_geodata`,
+`D:\projects\programming\Titan_geodata`) já expunha o endpoint quando o lado Titan foi construído,
+MapBiomas **não existe como fonte real em nenhum dos dois projetos** — `Titan_geodata/docs/plans/
+GEODATA_GENERAL_AUDIT.md:110` lista explicitamente `MapBiomas: PLANNED (Sem código/tabelas)` e
+`REQUISITOS.md:574` o registra como item de backlog não iniciado. O desenho do lado consumidor (replicando
+`CarLookupPort`/`TerritorialOverlapService`, o mesmo padrão de `fetch_funai_overlap`) está documentado para
+quando o pré-requisito existir, mas construir contra um contrato hipotético seria abstração especulativa —
+proibida por `AGENTS.md`/`ARCHITECTURE.md`. **Recomendação: DEFER**, não SPEC/PLAN/BUILD.
+
+**Achado colateral registrado, fora de escopo:** `Titan_geodata/integracao/PENDENCIAS_CONSUMIDOR_TITAN.md`
+(datado 10/09/2026) ainda lista como abertos os itens 1-4 que a entrada "10/09/2026 — Ponto de retomada
+externo: correcoes geodata" (acima) já registra como fechados do lado Titan no mesmo dia — os dois
+repositórios parecem desincronizados sobre esse status. Não é competência desta entrada corrigir (é
+atualização de status em outro projeto); só registrado para não confundir sessão futura.
+
+**Evidência:** `docs/plans/MAPBIOMAS_DISCOVERY.md`; commit `f105a48` (branch `main`, enviado a
+`origin/main`).
+
+**Portão:** revisão documental e leitura cruzada de `packages/livestock_infrastructure/geodata/
+car_client.py`, `packages/livestock_application/territorial_overlap_service.py` e três arquivos do
+repositório `Titan_geodata`. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e
+Alembic não aplicáveis a este incremento.
+
+**Decisão necessária, não tomada por este registro:** priorizar a integração MapBiomas dentro do projeto
+`Titan_geodata` (trabalho e decisão daquele repositório, não deste) é o único caminho para desbloquear esta
+Discovery para SPEC.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
