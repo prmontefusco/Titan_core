@@ -1,10 +1,11 @@
 # Declaração documental de GTA (Guia de Trânsito Animal)
 
 - **Nível:** STANDARD
-- **Estado:** proposta
+- **Estado:** aprovada (15/09/2026, como está — lista de campos obrigatórios do item 3 aceita sem alteração)
 - **Decisão de Discovery:** PROCEED (Opção A — `docs/plans/GTA_DISCOVERY.md`, 15/09/2026)
 - **Owner de produto:** Founder / Product Owner
 - **Data:** 2026-09-15
+- **PLAN:** `docs/plans/GTA_DECLARACAO_BUILD_PLAN.md`
 
 ## Problema e usuário
 
