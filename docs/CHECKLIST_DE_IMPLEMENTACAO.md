@@ -861,6 +861,41 @@ Alembic não aplicáveis a este incremento.
 técnicas granulares da pesquisa e decidir o desenho real de Policy/Rule por mercado, incluindo o tratamento
 do embargo de UE.
 
+### 15/09/2026 — Investigação de acesso oficial ao SISBOV/MAPA
+
+**Estado:** CONCLUÍDO — investigação externa (pesquisa web), sem código, migration, API ou decisão de
+arquitetura. Responde ao gatilho de retomada deixado por `SISBOV_CORTE3_DISCOVERY.md` (entrada anterior desta
+mesma data).
+
+**O que foi investigado:** se existe caminho real e concreto para acesso oficial ao SISBOV. Achado central,
+verificado por fonte primária (`manual-api-treinamento-sisbov.agricultura.gov.br`, catálogo de serviços
+`gov.br`): **existe uma API REST oficial em produção — "API de Integração SISBOV 2.0"** (autenticação por
+`X-ACCESS-KEY`/`X-SECRET-KEY`, Bearer Token JWT, recursos de animal/propriedade/movimentação/GTA), com
+contato técnico nomeado (`sisbov@agricultura.gov.br`). Porém o único modelo de acesso documentado é
+**exclusivo para `Certificadora` credenciada** — não há perfil de leitura pública nem de integração para
+sistema privado de rastreabilidade que não seja certificadora. Tornar-se certificadora exige assumir função
+regulatória real (diretor técnico registrado em conselho profissional, estrutura de campo proporcional à
+área de cobertura, termo de compromisso) — desproporcional ao que o Titan é hoje (plataforma de software, não
+entidade com estrutura de campo). Uma armadilha de pesquisa foi identificada e descartada: dois artigos sobre
+"prazo de migração para o novo Sisbov" (`brangus.org.br`, `beefpoint.com.br`) são de **19/01/2007**, sobre
+uma migração de sistema já ocorrida há quase vinte anos — não sobre o SISBOV 2.0 atual.
+
+**Estado resultante:** nenhuma ação de engenharia autorizada. Registradas duas próximas ações não-técnicas:
+(1) contato formal ao MAPA perguntando se existe modalidade de acesso mais estreita que certificadora
+completa; (2) avaliar parceria comercial com certificadora já credenciada (ex.: setor já tem players como
+`pantanalcertificadora.com.br`, citado nas próprias fontes oficiais).
+
+**Evidência:** `docs/plans/SISBOV_MAPA_OFFICIAL_ACCESS_INVESTIGATION.md` (novo), com fontes primárias
+listadas.
+
+**Portão:** pesquisa web e leitura de páginas oficiais `gov.br`/`agricultura.gov.br`. Nenhum arquivo de
+código, teste, migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
+
+**Gatilho de retomada:** resposta do MAPA confirmando (ou não) uma modalidade de acesso mais estreita, ou
+uma parceria comercial concreta com certificadora credenciada. Sem um dos dois, o Corte 3 da `ADR-0058`
+permanece bloqueado — agora por decisão comercial/institucional, não por falta de informação sobre se o
+acesso existe.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
