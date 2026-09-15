@@ -706,22 +706,33 @@ minúsculo, `animal_count` zero), leitura confirmando a proveniência, segunda d
 conflito, e negação ao auditor sem permissão de escrita. Registrado em `apps/validacao/README.md` e
 `apps/validacao/fumaca.py`.
 
-**Portão verificado nesta sessão (sem Docker/PostgreSQL disponível — ver ressalva abaixo):**
-`python -m uv run --locked pytest` — `1720 passed, 341 skipped` (as 341 são as suítes de integração
-puladas por ausência de `TITAN_DATABASE_URL`, comportamento documentado em `DEVELOPMENT.md`, não falha);
-`python -m uv run --locked ruff check .` e `ruff format --check .` — limpos; `python -m uv run --locked
-mypy` — limpo (800 arquivos).
+**Ressalva anterior fechada no mesmo dia.** Docker ficou disponível ainda em 15/09/2026; o portão completo
+foi reexecutado contra PostgreSQL real (`docker compose up -d postgres`, migrations até `20260909_0086` e
+ambiente asset em head, `TITAN_REQUIRE_INTEGRATION_DB=1`): `python -m uv run --locked pytest` — **`2061
+passed, 0 failed, 0 skipped`**, incluindo os 6 casos de integração HTTP de GTA reais (1 payload válido, 4
+campos obrigatórios parametrizados, 1 mesma guia em dois animais); `ruff check .`, `ruff format --check .`
+e `mypy` — limpos; `alembic check` e `alembic -c packages/asset_infrastructure/persistence/migrations/
+alembic.ini check` — ambos "No new upgrade operations detected" (só o aviso preexistente de reflexão
+PostGIS `geometry`), confirmando que esta entrega não precisava de migration, como o PLAN previu.
 
-**Ressalva registrada, não escondida:** `alembic check` e os três novos testes de integração HTTP
-(`test_gta_declarada_com_payload_completo_e_aceita` e os dois que o acompanham) **não foram executados**
-nesta sessão — o ambiente não tinha Docker/PostgreSQL disponível (`docker compose ps` falhou por daemon
-inacessível). Como não há migration nesta entrega, `alembic check` deve continuar "No new upgrade
-operations detected", mas isso não foi confirmado localmente. Os três testes de integração foram escritos
-seguindo rigorosamente o mesmo padrão dos testes vizinhos já existentes no mesmo arquivo (mesmas fixtures,
-mesmo cliente, mesmos endpoints já em produção), e a suíte completa com `TITAN_DATABASE_URL` configurada
-deve ser executada antes de considerar este incremento aceito em ambiente com banco disponível.
+**Armadilha de ambiente descoberta nesta verificação, registrada em `CLAUDE.md`.** Rodar a suíte de
+integração com `TITAN_DATABASE_URL` apontando para a role de runtime `titan_app` (como os comandos de
+subir a API sugerem) faz **105 testes falharem e 18 dar erro**, em arquivos completamente alheios a este
+incremento (`property`, `rule`, `policy`, `worker_e2e`, toda a vertical Asset) — não é regressão desta
+entrega. `tests/integration/conftest.py` semeia cada `Ambiente` pela conexão administrativa e só troca para
+`SET LOCAL ROLE titan_app` na transação, por requisição, via `dependency_overrides`; apontar
+`TITAN_DATABASE_URL` diretamente para `titan_app` remove essa camada de administração e a própria semeadura
+(inserção de duas Organizations num só `INSERT`) esbarra em RLS. Correção: para rodar o portão de testes,
+`TITAN_DATABASE_URL` **e** `TITAN_MIGRATION_DATABASE_URL` devem apontar para a conexão administrativa
+(`titan`, não `titan_app`) — distinto do valor usado para subir a API/worker de verdade.
 
-**Evidência:** commit `8706b93` (branch `main`, enviado a `origin/main`).
+**Portão verificado (completo, com Docker/PostgreSQL reais):** `python -m uv run --locked pytest` — `2061
+passed`; `ruff check .`, `ruff format --check .`, `mypy` — limpos; `alembic check` (Core+Livestock e Asset)
+— sem novas operações.
+
+**Evidência:** commit `8706b93` (branch `main`, enviado a `origin/main`); verificação completa desta
+mensagem sem commit de código associado (nenhum arquivo de produção mudou entre o BUILD e esta
+verificação).
 
 **Fora de escopo, reafirmado:** integração estadual de e-GTA, NF-e/NT 2024.003, referência tipada de
 propriedade externa, reconciliação com `AnimalMovement`/`PropertyStay`, consumo por

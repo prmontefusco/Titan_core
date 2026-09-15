@@ -29,9 +29,11 @@ python -m uv run --locked python -m alembic -c packages/asset_infrastructure/per
 
 Asset tem ambiente Alembic próprio (`-c packages/asset_infrastructure/persistence/migrations/alembic.ini`), separado do de Core+Livestock — ver `docs/architecture/MIGRATION_CONCURRENCY_STRATEGY.md`.
 
-Portão de verificação completo:
+Portão de verificação completo. **`TITAN_DATABASE_URL` aqui é a conexão administrativa (`titan`), não a
+`titan_app` usada para subir a API/worker** — ver "Armadilhas do ambiente" abaixo:
 
 ```powershell
+$env:TITAN_DATABASE_URL="postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
 $env:TITAN_REQUIRE_INTEGRATION_DB="1"
 python -m uv run --locked pytest
 ```
@@ -67,3 +69,4 @@ configuração.
 - Inserções em `core_identity.organizations` usam `(organization_id, record_owner_organization_id)`; a tabela não tem colunas `name` ou `slug`.
 - `set_config('titan.organization_id', ...)` exige o UUID como texto: passe `str(org_id.value)`.
 - O repositório autoritativo é `C:\programing\Titan`. Traceback apontando para `OneDrive\Projects\Titan` vem de cópia obsoleta e deve ser investigado, não seguido.
+- **Para rodar a suíte de testes, `TITAN_DATABASE_URL` precisa ser a conexão administrativa (`titan`), nunca a `titan_app` usada para subir a API/worker de verdade.** `tests/integration/conftest.py` semeia cada `Ambiente` (inclusive inserções multi-linha em `core_identity.organizations`) pela conexão recebida em `TITAN_DATABASE_URL` e só troca para `SET LOCAL ROLE titan_app` na transação, por requisição HTTP, via `dependency_overrides`. Se `TITAN_DATABASE_URL` já for `titan_app`, a própria semeadura roda sob RLS restrito e falha — sintoma: dezenas de testes completamente alheios uns aos outros (`property`, `rule`, `policy`, `worker_e2e`, toda a vertical Asset) quebram de uma vez com `InsufficientPrivilege`/`row-level security policy`, parecendo uma regressão ampla quando na verdade é só a variável de ambiente errada para este uso específico. Corrigido no comando de "Portão de verificação completo" acima; se copiar os comandos da seção "Comandos" em sequência para outro fim, lembre de reexportar `TITAN_DATABASE_URL` para o valor administrativo antes de rodar `pytest`.
