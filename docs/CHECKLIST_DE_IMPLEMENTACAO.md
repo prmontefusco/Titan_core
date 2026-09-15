@@ -798,6 +798,39 @@ Alembic não aplicáveis a este incremento.
 confirmados fora deste repositório; (2) pessoa/processo designado para decidir os valores do perfil de
 privacidade. Nenhuma implementação autorizada até os dois existirem.
 
+### 15/09/2026 — SISBOV Corte 3 (`ADR-0058`): Discovery, DEFER com causa raiz mais precisa
+
+**Estado:** CONCLUÍDO — Discovery apenas. Nenhum código, migration, API, feature flag ou permissão alterada.
+
+**O que foi investigado:** se o "Corte 3" nomeado pela própria `ADR-0058` (mapear captura/review simulada
+do SISBOV para `ImportedLivestockFact`/contribuição dimensional, hoje bloqueado por "campo específico,
+Policy consumidora e regra de admissibilidade aprovados") estava pronto para SPEC. O achado da pesquisa
+normativa de mercado desta sessão (`docs/livestock/MARKET_NORMATIVE_BASIS_RESEARCH_RESULT_2026-09-14.md`)
+confirma que a **União Europeia exige SISBOV obrigatoriamente** (IN MAPA nº 17/2006 e nº 51/2018; Decisão
+2008/61/CE) — pela primeira vez existe uma Policy candidata real (China e EUA não exigem SISBOV
+especificamente). Isso resolve metade do bloqueio da ADR, mas não a parte estrutural: a única fonte
+disponível continua sendo o simulador local, permanentemente `SIMULATED` por desenho deliberado (invariante
+3 da ADR-0058); promover esse material a Fact consumível por uma Policy de elegibilidade UE arriscaria
+exatamente o que essa invariante e o fail-closed de `NormativeBasisSnapshot` (ADR-0061) existem para
+impedir. Além disso, a entrega de GTA nesta mesma sessão já prova a mecânica "revisão confirmada → Fact
+declarado" com dado real (não simulado), removendo a principal razão técnica para avançar o Corte 3 como
+prova de conceito.
+
+**Estado resultante:** DEFER. Acesso oficial ao SISBOV/MAPA (fora do escopo desta Discovery, que é trabalho
+de descoberta próprio — credenciamento, autenticação, possivelmente LGPD) é pré-condição para reabrir o
+Corte 3; `ADR-0058` já isola essa integração oficial como etapa própria e maior.
+
+**Evidência:** `docs/plans/SISBOV_CORTE3_DISCOVERY.md` (novo).
+
+**Portão:** revisão documental e busca textual em `docs/adr/0058-*.md`,
+`docs/plans/POST_LIV_03_CAPTURE_REVIEW_ASSOCIATION_DESIGN_PACKAGE.md` e
+`docs/livestock/MARKET_NORMATIVE_BASIS_RESEARCH_RESULT_2026-09-14.md`. Nenhum arquivo de código, teste,
+migration ou API foi tocado; Ruff, Mypy e Alembic não aplicáveis a este incremento.
+
+**Gatilho de retomada:** acesso oficial (ou caminho concreto e autorizado) ao SISBOV/MAPA. Quando existir,
+o Corte 3 pode ser reaberto diretamente contra a Policy real de elegibilidade UE, em vez de um Fact
+simulado sem consumidor legítimo.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;
