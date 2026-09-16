@@ -76,6 +76,9 @@ SUPERFICIE_ESPERADA = {
     # compoe a avaliacao contratual com a matriz de elegibilidade regulatoria;
     # a resposta nunca expoe rule_results de nenhum dos dois lados.
     ("/v1/rule-governance/policies/shared-policies/{policy_id}/compose-with-matrix", "post"),
+    # BuyerPolicy Fase 3 Incremento 4: historico preservado por snapshot da
+    # Policy contratual, sem reabrir a Policy viva nem expor facts do fornecedor.
+    ("/v1/rule-governance/policies/shared-policies/{policy_id}/history", "get"),
     (
         "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/execute",
         "post",

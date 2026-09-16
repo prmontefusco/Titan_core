@@ -595,6 +595,48 @@ operacional, seção "O que foi de fato construído", riscos e próximos passos)
 **Pendente:** rodar a suíte de integração e `alembic check` contra PostgreSQL real assim que Docker estiver
 disponível — mesmo padrão já fechado para GTA nesta mesma sessão.
 
+### 16/09/2026 — NEXT-11 Incremento 4: snapshot e histórico pós-expiração (BUILD)
+
+**Estado:** IMPLEMENTADO — fechamento do quarto incremento MVP da BuyerPolicy Fase 3.
+
+**O que foi entregue:** `docs/plans/BUYERPOLICY_INCREMENTO4_BUILD_PLAN.md` registrou o recorte técnico
+antes do BUILD: preservar um snapshot mínimo da Policy contratual no momento em que o fornecedor cria uma
+`SharedDecision`, e expor esse histórico por endpoint próprio mesmo quando o grant expirar. Migration
+`20260916_0087_add_shared_decision_policy_snapshot.py` adiciona
+`core_audit.shared_decisions.policy_snapshot_json` (`JSONB`, nullable para compatibilidade com registros
+antigos). `SharedDecision` e `TransactionalSharedDecisionRepository` passaram a transportar o snapshot.
+`POST /v1/rule-governance/policies/shared-policies/{policy_id}/decisions` captura, sob o contexto do owner
+do grant, a definição da Policy e das Rules contratuais no momento da proposta. O novo
+`GET /v1/rule-governance/policies/shared-policies/{policy_id}/history` devolve somente itens em que a
+Organization ativa é proponente ou revisora, incluindo `policy_snapshot`, sem depender de grant ativo.
+
+**Decisões preservadas:** o histórico pós-expiração não reabre a leitura da Policy viva e não autoriza nova
+autoavaliação, composição ou revisão após expiração do grant. O snapshot não inclui facts do fornecedor,
+`rule_results`, evidências brutas, Decision regulatória, Dossier, VerificationBundle ou detalhes da matriz
+do comprador. Registros antigos sem snapshot continuam legíveis com `policy_snapshot=null`; não há backfill
+inferido, para não projetar definição atual sobre uma proposta histórica.
+
+**Roteiro manual:** `apps/validacao/buyerpolicy_shared_decision.py` foi atualizado para consultar
+`/history` e conferir que o snapshot da Policy usada pela proposta foi preservado. A simulação de expiração
+permanece coberta por teste automatizado, porque o roteiro HTTP não deve depender de atualização
+administrativa direta no banco durante a validação manual.
+
+**Evidência:** `apps/api/policy_governance.py`, `packages/core_domain/policy_sharing.py`,
+`packages/core_application/shared_decision_service.py`,
+`packages/core_infrastructure/persistence/shared_decision.py`,
+`packages/core_infrastructure/persistence/migrations/versions/20260916_0087_add_shared_decision_policy_snapshot.py`,
+`tests/integration/test_policy_sharing_api.py`, `apps/validacao/buyerpolicy_shared_decision.py`,
+`docs/adr/0066-buyerpolicy-fase-3-feedback-estruturado-composicao-e-rate-limiting.md`.
+
+**Portão verificado:** migration aplicada localmente com `python -m uv run --locked alembic upgrade heads`;
+testes relacionados `tests/integration/test_policy_sharing_api.py`,
+`tests/integration/test_buyerpolicy_compose_with_matrix.py` e
+`tests/integration/test_shared_policy_rate_limit.py` passaram em PostgreSQL real (**31 passed, 2 warnings**).
+Portão completo executado em seguida: `python -m uv run --locked pytest` (**2072 passed, 10 warnings**),
+`python -m uv run --locked ruff check .`, `python -m uv run --locked ruff format --check .`,
+`python -m uv run --locked mypy`, `python -m uv run --locked alembic check` e
+`python -m uv run --locked alembic -c packages/asset_infrastructure/persistence/migrations/alembic.ini check`.
+
 ### 14/09/2026 — Prompt de pesquisa para base normativa real de mercado (China/EUA/UE/Indonésia)
 
 **Estado:** CONCLUÍDO — apenas material de pesquisa e um guia de validação; nenhuma `NormativeBasis`,

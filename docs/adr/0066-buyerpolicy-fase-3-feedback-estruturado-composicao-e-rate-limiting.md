@@ -2,10 +2,11 @@
 
 **Data da decisão original:** 21-27 de agosto de 2026
 **Status:** ACEITA (decisões D1-D5 e escolha de Fluxo B confirmadas em 27/08/2026)
-**Estado operacional no MVP:** PARCIALMENTE_IMPLEMENTADA — Incrementos 1 (Decision/Proposal) e 2
-(Rate-Limiting & Auditoria) implementados e validados em 27/08/2026; Incremento 3 (Composição com Matriz)
-implementado em 16/09/2026 (ver seção "O que foi de fato construído" abaixo). Incremento 4 (Snapshot &
-Acesso Pós-Expiração) **não foi iniciado**. Ver `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, entrada NEXT-11.
+**Estado operacional no MVP:** IMPLEMENTADA NOS QUATRO INCREMENTOS MVP — Incrementos 1
+(Decision/Proposal) e 2 (Rate-Limiting & Auditoria) implementados e validados em 27/08/2026; Incremento 3
+(Composição com Matriz) implementado em 16/09/2026; Incremento 4 (Snapshot & Acesso Pós-Expiração)
+implementado em 16/09/2026 (ver seção "O que foi de fato construído" abaixo). Ver
+`docs/CHECKLIST_DE_IMPLEMENTACAO.md`, entrada NEXT-11.
 **Decisores:** responsável pelo produto e arquitetura do Titan
 **Reconstruída retroativamente em:** 14/09/2026, a partir de `docs/plans/BUYERPOLICY_FASE3_DISCOVERY.md`,
 `docs/plans/BUYERPOLICY_FASE3_REQUIREMENTS.md`, `docs/plans/BUYERPOLICY_FASE3_BUILD_PLAN.md` e
@@ -130,7 +131,8 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
 - `core_audit.shared_policy_access_log` — trilha append-only de leitura/avaliação/proposta/revisão, com
   RLS bilateral, sem política de `UPDATE`/`DELETE`.
 - `SharedDecision.policy_snapshot_json` — cópia da definição da Policy capturada no momento da proposta,
-  para acesso de leitura por até 90 dias após a expiração do grant (Incremento 4).
+  para acesso de leitura após a expiração do grant (Incremento 4). Retenção/limpeza por prazo permanece
+  fora do corte MVP deste incremento.
 
 ## O que foi de fato construído (14/09/2026)
 
@@ -153,7 +155,11 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
   de `/evaluate`, D3). **Ressalva:** os caminhos `ELEGIVEL`/`INELEGIVEL` exigiriam uma Policy contratual com
   fato real resolvível e regra governada de mercado adotada — os testes cobrem `REQUER_REVISAO` e todos os
   caminhos de erro/isolamento/auditoria; ver detalhes no BUILD PLAN.
-- **Incremento 4 — Snapshot & Acesso Pós-Expiração:** **não iniciado.**
+- **Incremento 4 — Snapshot & Acesso Pós-Expiração:** implementado em 16/09/2026.
+  `core_audit.shared_decisions.policy_snapshot_json` preserva um snapshot mínimo da Policy e das Rules
+  contratuais no momento em que o fornecedor cria a proposta; `GET .../shared-policies/{policy_id}/history`
+  devolve esse histórico para as partes da relação mesmo após expiração do grant, sem reabrir a Policy viva
+  e sem expor facts, `rule_results`, evidências brutas ou matriz regulatória.
 
 ## Consequências
 
@@ -168,9 +174,9 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
 
 ### Negativas / riscos
 
-- Acesso pós-expiração (Incremento 4) não existe: um grant expirado hoje deixa a avaliação e a proposta
-  associada sem caminho de leitura para o fornecedor, exatamente o risco que a Discovery já havia
-  identificado.
+- O Incremento 4 preserva o histórico via snapshot na `SharedDecision`, mas não cria job de retenção,
+  expurgo após 90 dias, Dossier ou VerificationBundle para esse histórico. Esses temas permanecem decisões
+  próprias.
 - Numeração de ADR ficou órfã por quase um mês (21/08 a 14/09/2026) até esta reconstrução — risco
   documental já registrado em `docs/CHECKLIST_DE_IMPLEMENTACAO.md`.
 
@@ -190,7 +196,7 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
 |---|---|---|
 | Exposição de dataset do fornecedor | Fornecedor só avalia seus próprios sujeitos (Opção A) | Mitigado — implementado desde a Fase 2 |
 | Força bruta de avaliações | Rate-limit por grant + log de acesso | Mitigado — Incremento 2 concluído |
-| Perda de histórico pós-expiração | Snapshot automático + acesso por 90 dias | **Não mitigado — Incremento 4 não construído** |
+| Perda de histórico pós-expiração | Snapshot automático + endpoint de histórico | Mitigado no MVP — Incremento 4 implementado em 16/09/2026; retenção/limpeza por prazo fora do corte |
 | Composição expõe matriz ao fornecedor | Endpoint separado (Fluxo B) | Mitigado — Incremento 3 implementado em 16/09/2026 |
 | Assimetria de autoria da proposta | Apenas beneficiary cria `SharedDecision` | Mitigado — Incremento 1 concluído |
 
@@ -198,5 +204,5 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
 
 Não autorizados por este registro — exigem decisão própria antes de BUILD:
 
-1. Incremento 4 (snapshot e acesso pós-expiração).
+1. Retenção/limpeza temporal do histórico preservado, se o prazo de 90 dias virar exigência operacional.
 2. Reavaliar se a Fase 4 (sujeitos cross-Organization, `BILATERAL_DATA_SHARING`) tem demanda real.

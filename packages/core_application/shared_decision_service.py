@@ -54,6 +54,7 @@ class SharedDecisionService:
         evaluation_id: TypedId,
         proposal_content: str,
         evidence_references: tuple[str, ...],
+        policy_snapshot_json: dict[str, Any] | None,
         proposer_organization_id: OrganizationId,
         created_by: str,
     ) -> SharedDecision:
@@ -91,6 +92,7 @@ class SharedDecisionService:
             status=SHARED_DECISION_STATUS_PROPOSTA,
             created_by=created_by,
             record_owner_organization_id=grant.owner_organization_id,
+            policy_snapshot_json=policy_snapshot_json,
         )
         self.decisions.save(decision)
         return decision

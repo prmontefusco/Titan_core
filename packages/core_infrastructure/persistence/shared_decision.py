@@ -46,6 +46,7 @@ shared_decisions_table = Table(
     Column("status", String(20), nullable=False),
     Column("created_by", String(255), nullable=False),
     Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("policy_snapshot_json", JSONB, nullable=True),
     ForeignKeyConstraint(
         ["grant_id"],
         ["core_audit.authorization_grants.grant_id"],
@@ -130,7 +131,8 @@ class TransactionalSharedDecisionRepository:
                     reviewed_by,
                     status,
                     created_by,
-                    record_owner_organization_id
+                    record_owner_organization_id,
+                    policy_snapshot_json
                 ) VALUES (
                     :decision_id,
                     :grant_id,
@@ -147,7 +149,8 @@ class TransactionalSharedDecisionRepository:
                     :reviewed_by,
                     :status,
                     :created_by,
-                    :record_owner_organization_id
+                    :record_owner_organization_id,
+                    :policy_snapshot_json
                 )
                 """
             ),
@@ -174,7 +177,8 @@ class TransactionalSharedDecisionRepository:
                     reviewed_by,
                     status,
                     created_by,
-                    record_owner_organization_id
+                    record_owner_organization_id,
+                    policy_snapshot_json
                 FROM core_audit.shared_decisions
                 WHERE decision_id = :decision_id
                 """
@@ -203,7 +207,8 @@ class TransactionalSharedDecisionRepository:
                     reviewed_by,
                     status,
                     created_by,
-                    record_owner_organization_id
+                    record_owner_organization_id,
+                    policy_snapshot_json
                 FROM core_audit.shared_decisions
                 WHERE policy_id = :policy_id
                 ORDER BY proposed_at DESC, decision_id DESC
@@ -263,12 +268,18 @@ class TransactionalSharedDecisionRepository:
             "status": decision.status,
             "created_by": decision.created_by,
             "record_owner_organization_id": decision.record_owner_organization_id.value,
+            "policy_snapshot_json": json.dumps(decision.policy_snapshot_json)
+            if decision.policy_snapshot_json is not None
+            else None,
         }
 
     def _map(self, row: object) -> SharedDecision:
         raw_references = row.proposal_evidence_references  # type: ignore[attr-defined]
         if isinstance(raw_references, str):
             raw_references = json.loads(raw_references)
+        raw_snapshot = row.policy_snapshot_json  # type: ignore[attr-defined]
+        if isinstance(raw_snapshot, str):
+            raw_snapshot = json.loads(raw_snapshot)
         proposed_at = self._ensure_utc(row.proposed_at)  # type: ignore[attr-defined]
         reviewed_at = row.reviewed_at  # type: ignore[attr-defined]
         return SharedDecision(
@@ -294,6 +305,7 @@ class TransactionalSharedDecisionRepository:
             record_owner_organization_id=OrganizationId(
                 row.record_owner_organization_id  # type: ignore[attr-defined]
             ),
+            policy_snapshot_json=raw_snapshot,
         )
 
     def _ensure_utc(self, value: datetime) -> datetime:

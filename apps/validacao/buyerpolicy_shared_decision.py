@@ -1,4 +1,4 @@
-"""Roteiro executavel para BuyerPolicy Fase 3 Incremento 1.
+"""Roteiro executavel para BuyerPolicy Fase 3 Incrementos 1 e 4.
 
 python -m uv run --locked python -m apps.validacao.buyerpolicy_shared_decision
 python -m uv run --locked python -m apps.validacao.buyerpolicy_shared_decision --pausar
@@ -31,7 +31,7 @@ from apps.validacao.runner import (
 
 def _montar_roteiro(cliente: Cliente, organizacao: str) -> Roteiro:
     ids: dict[str, str] = {}
-    roteiro = Roteiro("BuyerPolicy Fase 3 - SharedDecision", diario=cliente.diario)
+    roteiro = Roteiro("BuyerPolicy Fase 3 - SharedDecision e historico", diario=cliente.diario)
 
     roteiro.passo(
         "0",
@@ -195,13 +195,32 @@ def _montar_roteiro(cliente: Cliente, organizacao: str) -> Roteiro:
     )
     roteiro.passo(
         "9",
-        "Listar historico da Policy compartilhada",
+        "Listar propostas e revisoes da Policy compartilhada",
         lambda: cliente.get(
             f"/v1/rule-governance/policies/shared-policies/{ids['policy_id']}/decisions"
         ),
         200,
-        conferir=lambda r: None if len(r.corpo) == 1 else "historico inesperado",
-        porque="As partes conseguem reconstruir proposta e revisao pelo endpoint de leitura.",
+        conferir=lambda r: None if len(r.corpo) == 1 else "lista de propostas inesperada",
+        porque="As partes conseguem reconstruir proposta e revisao pelo endpoint de decisoes.",
+    )
+    roteiro.passo(
+        "10",
+        "Consultar historico preservado com snapshot da Policy",
+        lambda: cliente.get(
+            f"/v1/rule-governance/policies/shared-policies/{ids['policy_id']}/history"
+        ),
+        200,
+        conferir=lambda r: (
+            None
+            if len(r.corpo) == 1
+            and r.corpo[0]["policy_snapshot"]["policy"]["policy_id"] == ids["policy_id"]
+            and r.corpo[0]["policy_snapshot"]["rules"]
+            else "snapshot preservado inesperado"
+        ),
+        porque=(
+            "O Incremento 4 preserva o criterio contratual usado pela proposta sem reabrir "
+            "a Policy viva nem expor facts do fornecedor."
+        ),
     )
     return roteiro
 

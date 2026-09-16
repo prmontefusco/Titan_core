@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from packages.shared_kernel import OrganizationId, TypedId
@@ -93,6 +94,7 @@ class SharedDecision:
     review_content: str | None = None
     reviewed_at: datetime | None = None
     reviewed_by: str | None = None
+    policy_snapshot_json: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.decision_id.entity_type != SHARED_DECISION_ENTITY_TYPE:
@@ -123,6 +125,10 @@ class SharedDecision:
         for reference in self.proposal_evidence_references:
             if not reference.strip():
                 raise ValueError("proposal_evidence_references nao aceita valor vazio.")
+        if self.policy_snapshot_json is not None and not isinstance(
+            self.policy_snapshot_json, dict
+        ):
+            raise TypeError("policy_snapshot_json deve ser um objeto JSON.")
 
 
 @dataclass(frozen=True, slots=True)

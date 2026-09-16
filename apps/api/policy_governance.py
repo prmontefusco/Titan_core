@@ -19,7 +19,7 @@ governada se vincula -- entao ela nasce sob o mesmo prefixo aprovado
 """
 
 from datetime import UTC, datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request, status
@@ -268,6 +268,19 @@ class SharedDecisionResponse(BaseModel):
     reviewed_by: str | None
 
 
+class SharedPolicyHistoryItemResponse(BaseModel):
+    decision_id: str
+    grant_id: str
+    evaluation_id: str
+    policy_id: str
+    proposer_organization_id: str
+    reviewer_organization_id: str
+    status: str
+    proposed_at: datetime
+    reviewed_at: datetime | None
+    policy_snapshot: dict[str, Any] | None
+
+
 class AccessLogResponse(BaseModel):
     access_id: str
     grant_id: str
@@ -329,6 +342,81 @@ def _shared_decision_response(decision: SharedDecision) -> SharedDecisionRespons
         reviewed_at=decision.reviewed_at,
         reviewed_by=decision.reviewed_by,
     )
+
+
+def _shared_history_response(decision: SharedDecision) -> SharedPolicyHistoryItemResponse:
+    return SharedPolicyHistoryItemResponse(
+        decision_id=str(decision.decision_id.value),
+        grant_id=str(decision.grant_id),
+        evaluation_id=str(decision.evaluation_id.value),
+        policy_id=str(decision.policy_id.value),
+        proposer_organization_id=str(decision.proposer_organization_id.value),
+        reviewer_organization_id=str(decision.reviewer_organization_id.value),
+        status=decision.status,
+        proposed_at=decision.proposed_at,
+        reviewed_at=decision.reviewed_at,
+        policy_snapshot=decision.policy_snapshot_json,
+    )
+
+
+def _iso_ou_none(valor: datetime | None) -> str | None:
+    return valor.isoformat() if valor is not None else None
+
+
+def _snapshot_policy_compartilhada(
+    connection: Connection,
+    *,
+    policy_id: TypedId,
+    owner_organization_id: OrganizationId,
+    captured_at: datetime,
+) -> dict[str, Any]:
+    set_local_organization_context(connection, owner_organization_id)
+    policy = TransactionalPolicyRepository(connection).get_by_id(policy_id)
+    if policy is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Policy nao encontrada",
+        )
+    rules = TransactionalRuleRepository(connection).list_by_policy(
+        organization_id=owner_organization_id,
+        policy_id=policy_id,
+    )
+    return {
+        "snapshot_type": "BUYERPOLICY_SHARED_POLICY_V1",
+        "captured_at": captured_at.isoformat(),
+        "policy": {
+            "policy_id": str(policy.policy_id.value),
+            "organization_id": str(policy.organization_id.value),
+            "code": policy.code,
+            "name": policy.name,
+            "description": policy.description,
+            "version": policy.version,
+            "status": policy.status.value,
+            "valid_from": _iso_ou_none(policy.valid_from),
+            "valid_to": _iso_ou_none(policy.valid_to),
+            "published_at": _iso_ou_none(policy.published_at),
+        },
+        "rules": [
+            {
+                "rule_id": str(rule.rule_id.value),
+                "code": rule.code,
+                "name": rule.name,
+                "description": rule.description,
+                "version": rule.version,
+                "severity": rule.severity.value,
+                "normative_source": rule.normative_source,
+                "required_evidence_types": list(rule.required_evidence_types),
+                "conditions": [condition.to_dict() for condition in rule.conditions],
+                "justification": rule.justification,
+                "corrective_action": rule.corrective_action,
+                "valid_from": _iso_ou_none(rule.valid_from),
+                "valid_to": _iso_ou_none(rule.valid_to),
+            }
+            for rule in rules
+        ],
+    }
 
 
 def _registrar_acesso_compartilhado(
@@ -1243,6 +1331,28 @@ def criar_shared_decision(
             detail="grant_id deve ser um UUID valido",
         ) from error
 
+    grant = TransactionalAuthorizationGrantRepository(connection).get_by_id(grant_id)
+    if grant is None or grant.policy_id != policy_typed_id:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Recurso nao encontrado ou nao acessivel.",
+        )
+    if grant.beneficiary_organization_id != contexto.organization_id:
+        raise DomainProblem(
+            status_code=status.HTTP_403_FORBIDDEN,
+            reason_code="PERMISSAO_AUSENTE",
+            title="Acesso recusado",
+            detail="Apenas a Organization beneficiaria pode criar proposta.",
+        )
+    policy_snapshot = _snapshot_policy_compartilhada(
+        connection,
+        policy_id=policy_typed_id,
+        owner_organization_id=grant.owner_organization_id,
+        captured_at=datetime.now(UTC),
+    )
+
     try:
         decision = _shared_decision_service(connection).create_proposal(
             policy_id=policy_typed_id,
@@ -1250,6 +1360,7 @@ def criar_shared_decision(
             evaluation_id=evaluation_id,
             proposal_content=corpo.proposal_content,
             evidence_references=tuple(corpo.evidence_references),
+            policy_snapshot_json=policy_snapshot,
             proposer_organization_id=contexto.organization_id,
             created_by=str(contexto.user_id.value),
         )
@@ -1352,6 +1463,31 @@ def listar_shared_decisions(
         organization_id=contexto.organization_id,
     )
     return [_shared_decision_response(decision) for decision in decisions]
+
+
+@router.get(
+    "/shared-policies/{policy_id}/history",
+    response_model=list[SharedPolicyHistoryItemResponse],
+    summary="Consultar historico preservado de uma Policy compartilhada",
+    description=(
+        "BuyerPolicy Fase 3 Incremento 4: preserva o snapshot da Policy contratual "
+        "usada em propostas ja criadas, inclusive apos expiracao do grant."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def listar_shared_policy_history(
+    policy_id: str,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(POLICY_COMPARTILHAMENTO_LER))
+    ],
+    connection: ConnectionDependency,
+) -> list[SharedPolicyHistoryItemResponse]:
+    policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
+    decisions = _shared_decision_service(connection).list_for_policy(
+        policy_id=policy_typed_id,
+        organization_id=contexto.organization_id,
+    )
+    return [_shared_history_response(decision) for decision in decisions]
 
 
 @router.get(

@@ -199,6 +199,20 @@ def _evaluation_for_contract_policy(
     return str(resposta.json()["evaluation_id"])
 
 
+def _expire_grant(ambiente: Ambiente, grant_id: str) -> None:
+    set_local_organization_context(ambiente.connection, ambiente.org_a.organization_id)
+    ambiente.connection.execute(
+        text(
+            """
+            UPDATE core_audit.authorization_grants
+            SET valid_until = :valid_until
+            WHERE grant_id = :grant_id
+            """
+        ),
+        {"grant_id": UUID(grant_id), "valid_until": datetime.now(UTC) - timedelta(days=1)},
+    )
+
+
 def test_POST_shares_criar_grant_valido(ambiente: Ambiente, operador: ClienteAutenticado) -> None:
     policy_id = _contract_policy(operador, ambiente)
 
@@ -637,3 +651,103 @@ def test_GET_shared_decisions_lista_para_partes_e_oculta_terceiro(
     )
     assert third.status_code == 200
     assert third.json() == []
+
+
+def test_GET_shared_policy_history_preserva_snapshot_da_policy(
+    ambiente: Ambiente, operador: ClienteAutenticado, fornecedor: ClienteAutenticado
+) -> None:
+    policy_id = _contract_policy(operador, ambiente)
+    grant_id = _share_policy(operador, ambiente, policy_id)
+    evaluation_id = _evaluation_for_contract_policy(ambiente, fornecedor, policy_id)
+    created = fornecedor.post(
+        f"/v1/rule-governance/policies/shared-policies/{policy_id}/decisions",
+        json={
+            "grant_id": grant_id,
+            "evaluation_id": evaluation_id,
+            "proposal_content": "Preservar criterio usado.",
+            "evidence_references": ["doc-historico-001"],
+        },
+        headers=_headers(str(ambiente.org_b.organization_id.value)),
+    )
+    assert created.status_code == 201, created.text
+
+    history = fornecedor.get(
+        f"/v1/rule-governance/policies/shared-policies/{policy_id}/history",
+        headers=_headers(str(ambiente.org_b.organization_id.value)),
+    )
+
+    assert history.status_code == 200, history.text
+    items = history.json()
+    assert len(items) == 1
+    snapshot = items[0]["policy_snapshot"]
+    assert snapshot["snapshot_type"] == "BUYERPOLICY_SHARED_POLICY_V1"
+    assert snapshot["policy"]["policy_id"] == policy_id
+    assert snapshot["policy"]["code"].startswith("policy-contrato-")
+    assert len(snapshot["rules"]) == 1
+    assert snapshot["rules"][0]["code"].startswith("rule-contract-")
+    assert "conditions" in snapshot["rules"][0]
+
+
+def test_GET_shared_policy_history_continua_apos_expiracao_do_grant(
+    ambiente: Ambiente, operador: ClienteAutenticado, fornecedor: ClienteAutenticado
+) -> None:
+    policy_id = _contract_policy(operador, ambiente)
+    grant_id = _share_policy(operador, ambiente, policy_id)
+    evaluation_id = _evaluation_for_contract_policy(ambiente, fornecedor, policy_id)
+    created = fornecedor.post(
+        f"/v1/rule-governance/policies/shared-policies/{policy_id}/decisions",
+        json={
+            "grant_id": grant_id,
+            "evaluation_id": evaluation_id,
+            "proposal_content": "Historico pos-expiracao.",
+            "evidence_references": [],
+        },
+        headers=_headers(str(ambiente.org_b.organization_id.value)),
+    )
+    assert created.status_code == 201, created.text
+
+    _expire_grant(ambiente, grant_id)
+
+    live_read = fornecedor.get(
+        f"/v1/rule-governance/policies/shared-policies/{policy_id}",
+        headers=_headers(str(ambiente.org_b.organization_id.value)),
+    )
+    assert live_read.status_code == 404
+
+    history = fornecedor.get(
+        f"/v1/rule-governance/policies/shared-policies/{policy_id}/history",
+        headers=_headers(str(ambiente.org_b.organization_id.value)),
+    )
+
+    assert history.status_code == 200, history.text
+    assert history.json()[0]["policy_snapshot"]["policy"]["policy_id"] == policy_id
+
+
+def test_GET_shared_policy_history_oculta_terceira_organization(
+    ambiente: Ambiente,
+    operador: ClienteAutenticado,
+    fornecedor: ClienteAutenticado,
+    terceiro: ClienteAutenticado,
+) -> None:
+    policy_id = _contract_policy(operador, ambiente)
+    grant_id = _share_policy(operador, ambiente, policy_id)
+    evaluation_id = _evaluation_for_contract_policy(ambiente, fornecedor, policy_id)
+    created = fornecedor.post(
+        f"/v1/rule-governance/policies/shared-policies/{policy_id}/decisions",
+        json={
+            "grant_id": grant_id,
+            "evaluation_id": evaluation_id,
+            "proposal_content": "Terceiro nao deve ver.",
+            "evidence_references": [],
+        },
+        headers=_headers(str(ambiente.org_b.organization_id.value)),
+    )
+    assert created.status_code == 201, created.text
+
+    history = terceiro.get(
+        f"/v1/rule-governance/policies/shared-policies/{policy_id}/history",
+        headers=_headers(str(ambiente.operadora.organization_id.value)),
+    )
+
+    assert history.status_code == 200
+    assert history.json() == []
