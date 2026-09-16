@@ -72,6 +72,10 @@ SUPERFICIE_ESPERADA = {
     # BuyerPolicy Fase 3 Incremento 2: trilha de acesso a Policy compartilhada,
     # legivel apenas pela Organization que compartilhou.
     ("/v1/rule-governance/policies/{policy_id}/access-log", "get"),
+    # BuyerPolicy Fase 3 Incremento 3 (ADR-0066, Fluxo B): somente o comprador
+    # compoe a avaliacao contratual com a matriz de elegibilidade regulatoria;
+    # a resposta nunca expoe rule_results de nenhum dos dois lados.
+    ("/v1/rule-governance/policies/shared-policies/{policy_id}/compose-with-matrix", "post"),
     (
         "/v1/rule-governance/catalogs/livestock-market-rules/templates/{template_code}/execute",
         "post",

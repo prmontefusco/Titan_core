@@ -42,6 +42,7 @@ from packages.core_application.evaluation_service import (
 from packages.core_application.policy_authorization import (
     POLICY_AVALIAR,
     POLICY_AVALIAR_COMPARTILHADA,
+    POLICY_COMPARTILHAMENTO_COMPOR,
     POLICY_COMPARTILHAMENTO_LER,
     POLICY_COMPARTILHAMENTO_PROPOR,
     POLICY_COMPARTILHAMENTO_REVISAR,
@@ -55,8 +56,10 @@ from packages.core_application.policy_service import PolicyService
 from packages.core_application.policy_sharing_service import PolicySharingService
 from packages.core_application.shared_decision_service import SharedDecisionService
 from packages.core_domain import OrganizationContext
+from packages.core_domain.evaluation import EvaluationOutcome
 from packages.core_domain.policy import Policy
 from packages.core_domain.policy_sharing import (
+    SHARED_POLICY_ACCESS_ACTION_COMPOSE,
     SHARED_POLICY_ACCESS_ACTION_EVALUATE,
     SHARED_POLICY_ACCESS_ACTION_READ,
     SHARED_POLICY_ACCESS_ENTITY_TYPE,
@@ -67,11 +70,16 @@ from packages.core_domain.rule_governance import RuleSourceType
 from packages.core_infrastructure.persistence.authorization_grant import (
     TransactionalAuthorizationGrantRepository,
 )
+from packages.core_infrastructure.persistence.decision_governance import (
+    TransactionalDecisionAuthorityProfileRepository,
+    TransactionalDecisionGovernanceRepository,
+)
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.organizations import set_local_organization_context
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
 from packages.core_infrastructure.persistence.rule_governance import (
+    TransactionalRuleAdoptionRepository,
     TransactionalRuleIdentityRepository,
 )
 from packages.core_infrastructure.persistence.shared_decision import (
@@ -215,6 +223,19 @@ class SharedPolicyEvaluationResponse(BaseModel):
     rule_results: list[RuleResultResponse]
     missing_facts: list[str]
     evaluation_hash: str
+
+
+class ComposeComMatrizRequest(BaseModel):
+    grant_id: str = Field(min_length=1)
+    evaluation_id: str = Field(min_length=1)
+    market: str = Field(min_length=1, max_length=100)
+
+
+class ComposeComMatrizResponse(BaseModel):
+    grant_id: str
+    evaluation_id: str
+    market: str
+    composite_verdict: str
 
 
 class CriarSharedDecisionRequest(BaseModel):
@@ -978,6 +999,212 @@ def avaliar_shared_policy(
             }
         ),
         evaluation_hash=evaluation.evaluation_hash,
+    )
+
+
+_COMPOSITE_ELEGIVEL = "ELEGIVEL"
+_COMPOSITE_INELEGIVEL = "INELEGIVEL"
+_COMPOSITE_REQUER_REVISAO = "REQUER_REVISAO"
+
+
+@router.post(
+    "/shared-policies/{policy_id}/compose-with-matrix",
+    response_model=ComposeComMatrizResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Compor avaliacao contratual compartilhada com a matriz de elegibilidade regulatoria",
+    description=(
+        "ADR-0066 Incremento 3 (Fluxo B): somente o comprador (owner do grant) compoe. O "
+        "fornecedor nunca ve o efeito da matriz do comprador -- a resposta contem apenas o "
+        "veredito composto, sem rule_results de nenhum dos dois lados."
+    ),
+    responses={
+        **RESPOSTAS_PADRAO,
+        429: {"description": "Cota de avaliacoes por minuto do grant atingida"},
+    },
+)
+def compor_shared_policy_com_matriz(
+    policy_id: str,
+    corpo: ComposeComMatrizRequest,
+    request: Request,
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(POLICY_COMPARTILHAMENTO_COMPOR))
+    ],
+    connection: ConnectionDependency,
+) -> ComposeComMatrizResponse | JSONResponse:
+    policy_typed_id = typed_id_or_problem(policy_id, entity_type="policy", campo="policy_id")
+    evaluation_typed_id = typed_id_or_problem(
+        corpo.evaluation_id, entity_type="evaluation", campo="evaluation_id"
+    )
+    try:
+        grant_id = UUID(corpo.grant_id)
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            reason_code="FORMATO_INVALIDO",
+            title="Formato invalido",
+            detail="grant_id deve ser um UUID valido",
+        ) from error
+
+    # Import local pelo mesmo motivo de `avaliar_shared_policy`: nao acoplar o
+    # modulo de Policy do Core a toda a superficie de mercado da vertical.
+    from packages.livestock_application.market_eligibility import (
+        DEFAULT_MARKET_PROFILES,
+        MarketEligibilityPurpose,
+        MarketEligibilityService,
+        MarketEligibilityStatus,
+    )
+
+    try:
+        mercado = MarketEligibilityPurpose(corpo.market)
+    except ValueError as error:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason_code="PARAMETRO_INVALIDO",
+            title="Mercado invalido",
+            detail=f"'{corpo.market}' nao e um mercado reconhecido.",
+        ) from error
+    perfil = next((item for item in DEFAULT_MARKET_PROFILES if item.market is mercado), None)
+    if perfil is None:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            reason_code="PARAMETRO_INVALIDO",
+            title="Mercado invalido",
+            detail=f"Nao ha perfil de elegibilidade configurado para '{corpo.market}'.",
+        )
+
+    # Comprador -- nao beneficiario: `compose-with-matrix` e o unico passo da
+    # Fase 3 iniciado pelo owner do grant, nao pelo fornecedor (D1/D4).
+    grant = TransactionalAuthorizationGrantRepository(connection).get_by_id(grant_id)
+    if (
+        grant is None
+        or grant.policy_id != policy_typed_id
+        or grant.owner_organization_id != contexto.organization_id
+        or grant.status != "ATIVO"
+        or grant.valid_until < datetime.now(UTC)
+    ):
+        raise DomainProblem(
+            status_code=status.HTTP_403_FORBIDDEN,
+            reason_code="GRANT_INVALIDO",
+            title="Acesso recusado",
+            detail="Grant nao valido, nao pertence a esta Organization ou expirado",
+        )
+
+    # ADR-0066 secao 3 / D3: compose usa a mesma cota e a mesma chave de
+    # `/evaluate` -- e mais uma forma de sondar o fornecedor sob o mesmo
+    # grant, nao merece orcamento proprio.
+    limite = shared_policy_evaluation_rate_limiter().check_rate_limit(
+        shared_policy_evaluation_key(grant.grant_id)
+    )
+    if not limite.is_allowed:
+        _registrar_acesso_compartilhado(
+            connection,
+            grant_id=grant.grant_id,
+            policy_id=policy_typed_id,
+            organization_id=contexto.organization_id,
+            owner_organization_id=grant.owner_organization_id,
+            action=SHARED_POLICY_ACCESS_ACTION_COMPOSE,
+            http_status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+        recusa = problem_response(
+            request=request,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            reason_code="LIMITE_DE_AVALIACOES_EXCEDIDO",
+            title="Limite de avaliacoes atingido",
+            detail=(
+                f"Limite de {limite.limit} avaliacoes por minuto atingido para este "
+                f"grant. Tente novamente em {limite.reset_after_seconds}s."
+            ),
+            extra={
+                "limit_per_minute": limite.limit,
+                "retry_after_seconds": limite.reset_after_seconds,
+            },
+        )
+        recusa.headers["Retry-After"] = str(limite.reset_after_seconds)
+        return recusa
+
+    # Daqui para a frente corre sob a Organization do fornecedor -- a mesma
+    # troca de contexto de `avaliar_shared_policy` (ADR-0068): a Evaluation
+    # contratual e os facts do sujeito sao dele, nunca da RLS do comprador.
+    set_local_organization_context(connection, grant.beneficiary_organization_id)
+    evaluation = TransactionalEvaluationRepository(connection).get_by_id(evaluation_typed_id)
+    if (
+        evaluation is None
+        or evaluation.policy_id != policy_typed_id
+        or evaluation.organization_id != grant.beneficiary_organization_id
+    ):
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="RECURSO_NAO_ENCONTRADO",
+            title="Recurso nao encontrado",
+            detail="Evaluation nao encontrada ou nao acessivel.",
+        )
+
+    # Import local pelo mesmo motivo de `avaliar_shared_policy`.
+    from apps.api.livestock_queries import _eligibility_components
+    from packages.livestock_application.eligibility import HumanReviewRequired
+
+    animal_repository = TransactionalAnimalRepository(connection=connection)
+    _aplicacoes, evaluations, decisions, fact_provider = _eligibility_components(
+        connection, animal_repository
+    )
+
+    matriz_status: MarketEligibilityStatus | None
+    try:
+        matrix = MarketEligibilityService(
+            adoption_reader=TransactionalRuleAdoptionRepository(connection),
+            rule_reader=TransactionalRuleRepository(connection=connection),
+            policy_reader=TransactionalPolicyRepository(connection=connection),
+            fact_provider=fact_provider,
+            evaluation_repository=evaluations,
+            decision_repository=decisions,
+            authority_profile_repository=TransactionalDecisionAuthorityProfileRepository(
+                connection
+            ),
+            governance_repository=TransactionalDecisionGovernanceRepository(connection),
+            profiles=(perfil,),
+        ).evaluate(
+            organization_id=grant.beneficiary_organization_id,
+            subject_id=evaluation.subject_id,
+            at_time=datetime.now(UTC),
+        )
+    except HumanReviewRequired:
+        # A propria semantica de "precisa de revisao humana" ja e o que
+        # REQUER_REVISAO representa para o comprador -- sem propagar o 409
+        # bruto nem qualquer detalhe da avaliacao que a produziu.
+        matriz_status = None
+    else:
+        matriz_status = matrix.entries[0].status
+
+    if (
+        evaluation.outcome is EvaluationOutcome.CONDICOES_NAO_SATISFEITAS
+        or matriz_status is MarketEligibilityStatus.NAO_ELEGIVEL
+    ):
+        veredito = _COMPOSITE_INELEGIVEL
+    elif (
+        evaluation.outcome is EvaluationOutcome.CONDICOES_SATISFEITAS
+        and matriz_status is MarketEligibilityStatus.ELEGIVEL
+    ):
+        veredito = _COMPOSITE_ELEGIVEL
+    else:
+        veredito = _COMPOSITE_REQUER_REVISAO
+
+    _registrar_acesso_compartilhado(
+        connection,
+        grant_id=grant.grant_id,
+        policy_id=policy_typed_id,
+        organization_id=contexto.organization_id,
+        owner_organization_id=grant.owner_organization_id,
+        action=SHARED_POLICY_ACCESS_ACTION_COMPOSE,
+        http_status_code=status.HTTP_201_CREATED,
+        subject_type=_SUBJECT_TYPE_ANIMAL,
+        subject_id=str(evaluation.subject_id.value),
+    )
+
+    return ComposeComMatrizResponse(
+        grant_id=str(grant.grant_id),
+        evaluation_id=str(evaluation.evaluation_id.value),
+        market=corpo.market,
+        composite_verdict=veredito,
     )
 
 

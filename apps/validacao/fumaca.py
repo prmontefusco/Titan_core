@@ -81,6 +81,10 @@ ROTEIROS: tuple[tuple[str, list[str]], ...] = (
         "ADR-0066 — cota por grant e trilha de acesso compartilhado",
         ["apps.validacao.buyerpolicy_rate_limit_auditoria"],
     ),
+    (
+        "ADR-0066 Incremento 3 — composicao com a matriz de elegibilidade",
+        ["apps.validacao.buyerpolicy_composicao_matriz"],
+    ),
     ("IBAMA — embargo ambiental (HTTP real)", ["apps.validacao.embargo_ibama"]),
     ("FUNAI — terra indígena (HTTP real)", ["apps.validacao.funai"]),
     (

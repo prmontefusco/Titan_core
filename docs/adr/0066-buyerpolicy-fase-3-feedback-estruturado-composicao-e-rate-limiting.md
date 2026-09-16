@@ -3,10 +3,9 @@
 **Data da decisão original:** 21-27 de agosto de 2026
 **Status:** ACEITA (decisões D1-D5 e escolha de Fluxo B confirmadas em 27/08/2026)
 **Estado operacional no MVP:** PARCIALMENTE_IMPLEMENTADA — Incrementos 1 (Decision/Proposal) e 2
-(Rate-Limiting & Auditoria) implementados e validados em 27/08/2026. Incremento 3 (Composição com Matriz)
-foi desbloqueado no mesmo dia pela ADR-0068, mas **não foi construído**. Incremento 4 (Snapshot &
-Acesso Pós-Expiração) **não foi iniciado**. Ver `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, entrada NEXT-11 e o
-"Ponto de parada — 27 de agosto de 2026" no topo do checklist.
+(Rate-Limiting & Auditoria) implementados e validados em 27/08/2026; Incremento 3 (Composição com Matriz)
+implementado em 16/09/2026 (ver seção "O que foi de fato construído" abaixo). Incremento 4 (Snapshot &
+Acesso Pós-Expiração) **não foi iniciado**. Ver `docs/CHECKLIST_DE_IMPLEMENTACAO.md`, entrada NEXT-11.
 **Decisores:** responsável pelo produto e arquitetura do Titan
 **Reconstruída retroativamente em:** 14/09/2026, a partir de `docs/plans/BUYERPOLICY_FASE3_DISCOVERY.md`,
 `docs/plans/BUYERPOLICY_FASE3_REQUIREMENTS.md`, `docs/plans/BUYERPOLICY_FASE3_BUILD_PLAN.md` e
@@ -144,10 +143,16 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
   LIMITE_DE_AVALIACOES_EXCEDIDO`, trilha `core_audit.shared_policy_access_log` (migration `20260827_0077`,
   append-only por policy de banco, não por convenção), endpoint `GET .../access-log`, roteiro
   `apps/validacao/buyerpolicy_rate_limit_auditoria.py`.
-- **Incremento 3 — Composição com Matriz:** **não construído.** Foi desbloqueado em 27/08/2026 pela
-  aceitação da ADR-0068 (a autoavaliação compartilhada deixou de ser stub), e o Fluxo B ficou decidido, mas
-  nenhum código do Incremento 3 foi escrito antes de o trabalho seguir para outras frentes (Market Supply,
-  Commercial Passport).
+- **Incremento 3 — Composição com Matriz:** implementado em 16/09/2026, após
+  `docs/plans/BUYERPOLICY_INCREMENTO3_BUILD_PLAN.md` resolver os detalhes que este registro (e o
+  `BUYERPOLICY_FASE3_BUILD_PLAN.md`) deixaram para sessão posterior. `POST .../compose-with-matrix`
+  (`apps/api/policy_governance.py`) roda somente sob o comprador (owner do grant), troca de contexto para o
+  fornecedor para ler a `Evaluation` contratual e rodar `MarketEligibilityService` restrito ao mercado
+  pedido, e devolve exclusivamente `composite_verdict` — nenhum `rule_results` de nenhum dos lados atravessa
+  a resposta. Nova permissão `POLICY.COMPARTILHAMENTO_COMPOR` e nova ação de auditoria `COMPOSE` (mesma cota
+  de `/evaluate`, D3). **Ressalva:** os caminhos `ELEGIVEL`/`INELEGIVEL` exigiriam uma Policy contratual com
+  fato real resolvível e regra governada de mercado adotada — os testes cobrem `REQUER_REVISAO` e todos os
+  caminhos de erro/isolamento/auditoria; ver detalhes no BUILD PLAN.
 - **Incremento 4 — Snapshot & Acesso Pós-Expiração:** **não iniciado.**
 
 ## Consequências
@@ -163,9 +168,6 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
 
 ### Negativas / riscos
 
-- A composição com a matriz regulatória — a capacidade que justificava boa parte do valor comercial da
-  Fase 3 (ver Discovery, item 2) — permanece ausente. Um comprador não consegue hoje, por essa via, saber
-  automaticamente se um fornecedor que passou no contrato também passa na matriz.
 - Acesso pós-expiração (Incremento 4) não existe: um grant expirado hoje deixa a avaliação e a proposta
   associada sem caminho de leitura para o fornecedor, exatamente o risco que a Discovery já havia
   identificado.
@@ -189,13 +191,12 @@ GET  /v1/rule-governance/policies/shared-policies/{policy_id}/history   (Increme
 | Exposição de dataset do fornecedor | Fornecedor só avalia seus próprios sujeitos (Opção A) | Mitigado — implementado desde a Fase 2 |
 | Força bruta de avaliações | Rate-limit por grant + log de acesso | Mitigado — Incremento 2 concluído |
 | Perda de histórico pós-expiração | Snapshot automático + acesso por 90 dias | **Não mitigado — Incremento 4 não construído** |
-| Composição expõe matriz ao fornecedor | Endpoint separado (Fluxo B) | Decidido, mas endpoint não existe — **Incremento 3 não construído** |
+| Composição expõe matriz ao fornecedor | Endpoint separado (Fluxo B) | Mitigado — Incremento 3 implementado em 16/09/2026 |
 | Assimetria de autoria da proposta | Apenas beneficiary cria `SharedDecision` | Mitigado — Incremento 1 concluído |
 
 ## Próximos passos, se esta frente for retomada
 
 Não autorizados por este registro — exigem decisão própria antes de BUILD:
 
-1. Incremento 3 (composição com matriz, Fluxo B) — a porta de dependência (ADR-0068) já está aberta.
-2. Incremento 4 (snapshot e acesso pós-expiração).
-3. Reavaliar se a Fase 4 (sujeitos cross-Organization, `BILATERAL_DATA_SHARING`) tem demanda real.
+1. Incremento 4 (snapshot e acesso pós-expiração).
+2. Reavaliar se a Fase 4 (sujeitos cross-Organization, `BILATERAL_DATA_SHARING`) tem demanda real.

@@ -544,6 +544,57 @@ validados em 27/08/2026; Incrementos 3 (composição com matriz) e 4 (snapshot p
 entrada NEXT-11. Nenhum arquivo de código, teste, migration ou API foi tocado; Ruff, Mypy e Alembic não
 aplicáveis a este incremento.
 
+### 16/09/2026 — NEXT-11 Incremento 3: composição com a matriz de elegibilidade (BUILD)
+
+**Estado:** IMPLEMENTADO; portão de banco real pendente (Docker indisponível nesta sessão — ver Ressalva).
+
+**O que foi entregue:** `docs/plans/BUYERPOLICY_INCREMENTO3_BUILD_PLAN.md` (novo) resolveu, lendo o código
+real, os detalhes que `BUYERPOLICY_FASE3_BUILD_PLAN.md` e a `ADR-0066` deixaram para sessão posterior:
+mapeamento dos enums reais (`EvaluationOutcome`/`MarketEligibilityStatus`, não os nomes placeholder do
+REQUIREMENTS), decisão de aceitar a persistência real de Evaluation/Decision que
+`MarketEligibilityService.evaluate()` produz para o Animal do fornecedor (mesmo efeito que ocorreria se ele
+próprio rodasse a matriz — sem criar Dossier, fora de escopo), e o isolamento por troca de contexto
+idêntico ao de `avaliar_shared_policy` (ADR-0068). `POST /v1/rule-governance/policies/shared-policies/
+{policy_id}/compose-with-matrix` (`apps/api/policy_governance.py`) é acessível somente pelo comprador
+(owner do grant — verificado em código, D1/D4), lê a `Evaluation` contratual e roda a matriz restrita ao
+mercado pedido sob o contexto do fornecedor, e devolve exclusivamente `{grant_id, evaluation_id, market,
+composite_verdict}` — nenhum `rule_results` de nenhum dos dois lados atravessa a resposta (ADR-0066, risco
+"composição expõe matriz"). Nova permissão `POLICY.COMPARTILHAMENTO_COMPOR`
+(`packages/core_application/policy_authorization.py`) e nova ação de auditoria `COMPOSE`
+(`packages/core_domain/policy_sharing.py`), reaproveitando a mesma cota/chave do `/evaluate` (D3) — sem
+orçamento próprio. Roteiro `apps/validacao/buyerpolicy_composicao_matriz.py` (registrado em `fumaca.py` e
+no índice do `README.md`).
+
+**Ressalva de cobertura de teste:** `tests/integration/test_buyerpolicy_compose_with_matrix.py` (8 testes)
+cobre o mecanismo completo — isolamento, permissão exclusiva do comprador, grant inválido/expirado, mercado
+inválido, Evaluation inexistente/de outra Policy, cota compartilhada com `/evaluate` e trilha de auditoria —
+usando o caminho `REQUER_REVISAO`, que os fixtures existentes de `test_policy_sharing_api.py` produzem sem
+setup adicional (a Rule contratual desses fixtures usa `fact_type` fictício, nunca resolvível por nenhum
+fact provider real, então a Evaluation contratual nunca fica `CONDICOES_SATISFEITAS`/
+`CONDICOES_NAO_SATISFEITAS`). Os caminhos `ELEGIVEL`/`INELEGIVEL` exigiriam uma Policy contratual com fato
+real e uma regra governada de mercado adotada — combinação não coberta neste corte, registrada como
+ressalva, não como lacuna silenciosa.
+
+**Ressalva de portão:** Docker Desktop não pôde ser iniciado nesta sessão (`docker compose ps` recusou
+conexão mesmo após tentativa de start e duas esperas de ~2 minutos) — os 8 testes de integração novos e o
+`alembic check` não foram executados contra PostgreSQL real. `ruff check .`, `ruff format --check .` e
+`mypy` (802 arquivos) passaram limpos no repositório inteiro; `pytest` sem banco fechou em **1720 passed,
+349 skipped, 0 failed** (inclui a correção de `tests/api/test_core_public_surface.py`, que trava a
+superfície pública do Core e precisou incluir a nova rota). Nenhuma migration foi necessária — a ação nova
+é validada só no domínio (`SharedPolicyAccessLogEntry.__post_init__`), sem `CHECK` de banco na coluna
+`action`.
+
+**Evidência:** `docs/plans/BUYERPOLICY_INCREMENTO3_BUILD_PLAN.md`, `apps/api/policy_governance.py`,
+`packages/core_domain/policy_sharing.py`, `packages/core_application/policy_authorization.py`,
+`tests/integration/test_buyerpolicy_compose_with_matrix.py`, `tests/api/test_core_public_surface.py`,
+`tests/livestock_api_support.py`, `apps/validacao/buyerpolicy_composicao_matriz.py`,
+`docs/adr/0066-buyerpolicy-fase-3-feedback-estruturado-composicao-e-rate-limiting.md` (atualizado: Estado
+operacional, seção "O que foi de fato construído", riscos e próximos passos).
+
+**Portão verificado:** Ruff, ruff format e Mypy no repositório inteiro; pytest sem banco (1720/349/0).
+**Pendente:** rodar a suíte de integração e `alembic check` contra PostgreSQL real assim que Docker estiver
+disponível — mesmo padrão já fechado para GTA nesta mesma sessão.
+
 ### 14/09/2026 — Prompt de pesquisa para base normativa real de mercado (China/EUA/UE/Indonésia)
 
 **Estado:** CONCLUÍDO — apenas material de pesquisa e um guia de validação; nenhuma `NormativeBasis`,

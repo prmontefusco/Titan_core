@@ -100,6 +100,7 @@ provedor, não com sintoma genérico.
 | `post_liv_02a_neutral_contract` | Contrato outbound neutro de ERP (POST-LIV-02A) |
 | `buyerpolicy_shared_decision` | Proposta e revisão sobre Evaluation compartilhada (ADR-0066, Incremento 1) |
 | `buyerpolicy_rate_limit_auditoria` | Cota por grant e trilha de acesso da BuyerPolicy compartilhada (ADR-0066, Incremento 2) |
+| `buyerpolicy_composicao_matriz` | Composição explícita (Fluxo B) da avaliação contratual com a matriz de elegibilidade regulatória (ADR-0066, Incremento 3) |
 | `market_supply_aggregate_api` | Superfície HTTP protegida de Market Supply F3.5: rota default-off ou autenticada quando feature-flagged |
 | `ai_provider_smoke` | Fumaça sintética da Gemini API com chave local ignorada pelo Git, sem dados Titan ou integração produtiva — **HTTP real** |
 | `ai_explanation_pipeline_smoke` | Fumaça sintética da Gemini API através do pipeline local de AI Explanation, com provider recebendo somente payload minimizado — **HTTP real** |
