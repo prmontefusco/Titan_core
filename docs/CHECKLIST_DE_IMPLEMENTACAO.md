@@ -896,6 +896,10 @@ uma parceria comercial concreta com certificadora credenciada. Sem um dos dois, 
 permanece bloqueado — agora por decisão comercial/institucional, não por falta de informação sobre se o
 acesso existe.
 
+**Parqueado em 16/09/2026:** nem o contato ao MAPA nem a avaliação de parceria com certificadora serão
+perseguidos por ora, sem prazo definido — decisão do responsável. `docs/plans/SISBOV_MAPA_OFFICIAL_ACCESS_INVESTIGATION.md`
+atualizado; ambos os próximos passos ficam descritos lá para retomada futura sem refazer a investigação.
+
 > **Modernização do Login e Cadastro no Keycloak concluída em 13/08/2026.**
 > O tema do Keycloak em `config/keycloak/themes/titan/login` foi atualizado no estilo **Google Material Design 3**:
 > 1. Fundo fotorrealista panorâmico de fazenda ao nascer do sol (*sunrise*) com pastagem ampla e gado ao fundo;

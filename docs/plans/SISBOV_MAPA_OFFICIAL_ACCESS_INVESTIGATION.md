@@ -119,6 +119,13 @@ Enquanto nenhuma das duas gerar um caminho concreto, o Corte 3 da `ADR-0058` per
 por uma causa mais precisa e acionável: falta decisão comercial/institucional sobre como o Titan se relaciona
 com o SISBOV oficial, não falta de informação sobre se ele existe.
 
+## Parqueado em 16/09/2026
+
+Nem o contato formal ao MAPA (Opção C) nem a avaliação de parceria com certificadora (Opção B) serão
+perseguidos agora — decisão do responsável, sem prazo definido para retomada. Nenhuma das duas depende de
+código ou de outra decisão deste repositório; podem ser retomadas a qualquer momento futuro simplesmente
+executando os próximos passos já descritos acima, sem precisar refazer esta investigação.
+
 ## Fontes consultadas nesta sessão
 
 - [API de Integração SISBOV 2.0 — manual de treinamento](https://manual-api-treinamento-sisbov.agricultura.gov.br/)
