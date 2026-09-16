@@ -1172,6 +1172,15 @@ def compor_shared_policy_com_matriz(
         # REQUER_REVISAO representa para o comprador -- sem propagar o 409
         # bruto nem qualquer detalhe da avaliacao que a produziu.
         matriz_status = None
+    except Exception as debug_temp_exc:  # TEMP DEBUG -- remove before merge
+        import traceback
+
+        raise DomainProblem(
+            status_code=500,
+            reason_code="DEBUG_TEMP",
+            title="debug",
+            detail=(f"{type(debug_temp_exc).__name__}: {debug_temp_exc}\n{traceback.format_exc()}"),
+        ) from debug_temp_exc
     else:
         matriz_status = matrix.entries[0].status
 

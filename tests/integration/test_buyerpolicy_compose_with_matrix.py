@@ -125,6 +125,7 @@ def test_compor_com_grant_inexistente_recebe_403(
     ambiente: Ambiente, operador: ClienteAutenticado, fornecedor: ClienteAutenticado
 ) -> None:
     policy_id = _contract_policy(operador, ambiente)
+    _share_policy(operador, ambiente, policy_id)
     evaluation_id = _evaluation_for_contract_policy(ambiente, fornecedor, policy_id)
 
     resposta = _compor(
