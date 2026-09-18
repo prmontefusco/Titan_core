@@ -431,6 +431,41 @@ tests/api/test_commercial_passport_api_release_gate.py`, `python -m uv run --loc
 Policy/version e reports existentes) sem inventar mercado ou regra; esse próximo corte deve transformar a
 lacuna `MARKET_READINESS_REPORT_MISSING` em summary populacional quando houver report compatível.
 
+### 18/09/2026 — Commercial Passport: MarketReadiness real por propriedade
+
+**Estado:** IMPLEMENTADO — incremento de continuidade que liga a pipeline opt-in do Commercial Passport a
+um `MarketReadinessReport` canônico derivado de dados persistidos. `packages/livestock_infrastructure/
+persistence/commercial_passport.py` introduz `TransactionalPropertyCommercialPassportReadinessPipeline`,
+um adapter transacional que lista animais ativos nascidos na propriedade da Organization ativa, exclui
+natimortos e saídas ocorridas até o `reference_time`, e então usa `MarketReadinessPopulationReader` com os
+repositórios reais de `Decision`/`Evaluation` para compor o report.
+
+**O que foi entregue:** `apps/api/livestock_commercial_passport.py` passa a compor uma pipeline lazy quando
+`TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED=true` e a oportunidade comercial está configurada. A conexão
+de leitura é aberta somente no momento de montar a projection e recebe RLS da Organization do
+`CommercialPassportContext`. Com material compatível, o GET dinâmico retorna requirement
+`MARKET_READINESS_REPORT_AVAILABLE` e `PopulationEligibilitySummary` com `counts_by_status` do
+`MarketReadinessReport`. Sem `Decision`/`Evaluation` para os animais, a dimensão populacional permanece
+canônica como `NOT_EVALUATED`, não vira reprovação nem ausência. O roteiro
+`apps/validacao/commercial_passport_api.py` foi atualizado para validar o summary populacional quando a
+pipeline opt-in estiver ligada. `docs/plans/COMMERCIAL_PASSPORT_PROPERTY_READINESS_REPORT_PLAN.md`
+registrou o escopo.
+
+**Decisões preservadas:** não houve avaliação de Policy/Rule, criação de `Evaluation` ou `Decision`,
+mercado real hardcoded, população por lote, movimentação territorial completa, persistência nova,
+migration, disclosure externo ou emissão automática de `Dossier`/`VerificationBundle`. A população deste
+corte é propositalmente simples (`birth_property_id` + rebanho ativo) e declarada como materialização de
+MarketReadiness, não como elegibilidade regulatória autônoma.
+
+**Portão focado:** `python -m uv run --locked pytest
+tests/api/test_commercial_passport_api_release_gate.py tests/livestock_application/test_commercial_passport.py`
+passou com 34 testes; `ruff check`/`ruff format --check` focados passaram; `python -m uv run --locked
+mypy` passou.
+
+**Próximo passo:** ampliar a resolução de população de propriedade somente com decisão própria — por
+exemplo, permanência/movimentação temporal ou lote — e então evoluir para o Gap Engine v1 planejado, sem
+criar atalho regulatório.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.

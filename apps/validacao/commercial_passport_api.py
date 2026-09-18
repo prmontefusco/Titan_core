@@ -9,8 +9,8 @@ Este roteiro valida a segurança da API antes de qualquer habilitação produtiv
 - Com `--autenticado`, também valida que usuários locais semeados passam pelo
   gate de autenticação/permissão. Sem pipeline opt-in, a API segue fail-closed
   em 503; com `TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED=true` e metadados de
-  oportunidade configurados, a consulta dinâmica retorna a projection mínima e a
-  emissão formal segue fail-closed.
+  oportunidade configurados, a consulta dinâmica resolve MarketReadiness da
+  propriedade sob RLS e a emissão formal segue fail-closed.
 
 Uso:
 python -m uv run --locked python -m apps.validacao.commercial_passport_api
@@ -152,7 +152,7 @@ def _reason_code(expected: str) -> Callable[[Resposta], str | None]:
     return conferir
 
 
-def _minimal_projection() -> Callable[[Resposta], str | None]:
+def _readiness_projection() -> Callable[[Resposta], str | None]:
     def conferir(resposta: Resposta) -> str | None:
         corpo = resposta.corpo if isinstance(resposta.corpo, dict) else {}
         oportunidades = corpo.get("opportunities")
@@ -162,12 +162,15 @@ def _minimal_projection() -> Callable[[Resposta], str | None]:
         if not isinstance(requisitos, list) or not requisitos:
             return "projection não trouxe requisito de readiness"
         requisito = requisitos[0]
-        if requisito.get("status") != "MISSING":
-            return f"status do requisito veio {requisito.get('status')!r}, esperado 'MISSING'"
-        if "MARKET_READINESS_REPORT_MISSING" not in requisito.get("reason_codes", []):
-            return "projection não declarou a lacuna MARKET_READINESS_REPORT_MISSING"
-        if oportunidades[0].get("population_eligibility") is not None:
-            return "projection mínima não deve declarar elegibilidade populacional sem report"
+        if requisito.get("status") != "SATISFIED":
+            return f"status do requisito veio {requisito.get('status')!r}, esperado 'SATISFIED'"
+        if "MARKET_READINESS_REPORT_AVAILABLE" not in requisito.get("reason_codes", []):
+            return "projection não declarou MARKET_READINESS_REPORT_AVAILABLE"
+        population = oportunidades[0].get("population_eligibility")
+        if not isinstance(population, dict):
+            return "projection não trouxe resumo populacional de MarketReadiness"
+        if not isinstance(population.get("counts_by_status"), dict):
+            return "resumo populacional não trouxe counts_by_status"
         return None
 
     return conferir
@@ -243,14 +246,14 @@ def _authenticated_validation(
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
         conferir=(
-            _minimal_projection()
+            _readiness_projection()
             if pipeline_habilitada
             else _reason_code("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
         ),
         porque=(
             "Depois de autenticar e autorizar, a rota não pode fabricar avaliação: "
-            "sem pipeline opt-in falha fechado; com pipeline configurada, retorna "
-            "a oportunidade explícita e declara a lacuna de MarketReadiness."
+            "sem pipeline opt-in falha fechado; com pipeline configurada, compõe "
+            "MarketReadiness dos animais ativos da propriedade sob RLS."
         ),
     )
     roteiro.passo(

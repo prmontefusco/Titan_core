@@ -23,6 +23,7 @@ from packages.livestock_application.commercial_passport import (
     CommercialPassportRequirementDimension,
     CommercialPassportRequirementStatus,
     CommercialRequirementAssessment,
+    PopulationEligibilitySummary,
     PropertyCommercialPassportIssuancePort,
     PropertyCommercialPassportOpportunityInput,
     PropertyCommercialPassportProjectionPort,
@@ -129,6 +130,55 @@ class _ProjectionPipelineStub(PropertyCommercialPassportProjectionPort):
         )
 
 
+class _PopulationProjectionPipelineStub(PropertyCommercialPassportProjectionPort):
+    def build_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+    ) -> CommercialPassport:
+        return PropertyCommercialPassportService().build(
+            context=context,
+            opportunities=(
+                PropertyCommercialPassportOpportunityInput(
+                    opportunity=CommercialOpportunity(
+                        code="market-test",
+                        kind=CommercialOpportunityKind.MARKET,
+                        name="Mercado teste",
+                        purpose="market-test",
+                        policy_id=TypedId.parse(
+                            "policy",
+                            "30000000-0000-0000-0000-000000000001",
+                        ),
+                        policy_version=1,
+                    ),
+                    requirements=(
+                        CommercialRequirementAssessment(
+                            requirement_code="market-test:market-readiness-material",
+                            label="Market readiness material",
+                            dimension=CommercialPassportRequirementDimension.PROPERTY_READINESS,
+                            status=CommercialPassportRequirementStatus.SATISFIED,
+                            reason="MarketReadiness report is available.",
+                            reason_codes=("MARKET_READINESS_REPORT_AVAILABLE",),
+                        ),
+                    ),
+                    population_eligibility=PopulationEligibilitySummary(
+                        subject_type="animal",
+                        counts_by_status={
+                            "READY": 1,
+                            "NOT_READY": 0,
+                            "CONDITIONED": 0,
+                            "INDETERMINATE": 0,
+                            "REASSESSMENT_REQUIRED": 0,
+                            "NOT_EVALUATED": 2,
+                        },
+                        limitations=("derived from MarketReadiness; not a Decision",),
+                        source_report_reference="market-readiness-report:test",
+                    ),
+                ),
+            ),
+        )
+
+
 class _IssuancePipelineStub(PropertyCommercialPassportIssuancePort):
     seen_context: CommercialPassportContext | None = None
     seen_audience: str | None = None
@@ -205,10 +255,9 @@ def test_dynamic_commercial_passport_route_fails_closed_until_pipeline_is_enable
     assert response.json()["reason_code"] == "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"
 
 
-def test_dynamic_commercial_passport_route_uses_configured_minimal_pipeline(
+def test_dynamic_commercial_passport_dependency_builds_configured_pipeline(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
     monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "true")
     monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE", "market-test")
     monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_NAME", "Mercado teste")
@@ -219,10 +268,23 @@ def test_dynamic_commercial_passport_route_uses_configured_minimal_pipeline(
         "30000000-0000-0000-0000-000000000001",
     )
     monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION", "1")
+
+    pipeline = commercial_passport_api.get_commercial_passport_projection_pipeline()
+
+    assert pipeline is not None
+
+
+def test_dynamic_commercial_passport_route_returns_population_summary_from_pipeline(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
     importlib.reload(main_module)
     main_module.app.dependency_overrides[
         commercial_passport_api.require_commercial_passport_read
     ] = lambda: _context()
+    main_module.app.dependency_overrides[
+        commercial_passport_api.get_commercial_passport_projection_pipeline
+    ] = lambda: _PopulationProjectionPipelineStub()
 
     response = TestClient(main_module.app).get(GET_ROUTE, params=_valid_query())
 
@@ -233,9 +295,11 @@ def test_dynamic_commercial_passport_route_uses_configured_minimal_pipeline(
     assert opportunity["opportunity"]["code"] == "market-test"
     assert opportunity["opportunity"]["policy_id"] == "30000000-0000-0000-0000-000000000001"
     requirement = opportunity["property_readiness"]["requirements"][0]
-    assert requirement["status"] == "MISSING"
-    assert requirement["reason_codes"] == ["MARKET_READINESS_REPORT_MISSING"]
-    assert opportunity["population_eligibility"] is None
+    assert requirement["status"] == "SATISFIED"
+    assert requirement["reason_codes"] == ["MARKET_READINESS_REPORT_AVAILABLE"]
+    assert opportunity["population_eligibility"]["total_count"] == 3
+    assert opportunity["population_eligibility"]["counts_by_status"]["READY"] == 1
+    assert opportunity["population_eligibility"]["counts_by_status"]["NOT_EVALUATED"] == 2
     assert "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE" in payload["limitations"]
 
 

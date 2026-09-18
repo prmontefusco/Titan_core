@@ -6,6 +6,7 @@ declares the contract and guards the boundary without fabricating passport data
 from request payloads.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from os import environ
 from typing import Annotated
@@ -14,21 +15,28 @@ from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from apps.api.livestock_dependencies import require_permission, typed_id_or_problem
+from apps.api.livestock_dependencies import (
+    get_engine,
+    require_permission,
+    typed_id_or_problem,
+)
 from apps.api.problem import DomainProblem
 from packages.core_domain import OrganizationContext
+from packages.core_infrastructure.persistence.organizations import set_local_organization_context
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
 from packages.livestock_application.commercial_passport import (
     CommercialOpportunity,
     CommercialOpportunityKind,
+    CommercialPassport,
     CommercialPassportContext,
-    CommercialPassportMarketReadinessSource,
     PropertyCommercialPassportIssuancePort,
-    PropertyCommercialPassportMarketReadinessPipeline,
     PropertyCommercialPassportProjectionPort,
     commercial_passport_projection,
 )
 from packages.livestock_application.market_supply_response import MARKET_SUPPLY_NO_STORE_HEADERS
+from packages.livestock_infrastructure.persistence.commercial_passport import (
+    TransactionalPropertyCommercialPassportReadinessPipeline,
+)
 from packages.shared_kernel import TypedId
 from packages.shared_kernel.temporal import require_utc
 
@@ -47,23 +55,41 @@ class CommercialPassportIssueRequest(BaseModel):
 def get_commercial_passport_projection_pipeline() -> (
     PropertyCommercialPassportProjectionPort | None
 ):
+    """Compose the opt-in dynamic pipeline for the HTTP app.
+
+    This keeps the public route default-off even when the API route itself is
+    feature-flagged on. Configuration selects the commercial opportunity; the
+    adapter still reads only canonical persisted material from the active
+    request transaction.
+    """
+
     if environ.get("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "").casefold() != "true":
         return None
     opportunity = _configured_commercial_opportunity()
     if opportunity is None:
         return None
-    return PropertyCommercialPassportMarketReadinessPipeline(
-        sources=(
-            CommercialPassportMarketReadinessSource(
-                opportunity=opportunity,
-                limitations=("configured opportunity without productive MarketReadiness report",),
-            ),
-        ),
-    )
+    return _ConfiguredCommercialPassportProjectionPipeline(opportunity=opportunity)
 
 
 def get_commercial_passport_issuance_pipeline() -> PropertyCommercialPassportIssuancePort | None:
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class _ConfiguredCommercialPassportProjectionPipeline(PropertyCommercialPassportProjectionPort):
+    opportunity: CommercialOpportunity
+
+    def build_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+    ) -> CommercialPassport:
+        with get_engine().connect() as connection, connection.begin():
+            set_local_organization_context(connection, context.organization_id)
+            return TransactionalPropertyCommercialPassportReadinessPipeline(
+                connection=connection,
+                opportunity=self.opportunity,
+            ).build_property_passport(context=context)
 
 
 @router.get(
