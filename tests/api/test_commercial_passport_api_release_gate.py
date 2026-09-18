@@ -205,6 +205,40 @@ def test_dynamic_commercial_passport_route_fails_closed_until_pipeline_is_enable
     assert response.json()["reason_code"] == "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"
 
 
+def test_dynamic_commercial_passport_route_uses_configured_minimal_pipeline(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE", "market-test")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_NAME", "Mercado teste")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND", "MARKET")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PURPOSE", "market-test")
+    monkeypatch.setenv(
+        "TITAN_COMMERCIAL_PASSPORT_POLICY_ID",
+        "30000000-0000-0000-0000-000000000001",
+    )
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION", "1")
+    importlib.reload(main_module)
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_read
+    ] = lambda: _context()
+
+    response = TestClient(main_module.app).get(GET_ROUTE, params=_valid_query())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["property_id"] == PROPERTY_ID
+    opportunity = payload["opportunities"][0]
+    assert opportunity["opportunity"]["code"] == "market-test"
+    assert opportunity["opportunity"]["policy_id"] == "30000000-0000-0000-0000-000000000001"
+    requirement = opportunity["property_readiness"]["requirements"][0]
+    assert requirement["status"] == "MISSING"
+    assert requirement["reason_codes"] == ["MARKET_READINESS_REPORT_MISSING"]
+    assert opportunity["population_eligibility"] is None
+    assert "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE" in payload["limitations"]
+
+
 def test_dynamic_commercial_passport_route_returns_projection_from_pipeline(
     monkeypatch: MonkeyPatch,
 ) -> None:

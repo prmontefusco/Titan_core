@@ -396,6 +396,41 @@ packages/asset_infrastructure/persistence/migrations/alembic.ini check`.
 **Próximo passo:** definir se haverá habilitação em ambiente compartilhado/staging com pipeline produtiva
 injetada ou se o Commercial Passport permanece pronto, porém release-gated, até decisão de produto.
 
+### 18/09/2026 — Commercial Passport: pipeline mínima opt-in atrás da API
+
+**Estado:** IMPLEMENTADO — incremento de continuidade pós-F13, conectando o `GET
+/v1/livestock/properties/{property_id}/commercial-passport` a uma composição mínima explícita sem alterar
+o default seguro. A rota continua existindo somente quando `TITAN_COMMERCIAL_PASSPORT_API_ENABLED=true`;
+além disso, a nova composition só é criada quando `TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED=true` e a
+oportunidade comercial é declarada por configuração (`OPPORTUNITY_CODE`, `OPPORTUNITY_NAME`,
+`OPPORTUNITY_KIND`, `PURPOSE`, `POLICY_ID`, `POLICY_VERSION`). Sem esse conjunto completo, a resposta
+permanece `503 COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO`.
+
+**O que foi entregue:** `apps/api/livestock_commercial_passport.py` agora compõe
+`PropertyCommercialPassportMarketReadinessPipeline` usando a oportunidade configurada e a porta produtiva
+já existente. Como ainda não há resolução produtiva de `MarketReadinessReport` para a propriedade nesse
+corte, a projection retorna uma lacuna explícita `MARKET_READINESS_REPORT_MISSING` em
+`PROPERTY_READINESS`, sem `PopulationEligibilitySummary`. `apps/validacao/commercial_passport_api.py` foi
+atualizado para validar os dois modos: fail-closed sem pipeline opt-in ou projection mínima com lacuna
+quando a pipeline estiver habilitada. `docs/plans/COMMERCIAL_PASSPORT_MINIMAL_API_PIPELINE_PLAN.md`
+registrou a retomada, discovery, escopo e fora de escopo.
+
+**Decisões preservadas:** não houve mercado real hardcoded, parceiro, marketplace, buyer matching,
+disclosure externo, nova Policy engine, criação de `Evaluation`/`Decision`, persistência, migration,
+emissão automática de `Dossier`/`VerificationBundle` ou habilitação default da feature flag. A emissão
+formal (`POST /issue`) permanece fail-closed até receber pipeline própria e material canônico suficiente.
+
+**Portão focado:** `python -m uv run --locked pytest
+tests/api/test_commercial_passport_api_release_gate.py tests/livestock_application/test_commercial_passport.py`
+passou com 33 testes; `python -m uv run --locked ruff check
+apps/api/livestock_commercial_passport.py apps/validacao/commercial_passport_api.py
+tests/api/test_commercial_passport_api_release_gate.py`, `python -m uv run --locked ruff format --check
+...` e `python -m uv run --locked mypy` passaram.
+
+**Próximo passo:** resolver material canônico de MarketReadiness para uma propriedade real (população,
+Policy/version e reports existentes) sem inventar mercado ou regra; esse próximo corte deve transformar a
+lacuna `MARKET_READINESS_REPORT_MISSING` em summary populacional quando houver report compatível.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.

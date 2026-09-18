@@ -7,6 +7,7 @@ from request payloads.
 """
 
 from datetime import UTC, datetime
+from os import environ
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -18,12 +19,17 @@ from apps.api.problem import DomainProblem
 from packages.core_domain import OrganizationContext
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
 from packages.livestock_application.commercial_passport import (
+    CommercialOpportunity,
+    CommercialOpportunityKind,
     CommercialPassportContext,
+    CommercialPassportMarketReadinessSource,
     PropertyCommercialPassportIssuancePort,
+    PropertyCommercialPassportMarketReadinessPipeline,
     PropertyCommercialPassportProjectionPort,
     commercial_passport_projection,
 )
 from packages.livestock_application.market_supply_response import MARKET_SUPPLY_NO_STORE_HEADERS
+from packages.shared_kernel import TypedId
 from packages.shared_kernel.temporal import require_utc
 
 require_commercial_passport_read = require_permission(PROPERTY_LER)
@@ -41,7 +47,19 @@ class CommercialPassportIssueRequest(BaseModel):
 def get_commercial_passport_projection_pipeline() -> (
     PropertyCommercialPassportProjectionPort | None
 ):
-    return None
+    if environ.get("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "").casefold() != "true":
+        return None
+    opportunity = _configured_commercial_opportunity()
+    if opportunity is None:
+        return None
+    return PropertyCommercialPassportMarketReadinessPipeline(
+        sources=(
+            CommercialPassportMarketReadinessSource(
+                opportunity=opportunity,
+                limitations=("configured opportunity without productive MarketReadiness report",),
+            ),
+        ),
+    )
 
 
 def get_commercial_passport_issuance_pipeline() -> PropertyCommercialPassportIssuancePort | None:
@@ -217,3 +235,28 @@ def _not_enabled_response(*, reason_code: str, detail: str) -> JSONResponse:
         },
         media_type="application/problem+json",
     )
+
+
+def _configured_commercial_opportunity() -> CommercialOpportunity | None:
+    code = environ.get("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE", "").strip()
+    name = environ.get("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_NAME", "").strip()
+    purpose = environ.get("TITAN_COMMERCIAL_PASSPORT_PURPOSE", "").strip()
+    policy_id = environ.get("TITAN_COMMERCIAL_PASSPORT_POLICY_ID", "").strip()
+    policy_version = environ.get("TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION", "").strip()
+    kind = environ.get("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND", "MARKET").strip()
+    if not all((code, name, purpose, policy_id, policy_version)):
+        return None
+    try:
+        version = int(policy_version)
+        opportunity_kind = CommercialOpportunityKind(kind)
+        policy_ref = TypedId.parse("policy", policy_id)
+        return CommercialOpportunity(
+            code=code,
+            kind=opportunity_kind,
+            name=name,
+            purpose=purpose,
+            policy_id=policy_ref,
+            policy_version=version,
+        )
+    except ValueError:
+        return None
