@@ -33,6 +33,12 @@ contaminado com identificadores individuais (`animal_ids`/`membership_ids`) dent
 `population_eligibility` e confirmar que a tela não os renderiza. A UI continua exibindo apenas contagens,
 digests, fonte agregada e janela comercial; autorização e minimização seguem sendo responsabilidade da API.
 
+**Fechamento operacional de configuração:** a suíte HTTP passou a cobrir também habilitação parcial ou
+inválida da pipeline opt-in. Mesmo com `TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED=true`, ausência de
+metadados de oportunidade, `policy_id` inválido, versão inválida ou tipo de oportunidade desconhecido
+mantêm a dependência de projection em `None` e a rota autenticada responde `503
+COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO`, com `no-store` e `application/problem+json`.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

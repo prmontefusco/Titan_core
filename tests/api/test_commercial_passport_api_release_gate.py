@@ -96,6 +96,19 @@ def _valid_issue_body() -> dict[str, object]:
     }
 
 
+def _enable_valid_commercial_passport_pipeline(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE", "market-test")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_NAME", "Mercado teste")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND", "MARKET")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PURPOSE", "market-test")
+    monkeypatch.setenv(
+        "TITAN_COMMERCIAL_PASSPORT_POLICY_ID",
+        "30000000-0000-0000-0000-000000000001",
+    )
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION", "1")
+
+
 def _assert_no_forbidden_population_trace_keys(
     value: object,
     *,
@@ -286,20 +299,52 @@ def test_dynamic_commercial_passport_route_fails_closed_until_pipeline_is_enable
 def test_dynamic_commercial_passport_dependency_builds_configured_pipeline(
     monkeypatch: MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "true")
-    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE", "market-test")
-    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_NAME", "Mercado teste")
-    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND", "MARKET")
-    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PURPOSE", "market-test")
-    monkeypatch.setenv(
-        "TITAN_COMMERCIAL_PASSPORT_POLICY_ID",
-        "30000000-0000-0000-0000-000000000001",
-    )
-    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION", "1")
+    _enable_valid_commercial_passport_pipeline(monkeypatch)
 
     pipeline = commercial_passport_api.get_commercial_passport_projection_pipeline()
 
     assert pipeline is not None
+
+
+@pytest.mark.parametrize(
+    ("env_name", "env_value"),
+    (
+        ("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE", ""),
+        ("TITAN_COMMERCIAL_PASSPORT_POLICY_ID", "nao-e-uuid"),
+        ("TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION", "versao-invalida"),
+        ("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND", "TIPO_INEXISTENTE"),
+    ),
+)
+def test_dynamic_commercial_passport_dependency_fails_closed_with_invalid_configuration(
+    monkeypatch: MonkeyPatch,
+    env_name: str,
+    env_value: str,
+) -> None:
+    _enable_valid_commercial_passport_pipeline(monkeypatch)
+    monkeypatch.setenv(env_name, env_value)
+
+    pipeline = commercial_passport_api.get_commercial_passport_projection_pipeline()
+
+    assert pipeline is None
+
+
+def test_dynamic_commercial_passport_route_fails_closed_with_partial_pipeline_configuration(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "true")
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE", "market-test")
+    importlib.reload(main_module)
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_read
+    ] = lambda: _context()
+
+    response = TestClient(main_module.app).get(GET_ROUTE, params=_valid_query())
+
+    assert response.status_code == 503
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["reason_code"] == "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"
 
 
 def test_dynamic_commercial_passport_route_returns_population_summary_from_pipeline(
