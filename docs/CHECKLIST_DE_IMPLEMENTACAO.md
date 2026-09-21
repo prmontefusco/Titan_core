@@ -595,6 +595,36 @@ src/pages/CommercialPassport.test.tsx` passou com 3 testes; `npm run build` pass
 **Próximo passo:** avançar para resolução temporal real por propriedade usando movimentos/saídas, em corte
 separado, ou exibir os metadados de snapshot na UI caso a prioridade seja inspeção operacional.
 
+### 21/09/2026 — Commercial Passport: população temporal por permanência na propriedade
+
+**Estado:** IMPLEMENTADO — incremento de infraestrutura application-facing que faz a população do
+Commercial Passport considerar a permanência temporal do animal na propriedade. O adapter
+`TransactionalPropertyCommercialPassportReadinessPipeline` deixou de depender apenas de
+`birth_property_id`: agora usa `property_stays` vigente no `reference_time`, respeita
+`knowledge_cutoff` quando a permanência veio de movimento, exclui saídas anteriores ou iguais à referência
+e mantém fallback por nascimento somente para animais sem timeline de estadias.
+
+**O que foi entregue:** animais transferidos para a propriedade passam a compor a população do Commercial
+Passport no período correto; animais nascidos ali mas transferidos para fora antes da referência deixam de
+entrar pela regra antiga; movimentos ainda não conhecidos no `knowledge_cutoff` não antecipam presença. A
+projection HTTP permanece agregada e não expõe IDs individuais.
+
+**Decisões preservadas:** não houve migration, nova tabela, nova API, mudança em `MovementService`,
+reconstrução automática de timelines, exposição de IDs de animais, alteração de Policy/Evaluation/Decision,
+população cross-Organization, decisão regulatória, garantia comercial ou autorização visual.
+
+**Portão focado:** o teste PostgreSQL real
+`tests/integration/test_commercial_passport_population_postgresql.py` passou com `TITAN_DATABASE_URL`
+configurada; `python -m uv run --locked pytest
+tests/integration/test_commercial_passport_population_postgresql.py
+tests/api/test_commercial_passport_api_release_gate.py tests/livestock_application/test_commercial_passport.py`
+passou com 40 testes e 1 skip quando a URL não estava configurada; Ruff focado e Mypy passaram.
+Portão completo: `pytest` passou com 1728 testes e 353 skips; `ruff check .`, `ruff format --check .`,
+`mypy`, os dois `alembic check`, `npm test`, `npm run lint` e `npm run build` passaram.
+
+**Próximo passo:** expor, se útil, a origem agregada da população na UI/validação ou avançar para um
+snapshot de população formal para Commercial Passport, mantendo a privacidade e os limites de disclosure.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.
