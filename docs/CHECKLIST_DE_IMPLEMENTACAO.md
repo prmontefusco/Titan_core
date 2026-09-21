@@ -496,6 +496,29 @@ passou com 37 testes; `ruff check` e `ruff format --check` focados passaram.
 aprofundar a população de propriedade com permanência/movimentação temporal, mantendo a classificação
 agregada e sem transformar recomendação em decisão.
 
+### 21/09/2026 — Commercial Passport: visualização web do Gap Engine v1
+
+**Estado:** IMPLEMENTADO — incremento de superfície web que torna o `gap_analysis` do Commercial Passport
+visível para validação operacional. `apps/web/src/pages/CommercialPassport.tsx` agora apresenta o total de
+lacunas acionáveis, contagens por categoria, lista agregada de lacunas com oportunidade/categoria/contagem
+afetada quando existir, próxima ação recomendada e limitações da análise.
+
+**O que foi entregue:** a tela mantém a separação entre readiness de propriedade, população e lacunas
+operacionais. A recomendação é exibida como orientação derivada da projeção dinâmica, com texto explícito
+de que não é decisão regulatória, garantia comercial nem substituto de Policy/Evaluation/Decision. O
+frontend não reclassifica lacunas nem cria regra própria: apenas apresenta o payload `gap_analysis` já
+fornecido pela API. `docs/plans/COMMERCIAL_PASSPORT_GAP_ANALYSIS_UI_PLAN.md` registra discovery, escopo e
+fora de escopo.
+
+**Decisões preservadas:** não houve API nova, autorização visual, regra de domínio no navegador,
+persistência, migration, emissão formal, marketplace, buyer matching ou garantia de aceite comercial.
+
+**Portão focado:** `npm test -- src/pages/CommercialPassport.test.tsx` passou com 3 testes; `npm run build`
+passou.
+
+**Próximo passo:** decidir entre aprofundar população de propriedade com permanência/movimentação temporal
+ou iniciar o cofre de evidências v1 para alimentar as lacunas mais recorrentes.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.

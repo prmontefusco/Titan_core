@@ -134,6 +134,56 @@ describe('CommercialPassport', () => {
               limitations: [],
             },
           ],
+          gap_analysis: {
+            gap_count: 2,
+            category_counts: {
+              MISSING: 1,
+              UNKNOWN: 0,
+              EXPIRED: 0,
+              INSUFFICIENT: 1,
+              BLOCKING: 0,
+            },
+            gaps: [
+              {
+                opportunity_code: 'synthetic-eu',
+                opportunity_name: 'European Union',
+                dimension: 'PROPERTY_READINESS',
+                subject_scope: 'property',
+                gap_code: 'environmental-evidence',
+                label: 'Environmental evidence',
+                category: 'MISSING',
+                reason: 'Required evidence has not been supplied.',
+                reason_codes: ['MISSING_EVIDENCE'],
+                recommended_action: {
+                  action_code: 'PROVIDE_EVIDENCE',
+                  description: 'Attach or register the missing evidence before reassessment.',
+                },
+                affected_count: null,
+                limitations: [],
+              },
+              {
+                opportunity_code: 'synthetic-eu',
+                opportunity_name: 'European Union',
+                dimension: 'POPULATION_ELIGIBILITY',
+                subject_scope: 'animal',
+                gap_code: 'synthetic-eu:population:NOT_READY',
+                label: 'animal population not_ready',
+                category: 'INSUFFICIENT',
+                reason: '377 animal(s) are NOT_READY for this opportunity.',
+                reason_codes: ['NOT_READY'],
+                recommended_action: {
+                  action_code: 'REVIEW_FAILED_REQUIREMENTS',
+                  description: 'Review failed requirements and correct the operational condition.',
+                },
+                affected_count: 377,
+                limitations: [],
+              },
+            ],
+            limitations: [
+              'COMMERCIAL_GAP_ANALYSIS_IS_OPERATIONAL_GUIDANCE',
+              'COMMERCIAL_GAP_ANALYSIS_IS_NOT_REGULATORY_DECISION',
+            ],
+          },
           limitations: [],
         }),
       }),
@@ -151,5 +201,12 @@ describe('CommercialPassport', () => {
     expect(screen.getByText('Environmental evidence: MISSING')).toBeInTheDocument()
     expect(screen.getByText('READY: 742')).toBeInTheDocument()
     expect(screen.getByText('INDETERMINATE: 103')).toBeInTheDocument()
+    expect(screen.getByText(/lacunas e próximas ações/i)).toBeInTheDocument()
+    expect(screen.getByText('Lacunas acionáveis')).toBeInTheDocument()
+    expect(screen.getByText('MISSING')).toBeInTheDocument()
+    expect(screen.getByText('INSUFFICIENT')).toBeInTheDocument()
+    expect(screen.getByText(/Attach or register the missing evidence/i)).toBeInTheDocument()
+    expect(screen.getByText(/Afeta 377 item/i)).toBeInTheDocument()
+    expect(screen.getByText(/não são decisão regulatória/i)).toBeInTheDocument()
   })
 })

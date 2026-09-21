@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import {
   CommercialPassportApiError,
   fetchPropertyCommercialPassport,
+  type CommercialPassportGap,
   type CommercialPassportOpportunityAssessment,
   type CommercialPassportResponse,
 } from '../api/commercialPassport'
@@ -143,7 +144,13 @@ function CommercialPassportProjection({ passport }: { passport: CommercialPasspo
           <dt>Oportunidades</dt>
           <dd>{passport.opportunities.length}</dd>
         </div>
+        <div className="market-supply-metric">
+          <dt>Lacunas acionáveis</dt>
+          <dd>{passport.gap_analysis.gap_count}</dd>
+        </div>
       </dl>
+
+      <CommercialGapAnalysisSummary passport={passport} />
 
       <div className="commercial-passport-opportunity-list">
         {passport.opportunities.map((assessment) => (
@@ -154,6 +161,64 @@ function CommercialPassportProjection({ passport }: { passport: CommercialPasspo
         ))}
       </div>
     </section>
+  )
+}
+
+function CommercialGapAnalysisSummary({ passport }: { passport: CommercialPassportResponse }) {
+  const gaps = passport.gap_analysis.gaps
+  const categoryEntries = Object.entries(passport.gap_analysis.category_counts).filter(
+    ([, count]) => count > 0,
+  )
+
+  return (
+    <section className="market-supply-card">
+      <h3>Lacunas e próximas ações</h3>
+      <p>
+        Recomendações operacionais derivadas do passaporte dinâmico. Não são decisão
+        regulatória, garantia comercial ou substituto de Policy/Evaluation/Decision.
+      </p>
+
+      {categoryEntries.length > 0 ? (
+        <dl className="market-supply-metrics">
+          {categoryEntries.map(([category, count]) => (
+            <div className="market-supply-metric" key={category}>
+              <dt>{category}</dt>
+              <dd>{count}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p>Nenhuma lacuna acionável foi derivada para esta projeção.</p>
+      )}
+
+      {gaps.length > 0 && (
+        <ul>
+          {gaps.map((gap) => (
+            <CommercialGapItem gap={gap} key={`${gap.opportunity_code}:${gap.gap_code}`} />
+          ))}
+        </ul>
+      )}
+
+      <details>
+        <summary>Limitações da análise</summary>
+        <ul>
+          {passport.gap_analysis.limitations.map((limitation) => (
+            <li key={limitation}>{limitation}</li>
+          ))}
+        </ul>
+      </details>
+    </section>
+  )
+}
+
+function CommercialGapItem({ gap }: { gap: CommercialPassportGap }) {
+  return (
+    <li>
+      <strong>{gap.label}</strong> — {gap.category} em {gap.opportunity_name}.
+      {gap.affected_count !== null && <> Afeta {gap.affected_count} item(ns).</>}
+      <br />
+      Próxima ação: {gap.recommended_action.description}
+    </li>
   )
 }
 
