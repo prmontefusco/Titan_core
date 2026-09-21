@@ -21,6 +21,13 @@ roteiro permanece feature-flagged: sem `TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABL
 validando o fail-closed `503 COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO`; com a pipeline habilitada,
 também valida a forma do rastreio populacional.
 
+**Fechamento adicional:** a suíte de release gate HTTP também passou a congelar a fronteira de privacidade
+do payload: `tests/api/test_commercial_passport_api_release_gate.py` exige que
+`population_eligibility` permaneça agregado, com campos esperados explicitamente enumerados, e falhe se a
+serialização introduzir `animal_id`, `animal_ids`, `membership_id` ou campos equivalentes de identificador
+individual. A proteção cobre regressão de contrato na API, enquanto o roteiro executável cobre validação
+manual contra ambiente real.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

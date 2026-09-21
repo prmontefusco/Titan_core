@@ -34,6 +34,16 @@ from packages.shared_kernel import OrganizationId, TypedId
 PROPERTY_ID = "00000000-0000-0000-0000-000000000001"
 GET_ROUTE = f"/v1/livestock/properties/{PROPERTY_ID}/commercial-passport"
 ISSUE_ROUTE = f"/v1/livestock/properties/{PROPERTY_ID}/commercial-passport/issue"
+FORBIDDEN_POPULATION_TRACE_KEYS = frozenset(
+    {
+        "animal_id",
+        "animal_ids",
+        "membership_id",
+        "membership_ids",
+        "candidate_animal_id",
+        "candidate_animal_ids",
+    }
+)
 
 
 @pytest.fixture(autouse=True)
@@ -84,6 +94,24 @@ def _valid_issue_body() -> dict[str, object]:
         "knowledge_cutoff": "2026-09-11T00:00:00Z",
         "audience": "internal-audit",
     }
+
+
+def _assert_no_forbidden_population_trace_keys(
+    value: object,
+    *,
+    path: str = "population_eligibility",
+) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            assert key not in FORBIDDEN_POPULATION_TRACE_KEYS, (
+                "Commercial Passport population_eligibility must remain aggregate-only; "
+                f"found individual identifier field at {child_path}"
+            )
+            _assert_no_forbidden_population_trace_keys(child, path=child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _assert_no_forbidden_population_trace_keys(child, path=f"{path}[{index}]")
 
 
 class _ProjectionPipelineStub(PropertyCommercialPassportProjectionPort):
@@ -300,6 +328,17 @@ def test_dynamic_commercial_passport_route_returns_population_summary_from_pipel
     assert opportunity["population_eligibility"]["total_count"] == 3
     assert opportunity["population_eligibility"]["counts_by_status"]["READY"] == 1
     assert opportunity["population_eligibility"]["counts_by_status"]["NOT_EVALUATED"] == 2
+    assert set(opportunity["population_eligibility"]) == {
+        "subject_type",
+        "counts_by_status",
+        "total_count",
+        "source_report_reference",
+        "population_snapshot_digest",
+        "selection_criteria_digest",
+        "commercial_window",
+        "limitations",
+    }
+    _assert_no_forbidden_population_trace_keys(opportunity["population_eligibility"])
     assert "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE" in payload["limitations"]
 
 
