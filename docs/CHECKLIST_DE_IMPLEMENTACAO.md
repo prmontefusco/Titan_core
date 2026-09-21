@@ -4,6 +4,23 @@
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** ver o **ponto de parada de 27 de agosto de 2026** logo abaixo — é onde a sessão corrente parou e o que a próxima retoma. Continua pendente, de frente distinta: adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
 
+### 21/09/2026 — Commercial Passport: roteiro autenticado valida rastreio populacional
+
+**Estado:** CONCLUÍDO — o roteiro executável `apps/validacao/commercial_passport_api.py`, usado para
+validar a superfície HTTP real do Commercial Passport, passou a conferir explicitamente o rastreio
+populacional exposto quando a pipeline dinâmica está habilitada. A validação autenticada agora exige
+`population_snapshot_digest` e `selection_criteria_digest` textuais e não vazios, janela comercial com
+`start`/`end` preenchidos e ausência de identificadores individuais de animais ou memberships dentro de
+`population_eligibility`. O objetivo é tornar verificável no roteiro manual a mesma fronteira de produto
+que a UI apresenta: resumo agregado e auditável da população, sem transformar a consulta em listagem de
+animais.
+
+**Portão:** `tests/unit/test_validacao_commercial_passport_api.py` cobre o aceite do rastreio agregado e
+as rejeições de digest vazio, janela comercial incompleta e vazamento de identificadores individuais. O
+roteiro permanece feature-flagged: sem `TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED=true`, continua
+validando o fail-closed `503 COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO`; com a pipeline habilitada,
+também valida a forma do rastreio populacional.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

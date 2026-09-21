@@ -51,6 +51,16 @@ GET_ROUTE_TEMPLATE = "/v1/livestock/properties/{property_id}/commercial-passport
 ISSUE_ROUTE_TEMPLATE = "/v1/livestock/properties/{property_id}/commercial-passport/issue"
 GET_ROUTE = GET_ROUTE_TEMPLATE.format(property_id=PROPERTY_ID)
 ISSUE_ROUTE = ISSUE_ROUTE_TEMPLATE.format(property_id=PROPERTY_ID)
+_POPULATION_TRACE_FORBIDDEN_KEYS = frozenset(
+    {
+        "animal_id",
+        "animal_ids",
+        "membership_id",
+        "membership_ids",
+        "candidate_animal_id",
+        "candidate_animal_ids",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +162,49 @@ def _reason_code(expected: str) -> Callable[[Resposta], str | None]:
     return conferir
 
 
+def _forbidden_population_trace_path(
+    value: Any, *, path: str = "population_eligibility"
+) -> str | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            if key in _POPULATION_TRACE_FORBIDDEN_KEYS:
+                return child_path
+            found = _forbidden_population_trace_path(child, path=child_path)
+            if found is not None:
+                return found
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            found = _forbidden_population_trace_path(child, path=f"{path}[{index}]")
+            if found is not None:
+                return found
+    return None
+
+
+def _population_trace_projection(population: Any) -> str | None:
+    if not isinstance(population, dict):
+        return "projection não trouxe resumo populacional de MarketReadiness"
+    if not isinstance(population.get("counts_by_status"), dict):
+        return "resumo populacional não trouxe counts_by_status"
+    snapshot_digest = population.get("population_snapshot_digest")
+    if not isinstance(snapshot_digest, str) or not snapshot_digest.strip():
+        return "resumo populacional não trouxe population_snapshot_digest textual e não vazio"
+    criteria_digest = population.get("selection_criteria_digest")
+    if not isinstance(criteria_digest, str) or not criteria_digest.strip():
+        return "resumo populacional não trouxe selection_criteria_digest textual e não vazio"
+    commercial_window = population.get("commercial_window")
+    if not isinstance(commercial_window, dict):
+        return "resumo populacional não trouxe commercial_window"
+    for boundary in ("start", "end"):
+        value = commercial_window.get(boundary)
+        if not isinstance(value, str) or not value.strip():
+            return f"commercial_window.{boundary} não trouxe timestamp textual e não vazio"
+    forbidden_path = _forbidden_population_trace_path(population)
+    if forbidden_path is not None:
+        return f"resumo populacional expôs identificador individual proibido em {forbidden_path}"
+    return None
+
+
 def _readiness_projection() -> Callable[[Resposta], str | None]:
     def conferir(resposta: Resposta) -> str | None:
         corpo = resposta.corpo if isinstance(resposta.corpo, dict) else {}
@@ -166,20 +219,11 @@ def _readiness_projection() -> Callable[[Resposta], str | None]:
             return f"status do requisito veio {requisito.get('status')!r}, esperado 'SATISFIED'"
         if "MARKET_READINESS_REPORT_AVAILABLE" not in requisito.get("reason_codes", []):
             return "projection não declarou MARKET_READINESS_REPORT_AVAILABLE"
-        population = oportunidades[0].get("population_eligibility")
-        if not isinstance(population, dict):
-            return "projection não trouxe resumo populacional de MarketReadiness"
-        if not isinstance(population.get("counts_by_status"), dict):
-            return "resumo populacional não trouxe counts_by_status"
-        if not isinstance(population.get("population_snapshot_digest"), str):
-            return "resumo populacional não trouxe population_snapshot_digest textual"
-        if not isinstance(population.get("selection_criteria_digest"), str):
-            return "resumo populacional não trouxe selection_criteria_digest textual"
-        commercial_window = population.get("commercial_window")
-        if not isinstance(commercial_window, dict):
-            return "resumo populacional não trouxe commercial_window"
-        if "start" not in commercial_window or "end" not in commercial_window:
-            return "commercial_window não declarou start/end"
+        population_problem = _population_trace_projection(
+            oportunidades[0].get("population_eligibility")
+        )
+        if population_problem is not None:
+            return population_problem
         gap_analysis = corpo.get("gap_analysis")
         if not isinstance(gap_analysis, dict):
             return "projection não trouxe gap_analysis"
@@ -265,7 +309,7 @@ def _authenticated_validation(
     )
 
     roteiro = Roteiro(
-        "Commercial Passport — gate autenticado e projection mínima",
+        "Commercial Passport — gate autenticado, projection e rastreio populacional",
         diario=operador.diario,
     )
     roteiro.passo(
@@ -281,7 +325,8 @@ def _authenticated_validation(
         porque=(
             "Depois de autenticar e autorizar, a rota não pode fabricar avaliação: "
             "sem pipeline opt-in falha fechado; com pipeline configurada, compõe "
-            "MarketReadiness dos animais ativos da propriedade sob RLS."
+            "MarketReadiness dos animais ativos da propriedade sob RLS e expõe apenas "
+            "contagens, janela comercial e digests do universo/critério."
         ),
     )
     roteiro.passo(
