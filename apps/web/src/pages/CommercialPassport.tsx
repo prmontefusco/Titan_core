@@ -346,18 +346,81 @@ function CommercialOpportunityCard({
         <section>
           <h4>População</h4>
           {population ? (
-            <ul>
-              {Object.entries(population.counts_by_status).map(([status, count]) => (
-                <li key={status}>
-                  {status}: {count}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul>
+                {Object.entries(population.counts_by_status).map(([status, count]) => (
+                  <li key={status}>
+                    {status}: {count}
+                  </li>
+                ))}
+              </ul>
+              <CommercialPopulationTrace assessment={assessment} />
+            </>
           ) : (
             <p>Resumo populacional não informado.</p>
           )}
         </section>
       </div>
     </article>
+  )
+}
+
+function CommercialPopulationTrace({
+  assessment,
+}: {
+  assessment: CommercialPassportOpportunityAssessment
+}) {
+  const population = assessment.population_eligibility
+  if (!population) {
+    return null
+  }
+
+  const windowStart = population.commercial_window.start
+  const windowEnd = population.commercial_window.end
+
+  return (
+    <details>
+      <summary>Rastreio da população</summary>
+      <p>
+        Resumo agregado usado para validar a origem temporal da população. Não expõe
+        IDs individuais de animais.
+      </p>
+      <dl className="market-supply-metrics">
+        <div className="market-supply-metric">
+          <dt>Total avaliado</dt>
+          <dd>{population.total_count}</dd>
+        </div>
+        <div className="market-supply-metric">
+          <dt>Fonte do relatório</dt>
+          <dd>{population.source_report_reference || 'não informada'}</dd>
+        </div>
+        <div className="market-supply-metric">
+          <dt>Digest da população</dt>
+          <dd>{population.population_snapshot_digest || 'não informado'}</dd>
+        </div>
+        <div className="market-supply-metric">
+          <dt>Digest dos critérios</dt>
+          <dd>{population.selection_criteria_digest || 'não informado'}</dd>
+        </div>
+        <div className="market-supply-metric">
+          <dt>Janela comercial</dt>
+          <dd>
+            {windowStart && windowEnd
+              ? `${new Date(windowStart).toLocaleDateString()} — ${new Date(
+                  windowEnd,
+                ).toLocaleDateString()}`
+              : 'não informada'}
+          </dd>
+        </div>
+      </dl>
+
+      {population.limitations.length > 0 && (
+        <ul>
+          {population.limitations.map((limitation) => (
+            <li key={limitation}>{limitation}</li>
+          ))}
+        </ul>
+      )}
+    </details>
   )
 }

@@ -625,6 +625,28 @@ Portão completo: `pytest` passou com 1728 testes e 353 skips; `ruff check .`, `
 **Próximo passo:** expor, se útil, a origem agregada da população na UI/validação ou avançar para um
 snapshot de população formal para Commercial Passport, mantendo a privacidade e os limites de disclosure.
 
+### 21/09/2026 — Commercial Passport: rastreio da população na UI
+
+**Estado:** IMPLEMENTADO — incremento de superfície web que torna visíveis os metadados agregados de
+rastreio da população dentro da tela existente do Commercial Passport. `apps/web/src/pages/
+CommercialPassport.tsx` passou a exibir, por oportunidade, um bloco recolhível “Rastreio da população”
+com total avaliado, fonte do relatório, digest da população, digest dos critérios e janela comercial.
+
+**O que foi entregue:** a UI agora permite validar de onde veio o resumo populacional sem acessar IDs
+individuais de animais. O texto da tela declara explicitamente que o bloco é agregado e não expõe IDs
+individuais. O frontend continua passivo: apenas apresenta o payload da API, sem reclassificar população,
+readiness, lacunas ou evidências.
+
+**Decisões preservadas:** não houve API nova, contrato HTTP novo, regra de domínio no navegador,
+autorização visual, exposição de IDs individuais, upload/edição/correção pela UI, decisão regulatória ou
+garantia comercial.
+
+**Portão focado:** `npm test -- src/pages/CommercialPassport.test.tsx` passou com 3 testes; `npm run
+lint` e `npm run build` passaram.
+
+**Próximo passo:** avançar para snapshot formal de população do Commercial Passport ou aprofundar a
+validação manual executável para demonstrar o caso de transferência temporal ponta a ponta.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.
