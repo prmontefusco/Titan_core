@@ -468,6 +468,10 @@ def test_market_supply_readiness_composition_builds_owner_scoped_reports_from_sn
     assert reports[0].context.organization_id == policy.organization_id
     assert reports[0].context.policy_id == policy.policy_id
     assert reports[0].counts[MarketReadinessStatus.NOT_EVALUATED] == 1
+    assert reports[0].population_snapshot_digest == snapshot.snapshot_digest
+    assert reports[0].selection_criteria_digest == snapshot.criteria_digest
+    assert reports[0].commercial_window_start is None
+    assert reports[0].commercial_window_end is None
 
 
 class RecordingGrantReader:

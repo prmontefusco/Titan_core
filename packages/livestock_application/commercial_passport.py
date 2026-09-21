@@ -270,12 +270,32 @@ class PopulationEligibilitySummary:
     counts_by_status: Mapping[str, int]
     limitations: tuple[str, ...] = ()
     source_report_reference: str = ""
+    population_snapshot_digest: str = ""
+    selection_criteria_digest: str = ""
+    commercial_window_start: datetime | None = None
+    commercial_window_end: datetime | None = None
 
     def __post_init__(self) -> None:
         if self.subject_type not in {"animal", "lot", "population"}:
             raise ValueError("subject_type deve ser 'animal', 'lot' ou 'population'.")
         if any(not key.strip() or value < 0 for key, value in self.counts_by_status.items()):
             raise ValueError("counts_by_status exige codigos nao vazios e contagens >= 0.")
+        for field_name in ("source_report_reference", "population_snapshot_digest"):
+            value = getattr(self, field_name)
+            if value and not value.strip():
+                raise ValueError(f"{field_name} nao aceita texto vazio.")
+        if self.selection_criteria_digest and not self.selection_criteria_digest.strip():
+            raise ValueError("selection_criteria_digest nao aceita texto vazio.")
+        if self.commercial_window_start is not None:
+            require_utc(self.commercial_window_start, field_name="commercial_window_start")
+        if self.commercial_window_end is not None:
+            require_utc(self.commercial_window_end, field_name="commercial_window_end")
+        if (
+            self.commercial_window_start is not None
+            and self.commercial_window_end is not None
+            and self.commercial_window_end <= self.commercial_window_start
+        ):
+            raise ValueError("commercial_window_end deve ser posterior a commercial_window_start.")
         _require_text_tuple(self.limitations, "limitations")
         object.__setattr__(self, "counts_by_status", MappingProxyType(dict(self.counts_by_status)))
 
@@ -525,6 +545,10 @@ class PropertyCommercialPassportMarketReadinessPipeline:
                     ),
                 ),
                 source_report_reference=_market_readiness_report_reference(report),
+                population_snapshot_digest=report.population_snapshot_digest,
+                selection_criteria_digest=report.selection_criteria_digest,
+                commercial_window_start=report.commercial_window_start,
+                commercial_window_end=report.commercial_window_end,
             ),
             limitations=source.limitations,
         )
@@ -724,6 +748,20 @@ def _opportunity_snapshot(item: CommercialPassportOpportunityAssessment) -> dict
             "counts_by_status": dict(population.counts_by_status),
             "total_count": population.total_count,
             "source_report_reference": population.source_report_reference,
+            "population_snapshot_digest": population.population_snapshot_digest,
+            "selection_criteria_digest": population.selection_criteria_digest,
+            "commercial_window": {
+                "start": (
+                    None
+                    if population.commercial_window_start is None
+                    else population.commercial_window_start.isoformat()
+                ),
+                "end": (
+                    None
+                    if population.commercial_window_end is None
+                    else population.commercial_window_end.isoformat()
+                ),
+            },
             "limitations": list(population.limitations),
         },
         "limitations": list(item.limitations),

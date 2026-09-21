@@ -52,6 +52,12 @@ export interface CommercialPassportOpportunityAssessment {
     counts_by_status: Record<string, number>
     total_count: number
     source_report_reference: string
+    population_snapshot_digest: string
+    selection_criteria_digest: string
+    commercial_window: {
+      start: string | null
+      end: string | null
+    }
     limitations: string[]
   } | null
   limitations: string[]

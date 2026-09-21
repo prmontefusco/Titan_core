@@ -129,6 +129,12 @@ describe('CommercialPassport', () => {
                 },
                 total_count: 1222,
                 source_report_reference: 'market-readiness:synthetic-eu',
+                population_snapshot_digest: 'population:sha256:abc',
+                selection_criteria_digest: 'criteria:sha256:def',
+                commercial_window: {
+                  start: '2026-09-12T00:00:00+00:00',
+                  end: '2026-10-11T00:00:00+00:00',
+                },
                 limitations: [],
               },
               limitations: [],

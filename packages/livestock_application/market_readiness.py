@@ -133,7 +133,27 @@ class MarketReadinessReport:
     entries: tuple[MarketReadinessEntry, ...]
     counts: dict[MarketReadinessStatus, int]
     gap_summary: tuple[MarketReadinessGapSummary, ...]
+    population_snapshot_digest: str = ""
+    selection_criteria_digest: str = ""
+    commercial_window_start: datetime | None = None
+    commercial_window_end: datetime | None = None
     result_boundary: str = MARKET_ELIGIBILITY_RESULT_BOUNDARY
+
+    def __post_init__(self) -> None:
+        for field_name in ("population_snapshot_digest", "selection_criteria_digest"):
+            value = getattr(self, field_name)
+            if value and not value.strip():
+                raise ValueError(f"{field_name} nao aceita texto vazio.")
+        if self.commercial_window_start is not None:
+            require_utc(self.commercial_window_start, field_name="commercial_window_start")
+        if self.commercial_window_end is not None:
+            require_utc(self.commercial_window_end, field_name="commercial_window_end")
+        if (
+            self.commercial_window_start is not None
+            and self.commercial_window_end is not None
+            and self.commercial_window_end <= self.commercial_window_start
+        ):
+            raise ValueError("commercial_window_end deve ser posterior a commercial_window_start.")
 
 
 @dataclass(frozen=True, slots=True)

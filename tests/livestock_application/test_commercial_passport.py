@@ -276,6 +276,10 @@ def _market_readiness_report(
     ready: int = 1,
     not_ready: int = 0,
     indeterminate: int = 0,
+    population_snapshot_digest: str = "",
+    selection_criteria_digest: str = "",
+    commercial_window_start: datetime | None = None,
+    commercial_window_end: datetime | None = None,
 ) -> MarketReadinessReport:
     entries = (
         *(
@@ -337,6 +341,10 @@ def _market_readiness_report(
                 )[:3],
             ),
         ),
+        population_snapshot_digest=population_snapshot_digest,
+        selection_criteria_digest=selection_criteria_digest,
+        commercial_window_start=commercial_window_start,
+        commercial_window_end=commercial_window_end,
     )
 
 
@@ -1055,12 +1063,18 @@ def test_commercial_passport_section_travels_inside_existing_verification_bundle
 def test_market_readiness_pipeline_builds_property_passport_from_existing_report() -> None:
     context = _context()
     opportunity = _opportunity("eu")
+    window_start = NOW + timedelta(days=1)
+    window_end = NOW + timedelta(days=30)
     report = _market_readiness_report(
         context=context,
         opportunity=opportunity,
         ready=2,
         not_ready=1,
         indeterminate=1,
+        population_snapshot_digest="population:sha256:abc",
+        selection_criteria_digest="criteria:sha256:def",
+        commercial_window_start=window_start,
+        commercial_window_end=window_end,
     )
 
     passport = PropertyCommercialPassportMarketReadinessPipeline(
@@ -1084,6 +1098,10 @@ def test_market_readiness_pipeline_builds_property_passport_from_existing_report
     assert assessment.population_eligibility.ready_count == 2
     assert assessment.population_eligibility.not_ready_count == 1
     assert assessment.population_eligibility.indeterminate_count == 1
+    assert assessment.population_eligibility.population_snapshot_digest == "population:sha256:abc"
+    assert assessment.population_eligibility.selection_criteria_digest == "criteria:sha256:def"
+    assert assessment.population_eligibility.commercial_window_start == window_start
+    assert assessment.population_eligibility.commercial_window_end == window_end
     assert "derived from MarketReadiness; not a Decision" in (
         assessment.population_eligibility.limitations
     )

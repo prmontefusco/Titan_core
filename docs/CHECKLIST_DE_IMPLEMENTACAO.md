@@ -569,6 +569,32 @@ lint` e `npm run build` passaram.
 **Próximo passo:** aprofundar a resolução temporal de população/propriedade ou iniciar o corte seguinte
 do cofre para relacionar necessidades a evidências Core reais, ainda sem upload nem storage paralelo.
 
+### 21/09/2026 — Commercial Passport: rastreio temporal do snapshot populacional
+
+**Estado:** IMPLEMENTADO — incremento application/API que torna o resumo populacional do Commercial
+Passport rastreável ao snapshot de população autorizado que originou o `MarketReadinessReport`.
+`MarketReadinessReport` agora pode carregar `population_snapshot_digest`, `selection_criteria_digest` e
+janela comercial; `MarketSupplyReadinessCompositionService` preenche esses campos quando constrói
+relatórios a partir de `CandidatePopulationSnapshot`.
+
+**O que foi entregue:** `PopulationEligibilitySummary` passou a preservar os metadados temporais e a
+projection HTTP do Commercial Passport passou a serializar `population_snapshot_digest`,
+`selection_criteria_digest` e `commercial_window` junto do resumo por status. O contrato TypeScript e o
+roteiro `apps/validacao/commercial_passport_api.py` foram atualizados para exigir a forma desses campos,
+sem exigir snapshot real quando a pipeline mínima ainda não o possuir.
+
+**Decisões preservadas:** não houve nova query de movimentos/saídas, mudança de RLS/grants, persistência,
+API nova, exposição de IDs individuais de animais, alteração de Policy/MarketReadiness, classificação de
+lacunas, decisão regulatória, garantia comercial ou autorização visual.
+
+**Portão focado:** `python -m uv run --locked pytest tests/unit/test_validacao_fumaca.py
+tests/livestock_application/test_commercial_passport.py tests/livestock_application/test_market_supply.py
+tests/api/test_commercial_passport_api_release_gate.py` passou com 59 testes; `npm test --
+src/pages/CommercialPassport.test.tsx` passou com 3 testes; `npm run build` passou.
+
+**Próximo passo:** avançar para resolução temporal real por propriedade usando movimentos/saídas, em corte
+separado, ou exibir os metadados de snapshot na UI caso a prioridade seja inspeção operacional.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.

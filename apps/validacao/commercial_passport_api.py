@@ -171,6 +171,15 @@ def _readiness_projection() -> Callable[[Resposta], str | None]:
             return "projection não trouxe resumo populacional de MarketReadiness"
         if not isinstance(population.get("counts_by_status"), dict):
             return "resumo populacional não trouxe counts_by_status"
+        if not isinstance(population.get("population_snapshot_digest"), str):
+            return "resumo populacional não trouxe population_snapshot_digest textual"
+        if not isinstance(population.get("selection_criteria_digest"), str):
+            return "resumo populacional não trouxe selection_criteria_digest textual"
+        commercial_window = population.get("commercial_window")
+        if not isinstance(commercial_window, dict):
+            return "resumo populacional não trouxe commercial_window"
+        if "start" not in commercial_window or "end" not in commercial_window:
+            return "commercial_window não declarou start/end"
         gap_analysis = corpo.get("gap_analysis")
         if not isinstance(gap_analysis, dict):
             return "projection não trouxe gap_analysis"

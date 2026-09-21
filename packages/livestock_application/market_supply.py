@@ -8,7 +8,7 @@ cross-Organization access.
 import hashlib
 from collections import Counter
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol
 
@@ -377,7 +377,12 @@ class MarketSupplyReadinessCompositionService:
         for snapshot in population_result.snapshots:
             if self.owner_scoped_report_builder is not None:
                 reports.append(
-                    self.owner_scoped_report_builder.build_report_for_snapshot(snapshot=snapshot)
+                    _with_population_snapshot_metadata(
+                        self.owner_scoped_report_builder.build_report_for_snapshot(
+                            snapshot=snapshot,
+                        ),
+                        snapshot=snapshot,
+                    )
                 )
                 continue
             criteria = snapshot.criteria
@@ -407,12 +412,15 @@ class MarketSupplyReadinessCompositionService:
                 )
 
             if self.owner_scoped_executor is None:
-                reports.append(build())
+                reports.append(_with_population_snapshot_metadata(build(), snapshot=snapshot))
             else:
                 reports.append(
-                    self.owner_scoped_executor.run_for_owner(
-                        organization_id=criteria.organization_id,
-                        callback=build,
+                    _with_population_snapshot_metadata(
+                        self.owner_scoped_executor.run_for_owner(
+                            organization_id=criteria.organization_id,
+                            callback=build,
+                        ),
+                        snapshot=snapshot,
                     )
                 )
         return tuple(reports)
@@ -437,6 +445,21 @@ class MarketSupplyOwnerScopedReadinessReportBuilderPort(Protocol):
         *,
         snapshot: CandidatePopulationSnapshot,
     ) -> MarketReadinessReport: ...
+
+
+def _with_population_snapshot_metadata(
+    report: MarketReadinessReport,
+    *,
+    snapshot: CandidatePopulationSnapshot,
+) -> MarketReadinessReport:
+    criteria = snapshot.criteria
+    return replace(
+        report,
+        population_snapshot_digest=snapshot.snapshot_digest,
+        selection_criteria_digest=snapshot.criteria_digest,
+        commercial_window_start=criteria.commercial_window_start,
+        commercial_window_end=criteria.commercial_window_end,
+    )
 
 
 @dataclass(frozen=True, slots=True)
