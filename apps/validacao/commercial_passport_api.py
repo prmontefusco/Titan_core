@@ -45,6 +45,8 @@ from apps.validacao.runner import (
     Resposta,
     Roteiro,
 )
+from packages.livestock_application.commercial_passport import CommercialOpportunityKind
+from packages.shared_kernel import TypedId
 
 PROPERTY_ID = "00000000-0000-0000-0000-000000000001"
 GET_ROUTE_TEMPLATE = "/v1/livestock/properties/{property_id}/commercial-passport"
@@ -60,6 +62,13 @@ _POPULATION_TRACE_FORBIDDEN_KEYS = frozenset(
         "candidate_animal_id",
         "candidate_animal_ids",
     }
+)
+_PIPELINE_REQUIRED_ENV = (
+    "TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE",
+    "TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_NAME",
+    "TITAN_COMMERCIAL_PASSPORT_PURPOSE",
+    "TITAN_COMMERCIAL_PASSPORT_POLICY_ID",
+    "TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION",
 )
 
 
@@ -205,6 +214,44 @@ def _population_trace_projection(population: Any) -> str | None:
     return None
 
 
+def _pipeline_configuration_problem() -> str | None:
+    enabled = os.environ.get("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "")
+    if enabled.casefold() != "true":
+        return None
+
+    missing = [name for name in _PIPELINE_REQUIRED_ENV if not os.environ.get(name, "").strip()]
+    if missing:
+        return f"pipeline habilitada, mas faltam metadados obrigatórios: {', '.join(missing)}"
+
+    policy_id = os.environ["TITAN_COMMERCIAL_PASSPORT_POLICY_ID"].strip()
+    try:
+        TypedId.parse("policy", policy_id)
+    except ValueError:
+        return "TITAN_COMMERCIAL_PASSPORT_POLICY_ID deve ser UUID não nulo de policy"
+
+    policy_version = os.environ["TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION"].strip()
+    try:
+        parsed_policy_version = int(policy_version)
+    except ValueError:
+        return "TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION deve ser inteiro >= 1"
+    if parsed_policy_version < 1:
+        return "TITAN_COMMERCIAL_PASSPORT_POLICY_VERSION deve ser inteiro >= 1"
+
+    opportunity_kind = (
+        os.environ.get("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND", "MARKET").strip() or "MARKET"
+    )
+    try:
+        CommercialOpportunityKind(opportunity_kind)
+    except ValueError:
+        valid_values = ", ".join(kind.value for kind in CommercialOpportunityKind)
+        return (
+            "TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND inválido; "
+            f"use um destes valores: {valid_values}"
+        )
+
+    return None
+
+
 def _readiness_projection() -> Callable[[Resposta], str | None]:
     def conferir(resposta: Resposta) -> str | None:
         corpo = resposta.corpo if isinstance(resposta.corpo, dict) else {}
@@ -307,6 +354,15 @@ def _authenticated_validation(
     pipeline_habilitada = (
         os.environ.get("TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED", "").casefold() == "true"
     )
+    configuration_problem = _pipeline_configuration_problem()
+    if configuration_problem is not None:
+        print(f"{VERMELHO}Configuração inválida do Commercial Passport:{FIM}")
+        print(f"{CINZA}  {configuration_problem}{FIM}")
+        print(
+            f"{CINZA}  Corrija as variáveis locais ou desligue "
+            f"TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED para validar o fail-closed.{FIM}"
+        )
+        return 1
 
     roteiro = Roteiro(
         "Commercial Passport — gate autenticado, projection e rastreio populacional",

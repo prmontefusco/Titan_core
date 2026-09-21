@@ -39,6 +39,13 @@ metadados de oportunidade, `policy_id` inválido, versão inválida ou tipo de o
 mantêm a dependência de projection em `None` e a rota autenticada responde `503
 COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO`, com `no-store` e `application/problem+json`.
 
+**Fechamento do roteiro operacional:** o roteiro executável autenticado agora faz preflight da
+configuração local quando `TITAN_COMMERCIAL_PASSPORT_PIPELINE_ENABLED=true`. Antes de chamar a API
+esperando `200`, ele acusa ausência de metadados obrigatórios, `policy_id` sem UUID de `policy`, versão
+menor que 1 ou não inteira e tipo de oportunidade fora do enum aprovado, indicando corrigir as variáveis
+ou desligar a pipeline para validar o fail-closed. Isso reduz falso diagnóstico de permissão/API quando o
+problema real é configuração incompleta do ambiente de validação.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
