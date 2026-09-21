@@ -28,6 +28,24 @@ def _montar_roteiro(pretendente: Cliente, admin: Cliente) -> Roteiro:
     roteiro = Roteiro("Pedido de tipo de entidade (EntityTypeRequest)", diario=admin.diario)
 
     roteiro.passo(
+        "0",
+        "Pedido para Organization inexistente é recusado sem erro interno",
+        lambda: pretendente.post(
+            "/v1/livestock/entity-type-requests",
+            {"organization_id": str(uuid4()), "requested_kind": "PRODUTOR"},
+        ),
+        404,
+        conferir=lambda r: (
+            None
+            if r["reason_code"] == "ORGANIZACAO_NAO_ENCONTRADA"
+            else "não recusou por Organization inexistente"
+        ),
+        porque=(
+            "A tela pública de onboarding não pode transformar banco local não semeado "
+            "ou Organization digitada errada em 500."
+        ),
+    )
+    roteiro.passo(
         "1",
         "Quem nunca teve vínculo pede para ser PRODUTOR",
         lambda: pretendente.post(

@@ -11,6 +11,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from apps.api.livestock_dependencies import (
     ORGANIZATION_HEADER,
@@ -92,6 +93,25 @@ def _service(connection: ConnectionDependency) -> EntityTypeRequestService:
     )
 
 
+def _ensure_organization_exists(
+    connection: ConnectionDependency, organizacao: OrganizationId
+) -> None:
+    exists = connection.execute(
+        text("SELECT 1 FROM core_identity.organizations WHERE organization_id = :organization_id"),
+        {"organization_id": organizacao.value},
+    ).scalar_one_or_none()
+    if exists is None:
+        raise DomainProblem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="ORGANIZACAO_NAO_ENCONTRADA",
+            title="Organização não encontrada",
+            detail=(
+                "A Organization informada não existe no Titan. Em ambiente local, "
+                "rode scripts\\dev-reset.ps1 antes de iniciar a API."
+            ),
+        )
+
+
 @router.post(
     "/entity-type-requests",
     response_model=PedidoResponse,
@@ -106,6 +126,7 @@ def submeter_pedido(
 ) -> PedidoResponse:
     organizacao = OrganizationId(uuid_or_problem(corpo.organization_id, campo="organization_id"))
     set_local_organization_context(connection, organizacao)
+    _ensure_organization_exists(connection, organizacao)
 
     try:
         pedido = _service(connection).submit(

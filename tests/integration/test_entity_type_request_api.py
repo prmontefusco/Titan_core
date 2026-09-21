@@ -64,6 +64,23 @@ def test_submeter_pedido_sem_vinculo_previo(ambiente: Ambiente) -> None:
     assert corpo["decided_at"] is None
 
 
+def test_submeter_pedido_para_organization_inexistente_retorna_erro_controlado(
+    ambiente: Ambiente,
+) -> None:
+    pretendente = _cliente(ambiente, _sem_vinculo())
+
+    resposta = pretendente.post(
+        "/v1/livestock/entity-type-requests",
+        json={
+            "organization_id": str(uuid4()),
+            "requested_kind": "PRODUTOR",
+        },
+    )
+
+    assert resposta.status_code == 404, resposta.text
+    assert resposta.json()["reason_code"] == "ORGANIZACAO_NAO_ENCONTRADA"
+
+
 def test_segundo_pedido_pendente_da_mesma_pessoa_e_recusado(ambiente: Ambiente) -> None:
     pretendente = _cliente(ambiente, _sem_vinculo())
     payload = {

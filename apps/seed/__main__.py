@@ -242,7 +242,9 @@ def semear(connection: Connection, *, issuer: str, subs: dict[str, str]) -> Seme
         )
         or OrganizationId.new()
     )
-    organizacoes = {"operadora": operadora, "a": OrganizationId.new(), "b": OrganizationId.new()}
+    org_a_raw = os.environ.get("TITAN_SEED_PRIMARY_ORGANIZATION_ID", "")
+    org_a = OrganizationId.parse(org_a_raw) if org_a_raw else OrganizationId.new()
+    organizacoes = {"operadora": operadora, "a": org_a, "b": OrganizationId.new()}
     for identificador in organizacoes.values():
         set_local_organization_context(connection, identificador)
         existe = connection.execute(

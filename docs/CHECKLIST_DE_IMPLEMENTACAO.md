@@ -1,8 +1,37 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 12 de setembro de 2026
+**Atualizado em:** 21 de setembro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo planejado:** ver o **ponto de parada de 27 de agosto de 2026** logo abaixo — é onde a sessão corrente parou e o que a próxima retoma. Continua pendente, de frente distinta: adequações de conformidade da ADR-0048 antes de usar o motor atual como base de novas capacidades regulatórias. A redação da ADR-0049 pode prosseguir, mas não declara conformidade integral antes dessas adequações.
+
+### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
+
+**Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
+onboarding antes de existir Membership, agora verifica explicitamente se a `Organization` alvo existe
+antes de persistir o pedido. Quando o frontend aponta para uma Organization local não semeada ou o
+cliente informa um identificador inexistente, a API devolve `404 ORGANIZACAO_NAO_ENCONTRADA` com
+`application/problem+json`, em vez de deixar a violação de chave estrangeira escapar como `500`.
+
+**Operação local:** `scripts/dev-up.ps1` passou a conferir a Organization padrão da UI
+(`9ddb2b8b-2fed-48d4-b5ed-a0d308994dbc`) logo após as migrations. Se ela não existir, o script para
+antes de abrir API/frontend e instrui a executar `scripts\dev-reset.ps1`. `scripts/dev-reset.ps1` foi
+corrigido para falhar em comandos nativos com exit code diferente de zero, subir Keycloak antes da
+semeadura, aplicar migrations antes de provisionar a role runtime e confirmar explicitamente o bootstrap
+admin local. A seed agora aceita `TITAN_SEED_PRIMARY_ORGANIZATION_ID`, usada pelo reset para vincular
+`titan_operador` e `titan_auditor` à mesma Organization configurada no frontend. O `dev-up` também
+imprime as credenciais fictícias locais de teste, todas restritas ao ambiente descartável de
+desenvolvimento.
+
+**Portão:** `tests/integration/test_entity_type_request_api.py` cobre o novo caso negativo
+(`ORGANIZACAO_NAO_ENCONTRADA`), e `apps/validacao/entity_type_request.py` ganhou passo executável para
+o mesmo cenário. Verificações direcionadas executadas: `python -m uv run --locked pytest
+tests/integration/test_entity_type_request_api.py` com `TITAN_DATABASE_URL` administrativo local
+(`9 passed`), `python -m uv run --locked ruff check apps/api/livestock_entity_type_requests.py
+apps/validacao/entity_type_request.py tests/integration/test_entity_type_request_api.py`, parse do
+PowerShell em `scripts/dev-up.ps1`/`scripts/dev-reset.ps1`, execução real de `scripts/dev-reset.ps1`
+até semeadura concluída com a Organization de uso `9ddb2b8b-2fed-48d4-b5ed-a0d308994dbc`, conferência
+SQL de existência da Organization e 3 Memberships ativas nela, e formatação Ruff dos arquivos Python
+alterados.
 
 > **PONTO DE PARADA — 27 de agosto de 2026, fim do dia.** Trabalho interrompido por decisão do
 > responsável, com a árvore limpa e `main` em `c6ca7a3`. Três commits entraram hoje, nesta ordem:

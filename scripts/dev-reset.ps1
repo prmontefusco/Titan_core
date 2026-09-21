@@ -35,6 +35,21 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
 
+function Invoke-TitanNative {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    & $FilePath @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Comando falhou com exit code ${LASTEXITCODE}: $FilePath $($Arguments -join ' ')"
+    }
+}
+
 # Valores fixos e locais, sem segredo -- mesma convenção de
 # scripts\iniciar_servidor.md e scripts\dev-up.ps1. Para administrar com outro
 # usuário Keycloak, troque $TitanBootstrapSubject pelo "ID" dele (Keycloak
@@ -47,41 +62,53 @@ $TitanBootstrapIssuer = "http://localhost:8080/realms/titan"
 $TitanBootstrapSubject = "1835563b-56e6-4701-b3c3-33f702884457"  # prmontefusco
 
 Write-Host "== Derrubando e zerando o volume do Postgres do Titan ==" -ForegroundColor Cyan
-docker compose down
-docker volume rm titan_postgres_data -ErrorAction SilentlyContinue
-docker compose up --detach --wait postgres
+Invoke-TitanNative "docker" @("compose", "down")
+docker volume inspect titan_postgres_data *> $null
+if ($LASTEXITCODE -eq 0) {
+    Invoke-TitanNative "docker" @("volume", "rm", "titan_postgres_data")
+}
+Invoke-TitanNative "docker" @("compose", "up", "--detach", "--wait", "postgres", "keycloak")
 
-Write-Host "== Provisionando o papel de runtime restrito ==" -ForegroundColor Cyan
 $env:TITAN_MIGRATION_DATABASE_URL = "postgresql+psycopg://titan:titan_local_dev_password@127.0.0.1:5432/titan"
-$env:TITAN_RUNTIME_DATABASE_PASSWORD = "titan_local_runtime_password"
-python -m uv run --locked python -m apps.provision_runtime_database_role
+$env:TITAN_DATABASE_URL = $env:TITAN_MIGRATION_DATABASE_URL
 
 Write-Host "== Aplicando migrations ==" -ForegroundColor Cyan
-$env:TITAN_DATABASE_URL = "postgresql+psycopg://titan_app:titan_local_runtime_password@127.0.0.1:5432/titan"
-python -m uv run --locked alembic upgrade head
+Invoke-TitanNative "python" @("-m", "uv", "run", "--locked", "alembic", "upgrade", "heads")
+
+Write-Host "== Provisionando o papel de runtime restrito ==" -ForegroundColor Cyan
+$env:TITAN_RUNTIME_DATABASE_PASSWORD = "titan_local_runtime_password"
+Invoke-TitanNative "python" @(
+    "-m", "uv", "run", "--locked", "python", "-m", "apps.provision_runtime_database_role"
+)
 
 Write-Host "== Bootstrap da Organization operadora ==" -ForegroundColor Cyan
 $env:TITAN_OPERATOR_ORGANIZATION_ID = $TitanOperatorOrg
 $env:TITAN_BOOTSTRAP_AUTHORITY_ACTOR_ID = $TitanAuthorityActor
 $env:TITAN_ENVIRONMENT = "DESENVOLVIMENTO"
-python -m uv run --locked python -m apps.bootstrap
+Invoke-TitanNative "python" @("-m", "uv", "run", "--locked", "python", "-m", "apps.bootstrap")
 
 Write-Host "== Concedendo ADMIN_MESTRE ao usuario administrador ==" -ForegroundColor Cyan
+$env:TITAN_BOOTSTRAP_ADMIN_CONFIRM = "1"
 $env:TITAN_BOOTSTRAP_ORGANIZATION_ID = $TitanTargetOrg
 $env:TITAN_BOOTSTRAP_ISSUER = $TitanBootstrapIssuer
 $env:TITAN_BOOTSTRAP_SUBJECT = $TitanBootstrapSubject
-python -m uv run --locked python -m apps.bootstrap_admin
+Invoke-TitanNative "python" @(
+    "-m", "uv", "run", "--locked", "python", "-m", "apps.bootstrap_admin"
+)
 
 Write-Host "== Concedendo papeis operacionais (regras/politica + livestock) ao mesmo usuario ==" -ForegroundColor Cyan
 $env:TITAN_GRANT_ORGANIZATION_ID = $TitanTargetOrg
 $env:TITAN_GRANT_ISSUER = $TitanBootstrapIssuer
 $env:TITAN_GRANT_SUBJECT = $TitanBootstrapSubject
-python -m uv run --locked python -m apps.grant_local_admin_governance
+Invoke-TitanNative "python" @(
+    "-m", "uv", "run", "--locked", "python", "-m", "apps.grant_local_admin_governance"
+)
 
 if (-not $SemSemeadura) {
     Write-Host "== Semeando dados de demonstracao ==" -ForegroundColor Cyan
     $env:TITAN_SEED_CONFIRM = "1"
-    python -m uv run --locked python -m apps.seed
+    $env:TITAN_SEED_PRIMARY_ORGANIZATION_ID = $TitanTargetOrg
+    Invoke-TitanNative "python" @("-m", "uv", "run", "--locked", "python", "-m", "apps.seed")
 }
 
 Write-Host ""
