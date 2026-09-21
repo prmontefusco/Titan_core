@@ -135,6 +135,8 @@ describe('CommercialPassport', () => {
                   start: '2026-09-12T00:00:00+00:00',
                   end: '2026-10-11T00:00:00+00:00',
                 },
+                animal_ids: ['animal-individual-nao-deve-aparecer'],
+                membership_ids: ['membership-individual-nao-deve-aparecer'],
                 limitations: [],
               },
               limitations: [],
@@ -255,6 +257,8 @@ describe('CommercialPassport', () => {
     expect(screen.getByText('INDETERMINATE: 103')).toBeInTheDocument()
     expect(screen.getByText(/rastreio da população/i)).toBeInTheDocument()
     expect(screen.getByText(/não expõe IDs individuais de animais/i)).toBeInTheDocument()
+    expect(screen.queryByText(/animal-individual-nao-deve-aparecer/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/membership-individual-nao-deve-aparecer/i)).not.toBeInTheDocument()
     expect(screen.getByText('population:sha256:abc')).toBeInTheDocument()
     expect(screen.getByText('criteria:sha256:def')).toBeInTheDocument()
     expect(screen.getByText('market-readiness:synthetic-eu')).toBeInTheDocument()

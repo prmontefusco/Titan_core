@@ -28,6 +28,11 @@ serialização introduzir `animal_id`, `animal_ids`, `membership_id` ou campos e
 individual. A proteção cobre regressão de contrato na API, enquanto o roteiro executável cobre validação
 manual contra ambiente real.
 
+**Fechamento web:** `apps/web/src/pages/CommercialPassport.test.tsx` também passou a simular um payload
+contaminado com identificadores individuais (`animal_ids`/`membership_ids`) dentro de
+`population_eligibility` e confirmar que a tela não os renderiza. A UI continua exibindo apenas contagens,
+digests, fonte agregada e janela comercial; autorização e minimização seguem sendo responsabilidade da API.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
