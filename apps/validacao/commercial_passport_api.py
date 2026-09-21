@@ -181,6 +181,15 @@ def _readiness_projection() -> Callable[[Resposta], str | None]:
             [],
         ):
             return "gap_analysis não declarou que não é decisão regulatória"
+        evidence_vault = corpo.get("evidence_vault")
+        if not isinstance(evidence_vault, dict):
+            return "projection não trouxe evidence_vault"
+        if not isinstance(evidence_vault.get("needs"), list):
+            return "evidence_vault não trouxe lista de necessidades de evidência"
+        if "PRODUCER_EVIDENCE_VAULT_DOES_NOT_REPLACE_CORE_EVIDENCE" not in (
+            evidence_vault.get("limitations", [])
+        ):
+            return "evidence_vault não declarou que não substitui Core Evidence"
         return None
 
     return conferir

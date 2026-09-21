@@ -519,6 +519,33 @@ passou.
 **Próximo passo:** decidir entre aprofundar população de propriedade com permanência/movimentação temporal
 ou iniciar o cofre de evidências v1 para alimentar as lacunas mais recorrentes.
 
+### 21/09/2026 — Producer Evidence Vault v1: necessidades de evidência no Commercial Passport
+
+**Estado:** IMPLEMENTADO — primeiro corte do cofre de evidências do produtor, sem armazenamento novo e sem
+duplicar `Evidence` do Core. `packages/livestock_application/producer_evidence_vault.py` introduz
+`ProducerEvidenceVaultAnalyzer`, uma análise application-only que deriva necessidades de evidência a partir
+do Commercial Passport, preservando lacunas, finalidade, escopo, cobertura esperada, ação recomendada e IDs
+de evidências já referenciadas.
+
+**O que foi entregue:** `commercial_passport_projection()` agora inclui `evidence_vault`, com contagem de
+necessidades, contagem pendente, distribuição por status (`SATISFIED`, `MISSING`, `UNKNOWN`, `EXPIRED`,
+`INSUFFICIENT`, `BLOCKING`) e lista de necessidades. O contrato TypeScript de
+`apps/web/src/api/commercialPassport.ts` foi atualizado e o roteiro
+`apps/validacao/commercial_passport_api.py` passou a validar que a projection declara que o cofre não
+substitui Core Evidence. `docs/plans/PRODUCER_EVIDENCE_VAULT_V1_PLAN.md` registra discovery, escopo e fora
+de escopo.
+
+**Decisões preservadas:** não houve upload de arquivo, blob storage, GridFS, migration, tabela nova,
+admissibilidade de Evidence, associação automática a fatos, UI dedicada, decisão regulatória ou garantia
+comercial. O cofre v1 é um índice operacional derivado; a autoridade de evidência continua no Core.
+
+**Portão focado:** `python -m uv run --locked pytest
+tests/livestock_application/test_commercial_passport.py tests/api/test_commercial_passport_api_release_gate.py`
+passou com 40 testes; `ruff check`/`ruff format --check` focados passaram; `npm run build` passou.
+
+**Próximo passo:** criar a visualização web simples do `evidence_vault` ou aprofundar a resolução temporal
+de população/propriedade para reduzir lacunas reais.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.

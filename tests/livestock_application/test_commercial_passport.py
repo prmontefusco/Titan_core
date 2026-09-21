@@ -64,6 +64,10 @@ from packages.livestock_application.market_readiness import (
     MarketReadinessReport,
     MarketReadinessStatus,
 )
+from packages.livestock_application.producer_evidence_vault import (
+    ProducerEvidenceNeedStatus,
+    ProducerEvidenceVaultAnalyzer,
+)
 from packages.livestock_application.verification_bundle_interpreter import (
     LivestockVerificationBundleInterpreter,
 )
@@ -691,6 +695,98 @@ def test_commercial_passport_projection_includes_gap_analysis() -> None:
     assert gap_analysis["gaps"][0]["gap_code"] == "property-document"
     assert gap_analysis["gaps"][0]["recommended_action"]["action_code"] == "PROVIDE_EVIDENCE"
     assert "COMMERCIAL_GAP_ANALYSIS_IS_NOT_COMMERCIAL_GUARANTEE" in (gap_analysis["limitations"])
+
+
+def test_producer_evidence_vault_derives_needs_from_passport_gaps() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("buyer-x"),
+                requirements=(
+                    _requirement(
+                        "environmental-evidence",
+                        CommercialPassportRequirementStatus.MISSING,
+                    ),
+                    _requirement("gta-document", CommercialPassportRequirementStatus.UNKNOWN),
+                    _requirement("ok", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+
+    vault = ProducerEvidenceVaultAnalyzer().analyze(passport)
+
+    by_code = {need.need_code: need for need in vault.needs}
+    assert by_code["buyer-x:environmental-evidence"].status is (ProducerEvidenceNeedStatus.MISSING)
+    assert (
+        by_code["buyer-x:environmental-evidence"].evidence_type
+        == "livestock.property_environmental_evidence"
+    )
+    assert by_code["buyer-x:gta-document"].status is ProducerEvidenceNeedStatus.UNKNOWN
+    assert by_code["buyer-x:gta-document"].evidence_type == "livestock.gta"
+    assert by_code["buyer-x:ok"].status is ProducerEvidenceNeedStatus.SATISFIED
+    assert "PRODUCER_EVIDENCE_VAULT_DOES_NOT_REPLACE_CORE_EVIDENCE" in vault.limitations
+
+
+def test_producer_evidence_vault_derives_population_evidence_needs() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("eu"),
+                requirements=(
+                    _requirement("market-readiness", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+                population_eligibility=PopulationEligibilitySummary(
+                    subject_type="animal",
+                    counts_by_status={
+                        MarketReadinessStatus.READY.value: 10,
+                        MarketReadinessStatus.NOT_EVALUATED.value: 4,
+                        MarketReadinessStatus.REASSESSMENT_REQUIRED.value: 2,
+                    },
+                ),
+            ),
+        ),
+    )
+
+    vault = ProducerEvidenceVaultAnalyzer().analyze(passport)
+
+    by_code = {need.need_code: need for need in vault.needs}
+    assert by_code["eu:population:NOT_EVALUATED"].status is (ProducerEvidenceNeedStatus.MISSING)
+    assert (
+        by_code["eu:population:NOT_EVALUATED"].evidence_type
+        == "livestock.market_readiness_evaluation"
+    )
+    assert by_code["eu:population:REASSESSMENT_REQUIRED"].status is (
+        ProducerEvidenceNeedStatus.EXPIRED
+    )
+    assert by_code["eu:population:REASSESSMENT_REQUIRED"].expected_coverage == (
+        "2 animal(s) in population eligibility"
+    )
+
+
+def test_commercial_passport_projection_includes_evidence_vault() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("buyer-x"),
+                requirements=(
+                    _requirement("property-document", CommercialPassportRequirementStatus.MISSING),
+                ),
+            ),
+        ),
+    )
+
+    payload = commercial_passport_projection(passport)
+
+    vault = payload["evidence_vault"]
+    assert vault["need_count"] == 1
+    assert vault["missing_count"] == 1
+    assert vault["needs"][0]["evidence_type"] == "livestock.supporting_document"
+    assert vault["needs"][0]["status"] == "MISSING"
+    assert "PRODUCER_EVIDENCE_VAULT_DOES_NOT_STORE_DOCUMENT_BYTES" in vault["limitations"]
 
 
 def test_property_passport_service_orders_opportunities_deterministically() -> None:

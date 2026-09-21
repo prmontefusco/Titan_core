@@ -631,6 +631,9 @@ def commercial_passport_projection(passport: CommercialPassport) -> dict[str, An
     from packages.livestock_application.commercial_gap_engine import (  # noqa: PLC0415
         CommercialPassportGapAnalyzer,
     )
+    from packages.livestock_application.producer_evidence_vault import (  # noqa: PLC0415
+        ProducerEvidenceVaultAnalyzer,
+    )
 
     return {
         "property_id": str(passport.context.property_id.value),
@@ -640,6 +643,7 @@ def commercial_passport_projection(passport: CommercialPassport) -> dict[str, An
         "result_boundary": passport.context.result_boundary,
         "opportunities": [_opportunity_snapshot(item) for item in passport.opportunities],
         "gap_analysis": CommercialPassportGapAnalyzer().analyze(passport).to_dict(),
+        "evidence_vault": ProducerEvidenceVaultAnalyzer().analyze(passport).to_dict(),
         "limitations": list(passport.limitations),
     }
 
