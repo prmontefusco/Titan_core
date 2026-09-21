@@ -628,6 +628,9 @@ def commercial_passport_projection(passport: CommercialPassport) -> dict[str, An
     The payload is derived from the application projection. It is not a
     Decision, not MarketEligibility and not a formal issued snapshot.
     """
+    from packages.livestock_application.commercial_gap_engine import (  # noqa: PLC0415
+        CommercialPassportGapAnalyzer,
+    )
 
     return {
         "property_id": str(passport.context.property_id.value),
@@ -636,6 +639,7 @@ def commercial_passport_projection(passport: CommercialPassport) -> dict[str, An
         "evaluated_at": passport.context.evaluated_at.isoformat(),
         "result_boundary": passport.context.result_boundary,
         "opportunities": [_opportunity_snapshot(item) for item in passport.opportunities],
+        "gap_analysis": CommercialPassportGapAnalyzer().analyze(passport).to_dict(),
         "limitations": list(passport.limitations),
     }
 

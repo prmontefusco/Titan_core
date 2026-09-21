@@ -171,6 +171,16 @@ def _readiness_projection() -> Callable[[Resposta], str | None]:
             return "projection não trouxe resumo populacional de MarketReadiness"
         if not isinstance(population.get("counts_by_status"), dict):
             return "resumo populacional não trouxe counts_by_status"
+        gap_analysis = corpo.get("gap_analysis")
+        if not isinstance(gap_analysis, dict):
+            return "projection não trouxe gap_analysis"
+        if not isinstance(gap_analysis.get("gaps"), list):
+            return "gap_analysis não trouxe lista de lacunas"
+        if "COMMERCIAL_GAP_ANALYSIS_IS_NOT_REGULATORY_DECISION" not in gap_analysis.get(
+            "limitations",
+            [],
+        ):
+            return "gap_analysis não declarou que não é decisão regulatória"
         return None
 
     return conferir

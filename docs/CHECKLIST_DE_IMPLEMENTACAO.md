@@ -466,6 +466,36 @@ mypy` passou.
 exemplo, permanência/movimentação temporal ou lote — e então evoluir para o Gap Engine v1 planejado, sem
 criar atalho regulatório.
 
+### 18/09/2026 — Commercial Passport: Gap Engine v1 operacional
+
+**Estado:** IMPLEMENTADO — incremento de continuidade que adiciona uma análise operacional de lacunas ao
+Commercial Passport sem criar nova autoridade normativa. `packages/livestock_application/
+commercial_gap_engine.py` deriva lacunas a partir da projection já construída: requirements de propriedade
+com status não pronto e contagens agregadas de `PopulationEligibilitySummary`.
+
+**O que foi entregue:** a projeção HTTP de `commercial_passport_projection()` agora inclui
+`gap_analysis`, com `gap_count`, contagens por categoria (`MISSING`, `UNKNOWN`, `EXPIRED`,
+`INSUFFICIENT`, `BLOCKING`), lista agregada de lacunas e recomendação operacional simples (`PROVIDE_EVIDENCE`,
+`CLARIFY_UNKNOWN`, `RENEW_OR_REASSESS`, `REVIEW_FAILED_REQUIREMENTS`, `REMOVE_BLOCKER`,
+`RUN_MARKET_READINESS`, `REVIEW_CONDITIONS`). Lacunas populacionais são agregadas por status e contagem,
+sem expor IDs de animais. `apps/web/src/api/commercialPassport.ts` foi atualizado com o contrato do novo
+campo e `apps/validacao/commercial_passport_api.py` passou a conferir que a API declara explicitamente que
+a análise não é decisão regulatória. `docs/plans/COMMERCIAL_PASSPORT_GAP_ENGINE_V1_PLAN.md` registra o
+escopo e o fora de escopo.
+
+**Decisões preservadas:** não houve criação de `Policy`, `Evaluation`, `Decision`, persistência, migration,
+taxonomia comercial paralela, marketplace, matching de comprador, UI nova ou garantia de aceite comercial.
+A recomendação é material operacional derivado do Commercial Passport e declara que não substitui
+Policy/Evaluation/Decision nem funciona como decisão regulatória.
+
+**Portão focado:** `python -m uv run --locked pytest
+tests/livestock_application/test_commercial_passport.py tests/api/test_commercial_passport_api_release_gate.py`
+passou com 37 testes; `ruff check` e `ruff format --check` focados passaram.
+
+**Próximo passo:** conectar a análise a uma experiência visual simples do Commercial Passport ou
+aprofundar a população de propriedade com permanência/movimentação temporal, mantendo a classificação
+agregada e sem transformar recomendação em decisão.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.

@@ -31,6 +31,11 @@ from packages.core_domain.normative import (
 )
 from packages.core_domain.policy import Policy, PolicyStatus
 from packages.core_domain.rule import SeverityLevel
+from packages.livestock_application.commercial_gap_engine import (
+    CommercialGapActionCode,
+    CommercialGapCategory,
+    CommercialPassportGapAnalyzer,
+)
 from packages.livestock_application.commercial_passport import (
     CommercialOpportunity,
     CommercialOpportunityKind,
@@ -50,6 +55,7 @@ from packages.livestock_application.commercial_passport import (
     PropertyCommercialPassportOpportunityInput,
     PropertyCommercialPassportService,
     PropertyCommercialReadiness,
+    commercial_passport_projection,
 )
 from packages.livestock_application.market_readiness import (
     MarketReadinessContext,
@@ -336,6 +342,7 @@ def _requirement(
     dimension: CommercialPassportRequirementDimension = (
         CommercialPassportRequirementDimension.PROPERTY_READINESS
     ),
+    reason_codes: tuple[str, ...] = (),
 ) -> CommercialRequirementAssessment:
     return CommercialRequirementAssessment(
         requirement_code=code,
@@ -343,6 +350,7 @@ def _requirement(
         dimension=dimension,
         status=status,
         reason=f"Reason for {code}",
+        reason_codes=reason_codes,
     )
 
 
@@ -587,6 +595,102 @@ def test_property_passport_service_builds_dynamic_projection() -> None:
     )
     assert "PROPERTY_COMMERCIAL_PASSPORT_IS_DYNAMIC_PROJECTION" in passport.limitations
     assert "FORMAL_ISSUANCE_REQUIRES_DOSSIER_OR_VERIFICATION_BUNDLE" in passport.limitations
+
+
+def test_commercial_gap_engine_classifies_property_gaps_and_next_actions() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("buyer-x"),
+                requirements=(
+                    _requirement("missing", CommercialPassportRequirementStatus.MISSING),
+                    _requirement("unknown", CommercialPassportRequirementStatus.UNKNOWN),
+                    _requirement(
+                        "expired",
+                        CommercialPassportRequirementStatus.FAILED,
+                        reason_codes=("EVIDENCE_EXPIRED",),
+                    ),
+                    _requirement("failed", CommercialPassportRequirementStatus.FAILED),
+                    _requirement("blocked", CommercialPassportRequirementStatus.BLOCKED),
+                    _requirement("ok", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+            ),
+        ),
+    )
+
+    analysis = CommercialPassportGapAnalyzer().analyze(passport)
+
+    by_code = {gap.gap_code: gap for gap in analysis.gaps}
+    assert by_code["missing"].category is CommercialGapCategory.MISSING
+    assert by_code["missing"].recommended_action.action_code is (
+        CommercialGapActionCode.PROVIDE_EVIDENCE
+    )
+    assert by_code["unknown"].category is CommercialGapCategory.UNKNOWN
+    assert by_code["expired"].category is CommercialGapCategory.EXPIRED
+    assert by_code["failed"].category is CommercialGapCategory.INSUFFICIENT
+    assert by_code["blocked"].category is CommercialGapCategory.BLOCKING
+    assert "ok" not in by_code
+    assert "COMMERCIAL_GAP_ANALYSIS_IS_NOT_REGULATORY_DECISION" in analysis.limitations
+
+
+def test_commercial_gap_engine_adds_aggregate_population_gaps() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("eu"),
+                requirements=(
+                    _requirement("market-readiness", CommercialPassportRequirementStatus.SATISFIED),
+                ),
+                population_eligibility=PopulationEligibilitySummary(
+                    subject_type="animal",
+                    counts_by_status={
+                        MarketReadinessStatus.READY.value: 10,
+                        MarketReadinessStatus.NOT_READY.value: 2,
+                        MarketReadinessStatus.NOT_EVALUATED.value: 3,
+                        MarketReadinessStatus.REASSESSMENT_REQUIRED.value: 1,
+                    },
+                ),
+            ),
+        ),
+    )
+
+    analysis = CommercialPassportGapAnalyzer().analyze(passport)
+
+    by_code = {gap.gap_code: gap for gap in analysis.gaps}
+    assert by_code["eu:population:NOT_READY"].category is CommercialGapCategory.INSUFFICIENT
+    assert by_code["eu:population:NOT_READY"].affected_count == 2
+    assert by_code["eu:population:NOT_EVALUATED"].recommended_action.action_code is (
+        CommercialGapActionCode.RUN_MARKET_READINESS
+    )
+    assert by_code["eu:population:REASSESSMENT_REQUIRED"].category is (
+        CommercialGapCategory.EXPIRED
+    )
+    assert all(not hasattr(gap, "example_subject_ids") for gap in analysis.gaps)
+
+
+def test_commercial_passport_projection_includes_gap_analysis() -> None:
+    passport = PropertyCommercialPassportService().build(
+        context=_context(),
+        opportunities=(
+            PropertyCommercialPassportOpportunityInput(
+                opportunity=_opportunity("buyer-x"),
+                requirements=(
+                    _requirement("property-document", CommercialPassportRequirementStatus.MISSING),
+                ),
+            ),
+        ),
+    )
+
+    payload = commercial_passport_projection(passport)
+
+    gap_analysis = payload["gap_analysis"]
+    assert gap_analysis["gap_count"] == 1
+    assert gap_analysis["category_counts"]["MISSING"] == 1
+    assert gap_analysis["gaps"][0]["gap_code"] == "property-document"
+    assert gap_analysis["gaps"][0]["recommended_action"]["action_code"] == "PROVIDE_EVIDENCE"
+    assert "COMMERCIAL_GAP_ANALYSIS_IS_NOT_COMMERCIAL_GUARANTEE" in (gap_analysis["limitations"])
 
 
 def test_property_passport_service_orders_opportunities_deterministically() -> None:

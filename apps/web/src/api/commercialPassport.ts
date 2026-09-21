@@ -57,6 +57,33 @@ export interface CommercialPassportOpportunityAssessment {
   limitations: string[]
 }
 
+export interface CommercialPassportGapRecommendation {
+  action_code: string
+  description: string
+}
+
+export interface CommercialPassportGap {
+  opportunity_code: string
+  opportunity_name: string
+  dimension: string
+  subject_scope: string
+  gap_code: string
+  label: string
+  category: string
+  reason: string
+  reason_codes: string[]
+  recommended_action: CommercialPassportGapRecommendation
+  affected_count: number | null
+  limitations: string[]
+}
+
+export interface CommercialPassportGapAnalysis {
+  gap_count: number
+  category_counts: Record<string, number>
+  gaps: CommercialPassportGap[]
+  limitations: string[]
+}
+
 export interface CommercialPassportResponse {
   property_id: string
   reference_time: string
@@ -64,6 +91,7 @@ export interface CommercialPassportResponse {
   evaluated_at: string
   result_boundary: string
   opportunities: CommercialPassportOpportunityAssessment[]
+  gap_analysis: CommercialPassportGapAnalysis
   limitations: string[]
 }
 
