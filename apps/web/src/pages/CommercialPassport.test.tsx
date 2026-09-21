@@ -184,6 +184,52 @@ describe('CommercialPassport', () => {
               'COMMERCIAL_GAP_ANALYSIS_IS_NOT_REGULATORY_DECISION',
             ],
           },
+          evidence_vault: {
+            need_count: 2,
+            missing_count: 2,
+            status_counts: {
+              SATISFIED: 0,
+              MISSING: 1,
+              UNKNOWN: 0,
+              EXPIRED: 0,
+              INSUFFICIENT: 1,
+              BLOCKING: 0,
+            },
+            needs: [
+              {
+                need_code: 'synthetic-eu:environmental-evidence',
+                opportunity_code: 'synthetic-eu',
+                opportunity_name: 'European Union',
+                evidence_type: 'livestock.property_environmental_evidence',
+                purpose: 'export-eu',
+                subject_scope: 'property',
+                status: 'MISSING',
+                source_gap_code: 'environmental-evidence',
+                expected_coverage: 'property at Commercial Passport reference_time',
+                recommended_action: 'Attach or register the missing evidence before reassessment.',
+                referenced_evidence_ids: [],
+                limitations: [],
+              },
+              {
+                need_code: 'synthetic-eu:population:NOT_READY',
+                opportunity_code: 'synthetic-eu',
+                opportunity_name: 'European Union',
+                evidence_type: 'livestock.corrective_evidence',
+                purpose: 'export-eu',
+                subject_scope: 'animal',
+                status: 'INSUFFICIENT',
+                source_gap_code: 'synthetic-eu:population:NOT_READY',
+                expected_coverage: '377 animal(s) in population eligibility',
+                recommended_action: 'Review failed requirements and correct the operational condition.',
+                referenced_evidence_ids: ['evidence-1'],
+                limitations: [],
+              },
+            ],
+            limitations: [
+              'PRODUCER_EVIDENCE_VAULT_IS_OPERATIONAL_INDEX',
+              'PRODUCER_EVIDENCE_VAULT_DOES_NOT_REPLACE_CORE_EVIDENCE',
+            ],
+          },
           limitations: [],
         }),
       }),
@@ -203,10 +249,19 @@ describe('CommercialPassport', () => {
     expect(screen.getByText('INDETERMINATE: 103')).toBeInTheDocument()
     expect(screen.getByText(/lacunas e próximas ações/i)).toBeInTheDocument()
     expect(screen.getByText('Lacunas acionáveis')).toBeInTheDocument()
-    expect(screen.getByText('MISSING')).toBeInTheDocument()
-    expect(screen.getByText('INSUFFICIENT')).toBeInTheDocument()
-    expect(screen.getByText(/Attach or register the missing evidence/i)).toBeInTheDocument()
+    expect(screen.getAllByText('MISSING').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('INSUFFICIENT').length).toBeGreaterThan(0)
+    expect(screen.getAllByText(/Attach or register the missing evidence/i).length).toBeGreaterThan(
+      0,
+    )
     expect(screen.getByText(/Afeta 377 item/i)).toBeInTheDocument()
     expect(screen.getByText(/não são decisão regulatória/i)).toBeInTheDocument()
+    expect(screen.getByText(/cofre de evidências/i)).toBeInTheDocument()
+    expect(screen.getByText('Necessidades de evidência')).toBeInTheDocument()
+    expect(screen.getByText('livestock.property_environmental_evidence')).toBeInTheDocument()
+    expect(screen.getByText('livestock.corrective_evidence')).toBeInTheDocument()
+    expect(screen.getByText(/property at Commercial Passport reference_time/i)).toBeInTheDocument()
+    expect(screen.getByText(/Evidências referenciadas: evidence-1/i)).toBeInTheDocument()
+    expect(screen.getByText(/não substitui Evidence do Core/i)).toBeInTheDocument()
   })
 })

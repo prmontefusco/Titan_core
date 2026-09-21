@@ -546,6 +546,29 @@ passou com 40 testes; `ruff check`/`ruff format --check` focados passaram; `npm 
 **Próximo passo:** criar a visualização web simples do `evidence_vault` ou aprofundar a resolução temporal
 de população/propriedade para reduzir lacunas reais.
 
+### 21/09/2026 — Producer Evidence Vault v1: visualização web no Commercial Passport
+
+**Estado:** IMPLEMENTADO — incremento de superfície web que torna o `evidence_vault` visível dentro da
+tela existente do Commercial Passport. `apps/web/src/pages/CommercialPassport.tsx` agora apresenta a
+contagem de necessidades de evidência pendentes, distribuição por status, lista de necessidades com
+oportunidade, tipo de evidência, cobertura esperada, próxima ação e referências já conhecidas.
+
+**O que foi entregue:** a tela passou a explicar o cofre como índice operacional do que precisa estar
+documentado para reduzir lacunas do passaporte, declarando que não armazena arquivos, não substitui
+`Evidence` do Core e não valida admissibilidade. O frontend segue passivo: não reclassifica necessidade,
+não associa evidência a fatos e não decide prontidão regulatória. `docs/plans/
+PRODUCER_EVIDENCE_VAULT_UI_PLAN.md` registra discovery, escopo e fora de escopo.
+
+**Decisões preservadas:** não houve upload, storage, migration, API nova, regra de domínio no navegador,
+associação automática de evidência, UI dedicada fora do Commercial Passport, decisão regulatória,
+garantia comercial ou autorização visual.
+
+**Portão focado:** `npm test -- src/pages/CommercialPassport.test.tsx` passou com 3 testes; `npm run
+lint` e `npm run build` passaram.
+
+**Próximo passo:** aprofundar a resolução temporal de população/propriedade ou iniciar o corte seguinte
+do cofre para relacionar necessidades a evidências Core reais, ainda sem upload nem storage paralelo.
+
 ### 14/09/2026 — Reconhecimento da vertical Livestock e correção de `CORTE_MVP_BACKEND.md`
 
 **Estado:** CONCLUÍDO — documentação apenas, sem código, migration, API ou regra de negócio alterada.

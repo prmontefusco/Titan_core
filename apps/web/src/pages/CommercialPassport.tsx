@@ -2,6 +2,7 @@ import { useMemo, useState, type FormEvent } from 'react'
 import {
   CommercialPassportApiError,
   fetchPropertyCommercialPassport,
+  type CommercialPassportEvidenceNeed,
   type CommercialPassportGap,
   type CommercialPassportOpportunityAssessment,
   type CommercialPassportResponse,
@@ -148,9 +149,14 @@ function CommercialPassportProjection({ passport }: { passport: CommercialPasspo
           <dt>Lacunas acionáveis</dt>
           <dd>{passport.gap_analysis.gap_count}</dd>
         </div>
+        <div className="market-supply-metric">
+          <dt>Necessidades de evidência</dt>
+          <dd>{passport.evidence_vault.missing_count}</dd>
+        </div>
       </dl>
 
       <CommercialGapAnalysisSummary passport={passport} />
+      <CommercialEvidenceVaultSummary passport={passport} />
 
       <div className="commercial-passport-opportunity-list">
         {passport.opportunities.map((assessment) => (
@@ -161,6 +167,72 @@ function CommercialPassportProjection({ passport }: { passport: CommercialPasspo
         ))}
       </div>
     </section>
+  )
+}
+
+function CommercialEvidenceVaultSummary({ passport }: { passport: CommercialPassportResponse }) {
+  const needs = passport.evidence_vault.needs
+  const statusEntries = Object.entries(passport.evidence_vault.status_counts).filter(
+    ([, count]) => count > 0,
+  )
+
+  return (
+    <section className="market-supply-card">
+      <h3>Cofre de evidências</h3>
+      <p>
+        Índice operacional do que precisa estar documentado para reduzir lacunas do
+        passaporte. Não armazena arquivos, não substitui Evidence do Core e não valida
+        admissibilidade.
+      </p>
+
+      {statusEntries.length > 0 && (
+        <dl className="market-supply-metrics">
+          {statusEntries.map(([status, count]) => (
+            <div className="market-supply-metric" key={status}>
+              <dt>{status}</dt>
+              <dd>{count}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {needs.length > 0 ? (
+        <ul>
+          {needs.map((need) => (
+            <CommercialEvidenceNeedItem need={need} key={need.need_code} />
+          ))}
+        </ul>
+      ) : (
+        <p>Nenhuma necessidade de evidência foi derivada para esta projeção.</p>
+      )}
+
+      <details>
+        <summary>Limitações do cofre</summary>
+        <ul>
+          {passport.evidence_vault.limitations.map((limitation) => (
+            <li key={limitation}>{limitation}</li>
+          ))}
+        </ul>
+      </details>
+    </section>
+  )
+}
+
+function CommercialEvidenceNeedItem({ need }: { need: CommercialPassportEvidenceNeed }) {
+  return (
+    <li>
+      <strong>{need.evidence_type}</strong> — {need.status} em {need.opportunity_name}.
+      <br />
+      Cobertura esperada: {need.expected_coverage}
+      <br />
+      Próxima ação: {need.recommended_action}
+      {need.referenced_evidence_ids.length > 0 && (
+        <>
+          <br />
+          Evidências referenciadas: {need.referenced_evidence_ids.join(', ')}
+        </>
+      )}
+    </li>
   )
 }
 
