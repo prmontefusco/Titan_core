@@ -563,3 +563,24 @@ def test_commercial_passport_routes_reject_knowledge_cutoff_before_reference_tim
     assert response.headers["content-type"].startswith("application/problem+json")
     assert response.json()["reason_code"] == "COMMERCIAL_PASSPORT_REQUEST_INVALIDA"
     _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
+
+def test_commercial_passport_contract_validation_errors_are_not_cacheable(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_read
+    ] = lambda: _context()
+
+    query = _valid_query()
+    del query["knowledge_cutoff"]
+    response = TestClient(main_module.app).get(GET_ROUTE, params=query)
+
+    assert response.status_code == 422
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["reason_code"] == "ENTRADA_INVALIDA"
+    _assert_no_unauthenticated_commercial_passport_disclosure(response.json())

@@ -73,6 +73,12 @@ contrato para coordenadas temporais não UTC e para `knowledge_cutoff` anterior 
 confirmar que esses `422` não serializam campos reconhecíveis da projection, de Dossier ou de
 VerificationBundle.
 
+**Fechamento de validação de contrato:** erros `422` produzidos pelo FastAPI antes de executar a rota do
+Commercial Passport, como ausência de parâmetro obrigatório na query, também passaram a receber
+`cache-control: no-store`, `pragma: no-cache` e `application/problem+json`. O teste de release gate cobre
+esse caminho para impedir que validações de contrato fiquem cacheáveis enquanto erros de domínio já estavam
+protegidos.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

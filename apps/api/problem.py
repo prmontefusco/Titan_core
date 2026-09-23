@@ -23,6 +23,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
+NO_STORE_HEADERS = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 # Respostas de erro que toda rota autenticada da vertical pode produzir. Ficam
 # num só lugar porque contrato repetido em cada rota diverge com o tempo — e o
@@ -116,6 +117,7 @@ async def validation_problem_handler(request: Request, exception: Exception) -> 
         title="Entrada inválida",
         detail="A requisição não atende ao contrato declarado.",
         extra={"errors": campos},
+        headers=_validation_problem_headers(request),
     )
 
 
@@ -128,3 +130,9 @@ async def unexpected_error_handler(request: Request, exception: Exception) -> JS
         title="Erro interno",
         detail="A requisição não pôde ser concluída.",
     )
+
+
+def _validation_problem_headers(request: Request) -> dict[str, str] | None:
+    if "/commercial-passport" in request.url.path:
+        return dict(NO_STORE_HEADERS)
+    return None
