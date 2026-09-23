@@ -79,6 +79,12 @@ Commercial Passport, como ausência de parâmetro obrigatório na query, também
 esse caminho para impedir que validações de contrato fiquem cacheáveis enquanto erros de domínio já estavam
 protegidos.
 
+**Fechamento de negação anônima:** respostas `401` emitidas pelo handler HTTP geral para as rotas do
+Commercial Passport agora preservam `WWW-Authenticate`, mas também carregam `cache-control: no-store`,
+`pragma: no-cache` e `application/problem+json`. A suíte de release gate exige esse contrato tanto para a
+consulta dinâmica quanto para a emissão formal sem token, mantendo a negação sem autenticação não cacheável
+e sem disclosure de campos sensíveis.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

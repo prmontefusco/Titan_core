@@ -312,6 +312,9 @@ def test_commercial_passport_routes_are_feature_flagged_and_protected(
     response = TestClient(main_module.app).get(GET_ROUTE, params=_valid_query())
 
     assert response.status_code == 401
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["content-type"].startswith("application/problem+json")
     _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 
@@ -324,6 +327,9 @@ def test_commercial_passport_issue_route_does_not_disclose_without_authenticatio
     response = TestClient(main_module.app).post(ISSUE_ROUTE, json=_valid_issue_body())
 
     assert response.status_code == 401
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["content-type"].startswith("application/problem+json")
     _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 

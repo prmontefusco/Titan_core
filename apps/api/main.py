@@ -1,5 +1,5 @@
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
@@ -33,6 +33,7 @@ from apps.api.livestock_treatments import router as livestock_treatments_router
 from apps.api.livestock_writes import router as livestock_writes_router
 from apps.api.policy_governance import router as policy_governance_router
 from apps.api.problem import (
+    NO_STORE_HEADERS,
     DomainProblem,
     domain_problem_handler,
     unexpected_error_handler,
@@ -204,7 +205,7 @@ async def http_exception_handler(
         },
         media_type="application/problem+json",
         status_code=exception.status_code,
-        headers=exception.headers,
+        headers=_headers_http_sensiveis(request, exception.headers),
     )
 
 
@@ -216,6 +217,17 @@ async def http_exception_handler(
 )
 async def health() -> HealthResponse:
     return HealthResponse(status="ok")
+
+
+def _headers_http_sensiveis(
+    request: Request,
+    headers: Mapping[str, str] | None,
+) -> dict[str, str] | None:
+    if "/commercial-passport" not in request.url.path:
+        return dict(headers) if headers is not None else None
+    protegidos = dict(headers or {})
+    protegidos.update(NO_STORE_HEADERS)
+    return protegidos
 
 
 @app.get(
