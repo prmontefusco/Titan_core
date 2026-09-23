@@ -114,6 +114,13 @@ responde `400 ORGANIZACAO_INVALIDA` com `cache-control: no-store`, `pragma: no-c
 `application/problem+json`, sem serializar projection, população, Dossier ou VerificationBundle. Isso
 congela a fronteira contra identificação de Organization inválida antes de resolver permissões ou produto.
 
+**Fechamento de OrganizationContext negado:** chamadas autenticadas com Organization válida, mas sem
+contexto operacional autorizado, agora estão cobertas pela suíte de release gate. A API responde
+`403 CONTEXTO_ORGANIZACIONAL_NEGADO` com `cache-control: no-store`, `pragma: no-cache` e
+`application/problem+json`, sem serializar projection, população, Dossier ou VerificationBundle. Isso
+congela a negação indistinguível de vínculo ausente, inválido ou invisível antes de qualquer leitura de
+produto.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

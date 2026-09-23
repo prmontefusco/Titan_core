@@ -15,6 +15,7 @@ import apps.api.main as main_module
 from apps.api import livestock_commercial_passport as commercial_passport_api
 from apps.api.authentication import require_authenticated_principal
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER, request_connection
+from packages.core_application.organization_context import OrganizationContextDenied
 from packages.core_domain import AuthenticatedPrincipal, OrganizationContext, PrincipalType
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
 from packages.livestock_application.commercial_passport import (
@@ -116,6 +117,18 @@ def _valid_issue_body() -> dict[str, object]:
 
 def _fake_connection() -> object:
     return object()
+
+
+class _FakeTransactionalConnection:
+    def in_transaction(self) -> bool:
+        return True
+
+    def execute(self, *_args: object, **_kwargs: object) -> None:
+        raise AssertionError("OrganizationContext negado não deve armar RLS.")
+
+
+def _fake_transactional_connection() -> object:
+    return _FakeTransactionalConnection()
 
 
 def _enable_valid_commercial_passport_pipeline(monkeypatch: MonkeyPatch) -> None:
@@ -429,6 +442,42 @@ def test_commercial_passport_routes_reject_malformed_organization_context_withou
         assert response.headers["content-type"].startswith("application/problem+json")
         assert response.json()["reason_code"] == "ORGANIZACAO_INVALIDA"
         _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
+
+def test_commercial_passport_routes_do_not_disclose_denied_organization_context(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+
+    contexto = _context()
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        contexto.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = _fake_transactional_connection
+
+    headers = {ORGANIZATION_HEADER: str(contexto.organization_id.value)}
+    with (
+        patch(
+            "apps.api.livestock_dependencies.operator_organization_id",
+            return_value=OrganizationId.new(),
+        ),
+        patch(
+            "apps.api.livestock_dependencies.OrganizationContextService.build",
+            side_effect=OrganizationContextDenied("CONTEXTO_ORGANIZACIONAL_NEGADO"),
+        ),
+    ):
+        client = TestClient(main_module.app)
+        for response in (
+            client.get(GET_ROUTE, params=_valid_query(), headers=headers),
+            client.post(ISSUE_ROUTE, json=_valid_issue_body(), headers=headers),
+        ):
+            assert response.status_code == 403
+            assert response.headers["cache-control"] == "no-store"
+            assert response.headers["pragma"] == "no-cache"
+            assert response.headers["content-type"].startswith("application/problem+json")
+            assert response.json()["reason_code"] == "CONTEXTO_ORGANIZACIONAL_NEGADO"
+            _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 
 def test_commercial_passport_method_errors_are_not_cacheable(
