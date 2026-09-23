@@ -34,6 +34,7 @@ FIM = "\033[0m"
 class Resposta:
     status: int
     corpo: Any
+    headers: Mapping[str, str] = field(default_factory=dict)
 
     def __getitem__(self, chave: str) -> Any:
         return self.corpo[chave]
@@ -91,14 +92,22 @@ class Cliente:
         try:
             with urllib.request.urlopen(requisicao, timeout=_TIMEOUT_SEGUNDOS) as resposta:
                 bruto = resposta.read()
-                return Resposta(resposta.status, json.loads(bruto) if bruto else None)
+                return Resposta(
+                    resposta.status,
+                    json.loads(bruto) if bruto else None,
+                    {key.lower(): value for key, value in resposta.headers.items()},
+                )
         except urllib.error.HTTPError as erro:
             bruto = erro.read()
             try:
                 corpo_erro = json.loads(bruto) if bruto else None
             except json.JSONDecodeError:
                 corpo_erro = bruto.decode("utf-8", errors="replace")
-            return Resposta(erro.code, corpo_erro)
+            return Resposta(
+                erro.code,
+                corpo_erro,
+                {key.lower(): value for key, value in erro.headers.items()},
+            )
         except urllib.error.URLError as erro:
             raise SystemExit(
                 f"{VERMELHO}A API não respondeu em {url}: {erro.reason}{FIM}\n"

@@ -1,9 +1,12 @@
 from pytest import MonkeyPatch
 
 from apps.validacao.commercial_passport_api import (
+    _fail_closed_problem_contract,
     _pipeline_configuration_problem,
     _population_trace_projection,
+    _sensitive_success_contract,
 )
+from apps.validacao.runner import Resposta
 
 
 def _valid_pipeline_environment(monkeypatch: MonkeyPatch) -> None:
@@ -140,3 +143,56 @@ def test_pipeline_configuration_validation_rejects_invalid_opportunity_kind(
     assert problem is not None
     assert problem.startswith("TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_KIND inválido")
     assert "MARKET" in problem
+
+
+def test_fail_closed_contract_accepts_problem_json_with_no_store() -> None:
+    conferir = _fail_closed_problem_contract("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
+    resposta = Resposta(
+        503,
+        {"reason_code": "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"},
+        {
+            "cache-control": "no-store",
+            "content-type": "application/problem+json; charset=utf-8",
+        },
+    )
+
+    assert conferir(resposta) is None
+
+
+def test_fail_closed_contract_rejects_missing_no_store() -> None:
+    conferir = _fail_closed_problem_contract("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
+    resposta = Resposta(
+        503,
+        {"reason_code": "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"},
+        {"content-type": "application/problem+json"},
+    )
+
+    assert conferir(resposta) == "resposta sensível não trouxe cache-control: no-store"
+
+
+def test_fail_closed_contract_rejects_non_problem_json() -> None:
+    conferir = _fail_closed_problem_contract("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
+    resposta = Resposta(
+        503,
+        {"reason_code": "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"},
+        {"cache-control": "private, no-store", "content-type": "application/json"},
+    )
+
+    assert conferir(resposta) == (
+        "erro fail-closed não trouxe content-type application/problem+json "
+        "(veio 'application/json')"
+    )
+
+
+def test_sensitive_success_contract_requires_projection_and_no_store() -> None:
+    conferir = _sensitive_success_contract(lambda _: None)
+    resposta = Resposta(200, {}, {"cache-control": "max-age=0, no-store"})
+
+    assert conferir(resposta) is None
+
+
+def test_sensitive_success_contract_rejects_missing_no_store() -> None:
+    conferir = _sensitive_success_contract(lambda _: None)
+    resposta = Resposta(200, {}, {"cache-control": "private"})
+
+    assert conferir(resposta) == "resposta sensível não trouxe cache-control: no-store"

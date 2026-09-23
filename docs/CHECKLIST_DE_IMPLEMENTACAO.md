@@ -46,6 +46,13 @@ menor que 1 ou não inteira e tipo de oportunidade fora do enum aprovado, indica
 ou desligar a pipeline para validar o fail-closed. Isso reduz falso diagnóstico de permissão/API quando o
 problema real é configuração incompleta do ambiente de validação.
 
+**Fechamento de contrato HTTP sensível:** o runner dos roteiros de validação passou a preservar headers
+normalizados na `Resposta`, mantendo compatibilidade com chamadas antigas. O roteiro autenticado do
+Commercial Passport agora confere `cache-control: no-store` nas respostas sensíveis e exige
+`application/problem+json` nos erros fail-closed da projection e da emissão formal. Assim, o roteiro
+manual passa a capturar regressões de cache/contrato HTTP que poderiam deixar informação regulatória
+sensível reaproveitável por intermediários ou apresentada fora do envelope de erro esperado.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

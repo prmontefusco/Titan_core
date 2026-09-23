@@ -171,6 +171,46 @@ def _reason_code(expected: str) -> Callable[[Resposta], str | None]:
     return conferir
 
 
+def _no_store_header(resposta: Resposta) -> str | None:
+    cache_control = resposta.headers.get("cache-control", "")
+    directives = {directive.strip().casefold() for directive in cache_control.split(",")}
+    if "no-store" not in directives:
+        return "resposta sensível não trouxe cache-control: no-store"
+    return None
+
+
+def _problem_json_header(resposta: Resposta) -> str | None:
+    content_type = resposta.headers.get("content-type", "")
+    media_type = content_type.split(";", maxsplit=1)[0].strip().casefold()
+    if media_type != "application/problem+json":
+        return (
+            "erro fail-closed não trouxe content-type application/problem+json "
+            f"(veio {content_type!r})"
+        )
+    return None
+
+
+def _all(*checks: Callable[[Resposta], str | None]) -> Callable[[Resposta], str | None]:
+    def conferir(resposta: Resposta) -> str | None:
+        for check in checks:
+            problem = check(resposta)
+            if problem is not None:
+                return problem
+        return None
+
+    return conferir
+
+
+def _sensitive_success_contract(
+    projection_check: Callable[[Resposta], str | None],
+) -> Callable[[Resposta], str | None]:
+    return _all(projection_check, _no_store_header)
+
+
+def _fail_closed_problem_contract(expected_reason_code: str) -> Callable[[Resposta], str | None]:
+    return _all(_reason_code(expected_reason_code), _no_store_header, _problem_json_header)
+
+
 def _forbidden_population_trace_path(
     value: Any, *, path: str = "population_eligibility"
 ) -> str | None:
@@ -374,9 +414,9 @@ def _authenticated_validation(
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
         conferir=(
-            _readiness_projection()
+            _sensitive_success_contract(_readiness_projection())
             if pipeline_habilitada
-            else _reason_code("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
+            else _fail_closed_problem_contract("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
         ),
         porque=(
             "Depois de autenticar e autorizar, a rota não pode fabricar avaliação: "
@@ -390,7 +430,7 @@ def _authenticated_validation(
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,
-        conferir=_reason_code("COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA"),
+        conferir=_fail_closed_problem_contract("COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA"),
         porque=(
             "A emissão formal exige autorização, mas também não deve criar Dossier ou "
             "VerificationBundle sem a pipeline produtiva."
