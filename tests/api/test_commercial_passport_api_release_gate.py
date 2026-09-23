@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import cast
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,8 @@ from pytest import MonkeyPatch
 
 import apps.api.main as main_module
 from apps.api import livestock_commercial_passport as commercial_passport_api
+from apps.api.authentication import require_authenticated_principal
+from apps.api.livestock_dependencies import request_connection
 from packages.core_domain import AuthenticatedPrincipal, OrganizationContext, PrincipalType
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
 from packages.livestock_application.commercial_passport import (
@@ -109,6 +112,10 @@ def _valid_issue_body() -> dict[str, object]:
         "knowledge_cutoff": "2026-09-11T00:00:00Z",
         "audience": "internal-audit",
     }
+
+
+def _fake_connection() -> object:
+    return object()
 
 
 def _enable_valid_commercial_passport_pipeline(monkeypatch: MonkeyPatch) -> None:
@@ -342,6 +349,35 @@ def test_commercial_passport_issue_route_does_not_disclose_without_authenticatio
     assert response.headers["pragma"] == "no-cache"
     assert response.headers["content-type"].startswith("application/problem+json")
     _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
+
+def test_commercial_passport_routes_do_not_disclose_without_permission(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+
+    context_without_permission = _context(permissions=frozenset())
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        context_without_permission.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = _fake_connection
+
+    with patch(
+        "apps.api.livestock_dependencies.resolve_organization_context",
+        return_value=context_without_permission,
+    ):
+        client = TestClient(main_module.app)
+        for response in (
+            client.get(GET_ROUTE, params=_valid_query()),
+            client.post(ISSUE_ROUTE, json=_valid_issue_body()),
+        ):
+            assert response.status_code == 403
+            assert response.headers["cache-control"] == "no-store"
+            assert response.headers["pragma"] == "no-cache"
+            assert response.headers["content-type"].startswith("application/problem+json")
+            assert response.json()["reason_code"] == "PERMISSAO_AUSENTE"
+            _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 
 def test_dynamic_commercial_passport_route_fails_closed_until_pipeline_is_enabled(

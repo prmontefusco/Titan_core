@@ -16,6 +16,7 @@ nada do que aconteceu por dentro. Vazar exceção em resposta de API é entregar
 mapa da casa a quem bateu na porta.
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 from fastapi import Request, status
@@ -96,7 +97,7 @@ async def domain_problem_handler(request: Request, exception: Exception) -> JSON
         title=exception.title,
         detail=exception.detail,
         extra=exception.extra,
-        headers=exception.headers,
+        headers=_sensitive_problem_headers(request, exception.headers),
     )
 
 
@@ -117,7 +118,7 @@ async def validation_problem_handler(request: Request, exception: Exception) -> 
         title="Entrada inválida",
         detail="A requisição não atende ao contrato declarado.",
         extra={"errors": campos},
-        headers=_validation_problem_headers(request),
+        headers=_sensitive_problem_headers(request),
     )
 
 
@@ -132,7 +133,12 @@ async def unexpected_error_handler(request: Request, exception: Exception) -> JS
     )
 
 
-def _validation_problem_headers(request: Request) -> dict[str, str] | None:
-    if "/commercial-passport" in request.url.path:
-        return dict(NO_STORE_HEADERS)
-    return None
+def _sensitive_problem_headers(
+    request: Request,
+    headers: Mapping[str, str] | None = None,
+) -> dict[str, str] | None:
+    if "/commercial-passport" not in request.url.path:
+        return dict(headers) if headers is not None else None
+    protected = dict(headers or {})
+    protected.update(NO_STORE_HEADERS)
+    return protected

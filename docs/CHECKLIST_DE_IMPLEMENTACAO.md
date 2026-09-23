@@ -91,6 +91,12 @@ também carregam `cache-control: no-store`, `pragma: no-cache` e `application/pr
 campos reconhecíveis de Commercial Passport, propriedade, população, Dossier ou VerificationBundle. A suíte
 de release gate cobre esse estado para evitar que o modo default-off gere respostas cacheáveis.
 
+**Fechamento de permissão ausente:** respostas `403 PERMISSAO_AUSENTE` geradas pela dependência real de
+permissão do Commercial Passport agora também recebem `cache-control: no-store`, `pragma: no-cache` e
+`application/problem+json`. A suíte injeta um principal autenticado sem `PROPERTY_LER`/`DOSSIER_LER` e
+confirma que tanto a consulta quanto a emissão formal negam sem cache e sem serializar campos de projection,
+população, Dossier ou VerificationBundle.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
