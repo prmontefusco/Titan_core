@@ -121,6 +121,12 @@ contexto operacional autorizado, agora estão cobertas pela suíte de release ga
 congela a negação indistinguível de vínculo ausente, inválido ou invisível antes de qualquer leitura de
 produto.
 
+**Fechamento de identificador de propriedade malformado:** chamadas autenticadas aos paths do Commercial
+Passport com `property_id` sem UUID válido agora estão cobertas pela suíte de release gate. A API responde
+`422 IDENTIFICADOR_INVALIDO` com `cache-control: no-store`, `pragma: no-cache` e
+`application/problem+json`, sem serializar projection, população, Dossier ou VerificationBundle. Isso
+congela a validação do identificador de entrada sem transformar erro de path em disclosure de produto.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

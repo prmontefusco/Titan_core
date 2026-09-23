@@ -38,6 +38,8 @@ from packages.shared_kernel import OrganizationId, TypedId
 PROPERTY_ID = "00000000-0000-0000-0000-000000000001"
 GET_ROUTE = f"/v1/livestock/properties/{PROPERTY_ID}/commercial-passport"
 ISSUE_ROUTE = f"/v1/livestock/properties/{PROPERTY_ID}/commercial-passport/issue"
+MALFORMED_PROPERTY_GET_ROUTE = "/v1/livestock/properties/nao-e-uuid/commercial-passport"
+MALFORMED_PROPERTY_ISSUE_ROUTE = "/v1/livestock/properties/nao-e-uuid/commercial-passport/issue"
 FORBIDDEN_POPULATION_TRACE_KEYS = frozenset(
     {
         "animal_id",
@@ -478,6 +480,31 @@ def test_commercial_passport_routes_do_not_disclose_denied_organization_context(
             assert response.headers["content-type"].startswith("application/problem+json")
             assert response.json()["reason_code"] == "CONTEXTO_ORGANIZACIONAL_NEGADO"
             _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
+
+def test_commercial_passport_routes_reject_malformed_property_id_without_cache(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_read
+    ] = lambda: _context()
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_issue
+    ] = lambda: _context()
+
+    client = TestClient(main_module.app)
+    for response in (
+        client.get(MALFORMED_PROPERTY_GET_ROUTE, params=_valid_query()),
+        client.post(MALFORMED_PROPERTY_ISSUE_ROUTE, json=_valid_issue_body()),
+    ):
+        assert response.status_code == 422
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
+        assert response.headers["content-type"].startswith("application/problem+json")
+        assert response.json()["reason_code"] == "IDENTIFICADOR_INVALIDO"
+        _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 
 def test_commercial_passport_method_errors_are_not_cacheable(
