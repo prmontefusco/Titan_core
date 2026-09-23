@@ -97,6 +97,11 @@ permissão do Commercial Passport agora também recebem `cache-control: no-store
 confirma que tanto a consulta quanto a emissão formal negam sem cache e sem serializar campos de projection,
 população, Dossier ou VerificationBundle.
 
+**Fechamento de método inválido:** erros `405 METODO_NAO_PERMITIDO` sobre os paths publicados do
+Commercial Passport também ficam congelados como não cacheáveis e em `application/problem+json`. A suíte
+exercita método HTTP não suportado na rota de consulta e verifica ausência de campos de produto no corpo,
+fechando a família de negações HTTP genéricas sem depender de inspeção manual.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

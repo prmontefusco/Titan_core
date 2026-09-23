@@ -380,6 +380,22 @@ def test_commercial_passport_routes_do_not_disclose_without_permission(
             _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 
+def test_commercial_passport_method_errors_are_not_cacheable(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+
+    response = TestClient(main_module.app).patch(GET_ROUTE, json={})
+
+    assert response.status_code == 405
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["pragma"] == "no-cache"
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert response.json()["reason_code"] == "METODO_NAO_PERMITIDO"
+    _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
+
 def test_dynamic_commercial_passport_route_fails_closed_until_pipeline_is_enabled(
     monkeypatch: MonkeyPatch,
 ) -> None:
