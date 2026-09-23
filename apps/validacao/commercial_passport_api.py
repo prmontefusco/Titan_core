@@ -63,6 +63,21 @@ _POPULATION_TRACE_FORBIDDEN_KEYS = frozenset(
         "candidate_animal_ids",
     }
 )
+_UNAUTHENTICATED_FORBIDDEN_KEYS = frozenset(
+    {
+        "property_id",
+        "commercial_passport",
+        "opportunities",
+        "property_readiness",
+        "population_eligibility",
+        "gap_analysis",
+        "evidence_vault",
+        "dossier_id",
+        "verification_bundle_id",
+        "population_snapshot_digest",
+        "selection_criteria_digest",
+    }
+)
 _PIPELINE_REQUIRED_ENV = (
     "TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_CODE",
     "TITAN_COMMERCIAL_PASSPORT_OPPORTUNITY_NAME",
@@ -209,6 +224,30 @@ def _sensitive_success_contract(
 
 def _fail_closed_problem_contract(expected_reason_code: str) -> Callable[[Resposta], str | None]:
     return _all(_reason_code(expected_reason_code), _no_store_header, _problem_json_header)
+
+
+def _unauthenticated_disclosure_path(value: Any, *, path: str = "body") -> str | None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            if key in _UNAUTHENTICATED_FORBIDDEN_KEYS:
+                return child_path
+            found = _unauthenticated_disclosure_path(child, path=child_path)
+            if found is not None:
+                return found
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            found = _unauthenticated_disclosure_path(child, path=f"{path}[{index}]")
+            if found is not None:
+                return found
+    return None
+
+
+def _unauthenticated_boundary(response: HttpResponse) -> str | None:
+    forbidden_path = _unauthenticated_disclosure_path(response.body)
+    if forbidden_path is not None:
+        return f"resposta sem autenticação expôs campo proibido em {forbidden_path}"
+    return None
 
 
 def _forbidden_population_trace_path(
@@ -508,6 +547,10 @@ def main() -> int:
             f"({'rota autenticada' if get_published else 'rota ausente'})."
         )
         return 1
+    get_problem = _unauthenticated_boundary(get_response)
+    if get_problem is not None:
+        print(f"{VERMELHO}FALHOU{FIM} — {get_problem}.")
+        return 1
     _pause(args.pausar)
 
     print(f"\n{NEGRITO}[3] Chamar emissão formal sem autenticação{FIM}")
@@ -530,6 +573,10 @@ def main() -> int:
             f"{VERMELHO}FALHOU{FIM} — esperava {expected} "
             f"({'rota autenticada' if issue_published else 'rota ausente'})."
         )
+        return 1
+    issue_problem = _unauthenticated_boundary(issue_response)
+    if issue_problem is not None:
+        print(f"{VERMELHO}FALHOU{FIM} — {issue_problem}.")
         return 1
 
     print(

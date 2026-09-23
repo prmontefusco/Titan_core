@@ -53,6 +53,13 @@ Commercial Passport agora confere `cache-control: no-store` nas respostas sensí
 manual passa a capturar regressões de cache/contrato HTTP que poderiam deixar informação regulatória
 sensível reaproveitável por intermediários ou apresentada fora do envelope de erro esperado.
 
+**Fechamento do gate sem autenticação:** o roteiro manual também passou a conferir que as chamadas
+sem autenticação não retornam nenhuma estrutura reconhecível de Commercial Passport antes do login.
+Mesmo quando o status esperado é `401` ou `404`, o roteiro falha se o corpo contiver campos como
+`opportunities`, `population_eligibility`, `gap_analysis`, `evidence_vault`, `property_id`,
+`dossier_id`, `verification_bundle_id` ou digests de população/critério. Isso transforma a promessa
+"não revelar informação antes de autenticar" em verificação executável, não apenas inspeção visual.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

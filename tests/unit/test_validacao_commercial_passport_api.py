@@ -1,10 +1,12 @@
 from pytest import MonkeyPatch
 
 from apps.validacao.commercial_passport_api import (
+    HttpResponse,
     _fail_closed_problem_contract,
     _pipeline_configuration_problem,
     _population_trace_projection,
     _sensitive_success_contract,
+    _unauthenticated_boundary,
 )
 from apps.validacao.runner import Resposta
 
@@ -196,3 +198,37 @@ def test_sensitive_success_contract_rejects_missing_no_store() -> None:
     resposta = Resposta(200, {}, {"cache-control": "private"})
 
     assert conferir(resposta) == "resposta sensível não trouxe cache-control: no-store"
+
+
+def test_unauthenticated_boundary_accepts_generic_error_body() -> None:
+    response = HttpResponse(
+        401,
+        {"content-type": "application/json"},
+        {"detail": "Not authenticated"},
+    )
+
+    assert _unauthenticated_boundary(response) is None
+
+
+def test_unauthenticated_boundary_rejects_commercial_passport_payload_key() -> None:
+    response = HttpResponse(
+        401,
+        {"content-type": "application/json"},
+        {"detail": "Not authenticated", "opportunities": []},
+    )
+
+    assert _unauthenticated_boundary(response) == (
+        "resposta sem autenticação expôs campo proibido em body.opportunities"
+    )
+
+
+def test_unauthenticated_boundary_rejects_nested_population_trace_key() -> None:
+    response = HttpResponse(
+        401,
+        {"content-type": "application/json"},
+        {"debug": [{"population_eligibility": {"total_count": 1}}]},
+    )
+
+    assert _unauthenticated_boundary(response) == (
+        "resposta sem autenticação expôs campo proibido em body.debug[0].population_eligibility"
+    )
