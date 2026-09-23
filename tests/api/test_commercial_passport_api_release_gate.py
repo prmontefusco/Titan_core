@@ -299,6 +299,17 @@ def test_commercial_passport_routes_are_absent_by_default(monkeypatch: MonkeyPat
     assert "/v1/livestock/properties/{property_id}/commercial-passport" not in _paths()
     assert "/v1/livestock/properties/{property_id}/commercial-passport/issue" not in _paths()
 
+    client = TestClient(main_module.app)
+    for response in (
+        client.get(GET_ROUTE, params=_valid_query()),
+        client.post(ISSUE_ROUTE, json=_valid_issue_body()),
+    ):
+        assert response.status_code == 404
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
+        assert response.headers["content-type"].startswith("application/problem+json")
+        _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
 
 def test_commercial_passport_routes_are_feature_flagged_and_protected(
     monkeypatch: MonkeyPatch,

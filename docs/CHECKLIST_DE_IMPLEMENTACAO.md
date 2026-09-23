@@ -85,6 +85,12 @@ Commercial Passport agora preservam `WWW-Authenticate`, mas também carregam `ca
 consulta dinâmica quanto para a emissão formal sem token, mantendo a negação sem autenticação não cacheável
 e sem disclosure de campos sensíveis.
 
+**Fechamento do release gate desligado:** quando `TITAN_COMMERCIAL_PASSPORT_API_ENABLED` não publica as
+rotas, as chamadas diretas aos caminhos de consulta e emissão formal agora continuam respondendo `404`, mas
+também carregam `cache-control: no-store`, `pragma: no-cache` e `application/problem+json`, sem revelar
+campos reconhecíveis de Commercial Passport, propriedade, população, Dossier ou VerificationBundle. A suíte
+de release gate cobre esse estado para evitar que o modo default-off gere respostas cacheáveis.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

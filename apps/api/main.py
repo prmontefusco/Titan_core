@@ -181,6 +181,7 @@ async def http_exception_handler(
             },
             media_type="application/problem+json",
             status_code=404,
+            headers=_headers_http_sensiveis(request, exception.headers),
         )
 
     conhecida = _RESPOSTAS_CONHECIDAS.get(exception.status_code)
