@@ -44,6 +44,21 @@ FORBIDDEN_POPULATION_TRACE_KEYS = frozenset(
         "candidate_animal_ids",
     }
 )
+FORBIDDEN_UNAUTHENTICATED_KEYS = frozenset(
+    {
+        "property_id",
+        "commercial_passport",
+        "opportunities",
+        "property_readiness",
+        "population_eligibility",
+        "gap_analysis",
+        "evidence_vault",
+        "dossier_id",
+        "verification_bundle_id",
+        "population_snapshot_digest",
+        "selection_criteria_digest",
+    }
+)
 
 
 @pytest.fixture(autouse=True)
@@ -125,6 +140,27 @@ def _assert_no_forbidden_population_trace_keys(
     elif isinstance(value, list):
         for index, child in enumerate(value):
             _assert_no_forbidden_population_trace_keys(child, path=f"{path}[{index}]")
+
+
+def _assert_no_unauthenticated_commercial_passport_disclosure(
+    value: object,
+    *,
+    path: str = "body",
+) -> None:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            child_path = f"{path}.{key}"
+            assert key not in FORBIDDEN_UNAUTHENTICATED_KEYS, (
+                "Commercial Passport unauthenticated responses must not disclose "
+                f"commercial passport fields; found {child_path}"
+            )
+            _assert_no_unauthenticated_commercial_passport_disclosure(child, path=child_path)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _assert_no_unauthenticated_commercial_passport_disclosure(
+                child,
+                path=f"{path}[{index}]",
+            )
 
 
 class _ProjectionPipelineStub(PropertyCommercialPassportProjectionPort):
@@ -276,6 +312,19 @@ def test_commercial_passport_routes_are_feature_flagged_and_protected(
     response = TestClient(main_module.app).get(GET_ROUTE, params=_valid_query())
 
     assert response.status_code == 401
+    _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
+
+def test_commercial_passport_issue_route_does_not_disclose_without_authentication(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+
+    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=_valid_issue_body())
+
+    assert response.status_code == 401
+    _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 
 def test_dynamic_commercial_passport_route_fails_closed_until_pipeline_is_enabled(

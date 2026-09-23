@@ -60,6 +60,12 @@ Mesmo quando o status esperado é `401` ou `404`, o roteiro falha se o corpo con
 `dossier_id`, `verification_bundle_id` ou digests de população/critério. Isso transforma a promessa
 "não revelar informação antes de autenticar" em verificação executável, não apenas inspeção visual.
 
+**Fechamento HTTP do gate sem autenticação:** a suíte `tests/api/test_commercial_passport_api_release_gate.py`
+passou a congelar a mesma fronteira diretamente contra a API: GET da projection e POST de emissão formal
+sem token devem responder `401` sem carregar campos reconhecíveis de Commercial Passport, propriedade,
+população, Dossier ou VerificationBundle. A proteção deixa de depender apenas do roteiro manual e passa a
+falhar no CL se o middleware, rota ou handler de erro vazar estrutura sensível antes da autenticação.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
