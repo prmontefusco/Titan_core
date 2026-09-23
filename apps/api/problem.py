@@ -47,6 +47,7 @@ class DomainProblem(Exception):
         title: str,
         detail: str,
         extra: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> None:
         super().__init__(detail)
         self.status_code = status_code
@@ -54,6 +55,7 @@ class DomainProblem(Exception):
         self.title = title
         self.detail = detail
         self.extra = extra or {}
+        self.headers = headers
 
 
 def problem_response(
@@ -64,6 +66,7 @@ def problem_response(
     title: str,
     detail: str,
     extra: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
 ) -> JSONResponse:
     corpo: dict[str, Any] = {
         "type": f"urn:titan:problema:{reason_code.lower().replace('_', '-')}",
@@ -75,7 +78,12 @@ def problem_response(
     }
     if extra:
         corpo.update(extra)
-    return JSONResponse(content=corpo, media_type=PROBLEM_MEDIA_TYPE, status_code=status_code)
+    return JSONResponse(
+        content=corpo,
+        media_type=PROBLEM_MEDIA_TYPE,
+        status_code=status_code,
+        headers=headers,
+    )
 
 
 async def domain_problem_handler(request: Request, exception: Exception) -> JSONResponse:
@@ -87,6 +95,7 @@ async def domain_problem_handler(request: Request, exception: Exception) -> JSON
         title=exception.title,
         detail=exception.detail,
         extra=exception.extra,
+        headers=exception.headers,
     )
 
 

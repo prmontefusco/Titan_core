@@ -66,6 +66,13 @@ sem token devem responder `401` sem carregar campos reconhecíveis de Commercial
 população, Dossier ou VerificationBundle. A proteção deixa de depender apenas do roteiro manual e passa a
 falhar no CL se o middleware, rota ou handler de erro vazar estrutura sensível antes da autenticação.
 
+**Fechamento HTTP de entradas inválidas:** os erros previstos do Commercial Passport agora também carregam
+os headers sensíveis `cache-control: no-store` e `pragma: no-cache` quando passam pelo envelope
+`application/problem+json`. A suíte `tests/api/test_commercial_passport_api_release_gate.py` congela esse
+contrato para coordenadas temporais não UTC e para `knowledge_cutoff` anterior ao `reference_time`, além de
+confirmar que esses `422` não serializam campos reconhecíveis da projection, de Dossier ou de
+VerificationBundle.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

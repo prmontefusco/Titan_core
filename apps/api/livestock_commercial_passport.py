@@ -136,7 +136,7 @@ def get_property_commercial_passport(
             ),
         )
     except ValueError as error:
-        raise DomainProblem(
+        raise _commercial_passport_problem(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="COMMERCIAL_PASSPORT_REQUEST_INVALIDA",
             title="Requisição de Commercial Passport inválida",
@@ -176,7 +176,7 @@ def issue_property_commercial_passport(
         campo="property_id",
     )
     if not body.audience.strip():
-        raise DomainProblem(
+        raise _commercial_passport_problem(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="COMMERCIAL_PASSPORT_REQUEST_INVALIDA",
             title="Requisição de Commercial Passport inválida",
@@ -203,7 +203,7 @@ def issue_property_commercial_passport(
             issued_at=issued_at,
         )
     except ValueError as error:
-        raise DomainProblem(
+        raise _commercial_passport_problem(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="COMMERCIAL_PASSPORT_REQUEST_INVALIDA",
             title="Requisição de Commercial Passport inválida",
@@ -233,14 +233,14 @@ def _validate_temporal_coordinates(reference_time: datetime, knowledge_cutoff: d
         try:
             require_utc(value, field_name=field_name)
         except ValueError as error:
-            raise DomainProblem(
+            raise _commercial_passport_problem(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 reason_code="TEMPO_NAO_UTC",
                 title="Tempo inválido",
                 detail=f"O campo {field_name} deve possuir timezone UTC.",
             ) from error
     if knowledge_cutoff < reference_time:
-        raise DomainProblem(
+        raise _commercial_passport_problem(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             reason_code="COMMERCIAL_PASSPORT_REQUEST_INVALIDA",
             title="Requisição de Commercial Passport inválida",
@@ -260,6 +260,22 @@ def _not_enabled_response(*, reason_code: str, detail: str) -> JSONResponse:
             "reason_code": reason_code,
         },
         media_type="application/problem+json",
+    )
+
+
+def _commercial_passport_problem(
+    *,
+    status_code: int,
+    reason_code: str,
+    title: str,
+    detail: str,
+) -> DomainProblem:
+    return DomainProblem(
+        status_code=status_code,
+        reason_code=reason_code,
+        title=title,
+        detail=detail,
+        headers=dict(MARKET_SUPPLY_NO_STORE_HEADERS),
     )
 
 
