@@ -380,6 +380,31 @@ def test_commercial_passport_routes_do_not_disclose_without_permission(
             _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
 
 
+def test_commercial_passport_routes_require_organization_context_without_cache(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+
+    contexto = _context()
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        contexto.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = _fake_connection
+
+    client = TestClient(main_module.app)
+    for response in (
+        client.get(GET_ROUTE, params=_valid_query()),
+        client.post(ISSUE_ROUTE, json=_valid_issue_body()),
+    ):
+        assert response.status_code == 400
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
+        assert response.headers["content-type"].startswith("application/problem+json")
+        assert response.json()["reason_code"] == "ORGANIZACAO_NAO_INFORMADA"
+        _assert_no_unauthenticated_commercial_passport_disclosure(response.json())
+
+
 def test_commercial_passport_method_errors_are_not_cacheable(
     monkeypatch: MonkeyPatch,
 ) -> None:

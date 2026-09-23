@@ -102,6 +102,12 @@ Commercial Passport também ficam congelados como não cacheáveis e em `applica
 exercita método HTTP não suportado na rota de consulta e verifica ausência de campos de produto no corpo,
 fechando a família de negações HTTP genéricas sem depender de inspeção manual.
 
+**Fechamento de OrganizationContext ausente:** chamadas autenticadas sem `X-Titan-Organization-Id` aos
+paths do Commercial Passport agora estão cobertas pela suíte de release gate. A API responde
+`400 ORGANIZACAO_NAO_INFORMADA` com `cache-control: no-store`, `pragma: no-cache` e
+`application/problem+json`, sem serializar projection, população, Dossier ou VerificationBundle. Isso
+congela a fronteira de OrganizationContext antes de qualquer leitura de produto.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
