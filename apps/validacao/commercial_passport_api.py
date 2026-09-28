@@ -442,6 +442,7 @@ def _authenticated_validation(
     get_route = GET_ROUTE_TEMPLATE.format(property_id=propriedade)
     issue_route = ISSUE_ROUTE_TEMPLATE.format(property_id=propriedade)
     malformed_property_get_route = GET_ROUTE_TEMPLATE.format(property_id="nao-e-uuid")
+    malformed_property_issue_route = ISSUE_ROUTE_TEMPLATE.format(property_id="nao-e-uuid")
 
     print(f"\n{NEGRITO}Ambiente autenticado{FIM}")
     print(f"  API          : {api}")
@@ -520,6 +521,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "8",
+        "Auditor solicita emissão formal com property_id malformado sem disclosure",
+        lambda: auditor.post(malformed_property_issue_route, _issue_body()),
+        422,
+        conferir=_fail_closed_problem_contract("IDENTIFICADOR_INVALIDO"),
+        porque=(
+            "Mesmo com permissão de Dossier, a emissão formal deve parar na validação "
+            "do identificador da propriedade antes de pipeline, Dossier ou "
+            "VerificationBundle."
+        ),
+    )
+    roteiro.passo(
+        "9",
         "Operador sem permissão de Dossier não emite snapshot formal",
         lambda: operador.post(issue_route, _issue_body()),
         403,
@@ -531,7 +544,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "9",
+        "10",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,

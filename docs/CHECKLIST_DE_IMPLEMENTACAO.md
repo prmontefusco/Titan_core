@@ -158,6 +158,11 @@ Commercial Passport sem a permissão de Dossier. A validação espera `403 PERMI
 `cache-control: no-store` e `application/problem+json`, antes do passo positivo do auditor que chega ao
 fail-closed da emissão produtiva.
 
+**Fechamento do roteiro autenticado para emissão com path inválido:** o roteiro autenticado passou a
+validar também `POST /commercial-passport/issue` com `property_id` malformado usando o auditor. A validação
+espera `422 IDENTIFICADOR_INVALIDO`, `cache-control: no-store` e `application/problem+json`, confirmando
+que a emissão formal para na validação de entrada antes de pipeline, Dossier ou VerificationBundle.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
