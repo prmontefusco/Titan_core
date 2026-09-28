@@ -140,6 +140,12 @@ espera `422 IDENTIFICADOR_INVALIDO`, `cache-control: no-store` e `application/pr
 no ambiente real que a API para na validação de entrada sem serializar projection, população, Dossier ou
 VerificationBundle.
 
+**Fechamento do roteiro autenticado sem OrganizationContext:** o roteiro autenticado também passou a
+executar uma chamada sem `X-Titan-Organization-Id`, mesmo com token válido. A validação espera
+`400 ORGANIZACAO_NAO_INFORMADA`, `cache-control: no-store` e `application/problem+json`, confirmando no
+ambiente real que autenticação sem contexto de Organization não libera projection, população, Dossier ou
+VerificationBundle.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

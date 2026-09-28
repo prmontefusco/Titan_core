@@ -461,6 +461,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "4",
+        "Operador autenticado sem OrganizationContext não acessa o produto",
+        lambda: operador.get(f"{get_route}?{_query()}", com_organizacao=False),
+        400,
+        conferir=_fail_closed_problem_contract("ORGANIZACAO_NAO_INFORMADA"),
+        porque=(
+            "A autenticação não basta: toda operação protegida precisa de "
+            "OrganizationContext validado. Sem o cabeçalho da Organization, a API deve "
+            "negar antes de qualquer leitura de produto."
+        ),
+    )
+    roteiro.passo(
+        "5",
         "Operador consulta property_id malformado sem disclosure de produto",
         lambda: operador.get(f"{malformed_property_get_route}?{_query()}"),
         422,
@@ -472,7 +484,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "5",
+        "6",
         "Operador consulta projection dinâmica com permissão de propriedade",
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
@@ -489,7 +501,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "6",
+        "7",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,
