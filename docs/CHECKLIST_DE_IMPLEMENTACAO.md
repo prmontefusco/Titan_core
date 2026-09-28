@@ -169,6 +169,11 @@ também `pragma: no-cache` nas respostas sensíveis, além de `cache-control: no
 entradas inválidas, fail-closed da projection/emissão e sucesso sensível, alinhando o roteiro ao contrato
 HTTP congelado pela suíte de release gate.
 
+**Fechamento do roteiro autenticado para método inválido:** o roteiro autenticado passou a validar também
+`405 METODO_NAO_PERMITIDO` na rota de consulta do Commercial Passport, usando método HTTP não publicado.
+A verificação exige `cache-control: no-store`, `pragma: no-cache` e `application/problem+json`, mantendo
+negações genéricas da superfície HTTP no mesmo padrão sensível dos demais erros do produto.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

@@ -162,6 +162,21 @@ def test_fail_closed_contract_accepts_problem_json_with_no_store() -> None:
     assert conferir(resposta) is None
 
 
+def test_fail_closed_contract_accepts_method_not_allowed_problem() -> None:
+    conferir = _fail_closed_problem_contract("METODO_NAO_PERMITIDO")
+    resposta = Resposta(
+        405,
+        {"reason_code": "METODO_NAO_PERMITIDO"},
+        {
+            "cache-control": "no-store",
+            "pragma": "no-cache",
+            "content-type": "application/problem+json; charset=utf-8",
+        },
+    )
+
+    assert conferir(resposta) is None
+
+
 def test_fail_closed_contract_rejects_missing_no_store() -> None:
     conferir = _fail_closed_problem_contract("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
     resposta = Resposta(

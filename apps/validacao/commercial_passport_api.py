@@ -521,6 +521,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "7",
+        "Operador usa método HTTP não permitido sem disclosure de produto",
+        lambda: operador.requisitar("PATCH", get_route, {}),
+        405,
+        conferir=_fail_closed_problem_contract("METODO_NAO_PERMITIDO"),
+        porque=(
+            "A rota publicada só aceita GET para consulta. Um método errado deve "
+            "ficar no envelope problem+json não cacheável e não pode revelar "
+            "projection, população ou dados de Dossier."
+        ),
+    )
+    roteiro.passo(
+        "8",
         "Operador consulta projection dinâmica com permissão de propriedade",
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
@@ -537,7 +549,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "8",
+        "9",
         "Auditor solicita emissão formal com property_id malformado sem disclosure",
         lambda: auditor.post(malformed_property_issue_route, _issue_body()),
         422,
@@ -549,7 +561,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "9",
+        "10",
         "Operador sem permissão de Dossier não emite snapshot formal",
         lambda: operador.post(issue_route, _issue_body()),
         403,
@@ -561,7 +573,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "10",
+        "11",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,
