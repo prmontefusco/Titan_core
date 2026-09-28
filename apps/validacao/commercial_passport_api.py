@@ -199,7 +199,7 @@ def _problem_json_header(resposta: Resposta) -> str | None:
     media_type = content_type.split(";", maxsplit=1)[0].strip().casefold()
     if media_type != "application/problem+json":
         return (
-            "erro fail-closed não trouxe content-type application/problem+json "
+            "erro sensível não trouxe content-type application/problem+json "
             f"(veio {content_type!r})"
         )
     return None
@@ -434,6 +434,7 @@ def _authenticated_validation(
     propriedade = _property_from_listing(operador)
     get_route = GET_ROUTE_TEMPLATE.format(property_id=propriedade)
     issue_route = ISSUE_ROUTE_TEMPLATE.format(property_id=propriedade)
+    malformed_property_get_route = GET_ROUTE_TEMPLATE.format(property_id="nao-e-uuid")
 
     print(f"\n{NEGRITO}Ambiente autenticado{FIM}")
     print(f"  API          : {api}")
@@ -460,6 +461,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "4",
+        "Operador consulta property_id malformado sem disclosure de produto",
+        lambda: operador.get(f"{malformed_property_get_route}?{_query()}"),
+        422,
+        conferir=_fail_closed_problem_contract("IDENTIFICADOR_INVALIDO"),
+        porque=(
+            "Mesmo autenticada, uma chamada com identificador inválido deve parar na "
+            "validação de entrada, responder problem+json não cacheável e não revelar "
+            "projection, população ou dados de Dossier."
+        ),
+    )
+    roteiro.passo(
+        "5",
         "Operador consulta projection dinâmica com permissão de propriedade",
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
@@ -476,7 +489,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "5",
+        "6",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,

@@ -181,8 +181,7 @@ def test_fail_closed_contract_rejects_non_problem_json() -> None:
     )
 
     assert conferir(resposta) == (
-        "erro fail-closed não trouxe content-type application/problem+json "
-        "(veio 'application/json')"
+        "erro sensível não trouxe content-type application/problem+json (veio 'application/json')"
     )
 
 

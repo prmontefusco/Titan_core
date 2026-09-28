@@ -134,6 +134,12 @@ no modo default-off quanto no modo publicado por feature flag, retornem `cache-c
 propriedade, população, Dossier ou VerificationBundle. Com isso, a verificação manual automatizada cobre
 o mesmo contrato HTTP sensível que a suíte de release gate congela no CL.
 
+**Fechamento do roteiro autenticado para path inválido:** o roteiro autenticado do Commercial Passport
+também passou a executar uma chamada com `property_id` malformado antes da projection real. A validação
+espera `422 IDENTIFICADOR_INVALIDO`, `cache-control: no-store` e `application/problem+json`, confirmando
+no ambiente real que a API para na validação de entrada sem serializar projection, população, Dossier ou
+VerificationBundle.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
