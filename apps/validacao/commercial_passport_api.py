@@ -194,6 +194,14 @@ def _no_store_header(resposta: Resposta) -> str | None:
     return None
 
 
+def _pragma_no_cache_header(resposta: Resposta) -> str | None:
+    pragma = resposta.headers.get("pragma", "")
+    directives = {directive.strip().casefold() for directive in pragma.split(",")}
+    if "no-cache" not in directives:
+        return "resposta sensível não trouxe pragma: no-cache"
+    return None
+
+
 def _problem_json_header(resposta: Resposta) -> str | None:
     content_type = resposta.headers.get("content-type", "")
     media_type = content_type.split(";", maxsplit=1)[0].strip().casefold()
@@ -219,11 +227,16 @@ def _all(*checks: Callable[[Resposta], str | None]) -> Callable[[Resposta], str 
 def _sensitive_success_contract(
     projection_check: Callable[[Resposta], str | None],
 ) -> Callable[[Resposta], str | None]:
-    return _all(projection_check, _no_store_header)
+    return _all(projection_check, _no_store_header, _pragma_no_cache_header)
 
 
 def _fail_closed_problem_contract(expected_reason_code: str) -> Callable[[Resposta], str | None]:
-    return _all(_reason_code(expected_reason_code), _no_store_header, _problem_json_header)
+    return _all(
+        _reason_code(expected_reason_code),
+        _no_store_header,
+        _pragma_no_cache_header,
+        _problem_json_header,
+    )
 
 
 def _unauthenticated_disclosure_path(value: Any, *, path: str = "body") -> str | None:
@@ -248,6 +261,10 @@ def _unauthenticated_boundary(response: HttpResponse) -> str | None:
     directives = {directive.strip().casefold() for directive in cache_control.split(",")}
     if "no-store" not in directives:
         return "resposta sem autenticação não trouxe cache-control: no-store"
+    pragma = response.headers.get("pragma", "")
+    pragma_directives = {directive.strip().casefold() for directive in pragma.split(",")}
+    if "no-cache" not in pragma_directives:
+        return "resposta sem autenticação não trouxe pragma: no-cache"
     content_type = response.headers.get("content-type", "")
     media_type = content_type.split(";", maxsplit=1)[0].strip().casefold()
     if media_type != "application/problem+json":

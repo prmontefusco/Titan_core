@@ -163,6 +163,12 @@ validar também `POST /commercial-passport/issue` com `property_id` malformado u
 espera `422 IDENTIFICADOR_INVALIDO`, `cache-control: no-store` e `application/problem+json`, confirmando
 que a emissão formal para na validação de entrada antes de pipeline, Dossier ou VerificationBundle.
 
+**Fechamento de Pragma no roteiro sensível:** o roteiro executável do Commercial Passport passou a exigir
+também `pragma: no-cache` nas respostas sensíveis, além de `cache-control: no-store` e
+`application/problem+json` nos erros. A validação cobre chamadas sem autenticação, negações autenticadas,
+entradas inválidas, fail-closed da projection/emissão e sucesso sensível, alinhando o roteiro ao contrato
+HTTP congelado pela suíte de release gate.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

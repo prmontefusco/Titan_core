@@ -154,6 +154,7 @@ def test_fail_closed_contract_accepts_problem_json_with_no_store() -> None:
         {"reason_code": "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"},
         {
             "cache-control": "no-store",
+            "pragma": "no-cache",
             "content-type": "application/problem+json; charset=utf-8",
         },
     )
@@ -177,7 +178,11 @@ def test_fail_closed_contract_rejects_non_problem_json() -> None:
     resposta = Resposta(
         503,
         {"reason_code": "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"},
-        {"cache-control": "private, no-store", "content-type": "application/json"},
+        {
+            "cache-control": "private, no-store",
+            "pragma": "no-cache",
+            "content-type": "application/json",
+        },
     )
 
     assert conferir(resposta) == (
@@ -185,18 +190,39 @@ def test_fail_closed_contract_rejects_non_problem_json() -> None:
     )
 
 
+def test_fail_closed_contract_rejects_missing_pragma_no_cache() -> None:
+    conferir = _fail_closed_problem_contract("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
+    resposta = Resposta(
+        503,
+        {"reason_code": "COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO"},
+        {
+            "cache-control": "no-store",
+            "content-type": "application/problem+json; charset=utf-8",
+        },
+    )
+
+    assert conferir(resposta) == "resposta sensível não trouxe pragma: no-cache"
+
+
 def test_sensitive_success_contract_requires_projection_and_no_store() -> None:
     conferir = _sensitive_success_contract(lambda _: None)
-    resposta = Resposta(200, {}, {"cache-control": "max-age=0, no-store"})
+    resposta = Resposta(200, {}, {"cache-control": "max-age=0, no-store", "pragma": "no-cache"})
 
     assert conferir(resposta) is None
 
 
 def test_sensitive_success_contract_rejects_missing_no_store() -> None:
     conferir = _sensitive_success_contract(lambda _: None)
-    resposta = Resposta(200, {}, {"cache-control": "private"})
+    resposta = Resposta(200, {}, {"cache-control": "private", "pragma": "no-cache"})
 
     assert conferir(resposta) == "resposta sensível não trouxe cache-control: no-store"
+
+
+def test_sensitive_success_contract_rejects_missing_pragma_no_cache() -> None:
+    conferir = _sensitive_success_contract(lambda _: None)
+    resposta = Resposta(200, {}, {"cache-control": "no-store"})
+
+    assert conferir(resposta) == "resposta sensível não trouxe pragma: no-cache"
 
 
 def test_unauthenticated_boundary_accepts_generic_error_body() -> None:
@@ -204,6 +230,7 @@ def test_unauthenticated_boundary_accepts_generic_error_body() -> None:
         401,
         {
             "cache-control": "no-store",
+            "pragma": "no-cache",
             "content-type": "application/problem+json; charset=utf-8",
         },
         {"detail": "Not authenticated"},
@@ -228,7 +255,11 @@ def test_unauthenticated_boundary_rejects_missing_no_store() -> None:
 def test_unauthenticated_boundary_rejects_non_problem_json() -> None:
     response = HttpResponse(
         401,
-        {"cache-control": "private, no-store", "content-type": "application/json"},
+        {
+            "cache-control": "private, no-store",
+            "pragma": "no-cache",
+            "content-type": "application/json",
+        },
         {"detail": "Not authenticated"},
     )
 
@@ -238,11 +269,28 @@ def test_unauthenticated_boundary_rejects_non_problem_json() -> None:
     )
 
 
+def test_unauthenticated_boundary_rejects_missing_pragma_no_cache() -> None:
+    response = HttpResponse(
+        401,
+        {
+            "cache-control": "no-store",
+            "content-type": "application/problem+json; charset=utf-8",
+        },
+        {"detail": "Not authenticated"},
+    )
+
+    assert (
+        _unauthenticated_boundary(response)
+        == "resposta sem autenticação não trouxe pragma: no-cache"
+    )
+
+
 def test_unauthenticated_boundary_rejects_commercial_passport_payload_key() -> None:
     response = HttpResponse(
         401,
         {
             "cache-control": "no-store",
+            "pragma": "no-cache",
             "content-type": "application/problem+json; charset=utf-8",
         },
         {"detail": "Not authenticated", "opportunities": []},
@@ -258,6 +306,7 @@ def test_unauthenticated_boundary_rejects_nested_population_trace_key() -> None:
         401,
         {
             "cache-control": "no-store",
+            "pragma": "no-cache",
             "content-type": "application/problem+json; charset=utf-8",
         },
         {"debug": [{"population_eligibility": {"total_count": 1}}]},
