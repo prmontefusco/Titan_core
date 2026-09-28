@@ -152,6 +152,12 @@ executar também uma chamada com `X-Titan-Organization-Id` sem UUID válido. A v
 ambiente real que cabeçalho de Organization inválido não chega à resolução de permissões nem libera
 projection, população, Dossier ou VerificationBundle.
 
+**Fechamento do roteiro autenticado para permissão ausente:** o roteiro autenticado passou a validar que
+`titan_operador`, mesmo podendo consultar propriedade, não consegue solicitar a emissão formal do
+Commercial Passport sem a permissão de Dossier. A validação espera `403 PERMISSAO_AUSENTE`,
+`cache-control: no-store` e `application/problem+json`, antes do passo positivo do auditor que chega ao
+fail-closed da emissão produtiva.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

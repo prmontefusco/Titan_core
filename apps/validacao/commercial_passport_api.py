@@ -520,6 +520,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "8",
+        "Operador sem permissão de Dossier não emite snapshot formal",
+        lambda: operador.post(issue_route, _issue_body()),
+        403,
+        conferir=_fail_closed_problem_contract("PERMISSAO_AUSENTE"),
+        porque=(
+            "A emissão formal gera material de Dossier/VerificationBundle e exige "
+            "permissão própria. O operador pode consultar a propriedade, mas não deve "
+            "passar pelo gate de emissão formal sem DOSSIER.LER."
+        ),
+    )
+    roteiro.passo(
+        "9",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,
