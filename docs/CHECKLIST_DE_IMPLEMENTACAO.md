@@ -127,6 +127,13 @@ Passport com `property_id` sem UUID válido agora estão cobertas pela suíte de
 `application/problem+json`, sem serializar projection, população, Dossier ou VerificationBundle. Isso
 congela a validação do identificador de entrada sem transformar erro de path em disclosure de produto.
 
+**Fechamento do roteiro sem autenticação:** o roteiro executável
+`apps/validacao/commercial_passport_api.py` também passou a exigir que as respostas sem autenticação, tanto
+no modo default-off quanto no modo publicado por feature flag, retornem `cache-control: no-store` e
+`application/problem+json`, além de continuarem sem campos reconhecíveis de Commercial Passport,
+propriedade, população, Dossier ou VerificationBundle. Com isso, a verificação manual automatizada cobre
+o mesmo contrato HTTP sensível que a suíte de release gate congela no CL.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

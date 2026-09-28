@@ -244,6 +244,17 @@ def _unauthenticated_disclosure_path(value: Any, *, path: str = "body") -> str |
 
 
 def _unauthenticated_boundary(response: HttpResponse) -> str | None:
+    cache_control = response.headers.get("cache-control", "")
+    directives = {directive.strip().casefold() for directive in cache_control.split(",")}
+    if "no-store" not in directives:
+        return "resposta sem autenticação não trouxe cache-control: no-store"
+    content_type = response.headers.get("content-type", "")
+    media_type = content_type.split(";", maxsplit=1)[0].strip().casefold()
+    if media_type != "application/problem+json":
+        return (
+            "resposta sem autenticação não trouxe content-type application/problem+json "
+            f"(veio {content_type!r})"
+        )
     forbidden_path = _unauthenticated_disclosure_path(response.body)
     if forbidden_path is not None:
         return f"resposta sem autenticação expôs campo proibido em {forbidden_path}"
