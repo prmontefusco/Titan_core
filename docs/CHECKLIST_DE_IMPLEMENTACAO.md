@@ -146,6 +146,12 @@ executar uma chamada sem `X-Titan-Organization-Id`, mesmo com token válido. A v
 ambiente real que autenticação sem contexto de Organization não libera projection, população, Dossier ou
 VerificationBundle.
 
+**Fechamento do roteiro autenticado com OrganizationContext malformado:** o roteiro autenticado passou a
+executar também uma chamada com `X-Titan-Organization-Id` sem UUID válido. A validação espera
+`400 ORGANIZACAO_INVALIDA`, `cache-control: no-store` e `application/problem+json`, confirmando no
+ambiente real que cabeçalho de Organization inválido não chega à resolução de permissões nem libera
+projection, população, Dossier ou VerificationBundle.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

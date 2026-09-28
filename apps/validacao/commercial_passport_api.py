@@ -431,6 +431,13 @@ def _authenticated_validation(
         keycloak_url=keycloak_url,
         realm=realm,
     )
+    operador_organizacao_invalida = Cliente(
+        base_url=api,
+        token=operador.token,
+        organization_id="nao-e-uuid",
+        rotulo="operador-org-invalida",
+        diario=operador.diario,
+    )
     propriedade = _property_from_listing(operador)
     get_route = GET_ROUTE_TEMPLATE.format(property_id=propriedade)
     issue_route = ISSUE_ROUTE_TEMPLATE.format(property_id=propriedade)
@@ -473,6 +480,17 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "5",
+        "Operador autenticado com OrganizationContext malformado não acessa o produto",
+        lambda: operador_organizacao_invalida.get(f"{get_route}?{_query()}"),
+        400,
+        conferir=_fail_closed_problem_contract("ORGANIZACAO_INVALIDA"),
+        porque=(
+            "Um token válido não torna confiável um cabeçalho de Organization inválido. "
+            "A API deve recusar o UUID malformado antes de resolver permissões ou produto."
+        ),
+    )
+    roteiro.passo(
+        "6",
         "Operador consulta property_id malformado sem disclosure de produto",
         lambda: operador.get(f"{malformed_property_get_route}?{_query()}"),
         422,
@@ -484,7 +502,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "6",
+        "7",
         "Operador consulta projection dinâmica com permissão de propriedade",
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
@@ -501,7 +519,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "7",
+        "8",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,
