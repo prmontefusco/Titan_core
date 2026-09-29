@@ -198,6 +198,12 @@ confirma em ambiente real que `reference_time` sozinho não basta para reproduzi
 que a validação de contrato ocorre antes de qualquer montagem de projection, com
 `cache-control: no-store`, `pragma: no-cache` e `application/problem+json`.
 
+**Fechamento do roteiro autenticado para contrato incompleto na emissão:** o roteiro autenticado passou a
+validar também `422 ENTRADA_INVALIDA` quando a emissão formal omite `knowledge_cutoff` no corpo. O passo
+usa o auditor, com permissão de Dossier, para confirmar que contrato temporal incompleto é recusado antes
+de pipeline produtiva, Dossier ou VerificationBundle, preservando `cache-control: no-store`,
+`pragma: no-cache` e `application/problem+json`.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

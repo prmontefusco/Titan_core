@@ -159,6 +159,13 @@ def _issue_body() -> dict[str, Any]:
     }
 
 
+def _missing_knowledge_cutoff_issue_body() -> dict[str, Any]:
+    return {
+        "reference_time": "2026-09-11T00:00:00Z",
+        "audience": "internal-audit",
+    }
+
+
 def _invalid_temporal_issue_body() -> dict[str, Any]:
     return {
         "reference_time": "2026-09-11T10:00:00Z",
@@ -623,6 +630,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "13",
+        "Auditor solicita emissão formal sem knowledge_cutoff",
+        lambda: auditor.post(issue_route, _missing_knowledge_cutoff_issue_body()),
+        422,
+        conferir=_fail_closed_problem_contract("ENTRADA_INVALIDA"),
+        porque=(
+            "A emissão formal também exige corpo temporal completo. Mesmo com "
+            "permissão de Dossier, a API deve recusar o contrato incompleto antes "
+            "de qualquer pipeline, Dossier ou VerificationBundle."
+        ),
+    )
+    roteiro.passo(
+        "14",
         "Auditor solicita emissão formal com janela temporal inválida",
         lambda: auditor.post(issue_route, _invalid_temporal_issue_body()),
         422,
@@ -635,7 +654,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "14",
+        "15",
         "Operador sem permissão de Dossier não emite snapshot formal",
         lambda: operador.post(issue_route, _issue_body()),
         403,
@@ -647,7 +666,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "15",
+        "16",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,

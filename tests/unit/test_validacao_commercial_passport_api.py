@@ -4,6 +4,7 @@ from apps.validacao.commercial_passport_api import (
     HttpResponse,
     _fail_closed_problem_contract,
     _invalid_temporal_issue_body,
+    _missing_knowledge_cutoff_issue_body,
     _missing_knowledge_cutoff_query,
     _non_utc_query,
     _pipeline_configuration_problem,
@@ -245,6 +246,16 @@ def test_missing_knowledge_cutoff_query_omits_cutoff() -> None:
 
     assert query == "reference_time=2026-09-11T00%3A00%3A00Z"
     assert "knowledge_cutoff" not in query
+
+
+def test_missing_knowledge_cutoff_issue_body_omits_cutoff() -> None:
+    corpo = _missing_knowledge_cutoff_issue_body()
+
+    assert corpo == {
+        "reference_time": "2026-09-11T00:00:00Z",
+        "audience": "internal-audit",
+    }
+    assert "knowledge_cutoff" not in corpo
 
 
 def test_non_utc_query_uses_local_offset_for_reference_time() -> None:
