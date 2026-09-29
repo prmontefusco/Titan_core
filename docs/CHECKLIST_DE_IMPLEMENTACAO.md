@@ -174,6 +174,12 @@ HTTP congelado pela suíte de release gate.
 A verificação exige `cache-control: no-store`, `pragma: no-cache` e `application/problem+json`, mantendo
 negações genéricas da superfície HTTP no mesmo padrão sensível dos demais erros do produto.
 
+**Fechamento do roteiro autenticado para OrganizationContext negado:** o roteiro autenticado passou a
+validar também `403 CONTEXTO_ORGANIZACIONAL_NEGADO` com um UUID de Organization bem formado, mas sem
+vínculo operacional autorizado para o operador. A verificação exige `cache-control: no-store`,
+`pragma: no-cache` e `application/problem+json`, confirmando em ambiente real que token válido e
+Organization sintaticamente válida não bastam para consultar o Commercial Passport.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

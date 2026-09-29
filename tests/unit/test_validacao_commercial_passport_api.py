@@ -177,6 +177,21 @@ def test_fail_closed_contract_accepts_method_not_allowed_problem() -> None:
     assert conferir(resposta) is None
 
 
+def test_fail_closed_contract_accepts_denied_organization_context_problem() -> None:
+    conferir = _fail_closed_problem_contract("CONTEXTO_ORGANIZACIONAL_NEGADO")
+    resposta = Resposta(
+        403,
+        {"reason_code": "CONTEXTO_ORGANIZACIONAL_NEGADO"},
+        {
+            "cache-control": "no-store",
+            "pragma": "no-cache",
+            "content-type": "application/problem+json; charset=utf-8",
+        },
+    )
+
+    assert conferir(resposta) is None
+
+
 def test_fail_closed_contract_rejects_missing_no_store() -> None:
     conferir = _fail_closed_problem_contract("COMMERCIAL_PASSPORT_PIPELINE_NAO_HABILITADO")
     resposta = Resposta(

@@ -455,6 +455,13 @@ def _authenticated_validation(
         rotulo="operador-org-invalida",
         diario=operador.diario,
     )
+    operador_organizacao_nao_autorizada = Cliente(
+        base_url=api,
+        token=operador.token,
+        organization_id="ffffffff-ffff-4fff-8fff-ffffffffffff",
+        rotulo="operador-org-nao-autorizada",
+        diario=operador.diario,
+    )
     propriedade = _property_from_listing(operador)
     get_route = GET_ROUTE_TEMPLATE.format(property_id=propriedade)
     issue_route = ISSUE_ROUTE_TEMPLATE.format(property_id=propriedade)
@@ -509,6 +516,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "6",
+        "Operador autenticado sem vínculo na Organization não acessa o produto",
+        lambda: operador_organizacao_nao_autorizada.get(f"{get_route}?{_query()}"),
+        403,
+        conferir=_fail_closed_problem_contract("CONTEXTO_ORGANIZACIONAL_NEGADO"),
+        porque=(
+            "Um UUID de Organization bem formado não basta: o principal precisa ter "
+            "contexto operacional autorizado naquela Organization. A negação deve "
+            "ocorrer antes de qualquer leitura de produto."
+        ),
+    )
+    roteiro.passo(
+        "7",
         "Operador consulta property_id malformado sem disclosure de produto",
         lambda: operador.get(f"{malformed_property_get_route}?{_query()}"),
         422,
@@ -520,7 +539,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "7",
+        "8",
         "Operador usa método HTTP não permitido sem disclosure de produto",
         lambda: operador.requisitar("PATCH", get_route, {}),
         405,
@@ -532,7 +551,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "8",
+        "9",
         "Operador consulta projection dinâmica com permissão de propriedade",
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
@@ -549,7 +568,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "9",
+        "10",
         "Auditor solicita emissão formal com property_id malformado sem disclosure",
         lambda: auditor.post(malformed_property_issue_route, _issue_body()),
         422,
@@ -561,7 +580,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "10",
+        "11",
         "Operador sem permissão de Dossier não emite snapshot formal",
         lambda: operador.post(issue_route, _issue_body()),
         403,
@@ -573,7 +592,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "11",
+        "12",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,
