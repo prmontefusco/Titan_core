@@ -166,6 +166,14 @@ def _missing_knowledge_cutoff_issue_body() -> dict[str, Any]:
     }
 
 
+def _non_utc_issue_body() -> dict[str, Any]:
+    return {
+        "reference_time": "2026-09-11T00:00:00-04:00",
+        "knowledge_cutoff": "2026-09-11T00:00:00Z",
+        "audience": "internal-audit",
+    }
+
+
 def _invalid_temporal_issue_body() -> dict[str, Any]:
     return {
         "reference_time": "2026-09-11T10:00:00Z",
@@ -642,6 +650,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "14",
+        "Auditor solicita emissão formal com reference_time fora de UTC",
+        lambda: auditor.post(issue_route, _non_utc_issue_body()),
+        422,
+        conferir=_fail_closed_problem_contract("TEMPO_NAO_UTC"),
+        porque=(
+            "A emissão formal precisa ser reproduzível em UTC como a consulta. Mesmo "
+            "com permissão de Dossier, timestamp com offset local deve ser recusado "
+            "antes de pipeline, Dossier ou VerificationBundle."
+        ),
+    )
+    roteiro.passo(
+        "15",
         "Auditor solicita emissão formal com janela temporal inválida",
         lambda: auditor.post(issue_route, _invalid_temporal_issue_body()),
         422,
@@ -654,7 +674,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "15",
+        "16",
         "Operador sem permissão de Dossier não emite snapshot formal",
         lambda: operador.post(issue_route, _issue_body()),
         403,
@@ -666,7 +686,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "16",
+        "17",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,

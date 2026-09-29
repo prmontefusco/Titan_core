@@ -204,6 +204,13 @@ usa o auditor, com permissão de Dossier, para confirmar que contrato temporal i
 de pipeline produtiva, Dossier ou VerificationBundle, preservando `cache-control: no-store`,
 `pragma: no-cache` e `application/problem+json`.
 
+**Fechamento do roteiro autenticado para timestamp não UTC na emissão:** o roteiro autenticado passou a
+validar também `422 TEMPO_NAO_UTC` na emissão formal quando `reference_time` chega com offset local. O
+passo usa o auditor, com permissão de Dossier, para confirmar que a exigência de UTC vale tanto para
+consulta quanto para snapshot formal e é aplicada antes de pipeline produtiva, Dossier ou
+VerificationBundle, preservando `cache-control: no-store`, `pragma: no-cache` e
+`application/problem+json`.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

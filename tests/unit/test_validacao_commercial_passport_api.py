@@ -6,6 +6,7 @@ from apps.validacao.commercial_passport_api import (
     _invalid_temporal_issue_body,
     _missing_knowledge_cutoff_issue_body,
     _missing_knowledge_cutoff_query,
+    _non_utc_issue_body,
     _non_utc_query,
     _pipeline_configuration_problem,
     _population_trace_projection,
@@ -263,6 +264,14 @@ def test_non_utc_query_uses_local_offset_for_reference_time() -> None:
 
     assert "reference_time=2026-09-11T00%3A00%3A00-04%3A00" in query
     assert "knowledge_cutoff=2026-09-11T00%3A00%3A00Z" in query
+
+
+def test_non_utc_issue_body_uses_local_offset_for_reference_time() -> None:
+    corpo = _non_utc_issue_body()
+
+    assert corpo["reference_time"] == "2026-09-11T00:00:00-04:00"
+    assert corpo["knowledge_cutoff"] == "2026-09-11T00:00:00Z"
+    assert corpo["audience"] == "internal-audit"
 
 
 def test_invalid_temporal_issue_body_places_cutoff_before_reference_time() -> None:
