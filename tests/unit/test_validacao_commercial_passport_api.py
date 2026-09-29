@@ -3,6 +3,7 @@ from pytest import MonkeyPatch
 from apps.validacao.commercial_passport_api import (
     HttpResponse,
     _fail_closed_problem_contract,
+    _invalid_temporal_issue_body,
     _pipeline_configuration_problem,
     _population_trace_projection,
     _sensitive_success_contract,
@@ -190,6 +191,29 @@ def test_fail_closed_contract_accepts_denied_organization_context_problem() -> N
     )
 
     assert conferir(resposta) is None
+
+
+def test_fail_closed_contract_accepts_invalid_commercial_passport_request_problem() -> None:
+    conferir = _fail_closed_problem_contract("COMMERCIAL_PASSPORT_REQUEST_INVALIDA")
+    resposta = Resposta(
+        422,
+        {"reason_code": "COMMERCIAL_PASSPORT_REQUEST_INVALIDA"},
+        {
+            "cache-control": "no-store",
+            "pragma": "no-cache",
+            "content-type": "application/problem+json; charset=utf-8",
+        },
+    )
+
+    assert conferir(resposta) is None
+
+
+def test_invalid_temporal_issue_body_places_cutoff_before_reference_time() -> None:
+    corpo = _invalid_temporal_issue_body()
+
+    assert corpo["reference_time"] == "2026-09-11T10:00:00Z"
+    assert corpo["knowledge_cutoff"] == "2026-09-11T08:00:00Z"
+    assert corpo["audience"] == "internal-audit"
 
 
 def test_fail_closed_contract_rejects_missing_no_store() -> None:

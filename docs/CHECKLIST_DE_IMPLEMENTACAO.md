@@ -180,6 +180,12 @@ vínculo operacional autorizado para o operador. A verificação exige `cache-co
 `pragma: no-cache` e `application/problem+json`, confirmando em ambiente real que token válido e
 Organization sintaticamente válida não bastam para consultar o Commercial Passport.
 
+**Fechamento do roteiro autenticado para janela temporal inválida na emissão:** o roteiro autenticado
+passou a validar também `422 COMMERCIAL_PASSPORT_REQUEST_INVALIDA` na emissão formal quando
+`knowledge_cutoff` é anterior a `reference_time`. O passo usa o auditor, com permissão de Dossier, para
+confirmar que a validação temporal acontece antes de pipeline produtiva, Dossier ou VerificationBundle e
+mantém `cache-control: no-store`, `pragma: no-cache` e `application/problem+json`.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de

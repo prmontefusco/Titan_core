@@ -149,6 +149,14 @@ def _issue_body() -> dict[str, Any]:
     }
 
 
+def _invalid_temporal_issue_body() -> dict[str, Any]:
+    return {
+        "reference_time": "2026-09-11T10:00:00Z",
+        "knowledge_cutoff": "2026-09-11T08:00:00Z",
+        "audience": "internal-audit",
+    }
+
+
 def _print_body(value: Any) -> None:
     text = json.dumps(value, indent=2, ensure_ascii=False, default=str)
     for line in text.splitlines()[:32]:
@@ -581,6 +589,19 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "11",
+        "Auditor solicita emissão formal com janela temporal inválida",
+        lambda: auditor.post(issue_route, _invalid_temporal_issue_body()),
+        422,
+        conferir=_fail_closed_problem_contract("COMMERCIAL_PASSPORT_REQUEST_INVALIDA"),
+        porque=(
+            "Com permissão de emissão já satisfeita, a API ainda deve validar as "
+            "coordenadas temporais antes de qualquer pipeline, Dossier ou "
+            "VerificationBundle. knowledge_cutoff anterior ao reference_time é "
+            "requisição inválida."
+        ),
+    )
+    roteiro.passo(
+        "12",
         "Operador sem permissão de Dossier não emite snapshot formal",
         lambda: operador.post(issue_route, _issue_body()),
         403,
@@ -592,7 +613,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "12",
+        "13",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,
