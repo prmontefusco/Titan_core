@@ -192,6 +192,12 @@ local. O passo usa o operador, já autenticado e autorizado para ler a proprieda
 API recusa coordenada temporal não UTC antes de montar Commercial Passport, mantendo
 `cache-control: no-store`, `pragma: no-cache` e `application/problem+json`.
 
+**Fechamento do roteiro autenticado para contrato incompleto na consulta:** o roteiro autenticado passou
+a validar também `422 ENTRADA_INVALIDA` quando a consulta da projection omite `knowledge_cutoff`. O passo
+confirma em ambiente real que `reference_time` sozinho não basta para reproduzir o Commercial Passport e
+que a validação de contrato ocorre antes de qualquer montagem de projection, com
+`cache-control: no-store`, `pragma: no-cache` e `application/problem+json`.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
