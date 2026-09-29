@@ -4,6 +4,7 @@ from apps.validacao.commercial_passport_api import (
     HttpResponse,
     _fail_closed_problem_contract,
     _invalid_temporal_issue_body,
+    _non_utc_query,
     _pipeline_configuration_problem,
     _population_trace_projection,
     _sensitive_success_contract,
@@ -206,6 +207,28 @@ def test_fail_closed_contract_accepts_invalid_commercial_passport_request_proble
     )
 
     assert conferir(resposta) is None
+
+
+def test_fail_closed_contract_accepts_non_utc_time_problem() -> None:
+    conferir = _fail_closed_problem_contract("TEMPO_NAO_UTC")
+    resposta = Resposta(
+        422,
+        {"reason_code": "TEMPO_NAO_UTC"},
+        {
+            "cache-control": "no-store",
+            "pragma": "no-cache",
+            "content-type": "application/problem+json; charset=utf-8",
+        },
+    )
+
+    assert conferir(resposta) is None
+
+
+def test_non_utc_query_uses_local_offset_for_reference_time() -> None:
+    query = _non_utc_query()
+
+    assert "reference_time=2026-09-11T00%3A00%3A00-04%3A00" in query
+    assert "knowledge_cutoff=2026-09-11T00%3A00%3A00Z" in query
 
 
 def test_invalid_temporal_issue_body_places_cutoff_before_reference_time() -> None:

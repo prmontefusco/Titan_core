@@ -141,6 +141,12 @@ def _query() -> str:
     return "reference_time=2026-09-11T00%3A00%3A00Z&knowledge_cutoff=2026-09-11T00%3A00%3A00Z"
 
 
+def _non_utc_query() -> str:
+    return (
+        "reference_time=2026-09-11T00%3A00%3A00-04%3A00&knowledge_cutoff=2026-09-11T00%3A00%3A00Z"
+    )
+
+
 def _issue_body() -> dict[str, Any]:
     return {
         "reference_time": "2026-09-11T00:00:00Z",
@@ -560,6 +566,18 @@ def _authenticated_validation(
     )
     roteiro.passo(
         "9",
+        "Operador consulta projection com reference_time fora de UTC",
+        lambda: operador.get(f"{get_route}?{_non_utc_query()}"),
+        422,
+        conferir=_fail_closed_problem_contract("TEMPO_NAO_UTC"),
+        porque=(
+            "A consulta temporal do Commercial Passport precisa ser reprodutível em "
+            "UTC. Mesmo com autenticação e permissão, timestamp com offset local deve "
+            "ser recusado antes da projection."
+        ),
+    )
+    roteiro.passo(
+        "10",
         "Operador consulta projection dinâmica com permissão de propriedade",
         lambda: operador.get(f"{get_route}?{_query()}"),
         200 if pipeline_habilitada else 503,
@@ -576,7 +594,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "10",
+        "11",
         "Auditor solicita emissão formal com property_id malformado sem disclosure",
         lambda: auditor.post(malformed_property_issue_route, _issue_body()),
         422,
@@ -588,7 +606,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "11",
+        "12",
         "Auditor solicita emissão formal com janela temporal inválida",
         lambda: auditor.post(issue_route, _invalid_temporal_issue_body()),
         422,
@@ -601,7 +619,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "12",
+        "13",
         "Operador sem permissão de Dossier não emite snapshot formal",
         lambda: operador.post(issue_route, _issue_body()),
         403,
@@ -613,7 +631,7 @@ def _authenticated_validation(
         ),
     )
     roteiro.passo(
-        "13",
+        "14",
         "Auditor solicita emissão formal com permissão de Dossier",
         lambda: auditor.post(issue_route, _issue_body()),
         503,

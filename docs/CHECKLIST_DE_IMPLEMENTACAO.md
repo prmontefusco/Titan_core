@@ -186,6 +186,12 @@ passou a validar também `422 COMMERCIAL_PASSPORT_REQUEST_INVALIDA` na emissão 
 confirmar que a validação temporal acontece antes de pipeline produtiva, Dossier ou VerificationBundle e
 mantém `cache-control: no-store`, `pragma: no-cache` e `application/problem+json`.
 
+**Fechamento do roteiro autenticado para timestamp não UTC na consulta:** o roteiro autenticado passou a
+validar também `422 TEMPO_NAO_UTC` na consulta da projection quando `reference_time` chega com offset
+local. O passo usa o operador, já autenticado e autorizado para ler a propriedade, para confirmar que a
+API recusa coordenada temporal não UTC antes de montar Commercial Passport, mantendo
+`cache-control: no-store`, `pragma: no-cache` e `application/problem+json`.
+
 ### 21/09/2026 — Onboarding Livestock: Organization inexistente deixa de virar erro interno
 
 **Estado:** CONCLUÍDO — a rota pública `POST /v1/livestock/entity-type-requests`, usada pela tela de
