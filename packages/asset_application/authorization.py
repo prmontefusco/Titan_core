@@ -74,6 +74,15 @@ CONTRACT_ISSUE_VERSION: Final = "SUSTAINMENT_CONTRACT.ISSUE_VERSION"
 CONTRACT_AMEND: Final = "SUSTAINMENT_CONTRACT.AMEND"
 CONTRACT_READ: Final = "SUSTAINMENT_CONTRACT.READ"
 
+# -- Entitlement (módulo sustainment) -----------------------------------
+
+ENTITLEMENT_RESOLVE: Final = "SUSTAINMENT_ENTITLEMENT.RESOLVE"
+ENTITLEMENT_AUTHORIZE_EXCEPTION: Final = "SUSTAINMENT_ENTITLEMENT.AUTHORIZE_EXCEPTION"
+
+# -- Workshop Dashboard (read model sustainment) ------------------------
+
+DASHBOARD_READ: Final = "SUSTAINMENT_DASHBOARD.READ"
+
 # -- WorkOrder (módulo sustainment) --------------------------------------
 
 WO_OPEN: Final = "SUSTAINMENT_WO.OPEN"
@@ -100,6 +109,7 @@ LEITURA: Final = frozenset(
         SITE_READ,
         INVENTORY_READ,
         CONTRACT_READ,
+        DASHBOARD_READ,
         WO_READ,
     }
 )
@@ -132,6 +142,8 @@ ESCRITA: Final = frozenset(
         CONTRACT_REGISTER,
         CONTRACT_ISSUE_VERSION,
         CONTRACT_AMEND,
+        ENTITLEMENT_RESOLVE,
+        ENTITLEMENT_AUTHORIZE_EXCEPTION,
         WO_OPEN,
         WO_ADD_TASK,
         WO_DEMAND_MATERIAL,

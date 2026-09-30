@@ -28,11 +28,10 @@ carrega nenhum invariante do `__post_init__` além de ser uma tupla de
 `TypedId`.
 
 **Entitlement (`ResolveEntitlement`/`AuthorizeEntitlementException`, I‑SLI‑4/5)
-e o cálculo de `PriorityScore` via `Rule` governada continuam fora** — pedem
-`Evaluation`→`Decision` do Core; `recalculate_priority` aqui aceita um
-`PriorityScore` já calculado pelo chamador (mesmo padrão de
-`InventoryService.reserve_stock` aceitando `cross_purpose_decision_ref` já
-resolvido).
+é recebido como resultado governado do Core** — este serviço só confere que o
+resultado autoriza a peça e anexa o `decision_ref` à reserva. O cálculo de
+`PriorityScore` via `Rule` governada continua fora; `recalculate_priority`
+aceita um `PriorityScore` já calculado pelo chamador.
 """
 
 from dataclasses import dataclass, replace
@@ -40,6 +39,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Protocol
 
+from packages.asset_application.entitlement_service import EntitlementOutcome, EntitlementResolution
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import InventoryService
 from packages.asset_application.sustainment_contract_service import SLIContractRepositoryPort
@@ -98,6 +98,10 @@ class WorkOrderNaoEncontrada(KeyError):
 
 class SLIContractNaoEncontradoParaWorkOrder(KeyError):
     """`contract_ref` de `OpenWorkOrder` não corresponde a nenhum `SLIContract`."""
+
+
+class EntitlementNaoAutorizaReserva(ValueError):
+    """A reserva de material tentou usar entitlement negado ou incompatível."""
 
 
 class WorkOrderRepositoryPort(Protocol):
@@ -722,9 +726,19 @@ class WorkOrderService:
         part_ref: TypedId,
         qty: Decimal,
         priority: int,
+        entitlement: EntitlementResolution,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if entitlement.vehicle_ref != work_order.vehicle_ref:
+            raise EntitlementNaoAutorizaReserva("Entitlement diverge do vehicle_ref da WorkOrder.")
+        if entitlement.subject_ref != part_ref:
+            raise EntitlementNaoAutorizaReserva("Entitlement diverge da peça reservada.")
+        if entitlement.outcome not in {
+            EntitlementOutcome.GRANTED,
+            EntitlementOutcome.GRANTED_WITH_EXCEPTION,
+        }:
+            raise EntitlementNaoAutorizaReserva("Entitlement DENIED nao autoriza reserva.")
         prospective = dict(self._reserved_qty_by_part(work_order))
         prospective[part_ref] = prospective.get(part_ref, Decimal(0)) + qty
         require_reservations_do_not_exceed_demand(work_order, prospective)
@@ -736,6 +750,7 @@ class WorkOrderService:
             qty=qty,
             purpose=StockPurpose.SERVICE_SLI,
             priority=priority,
+            cross_purpose_decision_ref=entitlement.decision_ref,
             occurred_at=occurred_at,
         )
         updated = replace(

@@ -6606,3 +6606,123 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/asset_application/test_work_order_service.py` (4 casos: fluxo completo DRAFT->...->COMPLETED, incluindo reserva de material, execucao de tarefa e coordenacao real com `Vehicle` — confirma que o veiculo volta a `AVAILABLE` apos `close_work_order`; reservar alem do demandado levanta `MaterialReservadoExcedeDemanda`; `cancel_work_order` libera a reserva vinculada; `perform_post_maintenance_validation` com resultado `FAIL` volta a `TECHNICALLY_COMPLETE`) — 30 testes verdes em `tests/asset_application/`, sem banco. `tests/architecture` (27) verde. `ruff check`, `ruff format --check`, `mypy` limpos no repositorio inteiro. Suite completa sem DB: `1658 passed, 335 skipped`.
 
 **Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. Faltam: entitlement (`ResolveEntitlement`/`AuthorizeEntitlementException`, agora com `WorkOrder` disponivel para integrar de verdade) -> `workshop_dashboard.py` (projecao de leitura, fecha A4).
+
+### 29/09/2026 — A4 (parcial): entitlement de SLI consumido por `WorkOrder`
+
+**Estado:** EM EXECUCAO — nono incremento de A4. Fecha a lacuna imediata entre `ResolveEntitlement`/`AuthorizeEntitlementException` e `ReserveMaterialForWorkOrder` sem implementar regra de cobertura como `if` na vertical.
+
+**Implementacao:** `packages/asset_application/entitlement_service.py` define `EntitlementRequest`, `EntitlementResolution`, `EntitlementOutcome` e as portas `EntitlementDecisionPort`/`EntitlementExceptionDecisionPort`. O servico chama a porta governada pelo Core, valida que a `Decision` retornada preserva `vehicle_ref`, `subject_ref`, instante e breakdown explicavel, e registra `asset.sustainment.entitlement_resolved`. `packages/asset_application/work_order_service.py` passou a exigir `EntitlementResolution` em `reserve_material_for_work_order`; somente `GRANTED` e `GRANTED_WITH_EXCEPTION` autorizam reserva, e o `decision_ref` segue para `InventoryService.reserve_stock` como evidencia da decisao que autorizou o uso do material.
+
+**Decisoes preservadas:** a vertical Asset nao implementa regra de cobertura contratual nem calcula outcome de entitlement localmente; isso permanece responsabilidade de `Evaluation`/`Decision` do Core. `AuthorizeEntitlementException` exige uma resolucao original `DENIED` e uma nova decisao `GRANTED_WITH_EXCEPTION`, mas ainda nao abre API, seed de role, migration, dashboard ou provider produtivo de Policy/Rule. Este corte cria a fronteira de aplicacao e o consumo real pela WorkOrder.
+
+**Portao:** `tests/asset_application/test_entitlement_service.py` cobre decisao concedida, rejeicao de decision divergente e excecao recusada quando a decisao original nao e `DENIED`. `tests/asset_application/test_work_order_service.py` agora exige entitlement concedido nos fluxos de reserva e cobre recusa de entitlement `DENIED`. Verificacao focada: `python -m uv run --locked pytest tests/asset_application -q` — 34 testes verdes; `python -m uv run --locked ruff check packages/asset_application/entitlement_service.py packages/asset_application/work_order_service.py packages/asset_application/authorization.py tests/asset_application/test_entitlement_service.py tests/asset_application/test_work_order_service.py` — limpo.
+
+**Riscos e limites:** nenhum arquivo `packages/core_*`/`packages/livestock_*` tocado. A porta ainda e injetada por testes/futuros adaptadores; o proximo incremento natural e ligar essa porta a um caso de uso Core controlado ou seguir para `workshop_dashboard.py`, conforme prioridade do slice.
+
+### 29/09/2026 — A6 (parcial): Workshop Dashboard application-only
+
+**Estado:** EM EXECUCAO — primeiro incremento de A6, restrito a projection de leitura em `packages/asset_application`. O dashboard responde "o que a oficina faz a seguir" sem criar agregado, tabela, API, worker, recalculador por evento ou frontend.
+
+**Implementacao:** `packages/asset_application/workshop_dashboard.py` define `WorkshopDashboardRepositoryPort`, `WorkshopDashboardSnapshot`, `WorkshopDashboardLine`, `WorkshopDashboard` e `WorkshopDashboardService.get_dashboard(site_ref, workshop_ref?)`. A projection filtra WOs abertas pelo repositorio de leitura, descarta estados terminais, ordena por `PriorityScore` decrescente e preserva `priority_breakdown`/`evaluation_ref`. Os bloqueios operacionais sao derivados de dados ja existentes na WO e no snapshot de reservas: prioridade ausente, tarefa/material ausente, material pendente, autorizacao pendente, estado `WAITING_MATERIAL` e validacao pos-manutencao pendente. `authorization.py` ganhou `SUSTAINMENT_DASHBOARD.READ`.
+
+**Decisoes preservadas:** `WorkshopDashboard` permanece read model, nao contexto e nao fonte de verdade. O corte nao calcula `PriorityScore`, nao reavalia Policy/Rule, nao altera estado de `WorkOrder`, nao implementa Fleet View, nao cria repositorio PostgreSQL e nao abre contrato HTTP. A recomputacao por evento de `WAITING_MATERIAL` e prioridade segue para cortes posteriores de A6/A7.
+
+**Portao:** `tests/asset_application/test_workshop_dashboard.py` cobre ordenacao por prioridade com breakdown explicavel, bloqueio material/acao sugerida e filtro por oficina ignorando WO terminal. Verificacao focada: `python -m uv run --locked pytest tests/asset_application -q` — 37 testes verdes; `python -m uv run --locked ruff check packages/asset_application tests/asset_application` — limpo.
+
+**Riscos e limites:** sem persistencia, API ou validacao manual executavel neste corte, porque nao houve comportamento observavel por HTTP. Proximo incremento natural de A6: Fleet View ou repositorio de leitura/recalculador, conforme prioridade.
+
+### 29/09/2026 — A6 (parcial): Fleet View application-only
+
+**Estado:** EM EXECUCAO — segundo incremento de A6, restrito a projection de leitura em `packages/asset_application`. A Fleet View responde "como esta a frota" por estado operacional sem alterar `Vehicle`, `WorkOrder`, eventos, banco ou API.
+
+**Implementacao:** `packages/asset_application/fleet_view.py` define `FleetViewRepositoryPort`, `FleetViewSnapshot`, `FleetViewLine`, `FleetView`, `FleetOperationalState` e `FleetViewService.get_fleet_view(site_ref?)`. A projection classifica cada veiculo por estado operacional derivado de `VehicleLifecycleState` e WOs abertas: `AVAILABLE`, `DEGRADED`, `MAINTENANCE`, `UNAVAILABLE`, `WAITING_MATERIAL` e `SLA_RISK`. `WAITING_MATERIAL` vem de `WorkOrderState.WAITING_MATERIAL`; `SLA_RISK` e sinal operacional derivado de WO aberta com `PriorityScore` alto e explicavel. A resposta preserva refs de WOs abertas e sinais usados na classificacao.
+
+**Decisoes preservadas:** Fleet View permanece read model, nao agregado e nao fonte de verdade. O corte nao cria repositorio PostgreSQL, nao recalcula estados por evento, nao implementa endpoint, nao cria frontend e nao transforma prioridade em decisao de dominio. O sinal de risco de SLA e operacional e nao substitui `Evaluation`/`Decision`.
+
+**Portao:** `tests/asset_application/test_fleet_view.py` cobre contagem por estado de ciclo de vida, derivacao de `WAITING_MATERIAL` a partir de WO e filtro por site com `SLA_RISK`. Verificacao focada: `python -m uv run --locked pytest tests/asset_application -q` — 40 testes verdes; `python -m uv run --locked ruff check packages/asset_application tests/asset_application` — limpo.
+
+**Riscos e limites:** sem persistencia, API ou roteiro executavel neste corte. Proximo incremento natural de A6: repositorio de leitura/recalculador de projections ou preparar A5 API, conforme decisao de prioridade.
+
+### 30/09/2026 — A6 (parcial): Contract SLA Summary application-only
+
+**Estado:** EM EXECUCAO — terceiro incremento de A6, restrito a projection de leitura em `packages/asset_application`. `GetContractSLASummary(contract_ref)` responde a visao do gestor de contrato SLI: frota coberta, WOs abertas e sinais operacionais de SLA agregados sob um contrato.
+
+**Implementacao:** `packages/asset_application/contract_sla_summary.py` define `ContractSLASummaryRepositoryPort`, `ContractSLASummarySnapshot`, `ContractSLAWorkOrderLine`, `ContractSLASummary` e `ContractSLASummaryService.get_contract_sla_summary(contract_ref, as_of?)`. A projection resolve a versao vigente do `SLIContract`, preserva as duracoes de `response_sla`/`repair_sla`, conta veiculos cobertos e WOs abertas do proprio contrato, ignora WOs terminais e classifica sinais operacionais: material pendente, autorizacao pendente, prioridade ausente e prioridade alta.
+
+**Decisoes preservadas:** o resumo permanece read model, nao agregado e nao fonte de verdade. O corte nao declara violacao de SLA porque o slice ainda nao possui timestamps suficientes de `clock_start_event`/`clock_stop_event`; por isso a resposta fala em risco/sinal operacional, nao em breach. Nao cria repositorio PostgreSQL, endpoint, frontend, recalculador por evento nem nova regra governada.
+
+**Portao:** `tests/asset_application/test_contract_sla_summary.py` cobre duracoes de SLA/versionamento vigente, contagem de frota/WOs abertas, ordenacao por prioridade, filtro de WOs de outro contrato e contrato inexistente. Verificacao focada: `python -m uv run --locked pytest tests/asset_application/test_contract_sla_summary.py -q` — 3 testes verdes. Verificacao de conjunto: `python -m uv run --locked pytest tests/asset_application -q` — 43 testes verdes; `python -m uv run --locked pytest` — 1787 passed, 354 skipped; `ruff check .`, `ruff format --check .` e `mypy` limpos. `alembic check` Core e Asset nao compararam migrations nesta execucao porque `TITAN_MIGRATION_DATABASE_URL` nao estava definida no ambiente.
+
+**Riscos e limites:** sem persistencia, API ou roteiro executavel neste corte. Proximo incremento natural de A6: repositorio de leitura/recalculador de projections ou preparar A5 API, conforme decisao de prioridade.
+
+### 30/09/2026 — A6 (parcial): repositorio de leitura do Workshop Dashboard
+
+**Estado:** EM EXECUCAO — quarto incremento de A6, primeiro corte de infraestrutura para as projections de leitura. Entrega um adapter de leitura para `WorkshopDashboard` sem criar tabela nova, migration, API ou worker.
+
+**Implementacao:** `packages/asset_infrastructure/persistence/workshop_dashboard_repository.py` define `TransactionalWorkshopDashboardRepository`, implementando a porta `WorkshopDashboardRepositoryPort` a partir das tabelas existentes de `work_orders`, `stock_reservations` e `stock_positions`. O adapter lista WOs abertas por `site_ref` e `workshop_ref`, remonta cada `WorkOrder` pelo repositório transacional existente e calcula `reserved_qty_by_part` somando reservas ativas por peça; reservas `RELEASED` não entram na soma. A ordenação inicial por `priority_score` fica na query, enquanto a projection de aplicação continua responsável por derivar bloqueios e ação sugerida.
+
+**Decisoes preservadas:** o repositório não cria fonte de verdade paralela nem materializa projection persistida; ele reconstrói o snapshot a partir dos agregados atuais. Não há mudança de domínio, contrato HTTP, autorização, migrations ou recalculador por evento neste corte. O teste PostgreSQL real fica para o ambiente com `TITAN_DATABASE_URL`/migrations disponíveis.
+
+**Portao:** `tests/infrastructure/test_workshop_dashboard_repository.py` cobre a soma determinística de reservas por peça e a construção da query de WOs abertas por site/oficina excluindo estados terminais. Verificacao focada: `python -m uv run --locked pytest tests/infrastructure/test_workshop_dashboard_repository.py -q` — 2 testes verdes; `ruff check` nos arquivos tocados limpo; `mypy` limpo em 818 source files. Verificacao de conjunto: `python -m uv run --locked pytest` — 1789 passed, 354 skipped; `ruff check .` e `ruff format --check .` limpos. `alembic check` Core e Asset nao compararam migrations nesta execucao porque `TITAN_MIGRATION_DATABASE_URL` nao estava definida no ambiente.
+
+**Riscos e limites:** sem validação PostgreSQL nesta execução por indisponibilidade do ambiente de banco/migration. Proximo incremento natural de A6: repositório de leitura para Fleet View ou Contract SLA Summary, ou recalculador de `WAITING_MATERIAL` por evento quando houver ambiente de integração disponível.
+
+### 30/09/2026 — A6 (parcial): repositorio de leitura da Fleet View
+
+**Estado:** EM EXECUCAO — quinto incremento de A6, segundo corte de infraestrutura para as projections de leitura. Entrega um adapter de leitura para `FleetView` sem criar tabela nova, migration, API, projection persistida ou worker.
+
+**Implementacao:** `packages/asset_infrastructure/persistence/fleet_view_repository.py` define `TransactionalFleetViewRepository`, implementando a porta `FleetViewRepositoryPort` a partir das tabelas existentes de `vehicles` e `work_orders`. O adapter lista a frota inteira ou filtrada por `site_ref`, remonta cada `Vehicle` pelo repositório transacional existente e anexa as WOs abertas do veículo, excluindo estados terminais. A classificação em `AVAILABLE`/`DEGRADED`/`MAINTENANCE`/`WAITING_MATERIAL`/`SLA_RISK`/`UNAVAILABLE` permanece na projection de aplicação.
+
+**Decisoes preservadas:** o repositório não materializa estado operacional nem transforma sinal de prioridade em decisão de domínio. Não há mudança de domínio, contrato HTTP, autorização, migrations, recalculador por evento ou frontend neste corte.
+
+**Portao:** `tests/infrastructure/test_fleet_view_repository.py` cobre a query de frota filtrada por site, a query de frota inteira e a query de WOs abertas por veículo excluindo estados terminais. Verificacao focada: `python -m uv run --locked pytest tests/infrastructure/test_fleet_view_repository.py -q` — 3 testes verdes; `ruff check` nos arquivos tocados limpo; `mypy` limpo em 820 source files. Verificacao de conjunto: `python -m uv run --locked pytest` — 1792 passed, 354 skipped; `ruff check .` e `ruff format --check .` limpos. `alembic check` Core e Asset nao compararam migrations nesta execucao porque `TITAN_MIGRATION_DATABASE_URL` nao estava definida no ambiente.
+
+**Riscos e limites:** sem validação PostgreSQL nesta execução por indisponibilidade do ambiente de banco/migration. Proximo incremento natural de A6: repositório de leitura para Contract SLA Summary ou recalculador de `WAITING_MATERIAL` por evento quando houver ambiente de integração disponível.
+
+### 30/09/2026 — A6 (parcial): repositorio de leitura do Contract SLA Summary
+
+**Estado:** EM EXECUCAO — sexto incremento de A6, terceiro corte de infraestrutura para as projections de leitura. Entrega um adapter de leitura para `ContractSLASummary` sem criar tabela nova, migration, API, projection persistida ou worker.
+
+**Implementacao:** `packages/asset_infrastructure/persistence/contract_sla_summary_repository.py` define `TransactionalContractSLASummaryRepository`, implementando a porta `ContractSLASummaryRepositoryPort` a partir dos agregados/tabelas existentes de `SLIContract`, `Vehicle` e `WorkOrder`. O adapter carrega o contrato, resolve a versão vigente em `as_of` quando informado, deriva a frota coberta pelas `CoverageLine` da versão vigente nos escopos suportados pelo slice (`VEHICLE`, `SITE`, `MODEL`) e anexa WOs abertas sob o contrato, excluindo estados terminais.
+
+**Decisoes preservadas:** o repositório não calcula violação de SLA, não materializa estado agregado, não interpreta `REGION` porque o slice ainda não possui região em `Vehicle`/`CustomerSite`, e não cria regra paralela de entitlement. A classificação de risco/sinal operacional continua na projection de aplicação.
+
+**Portao:** `tests/infrastructure/test_contract_sla_summary_repository.py` cobre derivação de veículos cobertos por escopo `VEHICLE`/`SITE`/`MODEL` sem duplicidade, ausência de versão vigente, seleção dos campos de veículo necessários e query de WOs abertas por contrato excluindo estados terminais. Verificacao focada: `python -m uv run --locked pytest tests/infrastructure/test_contract_sla_summary_repository.py -q` — 4 testes verdes; `ruff check` nos arquivos tocados limpo; `mypy` limpo em 822 source files. Verificacao de conjunto: `python -m uv run --locked pytest` — 1796 passed, 354 skipped; `ruff check .` e `ruff format --check .` limpos. `alembic check` Core e Asset nao compararam migrations nesta execucao porque `TITAN_MIGRATION_DATABASE_URL` nao estava definida no ambiente.
+
+**Riscos e limites:** sem validação PostgreSQL nesta execução por indisponibilidade do ambiente de banco/migration. Proximo incremento natural de A6: recalculador de `WAITING_MATERIAL` por evento ou testes de integração reais dos três repositórios de leitura quando houver ambiente de integração disponível.
+
+### 30/09/2026 — A6 (parcial): recalculador de `WAITING_MATERIAL`
+
+**Estado:** EM EXECUCAO — sétimo incremento de A6, restrito à camada de aplicação. Entrega a unidade de aplicação que reavalia I-WO-4 depois de eventos de inventário, sem criar worker, consumer de broker, API, migration ou projection persistida.
+
+**Implementacao:** `packages/asset_application/material_readiness_recalculator.py` define `MaterialReadinessRecalculator`, `MaterialReadinessRecalculation` e `MaterialReadinessRecalculationOutcome`. O serviço resolve a `WorkOrder` afetada a partir de `StockReservation` (`stock_reserved`, `stock_reservation_released`, `stock_consumed`) ou de `StockTransfer.linked_reservation_ref` (`transfer_received`) e recalcula se toda demanda de material está coberta por reservas ativas. Se a WO está em `PLANNED` e falta material, chama T3 (`enter_waiting_material`); se está em `WAITING_MATERIAL` e todo material ficou reservado, chama T4 (`exit_waiting_material`); demais estados permanecem sem transição.
+
+**Decisoes preservadas:** o recalculador não inventa nova máquina de estados, não move WOs `READY`/`IN_PROGRESS` de volta para espera, não calcula disponibilidade futura por transferência e não substitui `InventoryService` ou `WorkOrderService`; ele apenas coordena os métodos já existentes e registra os eventos de transição via `WorkOrderService`.
+
+**Portao:** `tests/asset_application/test_material_readiness_recalculator.py` cobre entrada em `WAITING_MATERIAL` quando a reserva vinculada não conta mais para a demanda, saída para `PLANNED` quando toda demanda está reservada, ignorar reserva que não é de WO e resolver WO por transferência vinculada. Verificacao focada: `python -m uv run --locked pytest tests/asset_application/test_material_readiness_recalculator.py -q` — 4 testes verdes; `ruff check` nos arquivos tocados limpo; `mypy` limpo em 824 source files. Verificacao de conjunto: `python -m uv run --locked pytest` — 1800 passed, 354 skipped; `ruff check .` e `ruff format --check .` limpos. `alembic check` Core e Asset nao compararam migrations nesta execucao porque `TITAN_MIGRATION_DATABASE_URL` nao estava definida no ambiente.
+
+**Riscos e limites:** ainda não há handler de evento/broker nem teste PostgreSQL de ponta a ponta do cenário B; este corte entrega a lógica chamável e testável para ser conectada quando a composição de worker/API do Asset estiver no escopo.
+
+### 30/09/2026 — A6 (parcial): handler application-only de eventos de inventário
+
+**Estado:** EM EXECUCAO — oitavo incremento de A6, restrito à camada de aplicação. Conecta eventos de inventário já registrados no Core ao recalculador de `WAITING_MATERIAL`, ainda sem worker, fila, API, migration ou transação de infraestrutura.
+
+**Implementacao:** `packages/asset_application/material_readiness_event_handler.py` define `MaterialReadinessEventHandler` e `MaterialReadinessEventHandlingResult`. O handler reconhece `asset.inventory.stock_reserved`, `asset.inventory.stock_reservation_released`, `asset.inventory.stock_consumed` e `asset.inventory.transfer_received`, decodifica o `CanonicalPayload` mínimo para extrair `reservation_id` ou `transfer_id`, reconstrói `AssetOperationContext` a partir do próprio `DomainEvent` e chama `MaterialReadinessRecalculator`. Eventos Asset não relacionados retornam `IGNORED`.
+
+**Decisoes preservadas:** o handler não implementa broker/consumer nem abre transação; ele só formaliza a tradução determinística de evento para caso de uso. A composição futura do worker decide idempotência operacional, fronteira transacional e retry. O decodificador permanece local e mínimo, limitado aos campos necessários destes eventos.
+
+**Portao:** `tests/asset_application/test_material_readiness_event_handler.py` cobre roteamento de eventos de reserva para recalculo por reserva, roteamento de `transfer_received` para recalculo por transferência e ignorar evento não relacionado. Verificacao focada: `python -m uv run --locked pytest tests/asset_application/test_material_readiness_event_handler.py -q` — 3 testes verdes; `ruff check` nos arquivos tocados limpo; `mypy` limpo em 826 source files. Verificacao de conjunto: `python -m uv run --locked pytest` — 1803 passed, 354 skipped; `ruff check .` e `ruff format --check .` limpos. `alembic check` Core e Asset nao compararam migrations nesta execucao porque `TITAN_MIGRATION_DATABASE_URL` nao estava definida no ambiente.
+
+**Riscos e limites:** ainda falta conectar este handler ao worker/broker real e validar o cenário B contra PostgreSQL quando `TITAN_MIGRATION_DATABASE_URL`/ambiente de integração estiverem disponíveis.
+
+### 30/09/2026 — P3/A5: registro aditivo de routers da API
+
+**Estado:** CONCLUÍDO — pré-requisito P3 da trilha Asset entregue sem criar endpoint Asset ainda. A API passa a ter um registro explícito e iterável de routers em `apps/api/_registry.py`, preparando `apps/api/asset/` para A5 sem acoplar novos imports manuais em `main.py`.
+
+**Implementacao:** `apps/api/_registry.py` define `ApiRouterRegistration`, separa routers sempre ativos de routers protegidos por feature flag e expõe `enabled_api_routers()`. `apps/api/main.py` preserva os routers técnicos existentes (`verification`, rule governance e policy governance) e passa a incluir os routers de vertical iterando o registro. Os routers Livestock continuam nos mesmos arquivos e paths; nenhum contrato HTTP foi movido ou renomeado.
+
+**Decisoes preservadas:** este corte é composição aditiva, não funcionalidade de negócio. Não cria `apps/api/asset/`, não altera autorização, autenticação, OpenAPI de rotas existentes, persistência, migration, worker ou domínio. As rotas opcionais de Market Supply, Market Optionality AI Explanation e Commercial Passport continuam fechadas por suas mesmas variáveis de ambiente.
+
+**Portao:** `tests/api/test_api_router_registry.py` cobre rotas Livestock sempre ativas e preservação das feature flags. Verificacao focada: `python -m uv run --locked pytest tests/api/test_api_router_registry.py tests/api/test_market_supply_api_release_gate.py tests/api/test_market_optionality_explanation_api.py tests/api/test_commercial_passport_api_release_gate.py -q` — 42 testes verdes (1 warning preexistente de Starlette sobre `HTTP_422_UNPROCESSABLE_ENTITY`). `python -m uv run --locked ruff check apps/api/_registry.py apps/api/main.py tests/api/test_api_router_registry.py`, `python -m uv run --locked ruff format --check apps/api/_registry.py apps/api/main.py tests/api/test_api_router_registry.py` e `python -m uv run --locked mypy apps/api/_registry.py apps/api/main.py tests/api/test_api_router_registry.py` passaram.
+
+**Riscos e limites:** P3 remove o bloqueio estrutural de A5, mas A5 ainda precisa criar routers/dependencies Asset com contrato HTTP, testes de 401/403 e roteiro executável em `apps/validacao/asset/`. O recalculador de `PriorityScore` por evento permanece deliberadamente não implementado enquanto a regra governada/fonte de `PriorityScore` não estiver decidida, porque `WorkOrderService.recalculate_priority` aceita apenas um score já calculado.

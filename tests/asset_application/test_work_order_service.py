@@ -5,6 +5,7 @@ from decimal import Decimal
 
 import pytest
 
+from packages.asset_application.entitlement_service import EntitlementOutcome, EntitlementResolution
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import (
     InventoryService,
@@ -15,6 +16,7 @@ from packages.asset_application.inventory_service import (
 from packages.asset_application.sustainment_contract_service import SLIContractRepositoryPort
 from packages.asset_application.vehicle_service import VehicleRepositoryPort, VehicleService
 from packages.asset_application.work_order_service import (
+    EntitlementNaoAutorizaReserva,
     WorkOrderRepositoryPort,
     WorkOrderService,
 )
@@ -56,6 +58,17 @@ from packages.shared_kernel import TypedId
 from tests.asset_support import FakeEventLog
 
 OCCURRED_AT = datetime(2026, 9, 11, tzinfo=UTC)
+
+
+def _granted_entitlement(*, vehicle_ref: TypedId, subject_ref: TypedId) -> EntitlementResolution:
+    return EntitlementResolution(
+        vehicle_ref=vehicle_ref,
+        subject_ref=subject_ref,
+        instant=OCCURRED_AT,
+        decision_ref=TypedId.new("decision"),
+        outcome=EntitlementOutcome.GRANTED,
+        breakdown="Core Decision aprovou entitlement SLI.",
+    )
 
 
 class InMemoryWorkOrderRepository(WorkOrderRepositoryPort):
@@ -248,6 +261,7 @@ def test_full_lifecycle_open_to_close(
         part_ref=part_ref,
         qty=Decimal(2),
         priority=1,
+        entitlement=_granted_entitlement(vehicle_ref=vehicle_id, subject_ref=part_ref),
         occurred_at=OCCURRED_AT,
     )
     assert len(with_reservation.material_reservations) == 1
@@ -370,6 +384,71 @@ def test_reserve_material_beyond_demand_raises(
             part_ref=part_ref,
             qty=Decimal(3),
             priority=1,
+            entitlement=_granted_entitlement(vehicle_ref=vehicle_id, subject_ref=part_ref),
+            occurred_at=OCCURRED_AT,
+        )
+
+
+def test_reserve_material_requires_granted_entitlement(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle_id, contract_id = _open_contract_and_vehicle(
+        work_order_service, vehicle_service, context
+    )
+    part_ref = TypedId.new("part")
+    work_order = work_order_service.open_work_order(
+        context,
+        vehicle_ref=vehicle_id,
+        site_ref=TypedId.new("customer_site"),
+        contract_ref=contract_id,
+        failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+        at_instant=OCCURRED_AT,
+        occurred_at=OCCURRED_AT,
+    )
+    with_task = work_order_service.add_task(
+        context,
+        work_order.work_order_id,
+        description="Trocar peça",
+        mandatory=True,
+        occurred_at=OCCURRED_AT,
+    )
+    work_order_service.demand_material(
+        context,
+        work_order.work_order_id,
+        part_ref=part_ref,
+        qty=Decimal(1),
+        task_id=with_task.tasks[0].task_id,
+        occurred_at=OCCURRED_AT,
+    )
+    position = work_order_service.inventory_service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=TypedId.new("stock_location"),
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(on_hand=Decimal(10)),
+        occurred_at=OCCURRED_AT,
+    )
+    denied = _granted_entitlement(vehicle_ref=vehicle_id, subject_ref=part_ref)
+    denied = EntitlementResolution(
+        vehicle_ref=denied.vehicle_ref,
+        subject_ref=denied.subject_ref,
+        instant=denied.instant,
+        decision_ref=denied.decision_ref,
+        outcome=EntitlementOutcome.DENIED,
+        breakdown=denied.breakdown,
+    )
+
+    with pytest.raises(EntitlementNaoAutorizaReserva):
+        work_order_service.reserve_material_for_work_order(
+            context,
+            work_order.work_order_id,
+            stock_position_id=position.stock_position_id,
+            part_ref=part_ref,
+            qty=Decimal(1),
+            priority=1,
+            entitlement=denied,
             occurred_at=OCCURRED_AT,
         )
 
@@ -424,6 +503,7 @@ def test_cancel_releases_material_reservations(
         part_ref=part_ref,
         qty=Decimal(2),
         priority=1,
+        entitlement=_granted_entitlement(vehicle_ref=vehicle_id, subject_ref=part_ref),
         occurred_at=OCCURRED_AT,
     )
     reservation_id = reserved.material_reservations[0]
@@ -492,6 +572,7 @@ def test_fail_validation_returns_to_technically_complete(
         part_ref=part_ref,
         qty=Decimal(1),
         priority=1,
+        entitlement=_granted_entitlement(vehicle_ref=vehicle_id, subject_ref=part_ref),
         occurred_at=OCCURRED_AT,
     )
     planned = work_order_service.mark_planned(

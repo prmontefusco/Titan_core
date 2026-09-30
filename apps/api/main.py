@@ -11,26 +11,13 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from apps.api._registry import enabled_api_routers
 from apps.api.authentication import (
     AuthenticatedPrincipalDependency,
 )
 from apps.api.configuration import exigir_configuracao
-from apps.api.livestock_animals import router as livestock_animals_router
-from apps.api.livestock_commercial_passport import router as livestock_commercial_passport_router
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER
-from apps.api.livestock_entity_type_requests import router as livestock_entity_type_requests_router
-from apps.api.livestock_market_optionality_explanation import (
-    router as livestock_market_optionality_explanation_router,
-)
-from apps.api.livestock_market_supply import router as livestock_market_supply_router
-from apps.api.livestock_medications import router as livestock_medications_router
-from apps.api.livestock_queries import router as livestock_queries_router
-from apps.api.livestock_reads import router as livestock_reads_router
 from apps.api.livestock_rule_governance import router as livestock_rule_governance_router
-from apps.api.livestock_sanitary_campaigns import router as livestock_sanitary_campaigns_router
-from apps.api.livestock_transformations import router as livestock_transformations_router
-from apps.api.livestock_treatments import router as livestock_treatments_router
-from apps.api.livestock_writes import router as livestock_writes_router
 from apps.api.policy_governance import router as policy_governance_router
 from apps.api.problem import (
     NO_STORE_HEADERS,
@@ -120,27 +107,8 @@ def _openapi_com_contrato_publico() -> dict[str, Any]:
 app.openapi = _openapi_com_contrato_publico  # type: ignore[method-assign]
 
 
-for livestock_router in (
-    livestock_animals_router,
-    livestock_medications_router,
-    livestock_sanitary_campaigns_router,
-    livestock_treatments_router,
-    livestock_queries_router,
-    livestock_reads_router,
-    livestock_writes_router,
-    livestock_transformations_router,
-    livestock_entity_type_requests_router,
-):
-    app.include_router(livestock_router)
-
-if os.environ.get("TITAN_MARKET_SUPPLY_AGGREGATE_API_ENABLED", "").casefold() == "true":
-    app.include_router(livestock_market_supply_router)
-
-if os.environ.get("TITAN_MARKET_OPTIONALITY_AI_EXPLANATION_API_ENABLED", "").casefold() == "true":
-    app.include_router(livestock_market_optionality_explanation_router)
-
-if os.environ.get("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "").casefold() == "true":
-    app.include_router(livestock_commercial_passport_router)
+for api_router in enabled_api_routers():
+    app.include_router(api_router)
 
 app.add_exception_handler(DomainProblem, domain_problem_handler)
 app.add_exception_handler(RequestValidationError, validation_problem_handler)
