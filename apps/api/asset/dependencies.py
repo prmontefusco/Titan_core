@@ -14,7 +14,7 @@ from apps.api.livestock_dependencies import (
     require_permission,
     typed_id_or_problem,
 )
-from packages.asset_application.authorization import DASHBOARD_READ, VEHICLE_READ
+from packages.asset_application.authorization import CONTRACT_READ, DASHBOARD_READ, VEHICLE_READ
 from packages.core_domain import OrganizationContext
 
 
@@ -30,8 +30,15 @@ def require_vehicle_read(
     return contexto
 
 
+def require_contract_read(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(CONTRACT_READ))],
+) -> OrganizationContext:
+    return contexto
+
+
 __all__ = [
     "ConnectionDependency",
+    "require_contract_read",
     "require_dashboard_read",
     "require_vehicle_read",
     "typed_id_or_problem",

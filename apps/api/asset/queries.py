@@ -1,18 +1,26 @@
 """Queries HTTP read-only da vertical Asset — A5."""
 
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_contract_read,
     require_dashboard_read,
     require_vehicle_read,
     typed_id_or_problem,
 )
-from apps.api.problem import RESPOSTAS_PADRAO
+from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
+from packages.asset_application.contract_sla_summary import (
+    ContractSLASummary,
+    ContractSLASummaryService,
+    ContractSLAWorkOrderLine,
+    SLIContractSummaryNaoEncontrado,
+)
 from packages.asset_application.fleet_view import (
     FleetView,
     FleetViewLine,
@@ -22,6 +30,9 @@ from packages.asset_application.workshop_dashboard import (
     WorkshopDashboard,
     WorkshopDashboardLine,
     WorkshopDashboardService,
+)
+from packages.asset_infrastructure.persistence.contract_sla_summary_repository import (
+    TransactionalContractSLASummaryRepository,
 )
 from packages.asset_infrastructure.persistence.fleet_view_repository import (
     TransactionalFleetViewRepository,
@@ -69,6 +80,27 @@ class FleetViewResponse(BaseModel):
     lines: list[FleetViewLineResponse]
 
 
+class ContractSLAWorkOrderLineResponse(BaseModel):
+    work_order_id: str
+    vehicle_ref: str
+    state: str
+    priority_score: int | None
+    signals: list[str]
+
+
+class ContractSLASummaryResponse(BaseModel):
+    contract_ref: str
+    contract_version_no: int | None
+    covered_vehicle_count: int
+    open_work_order_count: int
+    waiting_material_count: int
+    waiting_authorization_count: int
+    sla_risk_count: int
+    response_sla_duration_seconds: int | None
+    repair_sla_duration_seconds: int | None
+    lines: list[ContractSLAWorkOrderLineResponse]
+
+
 def get_workshop_dashboard_service(
     connection: ConnectionDependency,
 ) -> WorkshopDashboardService:
@@ -81,10 +113,31 @@ def get_fleet_view_service(connection: ConnectionDependency) -> FleetViewService
     return FleetViewService(repository=TransactionalFleetViewRepository(connection=connection))
 
 
+def get_contract_sla_summary_service(
+    connection: ConnectionDependency,
+) -> ContractSLASummaryService:
+    return ContractSLASummaryService(
+        repository=TransactionalContractSLASummaryRepository(connection=connection)
+    )
+
+
 def _typed_optional(raw: str | None, *, entity_type: str, campo: str) -> TypedId | None:
     if raw is None:
         return None
     return typed_id_or_problem(raw, entity_type=entity_type, campo=campo)
+
+
+def _utc_optional(raw: datetime | None, *, campo: str) -> datetime | None:
+    if raw is None:
+        return None
+    if raw.tzinfo is None or raw.utcoffset() != UTC.utcoffset(raw):
+        raise DomainProblem(
+            status_code=422,
+            reason_code="DATA_INVALIDA",
+            title="Data inválida",
+            detail=f"{campo} deve estar em UTC.",
+        )
+    return raw
 
 
 def _mapping_to_dict(value: Mapping[str, int]) -> dict[str, int]:
@@ -137,6 +190,40 @@ def _fleet_view(response: FleetView) -> FleetViewResponse:
     )
 
 
+def _contract_sla_line(line: ContractSLAWorkOrderLine) -> ContractSLAWorkOrderLineResponse:
+    return ContractSLAWorkOrderLineResponse(
+        work_order_id=str(line.work_order_id.value),
+        vehicle_ref=str(line.vehicle_ref.value),
+        state=line.state.value,
+        priority_score=line.priority_score,
+        signals=[signal.value for signal in line.signals],
+    )
+
+
+def _contract_sla_summary(response: ContractSLASummary) -> ContractSLASummaryResponse:
+    return ContractSLASummaryResponse(
+        contract_ref=str(response.contract_ref.value),
+        contract_version_no=response.contract_version_no,
+        covered_vehicle_count=response.covered_vehicle_count,
+        open_work_order_count=response.open_work_order_count,
+        waiting_material_count=response.waiting_material_count,
+        waiting_authorization_count=response.waiting_authorization_count,
+        sla_risk_count=response.sla_risk_count,
+        response_sla_duration_seconds=response.response_sla_duration_seconds,
+        repair_sla_duration_seconds=response.repair_sla_duration_seconds,
+        lines=[_contract_sla_line(line) for line in response.lines],
+    )
+
+
+def _contract_not_found() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_404_NOT_FOUND,
+        reason_code="RECURSO_NAO_ENCONTRADO",
+        title="Recurso não encontrado",
+        detail="Contrato SLI não encontrado nesta organização.",
+    )
+
+
 @router.get(
     "/workshop-dashboard",
     response_model=WorkshopDashboardResponse,
@@ -179,3 +266,31 @@ def consultar_fleet_view(
     site_ref = _typed_optional(site_id, entity_type="customer_site", campo="site_id")
     _ = contexto
     return _fleet_view(service.get_fleet_view(site_ref=site_ref))
+
+
+@router.get(
+    "/contract-sla-summary",
+    response_model=ContractSLASummaryResponse,
+    summary="Consultar o resumo de SLA de um contrato SLI",
+    description=(
+        "Agrega frota coberta, Work Orders abertas e sinais operacionais de SLA "
+        "sob um contrato. A projection é leitura derivada e não calcula violação "
+        "contratual real sem relógios de SLA suficientes."
+    ),
+    responses=RESPOSTAS_PADRAO | {404: {"description": "Contrato não encontrado"}},
+)
+def consultar_contract_sla_summary(
+    contract_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_contract_read)],
+    service: Annotated[ContractSLASummaryService, Depends(get_contract_sla_summary_service)],
+    as_of: datetime | None = None,
+) -> Any:
+    contract_ref = typed_id_or_problem(contract_id, entity_type="sli_contract", campo="contract_id")
+    as_of_utc = _utc_optional(as_of, campo="as_of")
+    _ = contexto
+    try:
+        return _contract_sla_summary(
+            service.get_contract_sla_summary(contract_ref=contract_ref, as_of=as_of_utc)
+        )
+    except SLIContractSummaryNaoEncontrado as exc:
+        raise _contract_not_found() from exc
