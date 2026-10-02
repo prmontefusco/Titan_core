@@ -30,6 +30,9 @@ SUPERFICIE_ESPERADA = {
     ("/health", "get"),
     ("/technical/authentication", "get"),
     ("/v1/verification/bundles", "post"),
+    # Vertical Asset — A5 inicia por query read-only da projection A6, sem
+    # comandos de escrita ou endpoints genéricos de domínio.
+    ("/v1/asset/workshop-dashboard", "get"),
     # Core - governanca auditavel de regras (ADR-0043).
     ("/v1/rule-governance/rule-identities", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/versions", "post"),
@@ -465,7 +468,11 @@ def test_toda_rota_protegida_declara_autenticacao_e_negacoes() -> None:
     esquema = _esquema()
 
     for caminho, operacoes in esquema["paths"].items():
-        if not (caminho.startswith("/v1/livestock/") or caminho.startswith("/v1/rule-governance/")):
+        if not (
+            caminho.startswith("/v1/asset/")
+            or caminho.startswith("/v1/livestock/")
+            or caminho.startswith("/v1/rule-governance/")
+        ):
             continue
         for metodo, operacao in operacoes.items():
             rotulo = f"{metodo.upper()} {caminho}"
