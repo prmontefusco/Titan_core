@@ -35,6 +35,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/contract-sla-summary", "get"),
     ("/v1/asset/fleet-view", "get"),
     ("/v1/asset/workshop-dashboard", "get"),
+    ("/v1/asset/work-orders/{work_order_id}", "get"),
     # Core - governanca auditavel de regras (ADR-0043).
     ("/v1/rule-governance/rule-identities", "post"),
     ("/v1/rule-governance/rule-identities/{rule_identity_id}/versions", "post"),

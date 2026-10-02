@@ -12,6 +12,7 @@ from apps.api.asset.dependencies import (
     require_contract_read,
     require_dashboard_read,
     require_vehicle_read,
+    require_work_order_read,
     typed_id_or_problem,
 )
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
@@ -26,16 +27,29 @@ from packages.asset_application.fleet_view import (
     FleetViewLine,
     FleetViewService,
 )
+from packages.asset_application.work_order_query import (
+    WorkOrderDetailNaoEncontrado,
+    WorkOrderQueryService,
+)
 from packages.asset_application.workshop_dashboard import (
     WorkshopDashboard,
     WorkshopDashboardLine,
     WorkshopDashboardService,
+)
+from packages.asset_domain.work_order import (
+    MaterialDemand,
+    RemovedComponentDisposition,
+    WorkOrder,
+    WorkTask,
 )
 from packages.asset_infrastructure.persistence.contract_sla_summary_repository import (
     TransactionalContractSLASummaryRepository,
 )
 from packages.asset_infrastructure.persistence.fleet_view_repository import (
     TransactionalFleetViewRepository,
+)
+from packages.asset_infrastructure.persistence.work_order_repository import (
+    TransactionalWorkOrderRepository,
 )
 from packages.asset_infrastructure.persistence.workshop_dashboard_repository import (
     TransactionalWorkshopDashboardRepository,
@@ -101,6 +115,73 @@ class ContractSLASummaryResponse(BaseModel):
     lines: list[ContractSLAWorkOrderLineResponse]
 
 
+class ContractContextResponse(BaseModel):
+    contract_ref: str
+    contract_version_no: int
+    resolved_at: datetime
+
+
+class FailureRecordResponse(BaseModel):
+    mode: str
+    reported_at: datetime
+    affected_position: str | None
+
+
+class WorkTaskResponse(BaseModel):
+    task_id: str
+    description: str
+    mandatory: bool
+    state: str
+    labor_entries: list[str]
+
+
+class MaterialDemandResponse(BaseModel):
+    part_ref: str
+    qty: str
+    task_id: str
+
+
+class RemovedComponentResponse(BaseModel):
+    part_ref: str
+    disposition: str
+    serial: str | None
+
+
+class PriorityScoreResponse(BaseModel):
+    score: int
+    breakdown: dict[str, int]
+    evaluation_ref: str | None
+
+
+class PostMaintenanceValidationResponse(BaseModel):
+    validated_at: datetime
+    validator_ref: str
+    result: str
+    notes: str | None
+
+
+class WorkOrderDetailResponse(BaseModel):
+    work_order_id: str
+    vehicle_ref: str
+    site_ref: str
+    workshop_ref: str | None
+    state: str
+    pre_wait_authorization_state: str | None
+    contract_context: ContractContextResponse
+    failure: FailureRecordResponse
+    tasks: list[WorkTaskResponse]
+    material_demands: list[MaterialDemandResponse]
+    material_reservations: list[str]
+    priority: PriorityScoreResponse | None
+    diagnosis: str | None
+    root_cause: str | None
+    resolution: str | None
+    removed_components: list[RemovedComponentResponse]
+    validation: PostMaintenanceValidationResponse | None
+    version: int
+    created_at: datetime
+
+
 def get_workshop_dashboard_service(
     connection: ConnectionDependency,
 ) -> WorkshopDashboardService:
@@ -119,6 +200,10 @@ def get_contract_sla_summary_service(
     return ContractSLASummaryService(
         repository=TransactionalContractSLASummaryRepository(connection=connection)
     )
+
+
+def get_work_order_query_service(connection: ConnectionDependency) -> WorkOrderQueryService:
+    return WorkOrderQueryService(repository=TransactionalWorkOrderRepository(connection=connection))
 
 
 def _typed_optional(raw: str | None, *, entity_type: str, campo: str) -> TypedId | None:
@@ -215,12 +300,108 @@ def _contract_sla_summary(response: ContractSLASummary) -> ContractSLASummaryRes
     )
 
 
+def _work_task(task: WorkTask) -> WorkTaskResponse:
+    return WorkTaskResponse(
+        task_id=str(task.task_id.value),
+        description=task.description,
+        mandatory=task.mandatory,
+        state=task.state.value,
+        labor_entries=list(task.labor_entries),
+    )
+
+
+def _material_demand(demand: MaterialDemand) -> MaterialDemandResponse:
+    return MaterialDemandResponse(
+        part_ref=str(demand.part_ref.value),
+        qty=str(demand.qty),
+        task_id=str(demand.task_id.value),
+    )
+
+
+def _removed_component(component: RemovedComponentDisposition) -> RemovedComponentResponse:
+    return RemovedComponentResponse(
+        part_ref=str(component.part_ref.value),
+        disposition=component.disposition,
+        serial=component.serial,
+    )
+
+
+def _work_order_detail(work_order: WorkOrder) -> WorkOrderDetailResponse:
+    priority = work_order.priority
+    validation = work_order.validation
+    return WorkOrderDetailResponse(
+        work_order_id=str(work_order.work_order_id.value),
+        vehicle_ref=str(work_order.vehicle_ref.value),
+        site_ref=str(work_order.site_ref.value),
+        workshop_ref=None
+        if work_order.workshop_ref is None
+        else str(work_order.workshop_ref.value),
+        state=work_order.state.value,
+        pre_wait_authorization_state=(
+            None
+            if work_order.pre_wait_authorization_state is None
+            else work_order.pre_wait_authorization_state.value
+        ),
+        contract_context=ContractContextResponse(
+            contract_ref=str(work_order.contract_context.contract_ref.value),
+            contract_version_no=work_order.contract_context.contract_version_no,
+            resolved_at=work_order.contract_context.resolved_at,
+        ),
+        failure=FailureRecordResponse(
+            mode=work_order.failure.mode,
+            reported_at=work_order.failure.reported_at,
+            affected_position=work_order.failure.affected_position,
+        ),
+        tasks=[_work_task(task) for task in work_order.tasks],
+        material_demands=[_material_demand(demand) for demand in work_order.material_demands],
+        material_reservations=[str(ref.value) for ref in work_order.material_reservations],
+        priority=(
+            None
+            if priority is None
+            else PriorityScoreResponse(
+                score=priority.score,
+                breakdown=dict(priority.breakdown),
+                evaluation_ref=(
+                    None if priority.evaluation_ref is None else str(priority.evaluation_ref.value)
+                ),
+            )
+        ),
+        diagnosis=work_order.diagnosis,
+        root_cause=work_order.root_cause,
+        resolution=work_order.resolution,
+        removed_components=[
+            _removed_component(component) for component in work_order.removed_components
+        ],
+        validation=(
+            None
+            if validation is None
+            else PostMaintenanceValidationResponse(
+                validated_at=validation.validated_at,
+                validator_ref=str(validation.validator_ref.value),
+                result=validation.result.value,
+                notes=validation.notes,
+            )
+        ),
+        version=work_order.version,
+        created_at=work_order.created_at,
+    )
+
+
 def _contract_not_found() -> DomainProblem:
     return DomainProblem(
         status_code=status.HTTP_404_NOT_FOUND,
         reason_code="RECURSO_NAO_ENCONTRADO",
         title="Recurso não encontrado",
         detail="Contrato SLI não encontrado nesta organização.",
+    )
+
+
+def _work_order_not_found() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_404_NOT_FOUND,
+        reason_code="RECURSO_NAO_ENCONTRADO",
+        title="Recurso não encontrado",
+        detail="Work Order não encontrada nesta organização.",
     )
 
 
@@ -294,3 +475,29 @@ def consultar_contract_sla_summary(
         )
     except SLIContractSummaryNaoEncontrado as exc:
         raise _contract_not_found() from exc
+
+
+@router.get(
+    "/work-orders/{work_order_id}",
+    response_model=WorkOrderDetailResponse,
+    summary="Consultar detalhe de uma Work Order",
+    description=(
+        "Abre o detalhe de uma Work Order com tarefas, demandas e reservas de "
+        "material, contexto contratual congelado, prioridade explicável e dados "
+        "de validação quando existirem."
+    ),
+    responses=RESPOSTAS_PADRAO | {404: {"description": "Work Order não encontrada"}},
+)
+def consultar_work_order(
+    work_order_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_read)],
+    service: Annotated[WorkOrderQueryService, Depends(get_work_order_query_service)],
+) -> Any:
+    work_order_ref = typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    _ = contexto
+    try:
+        return _work_order_detail(service.get_work_order(work_order_ref))
+    except WorkOrderDetailNaoEncontrado as exc:
+        raise _work_order_not_found() from exc
