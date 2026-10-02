@@ -135,6 +135,31 @@ class TransactionalApplicabilityRepository:
             return None
         return self._map(row)
 
+    def list_by_part_and_target(
+        self,
+        *,
+        part_ref: TypedId,
+        model_ref: TypedId,
+        variant_ref: TypedId | None,
+    ) -> tuple[Applicability, ...]:
+        variant_column = applicability_table.c.target_variant_id
+        variant_predicate = (
+            variant_column.is_(None) if variant_ref is None else variant_column == variant_ref.value
+        )
+        rows = self.connection.execute(
+            select(applicability_table)
+            .where(
+                applicability_table.c.part_id == part_ref.value,
+                applicability_table.c.target_model_id == model_ref.value,
+                variant_predicate,
+            )
+            .order_by(
+                applicability_table.c.target_valid_from,
+                applicability_table.c.applicability_id,
+            )
+        ).fetchall()
+        return tuple(self._map(row) for row in rows)
+
     def _map(self, row: Row[Any]) -> Applicability:
         def _tz(value: Any) -> Any:
             if value is not None and value.tzinfo is None:

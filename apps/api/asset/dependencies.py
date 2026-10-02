@@ -15,6 +15,7 @@ from apps.api.livestock_dependencies import (
     typed_id_or_problem,
 )
 from packages.asset_application.authorization import (
+    APPLICABILITY_READ,
     CONTRACT_READ,
     DASHBOARD_READ,
     VEHICLE_READ,
@@ -35,6 +36,12 @@ def require_vehicle_read(
     return contexto
 
 
+def require_applicability_read(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(APPLICABILITY_READ))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_contract_read(
     contexto: Annotated[OrganizationContext, Depends(require_permission(CONTRACT_READ))],
 ) -> OrganizationContext:
@@ -49,6 +56,7 @@ def require_work_order_read(
 
 __all__ = [
     "ConnectionDependency",
+    "require_applicability_read",
     "require_contract_read",
     "require_dashboard_read",
     "require_vehicle_read",

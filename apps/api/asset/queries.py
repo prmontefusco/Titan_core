@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_applicability_read,
     require_contract_read,
     require_dashboard_read,
     require_vehicle_read,
@@ -26,6 +27,11 @@ from packages.asset_application.fleet_view import (
     FleetView,
     FleetViewLine,
     FleetViewService,
+)
+from packages.asset_application.part_applicability_query import (
+    PartApplicabilityQueryService,
+    PartApplicabilityResolution,
+    PartApplicabilityVehicleNaoEncontrado,
 )
 from packages.asset_application.vehicle_configuration_query import (
     VehicleConfigurationAt,
@@ -45,6 +51,7 @@ from packages.asset_application.workshop_dashboard import (
     WorkshopDashboardLine,
     WorkshopDashboardService,
 )
+from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
 from packages.asset_domain.configuration import BaselinePosition, ConfigurationBaseline
 from packages.asset_domain.vehicle import MeterCorrection, MeterReading, Vehicle
 from packages.asset_domain.work_order import (
@@ -52,6 +59,9 @@ from packages.asset_domain.work_order import (
     RemovedComponentDisposition,
     WorkOrder,
     WorkTask,
+)
+from packages.asset_infrastructure.persistence.applicability_repository import (
+    TransactionalApplicabilityRepository,
 )
 from packages.asset_infrastructure.persistence.configuration_repository import (
     TransactionalConfigurationBaselineRepository,
@@ -264,6 +274,31 @@ class VehicleConfigurationAtResponse(BaseModel):
     baseline: ConfigurationBaselineResponse
 
 
+class ApplicabilityTargetResponse(BaseModel):
+    model_ref: str
+    variant_ref: str | None
+    serial_from: str | None
+    serial_to: str | None
+    valid_from: datetime
+    valid_until: datetime | None
+
+
+class PartApplicabilityAssertionResponse(BaseModel):
+    applicability_id: str
+    part_revision_ref: str
+    target: ApplicabilityTargetResponse
+    evidence_ref: str
+    asserted_at: datetime
+    asserted_by: str
+
+
+class PartApplicabilityResolutionResponse(BaseModel):
+    part_ref: str
+    vehicle_id: str
+    instant: datetime
+    assertions: list[PartApplicabilityAssertionResponse]
+
+
 def get_workshop_dashboard_service(
     connection: ConnectionDependency,
 ) -> WorkshopDashboardService:
@@ -286,6 +321,15 @@ def get_vehicle_configuration_at_service(
     return VehicleConfigurationAtService(
         vehicle_repository=TransactionalVehicleRepository(connection=connection),
         baseline_repository=TransactionalConfigurationBaselineRepository(connection=connection),
+    )
+
+
+def get_part_applicability_query_service(
+    connection: ConnectionDependency,
+) -> PartApplicabilityQueryService:
+    return PartApplicabilityQueryService(
+        vehicle_repository=TransactionalVehicleRepository(connection=connection),
+        applicability_repository=TransactionalApplicabilityRepository(connection=connection),
     )
 
 
@@ -455,6 +499,41 @@ def _vehicle_configuration_at(result: VehicleConfigurationAt) -> VehicleConfigur
     )
 
 
+def _applicability_target(target: ApplicabilityTarget) -> ApplicabilityTargetResponse:
+    return ApplicabilityTargetResponse(
+        model_ref=str(target.model_ref.value),
+        variant_ref=None if target.variant_ref is None else str(target.variant_ref.value),
+        serial_from=target.serial_from,
+        serial_to=target.serial_to,
+        valid_from=target.valid_from,
+        valid_until=target.valid_until,
+    )
+
+
+def _applicability_assertion(
+    applicability: Applicability,
+) -> PartApplicabilityAssertionResponse:
+    return PartApplicabilityAssertionResponse(
+        applicability_id=str(applicability.applicability_id.value),
+        part_revision_ref=str(applicability.part_revision_ref.value),
+        target=_applicability_target(applicability.target),
+        evidence_ref=str(applicability.evidence_ref.value),
+        asserted_at=applicability.asserted_at,
+        asserted_by=str(applicability.asserted_by.value),
+    )
+
+
+def _part_applicability_resolution(
+    result: PartApplicabilityResolution,
+) -> PartApplicabilityResolutionResponse:
+    return PartApplicabilityResolutionResponse(
+        part_ref=str(result.part_ref.value),
+        vehicle_id=str(result.vehicle.vehicle_id.value),
+        instant=result.instant,
+        assertions=[_applicability_assertion(applicability) for applicability in result.assertions],
+    )
+
+
 def _contract_sla_line(line: ContractSLAWorkOrderLine) -> ContractSLAWorkOrderLineResponse:
     return ContractSLAWorkOrderLineResponse(
         work_order_id=str(line.work_order_id.value),
@@ -603,6 +682,15 @@ def _vehicle_configuration_not_found() -> DomainProblem:
     )
 
 
+def _part_applicability_vehicle_not_found() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_404_NOT_FOUND,
+        reason_code="RECURSO_NAO_ENCONTRADO",
+        title="Recurso não encontrado",
+        detail="Vehicle não encontrado nesta organização.",
+    )
+
+
 @router.get(
     "/workshop-dashboard",
     response_model=WorkshopDashboardResponse,
@@ -705,6 +793,45 @@ def consultar_vehicle_configuration_at(
         )
     except VehicleConfigurationAtNaoEncontrada as exc:
         raise _vehicle_configuration_not_found() from exc
+
+
+@router.get(
+    "/part-applicability",
+    response_model=PartApplicabilityResolutionResponse,
+    summary="Resolver aplicabilidade de peça para um veículo",
+    description=(
+        "Lista as asserções de Applicability ativas para uma peça, veículo e "
+        "instante. A resposta preserva evidence_ref; a API nunca reduz "
+        "aplicabilidade a um booleano sem evidência."
+    ),
+    responses=RESPOSTAS_PADRAO | {404: {"description": "Vehicle não encontrado"}},
+)
+def consultar_part_applicability(
+    part_id: str,
+    vehicle_id: str,
+    instant: datetime,
+    contexto: Annotated[OrganizationContext, Depends(require_applicability_read)],
+    service: Annotated[
+        PartApplicabilityQueryService, Depends(get_part_applicability_query_service)
+    ],
+) -> Any:
+    part_ref = typed_id_or_problem(part_id, entity_type="part", campo="part_id")
+    vehicle_ref = typed_id_or_problem(vehicle_id, entity_type="vehicle", campo="vehicle_id")
+    instant_utc = _utc_optional(instant, campo="instant")
+    if instant_utc is None:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="DATA_INVALIDA",
+            title="Data inválida",
+            detail="instant é obrigatório.",
+        )
+    _ = contexto
+    try:
+        return _part_applicability_resolution(
+            service.resolve(part_ref=part_ref, vehicle_id=vehicle_ref, instant=instant_utc)
+        )
+    except PartApplicabilityVehicleNaoEncontrado as exc:
+        raise _part_applicability_vehicle_not_found() from exc
 
 
 @router.get(
