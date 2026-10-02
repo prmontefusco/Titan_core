@@ -27,6 +27,10 @@ from packages.asset_application.fleet_view import (
     FleetViewLine,
     FleetViewService,
 )
+from packages.asset_application.vehicle_query import (
+    VehicleDetailNaoEncontrado,
+    VehicleQueryService,
+)
 from packages.asset_application.work_order_query import (
     WorkOrderDetailNaoEncontrado,
     WorkOrderQueryService,
@@ -36,6 +40,7 @@ from packages.asset_application.workshop_dashboard import (
     WorkshopDashboardLine,
     WorkshopDashboardService,
 )
+from packages.asset_domain.vehicle import MeterCorrection, MeterReading, Vehicle
 from packages.asset_domain.work_order import (
     MaterialDemand,
     RemovedComponentDisposition,
@@ -47,6 +52,9 @@ from packages.asset_infrastructure.persistence.contract_sla_summary_repository i
 )
 from packages.asset_infrastructure.persistence.fleet_view_repository import (
     TransactionalFleetViewRepository,
+)
+from packages.asset_infrastructure.persistence.vehicle_repository import (
+    TransactionalVehicleRepository,
 )
 from packages.asset_infrastructure.persistence.work_order_repository import (
     TransactionalWorkOrderRepository,
@@ -182,6 +190,45 @@ class WorkOrderDetailResponse(BaseModel):
     created_at: datetime
 
 
+class VehicleIdentifiersResponse(BaseModel):
+    serial_number: str
+    chassis: str | None
+    fleet_number: str | None
+
+
+class MeterReadingResponse(BaseModel):
+    reading_id: str
+    kind: str
+    value: str
+    observed_at: datetime
+    recorded_at: datetime
+    source: str
+
+
+class MeterCorrectionResponse(BaseModel):
+    correction_id: str
+    original_reading_id: str
+    corrected_value: str
+    reason: str
+    corrected_at: datetime
+
+
+class VehicleDetailResponse(BaseModel):
+    vehicle_id: str
+    model_ref: str
+    identifiers: VehicleIdentifiersResponse
+    ownership: str
+    variant_ref: str | None
+    site_ref: str | None
+    current_baseline_ref: str | None
+    baseline_valid_from: datetime | None
+    lifecycle_state: str
+    meter_readings: list[MeterReadingResponse]
+    meter_corrections: list[MeterCorrectionResponse]
+    version: int
+    created_at: datetime
+
+
 def get_workshop_dashboard_service(
     connection: ConnectionDependency,
 ) -> WorkshopDashboardService:
@@ -192,6 +239,10 @@ def get_workshop_dashboard_service(
 
 def get_fleet_view_service(connection: ConnectionDependency) -> FleetViewService:
     return FleetViewService(repository=TransactionalFleetViewRepository(connection=connection))
+
+
+def get_vehicle_query_service(connection: ConnectionDependency) -> VehicleQueryService:
+    return VehicleQueryService(repository=TransactionalVehicleRepository(connection=connection))
 
 
 def get_contract_sla_summary_service(
@@ -272,6 +323,55 @@ def _fleet_view(response: FleetView) -> FleetViewResponse:
         site_ref=None if response.site_ref is None else str(response.site_ref.value),
         counts_by_state={state.value: count for state, count in response.counts_by_state.items()},
         lines=[_fleet_line(line) for line in response.lines],
+    )
+
+
+def _meter_reading(reading: MeterReading) -> MeterReadingResponse:
+    return MeterReadingResponse(
+        reading_id=str(reading.reading_id.value),
+        kind=reading.kind.value,
+        value=str(reading.value),
+        observed_at=reading.observed_at,
+        recorded_at=reading.recorded_at,
+        source=reading.source,
+    )
+
+
+def _meter_correction(correction: MeterCorrection) -> MeterCorrectionResponse:
+    return MeterCorrectionResponse(
+        correction_id=str(correction.correction_id.value),
+        original_reading_id=str(correction.original_reading_id.value),
+        corrected_value=str(correction.corrected_value),
+        reason=correction.reason,
+        corrected_at=correction.corrected_at,
+    )
+
+
+def _vehicle_detail(vehicle: Vehicle) -> VehicleDetailResponse:
+    return VehicleDetailResponse(
+        vehicle_id=str(vehicle.vehicle_id.value),
+        model_ref=str(vehicle.model_ref.value),
+        identifiers=VehicleIdentifiersResponse(
+            serial_number=vehicle.identifiers.serial_number,
+            chassis=vehicle.identifiers.chassis,
+            fleet_number=vehicle.identifiers.fleet_number,
+        ),
+        ownership=vehicle.ownership.value,
+        variant_ref=None if vehicle.variant_ref is None else str(vehicle.variant_ref.value),
+        site_ref=None if vehicle.site_ref is None else str(vehicle.site_ref.value),
+        current_baseline_ref=(
+            None
+            if vehicle.current_baseline_ref is None
+            else str(vehicle.current_baseline_ref.value)
+        ),
+        baseline_valid_from=vehicle.baseline_valid_from,
+        lifecycle_state=vehicle.lifecycle_state.value,
+        meter_readings=[_meter_reading(reading) for reading in vehicle.meter_readings],
+        meter_corrections=[
+            _meter_correction(correction) for correction in vehicle.meter_corrections
+        ],
+        version=vehicle.version,
+        created_at=vehicle.created_at,
     )
 
 
@@ -405,6 +505,15 @@ def _work_order_not_found() -> DomainProblem:
     )
 
 
+def _vehicle_not_found() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_404_NOT_FOUND,
+        reason_code="RECURSO_NAO_ENCONTRADO",
+        title="Recurso não encontrado",
+        detail="Vehicle não encontrado nesta organização.",
+    )
+
+
 @router.get(
     "/workshop-dashboard",
     response_model=WorkshopDashboardResponse,
@@ -447,6 +556,29 @@ def consultar_fleet_view(
     site_ref = _typed_optional(site_id, entity_type="customer_site", campo="site_id")
     _ = contexto
     return _fleet_view(service.get_fleet_view(site_ref=site_ref))
+
+
+@router.get(
+    "/vehicles/{vehicle_id}",
+    response_model=VehicleDetailResponse,
+    summary="Consultar detalhe de um veículo",
+    description=(
+        "Abre o detalhe de um veículo com identificadores, estado de ciclo de vida, "
+        "site, baseline vigente e histórico de leituras/correções de medidor."
+    ),
+    responses=RESPOSTAS_PADRAO | {404: {"description": "Vehicle não encontrado"}},
+)
+def consultar_vehicle(
+    vehicle_id: str,
+    contexto: Annotated[OrganizationContext, Depends(require_vehicle_read)],
+    service: Annotated[VehicleQueryService, Depends(get_vehicle_query_service)],
+) -> Any:
+    vehicle_ref = typed_id_or_problem(vehicle_id, entity_type="vehicle", campo="vehicle_id")
+    _ = contexto
+    try:
+        return _vehicle_detail(service.get_vehicle(vehicle_ref))
+    except VehicleDetailNaoEncontrado as exc:
+        raise _vehicle_not_found() from exc
 
 
 @router.get(
