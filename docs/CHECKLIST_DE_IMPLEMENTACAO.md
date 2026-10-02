@@ -6740,3 +6740,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portao:** `tests/api/test_asset_workshop_dashboard_api.py` cobre registro no OpenAPI, 401 sem autenticação, 403 sem permissão, conversão positiva da projection e rejeição de identificador inválido. Verificacao focada: `python -m uv run --locked pytest tests/api/test_asset_workshop_dashboard_api.py tests/api/test_api_router_registry.py -q` — 7 testes verdes; `python -m uv run --locked ruff check apps/api/asset apps/api/_registry.py tests/api/test_asset_workshop_dashboard_api.py apps/validacao/asset/workshop_dashboard.py`, `python -m uv run --locked ruff format --check ...` e `python -m uv run --locked mypy ...` passaram.
 
 **Riscos e limites:** ainda não há endpoints Asset para Fleet View, Contract SLA Summary, WorkOrder detalhe ou comandos de escrita. O roteiro depende de massa Asset e permissões já semeadas; se o ambiente local ainda tiver roles antigos, ele falha antes do passo principal com instrução de reseed.
+
+### 02/10/2026 — A5 (parcial): query HTTP da Fleet View
+
+**Estado:** CONCLUÍDO — segundo endpoint Asset exposto pela API HTTP, restrito a leitura. Entrega `GET /v1/asset/fleet-view` para a query `GetFleetView(site?)`, consumindo a projection A6 e o repositório de leitura já implementados.
+
+**Implementacao:** `apps/api/asset/queries.py` acrescenta modelos de resposta `FleetViewResponse`/`FleetViewLineResponse`, conversão explícita de `FleetView` para JSON e dependency `get_fleet_view_service()` com `TransactionalFleetViewRepository`. `apps/api/asset/dependencies.py` acrescenta `require_vehicle_read`, usando a permissão aprovada `ASSET_VEHICLE.READ`. A superfície pública passa a declarar `/v1/asset/fleet-view` em `tests/api/test_core_public_surface.py`.
+
+**Decisoes preservadas:** a rota é read-only, não cria ou altera `Vehicle`/`WorkOrder`, não materializa projection, não cria migration e não adiciona regra de negócio em `apps/`. `site_id` é filtro opcional; a Organization continua vindo do `OrganizationContext` resolvido pelo servidor/RLS, não de query param.
+
+**Roteiro executavel:** `apps/validacao/asset/fleet_view.py` consulta a frota inteira e, quando houver `CustomerSite` Asset no banco local, valida também o filtro por site. O roteiro descobre Organization e CustomerSite sem copiar identificadores manualmente, mostra requisição/resposta e sonda `ASSET_VEHICLE.READ` antes dos passos principais.
+
+**Portao:** `tests/api/test_asset_fleet_view_api.py` cobre registro no OpenAPI, 401 sem autenticação, 403 sem permissão, conversão positiva da projection, filtro opcional por site, consulta sem filtro e rejeição de identificador inválido. Verificacao focada inicial: `python -m uv run --locked pytest tests/api/test_asset_fleet_view_api.py tests/api/test_asset_workshop_dashboard_api.py tests/api/test_core_public_surface.py -q` — 26 testes verdes. Verificacao de conjunto: `python -m uv run --locked pytest` — 1816 passed, 354 skipped, 1 warning preexistente de Starlette sobre `HTTP_422_UNPROCESSABLE_ENTITY`; `ruff check .`, `ruff format --check .` e `mypy` limpos. `alembic check` Core e Asset nao compararam migrations nesta execucao porque `TITAN_MIGRATION_DATABASE_URL` nao estava definida no ambiente.
+
+**Riscos e limites:** ainda não há endpoints Asset para Contract SLA Summary, WorkOrder detalhe ou comandos de escrita. O roteiro depende de API/Keycloak/banco locais e permissões Asset já semeadas; se o ambiente local ainda tiver roles antigos, ele falha antes do passo principal com instrução de reseed.

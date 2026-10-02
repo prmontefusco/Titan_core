@@ -32,6 +32,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/verification/bundles", "post"),
     # Vertical Asset — A5 inicia por query read-only da projection A6, sem
     # comandos de escrita ou endpoints genéricos de domínio.
+    ("/v1/asset/fleet-view", "get"),
     ("/v1/asset/workshop-dashboard", "get"),
     # Core - governanca auditavel de regras (ADR-0043).
     ("/v1/rule-governance/rule-identities", "post"),
