@@ -27,6 +27,11 @@ from packages.asset_application.fleet_view import (
     FleetViewLine,
     FleetViewService,
 )
+from packages.asset_application.vehicle_configuration_query import (
+    VehicleConfigurationAt,
+    VehicleConfigurationAtNaoEncontrada,
+    VehicleConfigurationAtService,
+)
 from packages.asset_application.vehicle_query import (
     VehicleDetailNaoEncontrado,
     VehicleQueryService,
@@ -40,12 +45,16 @@ from packages.asset_application.workshop_dashboard import (
     WorkshopDashboardLine,
     WorkshopDashboardService,
 )
+from packages.asset_domain.configuration import BaselinePosition, ConfigurationBaseline
 from packages.asset_domain.vehicle import MeterCorrection, MeterReading, Vehicle
 from packages.asset_domain.work_order import (
     MaterialDemand,
     RemovedComponentDisposition,
     WorkOrder,
     WorkTask,
+)
+from packages.asset_infrastructure.persistence.configuration_repository import (
+    TransactionalConfigurationBaselineRepository,
 )
 from packages.asset_infrastructure.persistence.contract_sla_summary_repository import (
     TransactionalContractSLASummaryRepository,
@@ -229,6 +238,32 @@ class VehicleDetailResponse(BaseModel):
     created_at: datetime
 
 
+class BaselinePositionResponse(BaseModel):
+    position_code: str
+    part_ref: str
+    part_revision_ref: str
+
+
+class ConfigurationBaselineResponse(BaseModel):
+    baseline_id: str
+    model_ref: str
+    variant_ref: str | None
+    revision_number: int
+    supersedes_ref: str | None
+    effectivity_valid_from: datetime
+    effectivity_valid_to: datetime | None
+    effectivity_serial_from: str | None
+    effectivity_serial_to: str | None
+    view: str
+    positions: list[BaselinePositionResponse]
+
+
+class VehicleConfigurationAtResponse(BaseModel):
+    vehicle_id: str
+    instant: datetime
+    baseline: ConfigurationBaselineResponse
+
+
 def get_workshop_dashboard_service(
     connection: ConnectionDependency,
 ) -> WorkshopDashboardService:
@@ -243,6 +278,15 @@ def get_fleet_view_service(connection: ConnectionDependency) -> FleetViewService
 
 def get_vehicle_query_service(connection: ConnectionDependency) -> VehicleQueryService:
     return VehicleQueryService(repository=TransactionalVehicleRepository(connection=connection))
+
+
+def get_vehicle_configuration_at_service(
+    connection: ConnectionDependency,
+) -> VehicleConfigurationAtService:
+    return VehicleConfigurationAtService(
+        vehicle_repository=TransactionalVehicleRepository(connection=connection),
+        baseline_repository=TransactionalConfigurationBaselineRepository(connection=connection),
+    )
 
 
 def get_contract_sla_summary_service(
@@ -372,6 +416,42 @@ def _vehicle_detail(vehicle: Vehicle) -> VehicleDetailResponse:
         ],
         version=vehicle.version,
         created_at=vehicle.created_at,
+    )
+
+
+def _baseline_position(position: BaselinePosition) -> BaselinePositionResponse:
+    return BaselinePositionResponse(
+        position_code=position.position_code,
+        part_ref=str(position.part_ref.value),
+        part_revision_ref=str(position.part_revision_ref.value),
+    )
+
+
+def _configuration_baseline(baseline: ConfigurationBaseline) -> ConfigurationBaselineResponse:
+    return ConfigurationBaselineResponse(
+        baseline_id=str(baseline.baseline_id.value),
+        model_ref=str(baseline.model_ref.value),
+        variant_ref=None if baseline.variant_ref is None else str(baseline.variant_ref.value),
+        revision_number=baseline.revision.number,
+        supersedes_ref=(
+            None
+            if baseline.revision.supersedes_ref is None
+            else str(baseline.revision.supersedes_ref.value)
+        ),
+        effectivity_valid_from=baseline.effectivity.valid_from,
+        effectivity_valid_to=baseline.effectivity.valid_to,
+        effectivity_serial_from=baseline.effectivity.serial_from,
+        effectivity_serial_to=baseline.effectivity.serial_to,
+        view=baseline.view.value,
+        positions=[_baseline_position(position) for position in baseline.positions],
+    )
+
+
+def _vehicle_configuration_at(result: VehicleConfigurationAt) -> VehicleConfigurationAtResponse:
+    return VehicleConfigurationAtResponse(
+        vehicle_id=str(result.vehicle.vehicle_id.value),
+        instant=result.instant,
+        baseline=_configuration_baseline(result.baseline),
     )
 
 
@@ -514,6 +594,15 @@ def _vehicle_not_found() -> DomainProblem:
     )
 
 
+def _vehicle_configuration_not_found() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_404_NOT_FOUND,
+        reason_code="RECURSO_NAO_ENCONTRADO",
+        title="Recurso não encontrado",
+        detail="ConfigurationBaseline não encontrada para o veículo no instante solicitado.",
+    )
+
+
 @router.get(
     "/workshop-dashboard",
     response_model=WorkshopDashboardResponse,
@@ -579,6 +668,43 @@ def consultar_vehicle(
         return _vehicle_detail(service.get_vehicle(vehicle_ref))
     except VehicleDetailNaoEncontrado as exc:
         raise _vehicle_not_found() from exc
+
+
+@router.get(
+    "/vehicles/{vehicle_id}/configuration-at",
+    response_model=VehicleConfigurationAtResponse,
+    summary="Consultar configuração vigente do veículo em um instante",
+    description=(
+        "Retorna a ConfigurationBaseline atualmente vinculada ao veículo quando "
+        "ela cobre o instante solicitado. O slice atual não reconstrói baselines "
+        "históricas anteriores ao vínculo vigente guardado no Vehicle."
+    ),
+    responses=RESPOSTAS_PADRAO | {404: {"description": "Configuração não encontrada"}},
+)
+def consultar_vehicle_configuration_at(
+    vehicle_id: str,
+    instant: datetime,
+    contexto: Annotated[OrganizationContext, Depends(require_vehicle_read)],
+    service: Annotated[
+        VehicleConfigurationAtService, Depends(get_vehicle_configuration_at_service)
+    ],
+) -> Any:
+    vehicle_ref = typed_id_or_problem(vehicle_id, entity_type="vehicle", campo="vehicle_id")
+    instant_utc = _utc_optional(instant, campo="instant")
+    if instant_utc is None:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="DATA_INVALIDA",
+            title="Data inválida",
+            detail="instant é obrigatório.",
+        )
+    _ = contexto
+    try:
+        return _vehicle_configuration_at(
+            service.get_configuration_at(vehicle_id=vehicle_ref, instant=instant_utc)
+        )
+    except VehicleConfigurationAtNaoEncontrada as exc:
+        raise _vehicle_configuration_not_found() from exc
 
 
 @router.get(
