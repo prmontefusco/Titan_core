@@ -18,6 +18,7 @@ from packages.asset_application.authorization import (
     APPLICABILITY_READ,
     CONTRACT_READ,
     DASHBOARD_READ,
+    INVENTORY_READ,
     VEHICLE_READ,
     WO_READ,
 )
@@ -48,6 +49,12 @@ def require_contract_read(
     return contexto
 
 
+def require_inventory_read(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(INVENTORY_READ))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_work_order_read(
     contexto: Annotated[OrganizationContext, Depends(require_permission(WO_READ))],
 ) -> OrganizationContext:
@@ -59,6 +66,7 @@ __all__ = [
     "require_applicability_read",
     "require_contract_read",
     "require_dashboard_read",
+    "require_inventory_read",
     "require_vehicle_read",
     "require_work_order_read",
     "typed_id_or_problem",

@@ -12,11 +12,16 @@ from apps.api.asset.dependencies import (
     require_applicability_read,
     require_contract_read,
     require_dashboard_read,
+    require_inventory_read,
     require_vehicle_read,
     require_work_order_read,
     typed_id_or_problem,
 )
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
+from packages.asset_application.availability_query import (
+    AvailabilityQueryService,
+    AvailabilityResult,
+)
 from packages.asset_application.contract_sla_summary import (
     ContractSLASummary,
     ContractSLASummaryService,
@@ -53,6 +58,7 @@ from packages.asset_application.workshop_dashboard import (
 )
 from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
 from packages.asset_domain.configuration import BaselinePosition, ConfigurationBaseline
+from packages.asset_domain.inventory import AvailabilityBreakdown, StockPurpose
 from packages.asset_domain.vehicle import MeterCorrection, MeterReading, Vehicle
 from packages.asset_domain.work_order import (
     MaterialDemand,
@@ -71,6 +77,9 @@ from packages.asset_infrastructure.persistence.contract_sla_summary_repository i
 )
 from packages.asset_infrastructure.persistence.fleet_view_repository import (
     TransactionalFleetViewRepository,
+)
+from packages.asset_infrastructure.persistence.inventory_repository import (
+    TransactionalStockPositionRepository,
 )
 from packages.asset_infrastructure.persistence.vehicle_repository import (
     TransactionalVehicleRepository,
@@ -299,6 +308,23 @@ class PartApplicabilityResolutionResponse(BaseModel):
     assertions: list[PartApplicabilityAssertionResponse]
 
 
+class AvailabilityBreakdownResponse(BaseModel):
+    on_hand: str
+    reserved: str
+    quarantine: str
+    inspection: str
+    damaged: str
+    available: str
+
+
+class AvailabilityResponse(BaseModel):
+    part_ref: str
+    location_ref: str
+    purpose: str
+    breakdown: AvailabilityBreakdownResponse
+    stock_position_refs: list[str]
+
+
 def get_workshop_dashboard_service(
     connection: ConnectionDependency,
 ) -> WorkshopDashboardService:
@@ -330,6 +356,14 @@ def get_part_applicability_query_service(
     return PartApplicabilityQueryService(
         vehicle_repository=TransactionalVehicleRepository(connection=connection),
         applicability_repository=TransactionalApplicabilityRepository(connection=connection),
+    )
+
+
+def get_availability_query_service(
+    connection: ConnectionDependency,
+) -> AvailabilityQueryService:
+    return AvailabilityQueryService(
+        repository=TransactionalStockPositionRepository(connection=connection)
     )
 
 
@@ -531,6 +565,29 @@ def _part_applicability_resolution(
         vehicle_id=str(result.vehicle.vehicle_id.value),
         instant=result.instant,
         assertions=[_applicability_assertion(applicability) for applicability in result.assertions],
+    )
+
+
+def _availability_breakdown(
+    breakdown: AvailabilityBreakdown,
+) -> AvailabilityBreakdownResponse:
+    return AvailabilityBreakdownResponse(
+        on_hand=str(breakdown.on_hand),
+        reserved=str(breakdown.reserved),
+        quarantine=str(breakdown.quarantine),
+        inspection=str(breakdown.inspection),
+        damaged=str(breakdown.damaged),
+        available=str(breakdown.available),
+    )
+
+
+def _availability(result: AvailabilityResult) -> AvailabilityResponse:
+    return AvailabilityResponse(
+        part_ref=str(result.part_ref.value),
+        location_ref=str(result.location_ref.value),
+        purpose=result.purpose.value,
+        breakdown=_availability_breakdown(result.breakdown),
+        stock_position_refs=[str(ref.value) for ref in result.stock_position_refs],
     )
 
 
@@ -832,6 +889,47 @@ def consultar_part_applicability(
         )
     except PartApplicabilityVehicleNaoEncontrado as exc:
         raise _part_applicability_vehicle_not_found() from exc
+
+
+@router.get(
+    "/availability",
+    response_model=AvailabilityResponse,
+    summary="Consultar disponibilidade de estoque",
+    description=(
+        "Agrega StockPositions por peça, localização e propósito, retornando "
+        "AvailabilityBreakdown explicável. A rota é read-only e não reserva, "
+        "aloca, consome nem ajusta estoque."
+    ),
+    responses=RESPOSTAS_PADRAO,
+)
+def consultar_availability(
+    part_id: str,
+    location_id: str,
+    purpose: str,
+    contexto: Annotated[OrganizationContext, Depends(require_inventory_read)],
+    service: Annotated[AvailabilityQueryService, Depends(get_availability_query_service)],
+) -> Any:
+    part_ref = typed_id_or_problem(part_id, entity_type="part", campo="part_id")
+    location_ref = typed_id_or_problem(
+        location_id, entity_type="stock_location", campo="location_id"
+    )
+    try:
+        stock_purpose = StockPurpose(purpose)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="VALOR_INVALIDO",
+            title="Valor inválido",
+            detail="purpose deve ser um StockPurpose válido.",
+        ) from exc
+    _ = contexto
+    return _availability(
+        service.get_availability(
+            part_ref=part_ref,
+            location_ref=location_ref,
+            purpose=stock_purpose,
+        )
+    )
 
 
 @router.get(

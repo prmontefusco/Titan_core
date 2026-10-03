@@ -32,6 +32,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/verification/bundles", "post"),
     # Vertical Asset — A5 inicia por query read-only da projection A6, sem
     # comandos de escrita ou endpoints genéricos de domínio.
+    ("/v1/asset/availability", "get"),
     ("/v1/asset/contract-sla-summary", "get"),
     ("/v1/asset/fleet-view", "get"),
     ("/v1/asset/part-applicability", "get"),

@@ -247,6 +247,24 @@ class TransactionalStockPositionRepository:
             return None
         return self._map(row)
 
+    def list_by_part_location_purpose(
+        self,
+        *,
+        part_ref: TypedId,
+        location_ref: TypedId,
+        purpose: StockPurpose,
+    ) -> tuple[StockPosition, ...]:
+        rows = self.connection.execute(
+            select(stock_positions_table)
+            .where(
+                stock_positions_table.c.part_id == part_ref.value,
+                stock_positions_table.c.location_id == location_ref.value,
+                stock_positions_table.c.purpose == purpose.value,
+            )
+            .order_by(stock_positions_table.c.stock_position_id)
+        ).fetchall()
+        return tuple(self._map(row) for row in rows)
+
     def _map(self, row: Row[Any]) -> StockPosition:
         line_rows = self.connection.execute(
             select(stock_position_reservations_table).where(
