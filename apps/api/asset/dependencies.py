@@ -24,6 +24,7 @@ from packages.asset_application.authorization import (
     WO_DEMAND_MATERIAL,
     WO_OPEN,
     WO_READ,
+    WO_TRANSITION,
 )
 from packages.core_domain import OrganizationContext
 
@@ -82,6 +83,12 @@ def require_work_order_demand_material(
     return contexto
 
 
+def require_work_order_transition(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(WO_TRANSITION))],
+) -> OrganizationContext:
+    return contexto
+
+
 __all__ = [
     "ConnectionDependency",
     "require_applicability_read",
@@ -93,5 +100,6 @@ __all__ = [
     "require_work_order_demand_material",
     "require_work_order_open",
     "require_work_order_read",
+    "require_work_order_transition",
     "typed_id_or_problem",
 ]

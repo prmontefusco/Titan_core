@@ -597,6 +597,49 @@ def test_demand_material_rejects_missing_part(
         )
 
 
+def test_mark_planned_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
+        work_order_service, vehicle_service, context
+    )
+    part_ref = _save_part(work_order_service)
+    work_order = work_order_service.open_work_order(
+        context,
+        vehicle_ref=vehicle_id,
+        site_ref=site_ref,
+        contract_ref=contract_id,
+        failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+        at_instant=OCCURRED_AT,
+        occurred_at=OCCURRED_AT,
+    )
+    with_task = work_order_service.add_task(
+        context,
+        work_order.work_order_id,
+        description="Trocar peça",
+        mandatory=True,
+        occurred_at=OCCURRED_AT,
+    )
+    with_demand = work_order_service.demand_material(
+        context,
+        work_order.work_order_id,
+        part_ref=part_ref,
+        qty=Decimal(1),
+        task_id=with_task.tasks[0].task_id,
+        expected_version=with_task.version,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        work_order_service.mark_planned(
+            context,
+            work_order.work_order_id,
+            expected_version=with_demand.version + 1,
+            occurred_at=OCCURRED_AT,
+        )
+
+
 def test_reserve_material_requires_granted_entitlement(
     recorder: AssetEventRecorder, context: AssetOperationContext
 ) -> None:
