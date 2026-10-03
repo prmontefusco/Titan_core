@@ -3,6 +3,7 @@
 import hashlib
 import json
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, status
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 from apps.api.asset.dependencies import (
     ConnectionDependency,
     require_work_order_add_task,
+    require_work_order_demand_material,
     require_work_order_open,
 )
 from apps.api.asset.queries import (
@@ -26,6 +28,7 @@ from packages.asset_application.contract_context_query import (
 )
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import InventoryService
+from packages.asset_application.part_service import PartNaoEncontrado
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
 from packages.asset_application.work_order_service import (
     SLIContractNaoEncontradoParaWorkOrder,
@@ -38,6 +41,7 @@ from packages.asset_infrastructure.persistence.inventory_repository import (
     TransactionalStockReservationRepository,
     TransactionalStockTransferRepository,
 )
+from packages.asset_infrastructure.persistence.part_repository import TransactionalPartRepository
 from packages.asset_infrastructure.persistence.sustainment_contract_repository import (
     TransactionalSLIContractRepository,
 )
@@ -66,6 +70,8 @@ OPEN_WORK_ORDER_PURPOSE = "SUSTAINMENT_WO_OPEN"
 OPEN_WORK_ORDER_OPERATION = "asset.work_order.open"
 ADD_WORK_ORDER_TASK_PURPOSE = "SUSTAINMENT_WO_ADD_TASK"
 ADD_WORK_ORDER_TASK_OPERATION = "asset.work_order.add_task"
+DEMAND_MATERIAL_PURPOSE = "SUSTAINMENT_WO_DEMAND_MATERIAL"
+DEMAND_MATERIAL_OPERATION = "asset.work_order.demand_material"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -84,6 +90,13 @@ class AddWorkOrderTaskRequest(BaseModel):
     mandatory: bool
 
 
+class DemandMaterialRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    part_id: str = Field(description="Part demandado pela tarefa da WorkOrder.")
+    qty: Decimal = Field(gt=Decimal("0"))
+    task_id: str = Field(description="Tarefa da WorkOrder que demanda o material.")
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -91,6 +104,7 @@ def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderSe
     return WorkOrderService(
         repository=TransactionalWorkOrderRepository(connection=connection),
         sli_contract_repository=TransactionalSLIContractRepository(connection=connection),
+        part_repository=TransactionalPartRepository(connection=connection),
         vehicle_service=VehicleService(repository=vehicle_repository, recorder=recorder),
         inventory_service=InventoryService(
             stock_position_repository=TransactionalStockPositionRepository(connection=connection),
@@ -287,6 +301,93 @@ def adicionar_tarefa_work_order(
     )
 
 
+@router.post(
+    "/work-orders/{work_order_id}/material-demands",
+    response_model=WorkOrderDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Demandar material para uma tarefa de WorkOrder",
+    responses=RESPOSTAS_PADRAO,
+)
+def demandar_material_work_order(
+    work_order_id: str,
+    body: DemandMaterialRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_demand_material)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> WorkOrderDetailResponse:
+    parsed_work_order_id = _typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    part_id = _typed_id_or_problem(body.part_id, entity_type="part", campo="part_id")
+    task_id = _typed_id_or_problem(body.task_id, entity_type="work_task", campo="task_id")
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=DEMAND_MATERIAL_OPERATION,
+        purpose=DEMAND_MATERIAL_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"work_order_id": work_order_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            work_order = service.demand_material(
+                operation_context,
+                parsed_work_order_id,
+                part_ref=part_id,
+                qty=body.qty,
+                task_id=task_id,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except (WorkOrderNaoEncontrada, PartNaoEncontrado, KeyError) as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _work_order_detail(work_order)
+        return CanonicalPayload(
+            schema="asset.demand_work_order_material.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return WorkOrderDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
 def _typed_id_or_problem(value: str, *, entity_type: str, campo: str) -> TypedId:
     try:
         return TypedId.parse(entity_type, value)
@@ -350,6 +451,8 @@ def _canonicalize(value: object) -> CanonicalValue:
         return {str(key): _canonicalize(item) for key, item in value.items()}
     if isinstance(value, list | tuple):
         return [_canonicalize(item) for item in value]
+    if isinstance(value, Decimal):
+        return str(value)
     if isinstance(value, str | int | bool | datetime) or value is None:
         return value
     raise TypeError(f"Tipo não suportado no digest idempotente: {type(value).__name__}.")

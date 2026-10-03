@@ -42,6 +42,7 @@ from typing import Protocol
 from packages.asset_application.entitlement_service import EntitlementOutcome, EntitlementResolution
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import InventoryService
+from packages.asset_application.part_service import PartNaoEncontrado, PartRepositoryPort
 from packages.asset_application.sustainment_contract_service import SLIContractRepositoryPort
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
 from packages.asset_domain.events import (
@@ -117,6 +118,7 @@ class WorkOrderRepositoryPort(Protocol):
 class WorkOrderService:
     repository: WorkOrderRepositoryPort
     sli_contract_repository: SLIContractRepositoryPort
+    part_repository: PartRepositoryPort
     vehicle_service: VehicleService
     inventory_service: InventoryService
     recorder: AssetEventRecorder
@@ -275,9 +277,14 @@ class WorkOrderService:
         part_ref: TypedId,
         qty: Decimal,
         task_id: TypedId,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
+        if self.part_repository.get_by_id(part_ref) is None:
+            raise PartNaoEncontrado(f"Part '{part_ref.value}' não encontrado.")
         demand = MaterialDemand(part_ref=part_ref, qty=qty, task_id=task_id)
         updated = work_order.demand_material(demand)
         self.repository.update(updated)

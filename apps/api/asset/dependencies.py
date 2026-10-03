@@ -21,6 +21,7 @@ from packages.asset_application.authorization import (
     INVENTORY_READ,
     VEHICLE_READ,
     WO_ADD_TASK,
+    WO_DEMAND_MATERIAL,
     WO_OPEN,
     WO_READ,
 )
@@ -75,6 +76,12 @@ def require_work_order_add_task(
     return contexto
 
 
+def require_work_order_demand_material(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(WO_DEMAND_MATERIAL))],
+) -> OrganizationContext:
+    return contexto
+
+
 __all__ = [
     "ConnectionDependency",
     "require_applicability_read",
@@ -83,6 +90,7 @@ __all__ = [
     "require_inventory_read",
     "require_vehicle_read",
     "require_work_order_add_task",
+    "require_work_order_demand_material",
     "require_work_order_open",
     "require_work_order_read",
     "typed_id_or_problem",

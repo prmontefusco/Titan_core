@@ -13,6 +13,7 @@ from packages.asset_application.inventory_service import (
     StockReservationRepositoryPort,
     StockTransferRepositoryPort,
 )
+from packages.asset_application.part_service import PartNaoEncontrado, PartRepositoryPort
 from packages.asset_application.sustainment_contract_service import SLIContractRepositoryPort
 from packages.asset_application.vehicle_service import (
     VehicleNaoEncontrado,
@@ -41,6 +42,7 @@ from packages.asset_domain.inventory import (
     StockReservation,
     StockTransfer,
 )
+from packages.asset_domain.part import Part, PartIdentity
 from packages.asset_domain.sustainment_contract import (
     ContractVersion,
     KnownValidInterval,
@@ -59,7 +61,7 @@ from packages.asset_domain.work_order import (
     WorkOrderState,
 )
 from packages.core_application import OptimisticConcurrencyConflict
-from packages.shared_kernel import TypedId
+from packages.shared_kernel import OrganizationId, TypedId
 from tests.asset_support import FakeEventLog
 
 OCCURRED_AT = datetime(2026, 9, 11, tzinfo=UTC)
@@ -102,6 +104,20 @@ class InMemorySLIContractRepository(SLIContractRepositoryPort):
 
     def get_by_id(self, contract_id: TypedId) -> SLIContract | None:
         return self.items.get(contract_id.value.hex)
+
+
+class InMemoryPartRepository(PartRepositoryPort):
+    def __init__(self) -> None:
+        self.items: dict[str, Part] = {}
+
+    def save(self, part: Part) -> None:
+        self.items[part.part_id.value.hex] = part
+
+    def update(self, part: Part) -> None:
+        self.items[part.part_id.value.hex] = part
+
+    def get_by_id(self, part_id: TypedId) -> Part | None:
+        return self.items.get(part_id.value.hex)
 
 
 class InMemoryVehicleRepository(VehicleRepositoryPort):
@@ -171,6 +187,7 @@ def _build_service(recorder: AssetEventRecorder) -> tuple[WorkOrderService, Vehi
     work_order_service = WorkOrderService(
         repository=InMemoryWorkOrderRepository(),
         sli_contract_repository=InMemorySLIContractRepository(),
+        part_repository=InMemoryPartRepository(),
         vehicle_service=vehicle_service,
         inventory_service=inventory_service,
         recorder=recorder,
@@ -209,6 +226,20 @@ def _open_contract_and_vehicle(
     return vehicle.vehicle_id, site_ref, contract.contract_id
 
 
+def _save_part(work_order_service: WorkOrderService) -> TypedId:
+    part = Part(
+        part_id=TypedId.new("part"),
+        organization_id=OrganizationId.new(),
+        identity=PartIdentity(
+            part_number="PN-WO-1",
+            description="Peça de manutenção",
+            manufacturer="Titan",
+        ),
+    )
+    work_order_service.part_repository.save(part)
+    return part.part_id
+
+
 def test_full_lifecycle_open_to_close(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
@@ -216,7 +247,7 @@ def test_full_lifecycle_open_to_close(
     vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
-    part_ref = TypedId.new("part")
+    part_ref = _save_part(work_order_service)
 
     work_order = work_order_service.open_work_order(
         context,
@@ -415,7 +446,7 @@ def test_reserve_material_beyond_demand_raises(
     vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
-    part_ref = TypedId.new("part")
+    part_ref = _save_part(work_order_service)
 
     work_order = work_order_service.open_work_order(
         context,
@@ -493,6 +524,79 @@ def test_add_task_rejects_stale_expected_version(
         )
 
 
+def test_demand_material_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
+        work_order_service, vehicle_service, context
+    )
+    part_ref = _save_part(work_order_service)
+    work_order = work_order_service.open_work_order(
+        context,
+        vehicle_ref=vehicle_id,
+        site_ref=site_ref,
+        contract_ref=contract_id,
+        failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+        at_instant=OCCURRED_AT,
+        occurred_at=OCCURRED_AT,
+    )
+    with_task = work_order_service.add_task(
+        context,
+        work_order.work_order_id,
+        description="Trocar peça",
+        mandatory=True,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        work_order_service.demand_material(
+            context,
+            work_order.work_order_id,
+            part_ref=part_ref,
+            qty=Decimal(1),
+            task_id=with_task.tasks[0].task_id,
+            expected_version=with_task.version + 1,
+            occurred_at=OCCURRED_AT,
+        )
+
+
+def test_demand_material_rejects_missing_part(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
+        work_order_service, vehicle_service, context
+    )
+    work_order = work_order_service.open_work_order(
+        context,
+        vehicle_ref=vehicle_id,
+        site_ref=site_ref,
+        contract_ref=contract_id,
+        failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+        at_instant=OCCURRED_AT,
+        occurred_at=OCCURRED_AT,
+    )
+    with_task = work_order_service.add_task(
+        context,
+        work_order.work_order_id,
+        description="Trocar peça",
+        mandatory=True,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(PartNaoEncontrado):
+        work_order_service.demand_material(
+            context,
+            work_order.work_order_id,
+            part_ref=TypedId.new("part"),
+            qty=Decimal(1),
+            task_id=with_task.tasks[0].task_id,
+            expected_version=with_task.version,
+            occurred_at=OCCURRED_AT,
+        )
+
+
 def test_reserve_material_requires_granted_entitlement(
     recorder: AssetEventRecorder, context: AssetOperationContext
 ) -> None:
@@ -500,7 +604,7 @@ def test_reserve_material_requires_granted_entitlement(
     vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
-    part_ref = TypedId.new("part")
+    part_ref = _save_part(work_order_service)
     work_order = work_order_service.open_work_order(
         context,
         vehicle_ref=vehicle_id,
@@ -564,7 +668,7 @@ def test_cancel_releases_material_reservations(
     vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
-    part_ref = TypedId.new("part")
+    part_ref = _save_part(work_order_service)
 
     work_order = work_order_service.open_work_order(
         context,
@@ -651,7 +755,7 @@ def test_fail_validation_returns_to_technically_complete(
         occurred_at=OCCURRED_AT,
     )
     task_id = with_task.tasks[0].task_id
-    part_ref = TypedId.new("part")
+    part_ref = _save_part(work_order_service)
     work_order_service.demand_material(
         context,
         work_order.work_order_id,

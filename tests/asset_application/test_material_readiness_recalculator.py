@@ -15,6 +15,7 @@ from packages.asset_application.material_readiness_recalculator import (
     MaterialReadinessRecalculationOutcome,
     MaterialReadinessRecalculator,
 )
+from packages.asset_application.part_service import PartRepositoryPort
 from packages.asset_application.sustainment_contract_service import SLIContractRepositoryPort
 from packages.asset_application.vehicle_service import VehicleRepositoryPort, VehicleService
 from packages.asset_application.work_order_service import WorkOrderRepositoryPort, WorkOrderService
@@ -29,6 +30,7 @@ from packages.asset_domain.inventory import (
     StockReservation,
     StockTransfer,
 )
+from packages.asset_domain.part import Part
 from packages.asset_domain.sustainment_contract import SLIContract
 from packages.asset_domain.vehicle import Vehicle
 from packages.asset_domain.work_order import (
@@ -65,6 +67,15 @@ class InMemorySLIContractRepository(SLIContractRepositoryPort):
     def update(self, contract: SLIContract) -> None: ...
 
     def get_by_id(self, contract_id: TypedId) -> SLIContract | None:
+        return None
+
+
+class InMemoryPartRepository(PartRepositoryPort):
+    def save(self, part: Part) -> None: ...
+
+    def update(self, part: Part) -> None: ...
+
+    def get_by_id(self, part_id: TypedId) -> Part | None:
         return None
 
 
@@ -141,6 +152,7 @@ def _build_recalculator(
     work_order_service = WorkOrderService(
         repository=work_order_repository,
         sli_contract_repository=InMemorySLIContractRepository(),
+        part_repository=InMemoryPartRepository(),
         vehicle_service=VehicleService(repository=InMemoryVehicleRepository(), recorder=recorder),
         inventory_service=inventory_service,
         recorder=recorder,
