@@ -20,6 +20,7 @@ from packages.asset_application.authorization import (
     DASHBOARD_READ,
     INVENTORY_READ,
     VEHICLE_READ,
+    WO_ADD_TASK,
     WO_OPEN,
     WO_READ,
 )
@@ -68,6 +69,12 @@ def require_work_order_open(
     return contexto
 
 
+def require_work_order_add_task(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(WO_ADD_TASK))],
+) -> OrganizationContext:
+    return contexto
+
+
 __all__ = [
     "ConnectionDependency",
     "require_applicability_read",
@@ -75,6 +82,7 @@ __all__ = [
     "require_dashboard_read",
     "require_inventory_read",
     "require_vehicle_read",
+    "require_work_order_add_task",
     "require_work_order_open",
     "require_work_order_read",
     "typed_id_or_problem",

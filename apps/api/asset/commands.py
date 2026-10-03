@@ -8,7 +8,11 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, Field
 
-from apps.api.asset.dependencies import ConnectionDependency, require_work_order_open
+from apps.api.asset.dependencies import (
+    ConnectionDependency,
+    require_work_order_add_task,
+    require_work_order_open,
+)
 from apps.api.asset.queries import (
     WorkOrderDetailResponse,
     _work_order_detail,
@@ -25,6 +29,7 @@ from packages.asset_application.inventory_service import InventoryService
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
 from packages.asset_application.work_order_service import (
     SLIContractNaoEncontradoParaWorkOrder,
+    WorkOrderNaoEncontrada,
     WorkOrderService,
 )
 from packages.asset_domain.work_order import FailureRecord
@@ -47,6 +52,7 @@ from packages.core_application import (
     IdempotencyRequest,
     IdempotencyResultUnknown,
     IdempotencyService,
+    OptimisticConcurrencyConflict,
 )
 from packages.core_domain import CanonicalPayload, OrganizationContext
 from packages.core_infrastructure.persistence.events import DomainEventRepository
@@ -58,6 +64,8 @@ from packages.shared_kernel.temporal import require_utc
 IDEMPOTENCY_HEADER = "Idempotency-Key"
 OPEN_WORK_ORDER_PURPOSE = "SUSTAINMENT_WO_OPEN"
 OPEN_WORK_ORDER_OPERATION = "asset.work_order.open"
+ADD_WORK_ORDER_TASK_PURPOSE = "SUSTAINMENT_WO_ADD_TASK"
+ADD_WORK_ORDER_TASK_OPERATION = "asset.work_order.add_task"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -68,6 +76,12 @@ class OpenWorkOrderRequest(BaseModel):
     failure_mode: str = Field(min_length=1, max_length=200)
     failure_reported_at: datetime
     failure_affected_position: str | None = Field(default=None, max_length=100)
+
+
+class AddWorkOrderTaskRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    description: str = Field(min_length=1, max_length=500)
+    mandatory: bool
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -189,6 +203,90 @@ def abrir_work_order(
     )
 
 
+@router.post(
+    "/work-orders/{work_order_id}/tasks",
+    response_model=WorkOrderDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Adicionar tarefa a uma WorkOrder",
+    responses=RESPOSTAS_PADRAO,
+)
+def adicionar_tarefa_work_order(
+    work_order_id: str,
+    body: AddWorkOrderTaskRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_add_task)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> WorkOrderDetailResponse:
+    parsed_work_order_id = _typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=ADD_WORK_ORDER_TASK_OPERATION,
+        purpose=ADD_WORK_ORDER_TASK_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"work_order_id": work_order_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            work_order = service.add_task(
+                operation_context,
+                parsed_work_order_id,
+                description=body.description,
+                mandatory=body.mandatory,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except WorkOrderNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _work_order_detail(work_order)
+        return CanonicalPayload(
+            schema="asset.add_work_order_task.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return WorkOrderDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
 def _typed_id_or_problem(value: str, *, entity_type: str, campo: str) -> TypedId:
     try:
         return TypedId.parse(entity_type, value)
@@ -215,10 +313,13 @@ def _require_utc_or_problem(value: datetime, *, field_name: str) -> None:
 
 def _idempotency_request(
     *,
-    body: OpenWorkOrderRequest,
+    body: BaseModel,
     contexto: OrganizationContext,
     idempotency_key: str,
+    operation: str = OPEN_WORK_ORDER_OPERATION,
+    purpose: str = OPEN_WORK_ORDER_PURPOSE,
     requested_at: datetime,
+    extra_intent: dict[str, CanonicalValue] | None = None,
 ) -> IdempotencyRequest:
     return IdempotencyRequest(
         key=idempotency_key,
@@ -228,22 +329,30 @@ def _idempotency_request(
             organization_id=contexto.organization_id,
             contract_version=1,
         ),
-        purpose=OPEN_WORK_ORDER_PURPOSE,
-        operation=OPEN_WORK_ORDER_OPERATION,
-        intent_digest=_intent_digest(body),
+        purpose=purpose,
+        operation=operation,
+        intent_digest=_intent_digest(body, extra=extra_intent),
         requested_at=requested_at,
     )
 
 
-def _intent_digest(body: OpenWorkOrderRequest) -> bytes:
-    value: dict[str, CanonicalValue] = {
-        "vehicle_id": body.vehicle_id,
-        "at_instant": body.at_instant,
-        "failure_mode": body.failure_mode,
-        "failure_reported_at": body.failure_reported_at,
-        "failure_affected_position": body.failure_affected_position,
-    }
+def _intent_digest(body: BaseModel, *, extra: dict[str, CanonicalValue] | None = None) -> bytes:
+    value = _canonicalize(body.model_dump(mode="python"))
+    if not isinstance(value, dict):
+        raise TypeError("Request idempotente deve ser um objeto.")
+    if extra:
+        value.update(extra)
     return hashlib.sha256(CanonicalSerializer().serialize(value)).digest()
+
+
+def _canonicalize(value: object) -> CanonicalValue:
+    if isinstance(value, dict):
+        return {str(key): _canonicalize(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [_canonicalize(item) for item in value]
+    if isinstance(value, str | int | bool | datetime) or value is None:
+        return value
+    raise TypeError(f"Tipo não suportado no digest idempotente: {type(value).__name__}.")
 
 
 def _not_found(detail: str) -> DomainProblem:
@@ -261,6 +370,15 @@ def _domain_conflict(detail: str) -> DomainProblem:
         reason_code="CONFLITO_DE_DOMINIO",
         title="Operação recusada pelo domínio",
         detail=detail,
+    )
+
+
+def _version_conflict() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_409_CONFLICT,
+        reason_code=OptimisticConcurrencyConflict.code,
+        title="Versão de agregado conflitante",
+        detail="A versão informada não corresponde à versão atual da WorkOrder.",
     )
 
 

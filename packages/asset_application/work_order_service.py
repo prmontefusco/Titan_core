@@ -89,6 +89,7 @@ from packages.asset_domain.work_order import (
     all_material_fully_reserved,
     require_reservations_do_not_exceed_demand,
 )
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 
 
@@ -244,9 +245,12 @@ class WorkOrderService:
         *,
         description: str,
         mandatory: bool,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         task = WorkTask(
             task_id=TypedId.new("work_task"), description=description, mandatory=mandatory
         )

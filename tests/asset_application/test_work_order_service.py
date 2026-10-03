@@ -58,6 +58,7 @@ from packages.asset_domain.work_order import (
     WorkOrder,
     WorkOrderState,
 )
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 from tests.asset_support import FakeEventLog
 
@@ -460,6 +461,34 @@ def test_reserve_material_beyond_demand_raises(
             qty=Decimal(3),
             priority=1,
             entitlement=_granted_entitlement(vehicle_ref=vehicle_id, subject_ref=part_ref),
+            occurred_at=OCCURRED_AT,
+        )
+
+
+def test_add_task_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
+        work_order_service, vehicle_service, context
+    )
+    work_order = work_order_service.open_work_order(
+        context,
+        vehicle_ref=vehicle_id,
+        site_ref=site_ref,
+        contract_ref=contract_id,
+        failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+        at_instant=OCCURRED_AT,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        work_order_service.add_task(
+            context,
+            work_order.work_order_id,
+            description="Trocar peça",
+            mandatory=True,
+            expected_version=work_order.version + 1,
             occurred_at=OCCURRED_AT,
         )
 
