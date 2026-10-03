@@ -231,6 +231,12 @@ class TransactionalSLIContractRepository:
             return None
         return self._map(row)
 
+    def list_all(self) -> tuple[SLIContract, ...]:
+        rows = self.connection.execute(
+            select(sli_contracts_table).order_by(sli_contracts_table.c.contract_id)
+        ).fetchall()
+        return tuple(self._map(row) for row in rows)
+
     def _map(self, row: Row[Any]) -> SLIContract:
         version_rows = self.connection.execute(
             select(contract_versions_table)

@@ -22,6 +22,12 @@ from packages.asset_application.availability_query import (
     AvailabilityQueryService,
     AvailabilityResult,
 )
+from packages.asset_application.contract_context_query import (
+    ContractContextAmbiguo,
+    ContractContextForVehicle,
+    ContractContextNaoEncontrado,
+    ContractContextQueryService,
+)
 from packages.asset_application.contract_sla_summary import (
     ContractSLASummary,
     ContractSLASummaryService,
@@ -59,6 +65,7 @@ from packages.asset_application.workshop_dashboard import (
 from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
 from packages.asset_domain.configuration import BaselinePosition, ConfigurationBaseline
 from packages.asset_domain.inventory import AvailabilityBreakdown, StockPurpose
+from packages.asset_domain.sustainment_contract import CoverageLine, ServiceLimits
 from packages.asset_domain.vehicle import MeterCorrection, MeterReading, Vehicle
 from packages.asset_domain.work_order import (
     MaterialDemand,
@@ -80,6 +87,9 @@ from packages.asset_infrastructure.persistence.fleet_view_repository import (
 )
 from packages.asset_infrastructure.persistence.inventory_repository import (
     TransactionalStockPositionRepository,
+)
+from packages.asset_infrastructure.persistence.sustainment_contract_repository import (
+    TransactionalSLIContractRepository,
 )
 from packages.asset_infrastructure.persistence.vehicle_repository import (
     TransactionalVehicleRepository,
@@ -325,6 +335,33 @@ class AvailabilityResponse(BaseModel):
     stock_position_refs: list[str]
 
 
+class CoverageLineResponse(BaseModel):
+    scope: str
+    scope_value: str
+    covered_services: list[str]
+    covered_parts: list[str]
+    excluded_parts: list[str]
+    labor_rules: str | None
+    travel_rules: str | None
+
+
+class ServiceLimitsResponse(BaseModel):
+    max_services_per_period: int
+    period_days: int
+
+
+class ContractContextForVehicleResponse(BaseModel):
+    vehicle_id: str
+    contract_ref: str
+    contract_version_no: int
+    resolved_at: datetime
+    coverage: CoverageLineResponse
+    response_sla_duration_seconds: int | None
+    repair_sla_duration_seconds: int | None
+    availability_target_percentage: str | None
+    service_limits: ServiceLimitsResponse | None
+
+
 def get_workshop_dashboard_service(
     connection: ConnectionDependency,
 ) -> WorkshopDashboardService:
@@ -372,6 +409,15 @@ def get_contract_sla_summary_service(
 ) -> ContractSLASummaryService:
     return ContractSLASummaryService(
         repository=TransactionalContractSLASummaryRepository(connection=connection)
+    )
+
+
+def get_contract_context_query_service(
+    connection: ConnectionDependency,
+) -> ContractContextQueryService:
+    return ContractContextQueryService(
+        vehicle_repository=TransactionalVehicleRepository(connection=connection),
+        contract_repository=TransactionalSLIContractRepository(connection=connection),
     )
 
 
@@ -591,6 +637,47 @@ def _availability(result: AvailabilityResult) -> AvailabilityResponse:
     )
 
 
+def _coverage_line(line: CoverageLine) -> CoverageLineResponse:
+    return CoverageLineResponse(
+        scope=line.scope.value,
+        scope_value=line.scope_value,
+        covered_services=list(line.covered_services),
+        covered_parts=[str(ref.value) for ref in line.covered_parts],
+        excluded_parts=[str(ref.value) for ref in line.excluded_parts],
+        labor_rules=line.labor_rules,
+        travel_rules=line.travel_rules,
+    )
+
+
+def _service_limits(limits: ServiceLimits | None) -> ServiceLimitsResponse | None:
+    if limits is None:
+        return None
+    return ServiceLimitsResponse(
+        max_services_per_period=limits.max_services_per_period,
+        period_days=limits.period_days,
+    )
+
+
+def _contract_context_for_vehicle(
+    result: ContractContextForVehicle,
+) -> ContractContextForVehicleResponse:
+    return ContractContextForVehicleResponse(
+        vehicle_id=str(result.vehicle.vehicle_id.value),
+        contract_ref=str(result.contract.contract_id.value),
+        contract_version_no=result.contract_version.version_no,
+        resolved_at=result.resolved_at,
+        coverage=_coverage_line(result.coverage_line),
+        response_sla_duration_seconds=result.response_sla_duration_seconds,
+        repair_sla_duration_seconds=result.repair_sla_duration_seconds,
+        availability_target_percentage=(
+            None
+            if result.availability_target_percentage is None
+            else str(result.availability_target_percentage)
+        ),
+        service_limits=_service_limits(result.service_limits),
+    )
+
+
 def _contract_sla_line(line: ContractSLAWorkOrderLine) -> ContractSLAWorkOrderLineResponse:
     return ContractSLAWorkOrderLineResponse(
         work_order_id=str(line.work_order_id.value),
@@ -709,6 +796,24 @@ def _contract_not_found() -> DomainProblem:
         reason_code="RECURSO_NAO_ENCONTRADO",
         title="Recurso não encontrado",
         detail="Contrato SLI não encontrado nesta organização.",
+    )
+
+
+def _contract_context_not_found() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_404_NOT_FOUND,
+        reason_code="RECURSO_NAO_ENCONTRADO",
+        title="Recurso não encontrado",
+        detail="Contexto contratual não encontrado para o veículo no instante solicitado.",
+    )
+
+
+def _contract_context_ambiguous() -> DomainProblem:
+    return DomainProblem(
+        status_code=status.HTTP_409_CONFLICT,
+        reason_code="COBERTURA_AMBIGUA",
+        title="Cobertura ambígua",
+        detail="Mais de um contrato SLI cobre o veículo no instante solicitado.",
     )
 
 
@@ -930,6 +1035,47 @@ def consultar_availability(
             purpose=stock_purpose,
         )
     )
+
+
+@router.get(
+    "/vehicles/{vehicle_id}/contract-context",
+    response_model=ContractContextForVehicleResponse,
+    summary="Consultar contexto contratual vigente de um veículo",
+    description=(
+        "Resolve o SLIContract, a ContractVersion e a CoverageLine aplicáveis "
+        "a um veículo no instante informado. A rota é read-only e não congela "
+        "ContractContext em WorkOrder; apenas mostra a resolução temporal."
+    ),
+    responses=RESPOSTAS_PADRAO
+    | {
+        404: {"description": "Contexto contratual não encontrado"},
+        409: {"description": "Cobertura contratual ambígua"},
+    },
+)
+def consultar_contract_context_for_vehicle(
+    vehicle_id: str,
+    instant: datetime,
+    contexto: Annotated[OrganizationContext, Depends(require_contract_read)],
+    service: Annotated[ContractContextQueryService, Depends(get_contract_context_query_service)],
+) -> Any:
+    vehicle_ref = typed_id_or_problem(vehicle_id, entity_type="vehicle", campo="vehicle_id")
+    instant_utc = _utc_optional(instant, campo="instant")
+    if instant_utc is None:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="DATA_INVALIDA",
+            title="Data inválida",
+            detail="instant é obrigatório.",
+        )
+    _ = contexto
+    try:
+        return _contract_context_for_vehicle(
+            service.get_context_for_vehicle(vehicle_id=vehicle_ref, instant=instant_utc)
+        )
+    except ContractContextNaoEncontrado as exc:
+        raise _contract_context_not_found() from exc
+    except ContractContextAmbiguo as exc:
+        raise _contract_context_ambiguous() from exc
 
 
 @router.get(
