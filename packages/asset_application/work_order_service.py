@@ -43,7 +43,7 @@ from packages.asset_application.entitlement_service import EntitlementOutcome, E
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import InventoryService
 from packages.asset_application.sustainment_contract_service import SLIContractRepositoryPort
-from packages.asset_application.vehicle_service import VehicleService
+from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
 from packages.asset_domain.events import (
     SUSTAINMENT_COMPONENT_REMOVED,
     SUSTAINMENT_FAILURE_RECORDED,
@@ -176,6 +176,13 @@ class WorkOrderService:
         at_instant: datetime,
         occurred_at: datetime,
     ) -> WorkOrder:
+        vehicle = self.vehicle_service.get_vehicle(vehicle_ref)
+        if vehicle is None:
+            raise VehicleNaoEncontrado(f"Vehicle '{vehicle_ref.value}' não encontrado.")
+        if vehicle.site_ref is None:
+            raise ValueError("OpenWorkOrder exige Vehicle vinculado a CustomerSite (I-SEC-2).")
+        if vehicle.site_ref != site_ref:
+            raise ValueError("site_ref deve corresponder ao site atual do Vehicle (I-SEC-2).")
         contract = self.sli_contract_repository.get_by_id(contract_ref)
         if contract is None:
             raise SLIContractNaoEncontradoParaWorkOrder(

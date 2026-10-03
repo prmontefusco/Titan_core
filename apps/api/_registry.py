@@ -11,6 +11,7 @@ from os import environ
 
 from fastapi import APIRouter
 
+from apps.api.asset.commands import router as asset_commands_router
 from apps.api.asset.queries import router as asset_queries_router
 from apps.api.livestock_animals import router as livestock_animals_router
 from apps.api.livestock_commercial_passport import router as livestock_commercial_passport_router
@@ -45,6 +46,7 @@ def _flag_enabled(name: str) -> Callable[[], bool]:
 
 
 ALWAYS_ON_ROUTERS: tuple[ApiRouterRegistration, ...] = (
+    ApiRouterRegistration(asset_commands_router),
     ApiRouterRegistration(asset_queries_router),
     ApiRouterRegistration(livestock_animals_router),
     ApiRouterRegistration(livestock_medications_router),

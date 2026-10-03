@@ -14,7 +14,11 @@ from packages.asset_application.inventory_service import (
     StockTransferRepositoryPort,
 )
 from packages.asset_application.sustainment_contract_service import SLIContractRepositoryPort
-from packages.asset_application.vehicle_service import VehicleRepositoryPort, VehicleService
+from packages.asset_application.vehicle_service import (
+    VehicleNaoEncontrado,
+    VehicleRepositoryPort,
+    VehicleService,
+)
 from packages.asset_application.work_order_service import (
     EntitlementNaoAutorizaReserva,
     WorkOrderRepositoryPort,
@@ -177,12 +181,14 @@ def _open_contract_and_vehicle(
     work_order_service: WorkOrderService,
     vehicle_service: VehicleService,
     context: AssetOperationContext,
-) -> tuple[TypedId, TypedId]:
+) -> tuple[TypedId, TypedId, TypedId]:
+    site_ref = TypedId.new("customer_site")
     vehicle = vehicle_service.register_vehicle(
         context,
         model_ref=TypedId.new("vehicle_model"),
         identifiers=VehicleIdentifiers(serial_number="SN-WO-1"),
         ownership=AssetOwnership.COMPANY,
+        site_ref=site_ref,
     )
     contract = SLIContract(
         contract_id=TypedId.new("sli_contract"),
@@ -199,18 +205,17 @@ def _open_contract_and_vehicle(
         ),
     )
     work_order_service.sli_contract_repository.save(contract)
-    return vehicle.vehicle_id, contract.contract_id
+    return vehicle.vehicle_id, site_ref, contract.contract_id
 
 
 def test_full_lifecycle_open_to_close(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
     work_order_service, vehicle_service = _build_service(recorder)
-    vehicle_id, contract_id = _open_contract_and_vehicle(
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
     part_ref = TypedId.new("part")
-    site_ref = TypedId.new("customer_site")
 
     work_order = work_order_service.open_work_order(
         context,
@@ -332,11 +337,81 @@ def test_full_lifecycle_open_to_close(
     assert reloaded_vehicle.lifecycle_state is VehicleLifecycleState.AVAILABLE
 
 
+def test_open_work_order_rejects_missing_vehicle(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, _ = _build_service(recorder)
+    contract = SLIContract(
+        contract_id=TypedId.new("sli_contract"),
+        organization_id=context.organization_id,
+        customer_ref=TypedId.new("customer"),
+        versions=(
+            ContractVersion(
+                version_no=1,
+                effective=KnownValidInterval(
+                    valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+                    known_at=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+            ),
+        ),
+    )
+    work_order_service.sli_contract_repository.save(contract)
+
+    with pytest.raises(VehicleNaoEncontrado):
+        work_order_service.open_work_order(
+            context,
+            vehicle_ref=TypedId.new("vehicle"),
+            site_ref=TypedId.new("customer_site"),
+            contract_ref=contract.contract_id,
+            failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+            at_instant=OCCURRED_AT,
+            occurred_at=OCCURRED_AT,
+        )
+
+
+def test_open_work_order_rejects_vehicle_without_site(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle = vehicle_service.register_vehicle(
+        context,
+        model_ref=TypedId.new("vehicle_model"),
+        identifiers=VehicleIdentifiers(serial_number="SN-WO-NO-SITE"),
+        ownership=AssetOwnership.COMPANY,
+    )
+    contract = SLIContract(
+        contract_id=TypedId.new("sli_contract"),
+        organization_id=context.organization_id,
+        customer_ref=TypedId.new("customer"),
+        versions=(
+            ContractVersion(
+                version_no=1,
+                effective=KnownValidInterval(
+                    valid_from=datetime(2026, 1, 1, tzinfo=UTC),
+                    known_at=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+            ),
+        ),
+    )
+    work_order_service.sli_contract_repository.save(contract)
+
+    with pytest.raises(ValueError, match="CustomerSite"):
+        work_order_service.open_work_order(
+            context,
+            vehicle_ref=vehicle.vehicle_id,
+            site_ref=TypedId.new("customer_site"),
+            contract_ref=contract.contract_id,
+            failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+            at_instant=OCCURRED_AT,
+            occurred_at=OCCURRED_AT,
+        )
+
+
 def test_reserve_material_beyond_demand_raises(
     recorder: AssetEventRecorder, context: AssetOperationContext
 ) -> None:
     work_order_service, vehicle_service = _build_service(recorder)
-    vehicle_id, contract_id = _open_contract_and_vehicle(
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
     part_ref = TypedId.new("part")
@@ -344,7 +419,7 @@ def test_reserve_material_beyond_demand_raises(
     work_order = work_order_service.open_work_order(
         context,
         vehicle_ref=vehicle_id,
-        site_ref=TypedId.new("customer_site"),
+        site_ref=site_ref,
         contract_ref=contract_id,
         failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
         at_instant=OCCURRED_AT,
@@ -393,14 +468,14 @@ def test_reserve_material_requires_granted_entitlement(
     recorder: AssetEventRecorder, context: AssetOperationContext
 ) -> None:
     work_order_service, vehicle_service = _build_service(recorder)
-    vehicle_id, contract_id = _open_contract_and_vehicle(
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
     part_ref = TypedId.new("part")
     work_order = work_order_service.open_work_order(
         context,
         vehicle_ref=vehicle_id,
-        site_ref=TypedId.new("customer_site"),
+        site_ref=site_ref,
         contract_ref=contract_id,
         failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
         at_instant=OCCURRED_AT,
@@ -457,7 +532,7 @@ def test_cancel_releases_material_reservations(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
     work_order_service, vehicle_service = _build_service(recorder)
-    vehicle_id, contract_id = _open_contract_and_vehicle(
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
     part_ref = TypedId.new("part")
@@ -465,7 +540,7 @@ def test_cancel_releases_material_reservations(
     work_order = work_order_service.open_work_order(
         context,
         vehicle_ref=vehicle_id,
-        site_ref=TypedId.new("customer_site"),
+        site_ref=site_ref,
         contract_ref=contract_id,
         failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
         at_instant=OCCURRED_AT,
@@ -526,14 +601,14 @@ def test_fail_validation_returns_to_technically_complete(
     recorder: AssetEventRecorder, context: AssetOperationContext
 ) -> None:
     work_order_service, vehicle_service = _build_service(recorder)
-    vehicle_id, contract_id = _open_contract_and_vehicle(
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
         work_order_service, vehicle_service, context
     )
 
     work_order = work_order_service.open_work_order(
         context,
         vehicle_ref=vehicle_id,
-        site_ref=TypedId.new("customer_site"),
+        site_ref=site_ref,
         contract_ref=contract_id,
         failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
         at_instant=OCCURRED_AT,

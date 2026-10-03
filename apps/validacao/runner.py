@@ -53,6 +53,7 @@ class Requisicao:
     caminho: str
     corpo: Mapping[str, Any] | None
     autor: str
+    headers: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -78,8 +79,10 @@ class Cliente:
         corpo: Mapping[str, Any] | None = None,
         *,
         com_organizacao: bool = True,
+        headers: Mapping[str, str] | None = None,
     ) -> Resposta:
-        self.diario.append(Requisicao(metodo, caminho, corpo, self.rotulo))
+        cabecalhos_extras = dict(headers or {})
+        self.diario.append(Requisicao(metodo, caminho, corpo, self.rotulo, cabecalhos_extras))
         url = f"{self.base_url.rstrip('/')}{caminho}"
         dados = None if corpo is None else json.dumps(corpo).encode("utf-8")
         cabecalhos = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
@@ -87,6 +90,7 @@ class Cliente:
             cabecalhos["Content-Type"] = "application/json"
         if com_organizacao:
             cabecalhos["X-Titan-Organization-Id"] = self.organization_id
+        cabecalhos.update(cabecalhos_extras)
 
         requisicao = urllib.request.Request(url, data=dados, headers=cabecalhos, method=metodo)
         try:
@@ -206,6 +210,8 @@ class Roteiro:
             )
             if pedido.corpo is not None:
                 print(self._corpo(pedido.corpo))
+            if pedido.headers:
+                print(self._corpo({"headers": dict(pedido.headers)}))
 
     def _corpo(self, valor: Any) -> str:
         if valor is None:

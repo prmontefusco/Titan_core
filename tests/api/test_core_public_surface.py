@@ -30,8 +30,8 @@ SUPERFICIE_ESPERADA = {
     ("/health", "get"),
     ("/technical/authentication", "get"),
     ("/v1/verification/bundles", "post"),
-    # Vertical Asset — A5 inicia por query read-only da projection A6, sem
-    # comandos de escrita ou endpoints genéricos de domínio.
+    # Vertical Asset — A5 expõe queries read-only e, incrementalmente, comandos
+    # explícitos de capacidade; não há PATCH genérico de domínio.
     ("/v1/asset/availability", "get"),
     ("/v1/asset/contract-sla-summary", "get"),
     ("/v1/asset/fleet-view", "get"),
@@ -40,6 +40,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/vehicles/{vehicle_id}/contract-context", "get"),
     ("/v1/asset/vehicles/{vehicle_id}/configuration-at", "get"),
     ("/v1/asset/workshop-dashboard", "get"),
+    ("/v1/asset/work-orders", "post"),
     ("/v1/asset/work-orders/{work_order_id}", "get"),
     # Core - governanca auditavel de regras (ADR-0043).
     ("/v1/rule-governance/rule-identities", "post"),
