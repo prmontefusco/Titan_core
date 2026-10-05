@@ -77,6 +77,8 @@ MARK_WORK_ORDER_PLANNED_PURPOSE = "SUSTAINMENT_WO_MARK_PLANNED"
 MARK_WORK_ORDER_PLANNED_OPERATION = "asset.work_order.mark_planned"
 MARK_WORK_ORDER_READY_PURPOSE = "SUSTAINMENT_WO_MARK_READY"
 MARK_WORK_ORDER_READY_OPERATION = "asset.work_order.mark_ready"
+SCHEDULE_WORK_ORDER_PURPOSE = "SUSTAINMENT_WO_SCHEDULE"
+SCHEDULE_WORK_ORDER_OPERATION = "asset.work_order.schedule"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -108,6 +110,11 @@ class MarkWorkOrderPlannedRequest(BaseModel):
 
 class MarkWorkOrderReadyRequest(BaseModel):
     expected_version: int = Field(ge=1)
+
+
+class ScheduleWorkOrderRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    technician_and_workshop_allocated: bool
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -532,6 +539,89 @@ def marcar_work_order_pronta(
         response = _work_order_detail(work_order)
         return CanonicalPayload(
             schema="asset.mark_work_order_ready.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return WorkOrderDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/schedule",
+    response_model=WorkOrderDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Agendar uma WorkOrder",
+    responses=RESPOSTAS_PADRAO,
+)
+def agendar_work_order(
+    work_order_id: str,
+    body: ScheduleWorkOrderRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_transition)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> WorkOrderDetailResponse:
+    parsed_work_order_id = _typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=SCHEDULE_WORK_ORDER_OPERATION,
+        purpose=SCHEDULE_WORK_ORDER_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"work_order_id": work_order_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            work_order = service.schedule(
+                operation_context,
+                parsed_work_order_id,
+                technician_and_workshop_allocated=body.technician_and_workshop_allocated,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except WorkOrderNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _work_order_detail(work_order)
+        return CanonicalPayload(
+            schema="asset.schedule_work_order.response",
             version=1,
             value=response.model_dump(mode="json"),
         )
