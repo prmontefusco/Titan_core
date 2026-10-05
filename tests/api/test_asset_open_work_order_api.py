@@ -18,6 +18,7 @@ from apps.api.livestock_dependencies import ORGANIZATION_HEADER, request_connect
 from packages.asset_application.authorization import (
     WO_ADD_TASK,
     WO_DEMAND_MATERIAL,
+    WO_EXECUTE,
     WO_OPEN,
     WO_TRANSITION,
 )
@@ -42,6 +43,7 @@ from packages.asset_domain.work_order import (
     WorkOrder,
     WorkOrderState,
     WorkTask,
+    WorkTaskState,
 )
 from packages.core_application import IdempotencyExecution, OptimisticConcurrencyConflict
 from packages.core_domain import AuthenticatedPrincipal, CanonicalPayload, OrganizationContext
@@ -571,6 +573,41 @@ class _FakeOpenWorkOrderService:
             created_at=occurred_at,
         )
 
+    def start_task(
+        self,
+        _context: object,
+        work_order_id: TypedId,
+        *,
+        task_id: TypedId,
+        expected_version: int | None,
+        occurred_at: datetime,
+    ) -> WorkOrder:
+        self.seen_work_order_id = work_order_id
+        self.seen_task_id = task_id
+        self.seen_expected_version = expected_version
+        task = WorkTask(
+            task_id=task_id,
+            description="Inspecionar bomba",
+            mandatory=True,
+            state=WorkTaskState.IN_PROGRESS,
+        )
+        return WorkOrder(
+            work_order_id=work_order_id,
+            organization_id=OrganizationId.new(),
+            vehicle_ref=TypedId.parse("vehicle", VEHICLE_ID),
+            site_ref=TypedId.parse("customer_site", SITE_ID),
+            contract_context=ContractContext(
+                contract_ref=TypedId.parse("sli_contract", CONTRACT_ID),
+                contract_version_no=1,
+                resolved_at=OCCURRED_AT,
+            ),
+            failure=FailureRecord(mode="Falha hidráulica", reported_at=OCCURRED_AT),
+            tasks=(task,),
+            state=WorkOrderState.IN_PROGRESS,
+            version=(expected_version or 1) + 1,
+            created_at=occurred_at,
+        )
+
 
 class _ConflictingTaskWorkOrderService(_FakeOpenWorkOrderService):
     def add_task(
@@ -671,6 +708,17 @@ class _ConflictingTaskWorkOrderService(_FakeOpenWorkOrderService):
     ) -> WorkOrder:
         raise OptimisticConcurrencyConflict()
 
+    def start_task(
+        self,
+        _context: object,
+        work_order_id: TypedId,
+        *,
+        task_id: TypedId,
+        expected_version: int | None,
+        occurred_at: datetime,
+    ) -> WorkOrder:
+        raise OptimisticConcurrencyConflict()
+
 
 def _fake_connection() -> object:
     return SimpleNamespace()
@@ -684,6 +732,11 @@ def test_open_work_order_route_is_registered_in_openapi() -> None:
     assert "/v1/asset/work-orders/{work_order_id}/tasks" in paths
     assert (
         "post" in main_module.app.openapi()["paths"]["/v1/asset/work-orders/{work_order_id}/tasks"]
+    )
+    assert "/v1/asset/work-orders/{work_order_id}/tasks/start" in paths
+    assert (
+        "post"
+        in main_module.app.openapi()["paths"]["/v1/asset/work-orders/{work_order_id}/tasks/start"]
     )
     assert "/v1/asset/work-orders/{work_order_id}/material-demands" in paths
     assert (
@@ -2017,6 +2070,141 @@ def test_resume_work_order_returns_409_on_stale_version() -> None:
         f"{ROUTE}/00000000-0000-0000-0000-000000000301/resume",
         json={"expected_version": 9},
         headers={"Idempotency-Key": "resume-test-005"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["reason_code"] == OptimisticConcurrencyConflict.code
+
+
+def test_start_work_order_task_requires_authentication() -> None:
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/tasks/start",
+        json={
+            "expected_version": 10,
+            "task_id": "00000000-0000-0000-0000-000000000901",
+        },
+        headers={"Idempotency-Key": "start-task-test-001"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_start_work_order_task_rejects_missing_permission(monkeypatch: MonkeyPatch) -> None:
+    contexto = _context(permissions=frozenset())
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        contexto.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = _fake_connection
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = (
+        _FakeOpenWorkOrderService
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = (
+        _ImmediateIdempotencyService
+    )
+    monkeypatch.setattr(
+        "apps.api.livestock_dependencies.resolve_organization_context",
+        lambda *_args, **_kwargs: contexto,
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/tasks/start",
+        json={
+            "expected_version": 10,
+            "task_id": "00000000-0000-0000-0000-000000000901",
+        },
+        headers={
+            ORGANIZATION_HEADER: str(contexto.organization_id.value),
+            "Idempotency-Key": "start-task-test-002",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_start_work_order_task_returns_updated_detail() -> None:
+    contexto = _context(permissions=frozenset({WO_EXECUTE}))
+    service = _FakeOpenWorkOrderService()
+    idempotency = _ImmediateIdempotencyService()
+    main_module.app.dependency_overrides[asset_commands.require_work_order_execute] = lambda: (
+        contexto
+    )
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = lambda: (
+        service
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = lambda: (
+        idempotency
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/tasks/start",
+        json={
+            "expected_version": 10,
+            "task_id": "00000000-0000-0000-0000-000000000901",
+        },
+        headers={"Idempotency-Key": "start-task-test-003"},
+    )
+
+    assert response.status_code == 200
+    assert service.seen_work_order_id == TypedId.parse(
+        "work_order", "00000000-0000-0000-0000-000000000301"
+    )
+    assert service.seen_task_id == TypedId.parse(
+        "work_task", "00000000-0000-0000-0000-000000000901"
+    )
+    assert service.seen_expected_version == 10
+    assert idempotency.seen_request_operation == asset_commands.START_WORK_ORDER_TASK_OPERATION
+    payload = response.json()
+    assert payload["state"] == "IN_PROGRESS"
+    assert payload["version"] == 11
+    assert payload["tasks"][0]["state"] == "IN_PROGRESS"
+
+
+def test_start_work_order_task_rejects_invalid_identifier() -> None:
+    contexto = _context(permissions=frozenset({WO_EXECUTE}))
+    main_module.app.dependency_overrides[asset_commands.require_work_order_execute] = lambda: (
+        contexto
+    )
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = (
+        _FakeOpenWorkOrderService
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = (
+        _ImmediateIdempotencyService
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/nao-e-uuid/tasks/start",
+        json={
+            "expected_version": 10,
+            "task_id": "00000000-0000-0000-0000-000000000901",
+        },
+        headers={"Idempotency-Key": "start-task-test-004"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["reason_code"] == "IDENTIFICADOR_INVALIDO"
+
+
+def test_start_work_order_task_returns_409_on_stale_version() -> None:
+    contexto = _context(permissions=frozenset({WO_EXECUTE}))
+    main_module.app.dependency_overrides[asset_commands.require_work_order_execute] = lambda: (
+        contexto
+    )
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = (
+        _ConflictingTaskWorkOrderService
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = (
+        _ImmediateIdempotencyService
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/tasks/start",
+        json={
+            "expected_version": 10,
+            "task_id": "00000000-0000-0000-0000-000000000901",
+        },
+        headers={"Idempotency-Key": "start-task-test-005"},
     )
 
     assert response.status_code == 409

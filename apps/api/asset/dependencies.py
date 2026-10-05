@@ -22,6 +22,7 @@ from packages.asset_application.authorization import (
     VEHICLE_READ,
     WO_ADD_TASK,
     WO_DEMAND_MATERIAL,
+    WO_EXECUTE,
     WO_OPEN,
     WO_READ,
     WO_TRANSITION,
@@ -83,6 +84,12 @@ def require_work_order_demand_material(
     return contexto
 
 
+def require_work_order_execute(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(WO_EXECUTE))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_work_order_transition(
     contexto: Annotated[OrganizationContext, Depends(require_permission(WO_TRANSITION))],
 ) -> OrganizationContext:
@@ -98,6 +105,7 @@ __all__ = [
     "require_vehicle_read",
     "require_work_order_add_task",
     "require_work_order_demand_material",
+    "require_work_order_execute",
     "require_work_order_open",
     "require_work_order_read",
     "require_work_order_transition",

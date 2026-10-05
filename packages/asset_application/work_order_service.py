@@ -521,9 +521,12 @@ class WorkOrderService:
         work_order_id: TypedId,
         *,
         task_id: TypedId,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         updated = work_order.start_task(task_id)
         self.repository.update(updated)
         self.recorder.record(
