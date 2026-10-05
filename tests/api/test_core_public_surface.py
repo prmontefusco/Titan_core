@@ -41,6 +41,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/vehicles/{vehicle_id}/configuration-at", "get"),
     ("/v1/asset/workshop-dashboard", "get"),
     ("/v1/asset/work-orders", "post"),
+    ("/v1/asset/work-orders/{work_order_id}/interrupt", "post"),
     ("/v1/asset/work-orders/{work_order_id}/mark-planned", "post"),
     ("/v1/asset/work-orders/{work_order_id}/mark-ready", "post"),
     ("/v1/asset/work-orders/{work_order_id}/mark-waiting-technician", "post"),
