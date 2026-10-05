@@ -448,9 +448,12 @@ class WorkOrderService:
         work_order_id: TypedId,
         *,
         vehicle_in_maintenance: bool,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         from_state = work_order.state
         updated = work_order.start_progress(vehicle_in_maintenance=vehicle_in_maintenance)
         self.repository.update(updated)

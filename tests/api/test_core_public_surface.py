@@ -46,6 +46,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/work-orders/{work_order_id}/mark-waiting-technician", "post"),
     ("/v1/asset/work-orders/{work_order_id}/material-demands", "post"),
     ("/v1/asset/work-orders/{work_order_id}/schedule", "post"),
+    ("/v1/asset/work-orders/{work_order_id}/start-progress", "post"),
     ("/v1/asset/work-orders/{work_order_id}/tasks", "post"),
     ("/v1/asset/work-orders/{work_order_id}", "get"),
     # Core - governanca auditavel de regras (ADR-0043).

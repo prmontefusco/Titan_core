@@ -81,6 +81,8 @@ SCHEDULE_WORK_ORDER_PURPOSE = "SUSTAINMENT_WO_SCHEDULE"
 SCHEDULE_WORK_ORDER_OPERATION = "asset.work_order.schedule"
 MARK_WORK_ORDER_WAITING_TECHNICIAN_PURPOSE = "SUSTAINMENT_WO_MARK_WAITING_TECHNICIAN"
 MARK_WORK_ORDER_WAITING_TECHNICIAN_OPERATION = "asset.work_order.mark_waiting_technician"
+START_WORK_ORDER_PROGRESS_PURPOSE = "SUSTAINMENT_WO_START_PROGRESS"
+START_WORK_ORDER_PROGRESS_OPERATION = "asset.work_order.start_progress"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -121,6 +123,11 @@ class ScheduleWorkOrderRequest(BaseModel):
 
 class MarkWorkOrderWaitingTechnicianRequest(BaseModel):
     expected_version: int = Field(ge=1)
+
+
+class StartWorkOrderProgressRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    vehicle_in_maintenance: bool
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -710,6 +717,89 @@ def marcar_work_order_aguardando_tecnico(
         response = _work_order_detail(work_order)
         return CanonicalPayload(
             schema="asset.mark_work_order_waiting_technician.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return WorkOrderDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/start-progress",
+    response_model=WorkOrderDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Iniciar execução de uma WorkOrder",
+    responses=RESPOSTAS_PADRAO,
+)
+def iniciar_execucao_work_order(
+    work_order_id: str,
+    body: StartWorkOrderProgressRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_transition)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> WorkOrderDetailResponse:
+    parsed_work_order_id = _typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=START_WORK_ORDER_PROGRESS_OPERATION,
+        purpose=START_WORK_ORDER_PROGRESS_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"work_order_id": work_order_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            work_order = service.start_progress(
+                operation_context,
+                parsed_work_order_id,
+                vehicle_in_maintenance=body.vehicle_in_maintenance,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except WorkOrderNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _work_order_detail(work_order)
+        return CanonicalPayload(
+            schema="asset.start_work_order_progress.response",
             version=1,
             value=response.model_dump(mode="json"),
         )
