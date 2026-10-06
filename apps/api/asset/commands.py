@@ -15,6 +15,7 @@ from apps.api.asset.dependencies import (
     require_work_order_demand_material,
     require_work_order_execute,
     require_work_order_open,
+    require_work_order_tech_complete,
     require_work_order_transition,
 )
 from apps.api.asset.queries import (
@@ -92,6 +93,8 @@ START_WORK_ORDER_TASK_PURPOSE = "SUSTAINMENT_WO_EXECUTE_TASK_START"
 START_WORK_ORDER_TASK_OPERATION = "asset.work_order.task.start"
 COMPLETE_WORK_ORDER_TASK_PURPOSE = "SUSTAINMENT_WO_EXECUTE_TASK_COMPLETE"
 COMPLETE_WORK_ORDER_TASK_OPERATION = "asset.work_order.task.complete"
+COMPLETE_WORK_ORDER_TECHNICALLY_PURPOSE = "SUSTAINMENT_WO_TECH_COMPLETE"
+COMPLETE_WORK_ORDER_TECHNICALLY_OPERATION = "asset.work_order.complete_technically"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -157,6 +160,13 @@ class CompleteWorkOrderTaskRequest(BaseModel):
     expected_version: int = Field(ge=1)
     task_id: str = Field(description="Tarefa da WorkOrder que será concluída.")
     labor_entry: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class CompleteWorkOrderTechnicallyRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    diagnosis: str = Field(min_length=1, max_length=1000)
+    root_cause: str = Field(min_length=1, max_length=1000)
+    resolution: str = Field(min_length=1, max_length=1000)
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -1163,6 +1173,91 @@ def concluir_tarefa_work_order(
         response = _work_order_detail(work_order)
         return CanonicalPayload(
             schema="asset.complete_work_order_task.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return WorkOrderDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/complete-technically",
+    response_model=WorkOrderDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Concluir tecnicamente uma WorkOrder",
+    responses=RESPOSTAS_PADRAO,
+)
+def concluir_tecnicamente_work_order(
+    work_order_id: str,
+    body: CompleteWorkOrderTechnicallyRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_tech_complete)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> WorkOrderDetailResponse:
+    parsed_work_order_id = _typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=COMPLETE_WORK_ORDER_TECHNICALLY_OPERATION,
+        purpose=COMPLETE_WORK_ORDER_TECHNICALLY_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"work_order_id": work_order_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            work_order = service.complete_technically(
+                operation_context,
+                parsed_work_order_id,
+                diagnosis=body.diagnosis,
+                root_cause=body.root_cause,
+                resolution=body.resolution,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except WorkOrderNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _work_order_detail(work_order)
+        return CanonicalPayload(
+            schema="asset.complete_work_order_technically.response",
             version=1,
             value=response.model_dump(mode="json"),
         )

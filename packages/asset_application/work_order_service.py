@@ -629,9 +629,12 @@ class WorkOrderService:
         diagnosis: str,
         root_cause: str,
         resolution: str,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         updated = work_order.complete_technically(
             diagnosis=diagnosis, root_cause=root_cause, resolution=resolution
         )

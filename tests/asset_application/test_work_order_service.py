@@ -1318,6 +1318,113 @@ def test_complete_task_rejects_stale_expected_version(
         )
 
 
+def test_complete_technically_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
+        work_order_service, vehicle_service, context
+    )
+    part_ref = _save_part(work_order_service)
+    work_order = work_order_service.open_work_order(
+        context,
+        vehicle_ref=vehicle_id,
+        site_ref=site_ref,
+        contract_ref=contract_id,
+        failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+        at_instant=OCCURRED_AT,
+        occurred_at=OCCURRED_AT,
+    )
+    with_task = work_order_service.add_task(
+        context,
+        work_order.work_order_id,
+        description="Trocar peça",
+        mandatory=True,
+        occurred_at=OCCURRED_AT,
+    )
+    task_id = with_task.tasks[0].task_id
+    work_order_service.demand_material(
+        context,
+        work_order.work_order_id,
+        part_ref=part_ref,
+        qty=Decimal(1),
+        task_id=task_id,
+        expected_version=with_task.version,
+        occurred_at=OCCURRED_AT,
+    )
+    position = work_order_service.inventory_service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=TypedId.new("stock_location"),
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(on_hand=Decimal(10)),
+        occurred_at=OCCURRED_AT,
+    )
+    with_reservation = work_order_service.reserve_material_for_work_order(
+        context,
+        work_order.work_order_id,
+        stock_position_id=position.stock_position_id,
+        part_ref=part_ref,
+        qty=Decimal(1),
+        priority=1,
+        entitlement=_granted_entitlement(vehicle_ref=vehicle_id, subject_ref=part_ref),
+        occurred_at=OCCURRED_AT,
+    )
+    planned = work_order_service.mark_planned(
+        context,
+        work_order.work_order_id,
+        expected_version=with_reservation.version,
+        occurred_at=OCCURRED_AT,
+    )
+    ready = work_order_service.mark_ready(
+        context,
+        work_order.work_order_id,
+        expected_version=planned.version,
+        occurred_at=OCCURRED_AT,
+    )
+    scheduled = work_order_service.schedule(
+        context,
+        work_order.work_order_id,
+        technician_and_workshop_allocated=True,
+        expected_version=ready.version,
+        occurred_at=OCCURRED_AT,
+    )
+    in_progress = work_order_service.start_progress(
+        context,
+        work_order.work_order_id,
+        vehicle_in_maintenance=True,
+        expected_version=scheduled.version,
+        occurred_at=OCCURRED_AT,
+    )
+    started = work_order_service.start_task(
+        context,
+        work_order.work_order_id,
+        task_id=task_id,
+        expected_version=in_progress.version,
+        occurred_at=OCCURRED_AT,
+    )
+    completed_task = work_order_service.complete_task(
+        context,
+        work_order.work_order_id,
+        task_id=task_id,
+        labor_entry="2h",
+        expected_version=started.version,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        work_order_service.complete_technically(
+            context,
+            work_order.work_order_id,
+            diagnosis="Retentor rompido",
+            root_cause="Desgaste",
+            resolution="Substituído",
+            expected_version=completed_task.version + 1,
+            occurred_at=OCCURRED_AT,
+        )
+
+
 def test_reserve_material_requires_granted_entitlement(
     recorder: AssetEventRecorder, context: AssetOperationContext
 ) -> None:
