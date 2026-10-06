@@ -27,6 +27,7 @@ from packages.asset_application.authorization import (
     WO_READ,
     WO_TECH_COMPLETE,
     WO_TRANSITION,
+    WO_VALIDATE,
 )
 from packages.core_domain import OrganizationContext
 
@@ -97,6 +98,12 @@ def require_work_order_tech_complete(
     return contexto
 
 
+def require_work_order_validate(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(WO_VALIDATE))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_work_order_transition(
     contexto: Annotated[OrganizationContext, Depends(require_permission(WO_TRANSITION))],
 ) -> OrganizationContext:
@@ -117,5 +124,6 @@ __all__ = [
     "require_work_order_read",
     "require_work_order_tech_complete",
     "require_work_order_transition",
+    "require_work_order_validate",
     "typed_id_or_problem",
 ]

@@ -502,9 +502,16 @@ class WorkOrderService:
         return updated
 
     def send_to_validation(
-        self, context: AssetOperationContext, work_order_id: TypedId, *, occurred_at: datetime
+        self,
+        context: AssetOperationContext,
+        work_order_id: TypedId,
+        *,
+        expected_version: int | None = None,
+        occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         from_state = work_order.state
         updated = work_order.send_to_validation()
         self.repository.update(updated)
