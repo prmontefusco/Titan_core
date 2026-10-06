@@ -668,6 +668,7 @@ class WorkOrderService:
         validator_ref: TypedId,
         reason: str,
         notes: str | None = None,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         """Só cobre o caminho `FAIL` (`fail_validation`, T15) — o domínio não
@@ -675,6 +676,8 @@ class WorkOrderService:
         validação `PASS` é `close_work_order`, que registra e fecha no mesmo
         ato (ver docstring do módulo)."""
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         validation = PostMaintenanceValidation(
             validated_at=occurred_at,
             validator_ref=validator_ref,
