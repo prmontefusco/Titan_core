@@ -714,12 +714,15 @@ class WorkOrderService:
         *,
         validator_ref: TypedId,
         notes: str | None = None,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         """T16: registra a validação `PASS` e fecha no mesmo ato, e coordena
         `Vehicle.return_to_service` (I-VEH-3) — fronteira transacional de
         `CloseWorkOrder` inclui os dois agregados (`09_COMMAND_MODEL.md`)."""
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         validation = PostMaintenanceValidation(
             validated_at=occurred_at,
             validator_ref=validator_ref,

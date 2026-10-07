@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from apps.api.asset.dependencies import (
     ConnectionDependency,
     require_work_order_add_task,
+    require_work_order_close,
     require_work_order_demand_material,
     require_work_order_execute,
     require_work_order_open,
@@ -100,6 +101,8 @@ SEND_WORK_ORDER_TO_VALIDATION_PURPOSE = "SUSTAINMENT_WO_SEND_TO_VALIDATION"
 SEND_WORK_ORDER_TO_VALIDATION_OPERATION = "asset.work_order.send_to_validation"
 FAIL_WORK_ORDER_VALIDATION_PURPOSE = "SUSTAINMENT_WO_VALIDATE_FAIL"
 FAIL_WORK_ORDER_VALIDATION_OPERATION = "asset.work_order.validation.fail"
+CLOSE_WORK_ORDER_PURPOSE = "SUSTAINMENT_WO_CLOSE"
+CLOSE_WORK_ORDER_OPERATION = "asset.work_order.close"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -181,6 +184,11 @@ class SendWorkOrderToValidationRequest(BaseModel):
 class FailWorkOrderValidationRequest(BaseModel):
     expected_version: int = Field(ge=1)
     reason: str = Field(min_length=1, max_length=500)
+    notes: str | None = Field(default=None, min_length=1, max_length=1000)
+
+
+class CloseWorkOrderRequest(BaseModel):
+    expected_version: int = Field(ge=1)
     notes: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
@@ -1440,6 +1448,90 @@ def reprovar_validacao_work_order(
         response = _work_order_detail(work_order)
         return CanonicalPayload(
             schema="asset.fail_work_order_validation.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return WorkOrderDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/close",
+    response_model=WorkOrderDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Fechar uma WorkOrder aprovada na validação pós-manutenção",
+    responses=RESPOSTAS_PADRAO,
+)
+def fechar_work_order(
+    work_order_id: str,
+    body: CloseWorkOrderRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_close)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> WorkOrderDetailResponse:
+    parsed_work_order_id = _typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=CLOSE_WORK_ORDER_OPERATION,
+        purpose=CLOSE_WORK_ORDER_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"work_order_id": work_order_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            work_order = service.close_work_order(
+                operation_context,
+                parsed_work_order_id,
+                validator_ref=contexto.actor_id,
+                notes=body.notes,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except WorkOrderNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _work_order_detail(work_order)
+        return CanonicalPayload(
+            schema="asset.close_work_order.response",
             version=1,
             value=response.model_dump(mode="json"),
         )
