@@ -27,6 +27,7 @@ from packages.asset_application.authorization import (
     WO_EXECUTE,
     WO_OPEN,
     WO_READ,
+    WO_RECORD_REMOVAL,
     WO_TECH_COMPLETE,
     WO_TRANSITION,
     WO_VALIDATE,
@@ -88,6 +89,12 @@ def require_work_order_demand_material(
     return contexto
 
 
+def require_work_order_record_removal(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(WO_RECORD_REMOVAL))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_work_order_execute(
     contexto: Annotated[OrganizationContext, Depends(require_permission(WO_EXECUTE))],
 ) -> OrganizationContext:
@@ -138,6 +145,7 @@ __all__ = [
     "require_work_order_execute",
     "require_work_order_open",
     "require_work_order_read",
+    "require_work_order_record_removal",
     "require_work_order_tech_complete",
     "require_work_order_transition",
     "require_work_order_validate",

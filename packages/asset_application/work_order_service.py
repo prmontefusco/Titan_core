@@ -580,9 +580,12 @@ class WorkOrderService:
         part_ref: TypedId,
         disposition: str,
         serial: str | None = None,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         component = RemovedComponentDisposition(
             part_ref=part_ref, disposition=disposition, serial=serial
         )
