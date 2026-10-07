@@ -372,6 +372,7 @@ class WorkOrderService:
         work_order_id: TypedId,
         *,
         reason: str,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         work_order = self._require(work_order_id)
@@ -767,11 +768,14 @@ class WorkOrderService:
         work_order_id: TypedId,
         *,
         reason: str,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> WorkOrder:
         """T17: libera toda reserva de material vinculada
         (`09_COMMAND_MODEL.md`: "+ libera reservas")."""
         work_order = self._require(work_order_id)
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         from_state = work_order.state
         updated = work_order.cancel(reason=reason)
         self.repository.update(updated)

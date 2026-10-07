@@ -17,6 +17,7 @@ from apps.api.authentication import require_authenticated_principal
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER, request_connection
 from packages.asset_application.authorization import (
     WO_ADD_TASK,
+    WO_CANCEL,
     WO_CLOSE,
     WO_DEMAND_MATERIAL,
     WO_EXECUTE,
@@ -814,6 +815,39 @@ class _FakeOpenWorkOrderService:
             created_at=occurred_at,
         )
 
+    def cancel_work_order(
+        self,
+        _context: object,
+        work_order_id: TypedId,
+        *,
+        reason: str,
+        expected_version: int | None,
+        occurred_at: datetime,
+    ) -> WorkOrder:
+        self.seen_work_order_id = work_order_id
+        self.seen_expected_version = expected_version
+        task = WorkTask(
+            task_id=TypedId.parse("work_task", "00000000-0000-0000-0000-000000000901"),
+            description="Inspecionar bomba",
+            mandatory=True,
+        )
+        return WorkOrder(
+            work_order_id=work_order_id,
+            organization_id=OrganizationId.new(),
+            vehicle_ref=TypedId.parse("vehicle", VEHICLE_ID),
+            site_ref=TypedId.parse("customer_site", SITE_ID),
+            contract_context=ContractContext(
+                contract_ref=TypedId.parse("sli_contract", CONTRACT_ID),
+                contract_version_no=1,
+                resolved_at=OCCURRED_AT,
+            ),
+            failure=FailureRecord(mode="Falha hidráulica", reported_at=OCCURRED_AT),
+            tasks=(task,),
+            state=WorkOrderState.CANCELLED,
+            version=(expected_version or 1) + 1,
+            created_at=occurred_at,
+        )
+
 
 class _ConflictingTaskWorkOrderService(_FakeOpenWorkOrderService):
     def add_task(
@@ -985,6 +1019,17 @@ class _ConflictingTaskWorkOrderService(_FakeOpenWorkOrderService):
     ) -> WorkOrder:
         raise OptimisticConcurrencyConflict()
 
+    def cancel_work_order(
+        self,
+        _context: object,
+        work_order_id: TypedId,
+        *,
+        reason: str,
+        expected_version: int | None,
+        occurred_at: datetime,
+    ) -> WorkOrder:
+        raise OptimisticConcurrencyConflict()
+
 
 def _fake_connection() -> object:
     return SimpleNamespace()
@@ -1035,6 +1080,10 @@ def test_open_work_order_route_is_registered_in_openapi() -> None:
     assert "/v1/asset/work-orders/{work_order_id}/close" in paths
     assert (
         "post" in main_module.app.openapi()["paths"]["/v1/asset/work-orders/{work_order_id}/close"]
+    )
+    assert "/v1/asset/work-orders/{work_order_id}/cancel" in paths
+    assert (
+        "post" in main_module.app.openapi()["paths"]["/v1/asset/work-orders/{work_order_id}/cancel"]
     )
     assert "/v1/asset/work-orders/{work_order_id}/material-demands" in paths
     assert (
@@ -3222,6 +3271,143 @@ def test_close_work_order_returns_409_on_stale_version() -> None:
         f"{ROUTE}/00000000-0000-0000-0000-000000000301/close",
         json={"expected_version": 15},
         headers={"Idempotency-Key": "close-work-order-test-005"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["reason_code"] == OptimisticConcurrencyConflict.code
+
+
+def test_cancel_work_order_requires_authentication() -> None:
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/cancel",
+        json={
+            "expected_version": 3,
+            "reason": "Cliente cancelou a manutenção.",
+        },
+        headers={"Idempotency-Key": "cancel-work-order-test-001"},
+    )
+
+    assert response.status_code == 401
+    assert response.headers["content-type"].startswith("application/problem+json")
+
+
+def test_cancel_work_order_rejects_missing_permission(monkeypatch: MonkeyPatch) -> None:
+    contexto = _context(permissions=frozenset())
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        contexto.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = _fake_connection
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = (
+        _FakeOpenWorkOrderService
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = (
+        _ImmediateIdempotencyService
+    )
+    monkeypatch.setattr(
+        "apps.api.livestock_dependencies.resolve_organization_context",
+        lambda *_args, **_kwargs: contexto,
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/cancel",
+        json={
+            "expected_version": 3,
+            "reason": "Cliente cancelou a manutenção.",
+        },
+        headers={
+            ORGANIZATION_HEADER: str(contexto.organization_id.value),
+            "Idempotency-Key": "cancel-work-order-test-002",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_cancel_work_order_returns_updated_detail() -> None:
+    contexto = _context(permissions=frozenset({WO_CANCEL}))
+    service = _FakeOpenWorkOrderService()
+    idempotency = _ImmediateIdempotencyService()
+
+    def _cancel_context() -> OrganizationContext:
+        return contexto
+
+    main_module.app.dependency_overrides[asset_commands.require_work_order_cancel] = _cancel_context
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = lambda: (
+        service
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = lambda: (
+        idempotency
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/cancel",
+        json={
+            "expected_version": 3,
+            "reason": "Cliente cancelou a manutenção.",
+        },
+        headers={"Idempotency-Key": "cancel-work-order-test-003"},
+    )
+
+    assert response.status_code == 200
+    assert service.seen_work_order_id == TypedId.parse(
+        "work_order", "00000000-0000-0000-0000-000000000301"
+    )
+    assert service.seen_expected_version == 3
+    assert idempotency.seen_request_operation == asset_commands.CANCEL_WORK_ORDER_OPERATION
+    payload = response.json()
+    assert payload["state"] == "CANCELLED"
+    assert payload["version"] == 4
+
+
+def test_cancel_work_order_rejects_invalid_identifier() -> None:
+    contexto = _context(permissions=frozenset({WO_CANCEL}))
+
+    def _cancel_context() -> OrganizationContext:
+        return contexto
+
+    main_module.app.dependency_overrides[asset_commands.require_work_order_cancel] = _cancel_context
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = (
+        _FakeOpenWorkOrderService
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = (
+        _ImmediateIdempotencyService
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/nao-e-uuid/cancel",
+        json={
+            "expected_version": 3,
+            "reason": "Cliente cancelou a manutenção.",
+        },
+        headers={"Idempotency-Key": "cancel-work-order-test-004"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["reason_code"] == "IDENTIFICADOR_INVALIDO"
+
+
+def test_cancel_work_order_returns_409_on_stale_version() -> None:
+    contexto = _context(permissions=frozenset({WO_CANCEL}))
+
+    def _cancel_context() -> OrganizationContext:
+        return contexto
+
+    main_module.app.dependency_overrides[asset_commands.require_work_order_cancel] = _cancel_context
+    main_module.app.dependency_overrides[asset_commands.get_open_work_order_service] = (
+        _ConflictingTaskWorkOrderService
+    )
+    main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = (
+        _ImmediateIdempotencyService
+    )
+
+    response = TestClient(main_module.app).post(
+        f"{ROUTE}/00000000-0000-0000-0000-000000000301/cancel",
+        json={
+            "expected_version": 3,
+            "reason": "Cliente cancelou a manutenção.",
+        },
+        headers={"Idempotency-Key": "cancel-work-order-test-005"},
     )
 
     assert response.status_code == 409

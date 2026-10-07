@@ -21,6 +21,7 @@ from packages.asset_application.authorization import (
     INVENTORY_READ,
     VEHICLE_READ,
     WO_ADD_TASK,
+    WO_CANCEL,
     WO_CLOSE,
     WO_DEMAND_MATERIAL,
     WO_EXECUTE,
@@ -111,6 +112,12 @@ def require_work_order_close(
     return contexto
 
 
+def require_work_order_cancel(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(WO_CANCEL))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_work_order_transition(
     contexto: Annotated[OrganizationContext, Depends(require_permission(WO_TRANSITION))],
 ) -> OrganizationContext:
@@ -125,6 +132,7 @@ __all__ = [
     "require_inventory_read",
     "require_vehicle_read",
     "require_work_order_add_task",
+    "require_work_order_cancel",
     "require_work_order_close",
     "require_work_order_demand_material",
     "require_work_order_execute",

@@ -1779,6 +1779,33 @@ def test_close_work_order_rejects_stale_expected_version(
         )
 
 
+def test_cancel_work_order_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    work_order_service, vehicle_service = _build_service(recorder)
+    vehicle_id, site_ref, contract_id = _open_contract_and_vehicle(
+        work_order_service, vehicle_service, context
+    )
+    work_order = work_order_service.open_work_order(
+        context,
+        vehicle_ref=vehicle_id,
+        site_ref=site_ref,
+        contract_ref=contract_id,
+        failure=FailureRecord(mode="Falha", reported_at=OCCURRED_AT),
+        at_instant=OCCURRED_AT,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        work_order_service.cancel_work_order(
+            context,
+            work_order.work_order_id,
+            reason="Cliente cancelou a manutenção.",
+            expected_version=work_order.version + 1,
+            occurred_at=OCCURRED_AT,
+        )
+
+
 def test_reserve_material_requires_granted_entitlement(
     recorder: AssetEventRecorder, context: AssetOperationContext
 ) -> None:
