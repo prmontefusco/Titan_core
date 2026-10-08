@@ -2,6 +2,7 @@
 
 import importlib
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -15,10 +16,15 @@ import apps.api.main as main_module
 from apps.api.asset import commands as asset_commands
 from apps.api.authentication import require_authenticated_principal
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER, request_connection
-from packages.asset_application.authorization import VEHICLE_RECORD_METER, VEHICLE_TRANSITION
+from packages.asset_application.authorization import (
+    VEHICLE_CORRECT_METER,
+    VEHICLE_RECORD_METER,
+    VEHICLE_TRANSITION,
+)
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado
 from packages.asset_domain.vehicle import (
     AssetOwnership,
+    MeterCorrection,
     MeterKind,
     MeterReading,
     Vehicle,
@@ -33,6 +39,8 @@ from packages.shared_kernel import OrganizationId, TypedId
 VEHICLE_ID = "00000000-0000-0000-0000-000000000401"
 ROUTE = f"/v1/asset/vehicles/{VEHICLE_ID}/transition-lifecycle"
 METER_ROUTE = f"/v1/asset/vehicles/{VEHICLE_ID}/meter-readings"
+READING_ID = "00000000-0000-0000-0000-000000000901"
+CORRECTION_ROUTE = f"{METER_ROUTE}/{READING_ID}/corrections"
 OCCURRED_AT = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
 
 
@@ -156,6 +164,61 @@ class _StaleMeterVehicleService(_MeterVehicleService):
         raise OptimisticConcurrencyConflict()
 
 
+class _CorrectMeterVehicleService:
+    seen: tuple[TypedId, TypedId, Decimal, str, int | None] | None = None
+
+    def correct_meter_reading(
+        self,
+        _context: object,
+        vehicle_id: TypedId,
+        *,
+        original_reading_id: TypedId,
+        corrected_value: Decimal,
+        reason: str,
+        corrected_at: datetime,
+        expected_version: int | None,
+    ) -> Vehicle:
+        self.seen = (
+            vehicle_id,
+            original_reading_id,
+            corrected_value,
+            reason,
+            expected_version,
+        )
+        vehicle = replace(
+            _vehicle(version=expected_version or 1),
+            meter_readings=(
+                MeterReading(
+                    reading_id=original_reading_id,
+                    kind=MeterKind.HOURS,
+                    value=Decimal("120"),
+                    observed_at=OCCURRED_AT,
+                    recorded_at=OCCURRED_AT,
+                    source="manual",
+                ),
+            ),
+        )
+        return vehicle.correct_meter_reading(
+            MeterCorrection(
+                correction_id=TypedId.new("vehicle_meter_correction"),
+                original_reading_id=original_reading_id,
+                corrected_value=corrected_value,
+                reason=reason,
+                corrected_at=corrected_at,
+            )
+        )
+
+
+class _MissingReadingVehicleService(_CorrectMeterVehicleService):
+    def correct_meter_reading(self, *args: object, **kwargs: object) -> Vehicle:
+        raise KeyError("Leitura não encontrada neste veículo.")
+
+
+class _StaleCorrectionVehicleService(_CorrectMeterVehicleService):
+    def correct_meter_reading(self, *args: object, **kwargs: object) -> Vehicle:
+        raise OptimisticConcurrencyConflict()
+
+
 def _fake_connection() -> object:
     return SimpleNamespace()
 
@@ -165,6 +228,9 @@ def _override_command_dependencies(service: object, contexto: OrganizationContex
         contexto
     )
     main_module.app.dependency_overrides[asset_commands.require_vehicle_record_meter] = lambda: (
+        contexto
+    )
+    main_module.app.dependency_overrides[asset_commands.require_vehicle_correct_meter] = lambda: (
         contexto
     )
     main_module.app.dependency_overrides[asset_commands.get_vehicle_service] = lambda: service
@@ -357,3 +423,95 @@ def test_record_meter_rejects_stale_version() -> None:
     )
     assert response.status_code == 409
     assert response.json()["reason_code"] == OptimisticConcurrencyConflict.code
+
+
+def _correction_body(**overrides: object) -> dict[str, object]:
+    body: dict[str, object] = {
+        "expected_version": 2,
+        "corrected_value": "121.5",
+        "reason": "Erro de digitação na leitura original",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_correction_route_is_registered_in_openapi() -> None:
+    expected = CORRECTION_ROUTE.replace(VEHICLE_ID, "{vehicle_id}").replace(
+        READING_ID, "{reading_id}"
+    )
+    assert expected in main_module.app.openapi()["paths"]
+
+
+def test_correct_meter_requires_authentication() -> None:
+    response = TestClient(main_module.app).post(
+        CORRECTION_ROUTE,
+        json=_correction_body(),
+        headers={"Idempotency-Key": "vehicle-meter-correction-auth"},
+    )
+    assert response.status_code == 401
+
+
+def test_correct_meter_rejects_missing_permission(monkeypatch: MonkeyPatch) -> None:
+    contexto = _context(permissions=frozenset())
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        contexto.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = _fake_connection
+    monkeypatch.setattr(
+        "apps.api.livestock_dependencies.resolve_organization_context",
+        lambda *_args, **_kwargs: contexto,
+    )
+    response = TestClient(main_module.app).post(
+        CORRECTION_ROUTE,
+        json=_correction_body(),
+        headers={
+            ORGANIZATION_HEADER: str(contexto.organization_id.value),
+            "Idempotency-Key": "vehicle-meter-correction-permission",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_correct_meter_returns_updated_vehicle() -> None:
+    contexto = _context(permissions=frozenset({VEHICLE_CORRECT_METER}))
+    service = _CorrectMeterVehicleService()
+    _override_command_dependencies(service, contexto)
+    response = TestClient(main_module.app).post(
+        CORRECTION_ROUTE,
+        json=_correction_body(),
+        headers={"Idempotency-Key": "vehicle-meter-correction-success"},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["version"] == 3
+    assert payload["meter_readings"][0]["value"] == "120"
+    assert payload["meter_corrections"][0]["corrected_value"] == "121.5"
+    assert service.seen == (
+        TypedId.parse("vehicle", VEHICLE_ID),
+        TypedId.parse("vehicle_meter_reading", READING_ID),
+        Decimal("121.5"),
+        "Erro de digitação na leitura original",
+        2,
+    )
+
+
+@pytest.mark.parametrize(
+    ("service", "status_code", "reason_code"),
+    [
+        (_MissingReadingVehicleService(), 404, "RECURSO_NAO_ENCONTRADO"),
+        (_StaleCorrectionVehicleService(), 409, OptimisticConcurrencyConflict.code),
+    ],
+)
+def test_correct_meter_translates_application_errors(
+    service: object, status_code: int, reason_code: str
+) -> None:
+    contexto = _context(permissions=frozenset({VEHICLE_CORRECT_METER}))
+    _override_command_dependencies(service, contexto)
+    response = TestClient(main_module.app).post(
+        CORRECTION_ROUTE,
+        json=_correction_body(),
+        headers={"Idempotency-Key": f"vehicle-meter-correction-{status_code}"},
+    )
+    assert response.status_code == status_code
+    assert response.json()["reason_code"] == reason_code

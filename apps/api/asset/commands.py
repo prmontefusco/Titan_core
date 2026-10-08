@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_vehicle_correct_meter,
     require_vehicle_record_meter,
     require_vehicle_transition,
     require_work_order_add_task,
@@ -118,6 +119,8 @@ TRANSITION_VEHICLE_LIFECYCLE_PURPOSE = "ASSET_VEHICLE_TRANSITION"
 TRANSITION_VEHICLE_LIFECYCLE_OPERATION = "asset.vehicle.transition_lifecycle"
 RECORD_VEHICLE_METER_PURPOSE = "ASSET_VEHICLE_RECORD_METER"
 RECORD_VEHICLE_METER_OPERATION = "asset.vehicle.record_meter"
+CORRECT_VEHICLE_METER_PURPOSE = "ASSET_VEHICLE_CORRECT_METER"
+CORRECT_VEHICLE_METER_OPERATION = "asset.vehicle.correct_meter"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -233,6 +236,12 @@ class RecordVehicleMeterReadingRequest(BaseModel):
     source: str = Field(min_length=1, max_length=100)
 
 
+class CorrectVehicleMeterReadingRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    corrected_value: Decimal = Field(ge=Decimal("0"))
+    reason: str = Field(min_length=1, max_length=500)
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -323,6 +332,100 @@ def registrar_leitura_medidor_vehicle(
         response = _vehicle_detail(vehicle)
         return CanonicalPayload(
             schema="asset.record_vehicle_meter_reading.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return VehicleDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/vehicles/{vehicle_id}/meter-readings/{reading_id}/corrections",
+    response_model=VehicleDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Corrigir leitura de medidor de um Vehicle",
+    responses=RESPOSTAS_PADRAO,
+)
+def corrigir_leitura_medidor_vehicle(
+    vehicle_id: str,
+    reading_id: str,
+    body: CorrectVehicleMeterReadingRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_vehicle_correct_meter)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[VehicleService, Depends(get_vehicle_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> VehicleDetailResponse:
+    parsed_vehicle_id = _typed_id_or_problem(vehicle_id, entity_type="vehicle", campo="vehicle_id")
+    parsed_reading_id = _typed_id_or_problem(
+        reading_id,
+        entity_type="vehicle_meter_reading",
+        campo="reading_id",
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=CORRECT_VEHICLE_METER_OPERATION,
+        purpose=CORRECT_VEHICLE_METER_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"vehicle_id": vehicle_id, "reading_id": reading_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            vehicle = service.correct_meter_reading(
+                operation_context,
+                parsed_vehicle_id,
+                original_reading_id=parsed_reading_id,
+                corrected_value=body.corrected_value,
+                reason=body.reason,
+                corrected_at=datetime.now(UTC),
+                expected_version=body.expected_version,
+            )
+        except (VehicleNaoEncontrado, KeyError) as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise DomainProblem(
+                status_code=status.HTTP_409_CONFLICT,
+                reason_code=OptimisticConcurrencyConflict.code,
+                title="Versão de agregado conflitante",
+                detail="A versão informada não corresponde à versão atual do Vehicle.",
+            ) from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _vehicle_detail(vehicle)
+        return CanonicalPayload(
+            schema="asset.correct_vehicle_meter_reading.response",
             version=1,
             value=response.model_dump(mode="json"),
         )

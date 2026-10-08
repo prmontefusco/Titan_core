@@ -182,8 +182,11 @@ class VehicleService:
         corrected_value: Decimal,
         reason: str,
         corrected_at: datetime,
+        expected_version: int | None = None,
     ) -> Vehicle:
         vehicle = self._require(vehicle_id)
+        if expected_version is not None and vehicle.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         correction = MeterCorrection(
             correction_id=TypedId.new("vehicle_meter_correction"),
             original_reading_id=original_reading_id,

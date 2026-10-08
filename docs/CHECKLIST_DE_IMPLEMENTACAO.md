@@ -7132,3 +7132,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API e superfície pública — 36 verdes. Verificação completa: `python -m uv run --locked pytest` — 2008 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro acrescenta uma leitura fictícia permanente ao histórico do Vehicle escolhido; usar massa dedicada. Este incremento não expõe correção de medidor, troca de baseline ou cadastro de Vehicle.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para corrigir leitura de medidor do Vehicle
+
+**Estado:** CONCLUÍDO — comando `CorrectMeterReading` exposto pela API HTTP. Entrega `POST /v1/asset/vehicles/{vehicle_id}/meter-readings/{reading_id}/corrections`, com `ASSET_VEHICLE.CORRECT_METER`, `expected_version` e motivo obrigatórios, `Idempotency-Key` obrigatório e retorno do Vehicle atualizado.
+
+**Implementação:** `VehicleService.correct_meter_reading` passou a validar concorrência otimista antes da mutação. A API acrescenta permissão específica, contrato de correção, identificadores tipados de Vehicle/leitura, idempotência e tradução de leitura inexistente, versão divergente e conflito de domínio. A superfície pública foi atualizada.
+
+**Decisões preservadas:** a correção não altera nem remove `MeterReading`; acrescenta `MeterCorrection` ligada à leitura original. `corrected_at` é definido pelo servidor e uma segunda correção da mesma leitura continua recusada pelo domínio, exigindo nova leitura para preservar a cadeia histórica.
+
+**Roteiro executável:** `apps/validacao/asset/correct_vehicle_meter_reading.py` descobre Organization, Vehicle, versão e uma leitura ainda não corrigida, calcula valor fictício, sonda `ASSET_VEHICLE.CORRECT_METER` e confirma na resposta que original e correção coexistem.
+
+**Portão:** testes focados de Application, API e superfície pública — 43 verdes. Verificação completa: `python -m uv run --locked pytest` — 2015 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria uma correção permanente e consome a leitura escolhida para futuras correções; usar massa fictícia dedicada. Cadastro, baseline e demais comandos de Vehicle permanecem separados.

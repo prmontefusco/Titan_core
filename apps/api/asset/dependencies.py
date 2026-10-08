@@ -19,6 +19,7 @@ from packages.asset_application.authorization import (
     CONTRACT_READ,
     DASHBOARD_READ,
     INVENTORY_READ,
+    VEHICLE_CORRECT_METER,
     VEHICLE_READ,
     VEHICLE_RECORD_METER,
     VEHICLE_TRANSITION,
@@ -57,6 +58,12 @@ def require_vehicle_transition(
 
 def require_vehicle_record_meter(
     contexto: Annotated[OrganizationContext, Depends(require_permission(VEHICLE_RECORD_METER))],
+) -> OrganizationContext:
+    return contexto
+
+
+def require_vehicle_correct_meter(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(VEHICLE_CORRECT_METER))],
 ) -> OrganizationContext:
     return contexto
 
@@ -152,6 +159,7 @@ __all__ = [
     "require_dashboard_read",
     "require_inventory_read",
     "require_vehicle_read",
+    "require_vehicle_correct_meter",
     "require_vehicle_record_meter",
     "require_vehicle_transition",
     "require_work_order_add_task",

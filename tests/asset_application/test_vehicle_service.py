@@ -124,6 +124,24 @@ def test_record_meter_reading_rejects_stale_expected_version(
         )
 
 
+def test_correct_meter_reading_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    service = VehicleService(repository=InMemoryVehicleRepository(), recorder=recorder)
+    vehicle = _register(service, context)
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.correct_meter_reading(
+            context,
+            vehicle.vehicle_id,
+            original_reading_id=TypedId.new("vehicle_meter_reading"),
+            corrected_value=Decimal("1"),
+            reason="correção",
+            corrected_at=datetime(2026, 1, 1, tzinfo=UTC),
+            expected_version=vehicle.version + 1,
+        )
+
+
 def test_set_configuration_baseline(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
