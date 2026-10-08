@@ -33,6 +33,7 @@ SUPERFICIE_ESPERADA = {
     # Vertical Asset — A5 expõe queries read-only e, incrementalmente, comandos
     # explícitos de capacidade; não há PATCH genérico de domínio.
     ("/v1/asset/availability", "get"),
+    ("/v1/asset/customer-sites", "post"),
     ("/v1/asset/contract-sla-summary", "get"),
     ("/v1/asset/fleet-view", "get"),
     ("/v1/asset/part-applicability", "get"),

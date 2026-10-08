@@ -7146,3 +7146,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API e superfície pública — 43 verdes. Verificação completa: `python -m uv run --locked pytest` — 2015 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria uma correção permanente e consome a leitura escolhida para futuras correções; usar massa fictícia dedicada. Cadastro, baseline e demais comandos de Vehicle permanecem separados.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para cadastrar CustomerSite
+
+**Estado:** CONCLUÍDO — `RegisterCustomerSite` exposto em `POST /v1/asset/customer-sites`, com `ASSET_SITE.REGISTER`, `Idempotency-Key` obrigatório, código tenant-scoped, tipo controlado e contatos opcionais.
+
+**Implementação:** `apps/api/asset/commands.py` acrescenta contratos de request/response, composição de `CustomerSiteService`, identificador tipado de cliente, serialização do agregado e tradução da restrição única `(Organization, code)` para conflito de domínio. `apps/api/asset/dependencies.py` acrescenta a permissão específica e a superfície pública declara a rota.
+
+**Decisões preservadas:** CustomerSite continua entidade de referência da vertical Asset, não conceito do Core. O cliente não informa Organization; ela vem do contexto autenticado. A unicidade de `code` permanece garantida pela constraint persistente já existente, sem consulta prévia sujeita a corrida.
+
+**Roteiro executável:** `apps/validacao/asset/register_customer_site.py` descobre Organization e um `customer_ref` existente, gera código único e cadastra oficina/contato inteiramente fictícios, após sondar a permissão, mostrando requisição e resposta.
+
+**Portão:** testes focados de API, superfície pública e Application — 21 verdes. Verificação completa: `python -m uv run --locked pytest` — 2020 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria um CustomerSite permanente; usar base de validação. O `customer_ref` continua uma referência da vertical e este incremento não cria catálogo de Customer nem amplia o Core.

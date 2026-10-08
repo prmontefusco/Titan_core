@@ -8,9 +8,11 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import IntegrityError
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_site_register,
     require_vehicle_correct_meter,
     require_vehicle_record_meter,
     require_vehicle_transition,
@@ -38,6 +40,7 @@ from packages.asset_application.contract_context_query import (
     ContractContextNaoEncontrado,
     ContractContextQueryService,
 )
+from packages.asset_application.customer_site_service import CustomerSiteService
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import InventoryService
 from packages.asset_application.part_service import PartNaoEncontrado
@@ -47,8 +50,12 @@ from packages.asset_application.work_order_service import (
     WorkOrderNaoEncontrada,
     WorkOrderService,
 )
+from packages.asset_domain.customer_site import CustomerSite, CustomerSiteKind, SiteContact
 from packages.asset_domain.vehicle import MeterKind, VehicleLifecycleState
 from packages.asset_domain.work_order import FailureRecord
+from packages.asset_infrastructure.persistence.customer_site_repository import (
+    TransactionalCustomerSiteRepository,
+)
 from packages.asset_infrastructure.persistence.inventory_repository import (
     TransactionalStockPositionRepository,
     TransactionalStockReservationRepository,
@@ -121,6 +128,8 @@ RECORD_VEHICLE_METER_PURPOSE = "ASSET_VEHICLE_RECORD_METER"
 RECORD_VEHICLE_METER_OPERATION = "asset.vehicle.record_meter"
 CORRECT_VEHICLE_METER_PURPOSE = "ASSET_VEHICLE_CORRECT_METER"
 CORRECT_VEHICLE_METER_OPERATION = "asset.vehicle.correct_meter"
+REGISTER_CUSTOMER_SITE_PURPOSE = "ASSET_SITE_REGISTER"
+REGISTER_CUSTOMER_SITE_OPERATION = "asset.customer_site.register"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -242,6 +251,38 @@ class CorrectVehicleMeterReadingRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class SiteContactRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    role: str | None = Field(default=None, min_length=1, max_length=100)
+    email: str | None = Field(default=None, min_length=1, max_length=200)
+    phone: str | None = Field(default=None, min_length=1, max_length=50)
+
+
+class RegisterCustomerSiteRequest(BaseModel):
+    customer_id: str
+    code: str = Field(min_length=1, max_length=100)
+    display_name: str = Field(min_length=1, max_length=200)
+    kind: CustomerSiteKind = CustomerSiteKind.OM
+    contacts: list[SiteContactRequest] = Field(default_factory=list)
+
+
+class SiteContactResponse(BaseModel):
+    name: str
+    role: str | None
+    email: str | None
+    phone: str | None
+
+
+class CustomerSiteResponse(BaseModel):
+    site_id: str
+    customer_ref: str
+    code: str
+    display_name: str
+    kind: str
+    contacts: list[SiteContactResponse]
+    version: int
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -272,6 +313,125 @@ def get_vehicle_service(connection: ConnectionDependency) -> VehicleService:
     return VehicleService(
         repository=TransactionalVehicleRepository(connection=connection),
         recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+    )
+
+
+def get_customer_site_service(connection: ConnectionDependency) -> CustomerSiteService:
+    event_log = DomainEventRepository(connection=connection)
+    return CustomerSiteService(
+        repository=TransactionalCustomerSiteRepository(connection=connection),
+        recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+    )
+
+
+def _customer_site_response(site: CustomerSite) -> CustomerSiteResponse:
+    return CustomerSiteResponse(
+        site_id=str(site.site_id.value),
+        customer_ref=str(site.customer_ref.value),
+        code=site.code,
+        display_name=site.display_name,
+        kind=site.kind.value,
+        contacts=[
+            SiteContactResponse(
+                name=contact.name,
+                role=contact.role,
+                email=contact.email,
+                phone=contact.phone,
+            )
+            for contact in site.contacts
+        ],
+        version=site.version,
+    )
+
+
+@router.post(
+    "/customer-sites",
+    response_model=CustomerSiteResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastrar CustomerSite",
+    responses=RESPOSTAS_PADRAO,
+)
+def cadastrar_customer_site(
+    body: RegisterCustomerSiteRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_site_register)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[CustomerSiteService, Depends(get_customer_site_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> CustomerSiteResponse:
+    customer_ref = _typed_id_or_problem(
+        body.customer_id, entity_type="customer", campo="customer_id"
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=REGISTER_CUSTOMER_SITE_OPERATION,
+        purpose=REGISTER_CUSTOMER_SITE_PURPOSE,
+        requested_at=datetime.now(UTC),
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            site = service.register_site(
+                operation_context,
+                customer_ref=customer_ref,
+                code=body.code,
+                display_name=body.display_name,
+                kind=body.kind,
+                contacts=tuple(
+                    SiteContact(
+                        name=contact.name,
+                        role=contact.role,
+                        email=contact.email,
+                        phone=contact.phone,
+                    )
+                    for contact in body.contacts
+                ),
+                occurred_at=datetime.now(UTC),
+            )
+        except IntegrityError as exc:
+            raise _domain_conflict(
+                "Já existe CustomerSite com este code nesta Organization."
+            ) from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _customer_site_response(site)
+        return CanonicalPayload(
+            schema="asset.register_customer_site.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return CustomerSiteResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
     )
 
 
