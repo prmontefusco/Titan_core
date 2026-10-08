@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_vehicle_transition,
     require_work_order_add_task,
     require_work_order_cancel,
     require_work_order_close,
@@ -23,7 +24,9 @@ from apps.api.asset.dependencies import (
     require_work_order_validate,
 )
 from apps.api.asset.queries import (
+    VehicleDetailResponse,
     WorkOrderDetailResponse,
+    _vehicle_detail,
     _work_order_detail,
     get_contract_context_query_service,
 )
@@ -42,6 +45,7 @@ from packages.asset_application.work_order_service import (
     WorkOrderNaoEncontrada,
     WorkOrderService,
 )
+from packages.asset_domain.vehicle import VehicleLifecycleState
 from packages.asset_domain.work_order import FailureRecord
 from packages.asset_infrastructure.persistence.inventory_repository import (
     TransactionalStockPositionRepository,
@@ -109,6 +113,8 @@ CANCEL_WORK_ORDER_PURPOSE = "SUSTAINMENT_WO_CANCEL"
 CANCEL_WORK_ORDER_OPERATION = "asset.work_order.cancel"
 RECORD_REMOVED_COMPONENT_PURPOSE = "SUSTAINMENT_WO_RECORD_REMOVAL"
 RECORD_REMOVED_COMPONENT_OPERATION = "asset.work_order.component.record_removed"
+TRANSITION_VEHICLE_LIFECYCLE_PURPOSE = "ASSET_VEHICLE_TRANSITION"
+TRANSITION_VEHICLE_LIFECYCLE_OPERATION = "asset.vehicle.transition_lifecycle"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -210,6 +216,12 @@ class CancelWorkOrderRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class TransitionVehicleLifecycleRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    new_state: VehicleLifecycleState
+    reason: str | None = Field(default=None, min_length=1, max_length=500)
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -233,6 +245,101 @@ def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderSe
 
 def get_idempotency_service(connection: ConnectionDependency) -> IdempotencyService:
     return IdempotencyService(IdempotencyRepository(connection))
+
+
+def get_vehicle_service(connection: ConnectionDependency) -> VehicleService:
+    event_log = DomainEventRepository(connection=connection)
+    return VehicleService(
+        repository=TransactionalVehicleRepository(connection=connection),
+        recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+    )
+
+
+@router.post(
+    "/vehicles/{vehicle_id}/transition-lifecycle",
+    response_model=VehicleDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Transicionar o ciclo de vida de um Vehicle",
+    responses=RESPOSTAS_PADRAO,
+)
+def transicionar_ciclo_de_vida_vehicle(
+    vehicle_id: str,
+    body: TransitionVehicleLifecycleRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_vehicle_transition)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[VehicleService, Depends(get_vehicle_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> VehicleDetailResponse:
+    parsed_vehicle_id = _typed_id_or_problem(vehicle_id, entity_type="vehicle", campo="vehicle_id")
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=TRANSITION_VEHICLE_LIFECYCLE_OPERATION,
+        purpose=TRANSITION_VEHICLE_LIFECYCLE_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"vehicle_id": vehicle_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            vehicle = service.transition_lifecycle(
+                operation_context,
+                parsed_vehicle_id,
+                new_state=body.new_state,
+                reason=body.reason,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except VehicleNaoEncontrado as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise DomainProblem(
+                status_code=status.HTTP_409_CONFLICT,
+                reason_code=OptimisticConcurrencyConflict.code,
+                title="Versão de agregado conflitante",
+                detail="A versão informada não corresponde à versão atual do Vehicle.",
+            ) from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _vehicle_detail(vehicle)
+        return CanonicalPayload(
+            schema="asset.transition_vehicle_lifecycle.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+
+    return VehicleDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
 
 
 @router.post(

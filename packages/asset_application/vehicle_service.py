@@ -39,6 +39,7 @@ from packages.asset_domain.vehicle import (
     VehicleIdentifiers,
     VehicleLifecycleState,
 )
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 
 
@@ -211,9 +212,12 @@ class VehicleService:
         *,
         new_state: VehicleLifecycleState,
         reason: str | None = None,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> Vehicle:
         vehicle = self._require(vehicle_id)
+        if expected_version is not None and vehicle.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         from_state = vehicle.lifecycle_state
         updated = vehicle.transition_lifecycle(new_state, reason=reason)
         self.repository.update(updated)

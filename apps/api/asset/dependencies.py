@@ -20,6 +20,7 @@ from packages.asset_application.authorization import (
     DASHBOARD_READ,
     INVENTORY_READ,
     VEHICLE_READ,
+    VEHICLE_TRANSITION,
     WO_ADD_TASK,
     WO_CANCEL,
     WO_CLOSE,
@@ -43,6 +44,12 @@ def require_dashboard_read(
 
 def require_vehicle_read(
     contexto: Annotated[OrganizationContext, Depends(require_permission(VEHICLE_READ))],
+) -> OrganizationContext:
+    return contexto
+
+
+def require_vehicle_transition(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(VEHICLE_TRANSITION))],
 ) -> OrganizationContext:
     return contexto
 
@@ -138,6 +145,7 @@ __all__ = [
     "require_dashboard_read",
     "require_inventory_read",
     "require_vehicle_read",
+    "require_vehicle_transition",
     "require_work_order_add_task",
     "require_work_order_cancel",
     "require_work_order_close",

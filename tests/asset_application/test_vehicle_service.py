@@ -26,6 +26,7 @@ from packages.asset_domain.vehicle import (
     VehicleIdentifiers,
     VehicleLifecycleState,
 )
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 from tests.asset_support import FakeEventLog
 
@@ -84,6 +85,22 @@ def test_mutation_on_unknown_vehicle_raises(
             context,
             TypedId.new("vehicle"),
             new_state=VehicleLifecycleState.DEGRADED,
+            occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+
+def test_transition_lifecycle_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    service = VehicleService(repository=InMemoryVehicleRepository(), recorder=recorder)
+    vehicle = _register(service, context)
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.transition_lifecycle(
+            context,
+            vehicle.vehicle_id,
+            new_state=VehicleLifecycleState.DEGRADED,
+            expected_version=vehicle.version + 1,
             occurred_at=datetime(2026, 1, 1, tzinfo=UTC),
         )
 
