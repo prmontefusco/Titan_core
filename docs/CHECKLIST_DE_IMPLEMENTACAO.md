@@ -7118,3 +7118,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** `tests/asset_application/test_vehicle_service.py` cobre conflito de versão. `tests/api/test_asset_transition_vehicle_lifecycle_api.py` cobre OpenAPI, 401, 403, caminho feliz, identificador inválido, Vehicle inexistente e versão divergente. Verificação focada: 29 testes verdes. Verificação completa: `python -m uv run --locked pytest` — 2001 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro altera um Vehicle `AVAILABLE` real do ambiente para `DEGRADED`; usar massa fictícia dedicada. Este incremento não cadastra Vehicle, não troca baseline, não registra medidor e não contorna o retorno ao serviço governado pela WorkOrder.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para registrar leitura de medidor do Vehicle
+
+**Estado:** CONCLUÍDO — comando `RecordMeterReading` exposto pela API HTTP. Entrega `POST /v1/asset/vehicles/{vehicle_id}/meter-readings`, com `ASSET_VEHICLE.RECORD_METER`, `expected_version` obrigatório, `Idempotency-Key` obrigatório e retorno do detalhe atualizado do Vehicle.
+
+**Implementação:** `packages/asset_application/vehicle_service.py` passou a validar concorrência otimista antes de anexar a leitura. `apps/api/asset/dependencies.py` acrescenta a permissão específica. `apps/api/asset/commands.py` acrescenta contrato tipado para `HOURS`/`KILOMETERS`, validação de instante UTC, composição do serviço, comando idempotente e tradução de Vehicle inexistente, conflito de versão e recusa de domínio. A superfície pública foi atualizada.
+
+**Decisões preservadas:** `recorded_at` é definido pelo servidor; o cliente declara apenas `observed_at` e a fonte. A leitura permanece append-only e I‑VEH‑2 continua recusando valor menor que a última leitura do mesmo tipo. Este comando não corrige nem apaga leitura anterior; correção possui capacidade própria.
+
+**Roteiro executável:** `apps/validacao/asset/record_vehicle_meter_reading.py` descobre Organization, Vehicle, versão e maior horímetro existente, calcula automaticamente um valor monotônico, sonda `ASSET_VEHICLE.RECORD_METER` e mostra requisição, resposta e razão do teste.
+
+**Portão:** testes focados de Application, API e superfície pública — 36 verdes. Verificação completa: `python -m uv run --locked pytest` — 2008 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro acrescenta uma leitura fictícia permanente ao histórico do Vehicle escolhido; usar massa dedicada. Este incremento não expõe correção de medidor, troca de baseline ou cadastro de Vehicle.

@@ -142,8 +142,11 @@ class VehicleService:
         observed_at: datetime,
         recorded_at: datetime,
         source: str,
+        expected_version: int | None = None,
     ) -> Vehicle:
         vehicle = self._require(vehicle_id)
+        if expected_version is not None and vehicle.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         reading = MeterReading(
             reading_id=TypedId.new("vehicle_meter_reading"),
             kind=kind,

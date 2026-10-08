@@ -105,6 +105,25 @@ def test_transition_lifecycle_rejects_stale_expected_version(
         )
 
 
+def test_record_meter_reading_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    service = VehicleService(repository=InMemoryVehicleRepository(), recorder=recorder)
+    vehicle = _register(service, context)
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.record_meter_reading(
+            context,
+            vehicle.vehicle_id,
+            kind=MeterKind.HOURS,
+            value=Decimal("1"),
+            observed_at=datetime(2026, 1, 1, tzinfo=UTC),
+            recorded_at=datetime(2026, 1, 1, tzinfo=UTC),
+            source="teste",
+            expected_version=vehicle.version + 1,
+        )
+
+
 def test_set_configuration_baseline(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:

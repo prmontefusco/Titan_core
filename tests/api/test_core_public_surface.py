@@ -37,6 +37,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/fleet-view", "get"),
     ("/v1/asset/part-applicability", "get"),
     ("/v1/asset/vehicles/{vehicle_id}", "get"),
+    ("/v1/asset/vehicles/{vehicle_id}/meter-readings", "post"),
     ("/v1/asset/vehicles/{vehicle_id}/transition-lifecycle", "post"),
     ("/v1/asset/vehicles/{vehicle_id}/contract-context", "get"),
     ("/v1/asset/vehicles/{vehicle_id}/configuration-at", "get"),
