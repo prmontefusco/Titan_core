@@ -33,7 +33,7 @@ Legenda de colunas: **Autz** = permissão exigida (`<MODULE>.<AÇÃO>`, nunca po
 | `SupersedePartRevision` | `ASSET_PART.SUPERSEDE` | ✔ | ✔ | `Part` | grafo acíclico; `reason` | `part.revision_superseded`, `part.lifecycle_state_changed` (I‑PRT‑1) |
 | `ChangeInterchangeabilityGroup` | `ASSET_PART.EDIT_INTERCHANGE` | ✔ | ✔ | `InterchangeabilityGroup` | simetria preservada | `part.interchangeability_group_changed` (I‑PRT‑2) |
 | `AssertPartApplicability` | `ASSET_APPLICABILITY.ASSERT` | — | ✔ | `Applicability` | **`evidence_ref` obrigatório**; `target` bem formado | `applicability.asserted` (I‑APP‑1) |
-| `WithdrawPartApplicability` | `ASSET_APPLICABILITY.WITHDRAW` | ✔ | ✔ | `Applicability` | `reason`; gera `correction` | `applicability.withdrawn` (I‑APP‑2) |
+| `WithdrawPartApplicability` | `ASSET_APPLICABILITY.WITHDRAW` | ✔ | ✔ | `Applicability` | `reason`; preserva a asserção original | `applicability.withdrawn`, com causalidade para `applicability.asserted` (I‑APP‑2, ADR-0082) |
 
 ### Inventory
 | `OpenStockPosition` | `ASSET_INVENTORY.OPEN_POSITION` | — | ✔ | `StockPosition` | `(part, location, purpose)` inédita | `inventory.stock_position_opened` |

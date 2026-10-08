@@ -17,6 +17,7 @@ from apps.api.livestock_dependencies import (
 from packages.asset_application.authorization import (
     APPLICABILITY_ASSERT,
     APPLICABILITY_READ,
+    APPLICABILITY_WITHDRAW,
     CONTRACT_READ,
     DASHBOARD_READ,
     INVENTORY_READ,
@@ -122,6 +123,12 @@ def require_applicability_assert(
     return contexto
 
 
+def require_applicability_withdraw(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(APPLICABILITY_WITHDRAW))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_part_supersede(
     contexto: Annotated[OrganizationContext, Depends(require_permission(PART_SUPERSEDE))],
 ) -> OrganizationContext:
@@ -204,6 +211,7 @@ __all__ = [
     "require_part_add_revision",
     "require_part_edit_interchange",
     "require_applicability_assert",
+    "require_applicability_withdraw",
     "require_part_supersede",
     "require_site_register",
     "require_vehicle_read",

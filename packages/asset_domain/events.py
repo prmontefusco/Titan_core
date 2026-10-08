@@ -898,13 +898,11 @@ def applicability_withdrawn_payload(
     *,
     applicability_id: TypedId,
     reason: str,
-    correction_ref: TypedId | None,
 ) -> CanonicalPayload:
     return _payload(
         APPLICABILITY_WITHDRAWN,
         {
             "applicability_id": _id(applicability_id),
-            "correction_ref": _optional_id(correction_ref),
             "reason": reason,
         },
     )

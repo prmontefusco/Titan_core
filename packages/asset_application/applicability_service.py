@@ -6,11 +6,16 @@ delete) já são garantidos pelo próprio `Applicability.__post_init__`/`withdra
 padrão de `part_service.py`.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
+from packages.asset_application.event_recorder import (
+    AGGREGATE_CONTRACT_VERSION,
+    AssetEventRecorder,
+    AssetOperationContext,
+)
 from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
 from packages.asset_domain.events import (
     APPLICABILITY_ASSERTED,
@@ -18,11 +23,16 @@ from packages.asset_domain.events import (
     applicability_asserted_payload,
     applicability_withdrawn_payload,
 )
-from packages.shared_kernel import TypedId
+from packages.core_application import OptimisticConcurrencyConflict
+from packages.shared_kernel import TypedId, UniversalReference
 
 
 class ApplicabilityNaoEncontrada(KeyError):
     """`applicability_id` não corresponde a nenhuma `Applicability` desta Organization."""
+
+
+class AssercaoOriginalNaoEncontrada(RuntimeError):
+    """O fluxo da Applicability não contém seu evento original de asserção."""
 
 
 class ApplicabilityRepositoryPort(Protocol):
@@ -33,10 +43,25 @@ class ApplicabilityRepositoryPort(Protocol):
     def get_by_id(self, applicability_id: TypedId) -> Applicability | None: ...
 
 
+class RecordedApplicabilityEvent(Protocol):
+    @property
+    def event_id(self) -> TypedId: ...
+
+    @property
+    def event_type(self) -> str: ...
+
+
+class ApplicabilityEventReader(Protocol):
+    def list_for_aggregate(
+        self, aggregate_reference: UniversalReference
+    ) -> Sequence[RecordedApplicabilityEvent]: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ApplicabilityService:
     repository: ApplicabilityRepositoryPort
     recorder: AssetEventRecorder
+    event_reader: ApplicabilityEventReader
 
     def _require(self, applicability_id: TypedId) -> Applicability:
         applicability = self.repository.get_by_id(applicability_id)
@@ -92,9 +117,28 @@ class ApplicabilityService:
         *,
         reason: str,
         withdrawn_at: datetime,
-        correction_ref: TypedId | None = None,
+        expected_version: int | None = None,
     ) -> Applicability:
         applicability = self._require(applicability_id)
+        if expected_version is not None and applicability.version != expected_version:
+            raise OptimisticConcurrencyConflict()
+        aggregate_reference = UniversalReference(
+            target_id=applicability_id,
+            organization_id=context.organization_id,
+            contract_version=AGGREGATE_CONTRACT_VERSION,
+        )
+        assertion_event = next(
+            (
+                event
+                for event in self.event_reader.list_for_aggregate(aggregate_reference)
+                if event.event_type == APPLICABILITY_ASSERTED
+            ),
+            None,
+        )
+        if assertion_event is None:
+            raise AssercaoOriginalNaoEncontrada(
+                f"Evento original de Applicability '{applicability_id.value}' não encontrado."
+            )
         updated = applicability.withdraw(reason=reason, withdrawn_at=withdrawn_at)
         self.repository.update(updated)
         self.recorder.record(
@@ -104,9 +148,9 @@ class ApplicabilityService:
             payload=applicability_withdrawn_payload(
                 applicability_id=updated.applicability_id,
                 reason=reason,
-                correction_ref=correction_ref,
             ),
             occurred_at=withdrawn_at,
+            causation_id=assertion_event.event_id,
         )
         return updated
 

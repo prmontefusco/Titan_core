@@ -82,8 +82,9 @@ de nova manutenção passa a propor rev. 3 **se aplicável**.
 `evidence_ref`, nunca só `true`.
 
 ### I‑APP‑2 — Retirada de aplicabilidade por correção, não por delete
-**Enunciado:** revogar uma `Applicability` gera estado `WITHDRAWN` + `CorrectionEvent`; o registro
-`ASSERTED` original permanece.
+**Enunciado:** revogar uma `Applicability` gera estado `WITHDRAWN` e o evento corretivo específico
+`asset.applicability.withdrawn`, ligado por `causation_id` ao `asset.applicability.asserted`; o registro
+`ASSERTED` original permanece (ADR-0082).
 **Camada:** D + DB (append‑only).
 **NUNCA:** `DELETE` de uma aplicabilidade que já foi usada por uma decisão/instalação.
 **Teste:** revogar aplicabilidade usada em WO fechada → histórico da WO intacto; nova consulta não a retorna.

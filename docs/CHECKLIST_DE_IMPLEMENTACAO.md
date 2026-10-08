@@ -7240,3 +7240,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API e superfície pública — 24 verdes. Verificação completa: `python -m uv run --locked pytest` — 2051 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria uma Applicability permanente; usar massa fictícia dedicada. A referência de Evidence é opaca entre verticais conforme a arquitetura vigente; retirada permanece no comando separado `WithdrawPartApplicability`.
+
+### 08/10/2026 — A5: correção específica e retirada HTTP de Applicability
+
+**Estado:** CONCLUÍDO — `WithdrawPartApplicability` exposto em `POST /v1/asset/part-applicability/{applicability_id}/withdraw`, com `ASSET_APPLICABILITY.WITHDRAW`, `expected_version`, motivo e `Idempotency-Key` obrigatórios. A ADR-0082 estabelece o padrão transversal de correções específicas por vertical.
+
+**Implementação:** `ApplicabilityService.withdraw_applicability` passou a validar concorrência otimista, localizar no log o evento original `asset.applicability.asserted` e emitir `asset.applicability.withdrawn` com seu `event_id` em `causation_id`. O payload removeu o `correction_ref` opcional e ambíguo. A API acrescenta autorização, contrato, idempotência e tradução de Applicability inexistente, histórico incompleto, versão divergente e conflito de domínio.
+
+**Decisões preservadas:** conforme ADR-0082, `asset.applicability.withdrawn` é o único evento corretivo desta operação; não há `registro_corrigido` duplicado nem comando genérico capaz de alterar agregados da vertical. I-APP-2 permanece append-only: a asserção original e seu evento não são apagados ou sobrescritos. Nenhuma abstração compartilhada foi criada antes de existir um segundo caso concreto.
+
+**Roteiro executável:** `apps/validacao/asset/withdraw_part_applicability.py` descobre Organization, Applicability ainda `ASSERTED` e versão corrente, sonda `ASSET_APPLICABILITY.WITHDRAW` e confirma estado `WITHDRAWN` e incremento de versão sem copiar identificadores manualmente.
+
+**Portão:** testes focados de eventos, Application, API e superfície pública — 39 verdes. Verificação completa: `python -m uv run --locked pytest` — 2056 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos após estreitar a porta de leitura aos campos efetivamente usados. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro retira permanentemente a Applicability escolhida; usar massa fictícia dedicada. A navegação causal depende da preservação do evento original; fluxo legado sem `applicability.asserted` é recusado explicitamente, não corrigido às cegas.

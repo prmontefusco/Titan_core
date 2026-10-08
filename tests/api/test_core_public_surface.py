@@ -39,6 +39,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/interchangeability-groups/{group_id}/members/change", "post"),
     ("/v1/asset/part-applicability", "get"),
     ("/v1/asset/part-applicability/assertions", "post"),
+    ("/v1/asset/part-applicability/{applicability_id}/withdraw", "post"),
     ("/v1/asset/parts", "post"),
     ("/v1/asset/parts/{part_id}/revisions", "post"),
     ("/v1/asset/parts/{part_id}/revisions/supersede", "post"),

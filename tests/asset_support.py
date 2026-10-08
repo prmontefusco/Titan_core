@@ -9,6 +9,7 @@ de Asset precisar deles (ex.: entitlement de SLI via `Evaluation`→`Decision`),
 não antes.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
@@ -37,6 +38,11 @@ class FakeEventLog:
 
     def list_versions(self, aggregate_reference: UniversalReference) -> tuple[int, ...]:
         return self.versions_of(aggregate_reference)
+
+    def list_for_aggregate(self, aggregate_reference: UniversalReference) -> Sequence[DomainEvent]:
+        return tuple(
+            event for event in self.events if event.aggregate_reference == aggregate_reference
+        )
 
     def versions_of(self, aggregate_reference: UniversalReference) -> tuple[int, ...]:
         return tuple(

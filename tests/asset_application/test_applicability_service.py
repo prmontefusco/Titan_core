@@ -16,6 +16,7 @@ from packages.asset_domain.applicability import (
     ApplicabilityTarget,
 )
 from packages.asset_domain.events import APPLICABILITY_ASSERTED, APPLICABILITY_WITHDRAWN
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 from tests.asset_support import FakeEventLog
 
@@ -58,7 +59,9 @@ def _assert(service: ApplicabilityService, context: AssetOperationContext) -> Ap
 def test_assert_applicability(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
-    service = ApplicabilityService(repository=InMemoryApplicabilityRepository(), recorder=recorder)
+    service = ApplicabilityService(
+        repository=InMemoryApplicabilityRepository(), recorder=recorder, event_reader=event_log
+    )
     applicability = _assert(service, context)
 
     assert applicability.state is ApplicabilityState.ASSERTED
@@ -69,7 +72,9 @@ def test_assert_applicability(
 def test_withdraw_applicability(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
-    service = ApplicabilityService(repository=InMemoryApplicabilityRepository(), recorder=recorder)
+    service = ApplicabilityService(
+        repository=InMemoryApplicabilityRepository(), recorder=recorder, event_reader=event_log
+    )
     applicability = _assert(service, context)
 
     withdrawn = service.withdraw_applicability(
@@ -79,13 +84,16 @@ def test_withdraw_applicability(
         withdrawn_at=datetime(2026, 6, 1, tzinfo=UTC),
     )
     assert withdrawn.state is ApplicabilityState.WITHDRAWN
-    event_log.only(APPLICABILITY_WITHDRAWN)
+    withdrawn_event = event_log.only(APPLICABILITY_WITHDRAWN)
+    assert withdrawn_event.causation_id == event_log.only(APPLICABILITY_ASSERTED).event_id
 
 
 def test_withdraw_unknown_applicability_raises(
-    recorder: AssetEventRecorder, context: AssetOperationContext
+    recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
-    service = ApplicabilityService(repository=InMemoryApplicabilityRepository(), recorder=recorder)
+    service = ApplicabilityService(
+        repository=InMemoryApplicabilityRepository(), recorder=recorder, event_reader=event_log
+    )
     with pytest.raises(ApplicabilityNaoEncontrada):
         service.withdraw_applicability(
             context,
@@ -93,3 +101,24 @@ def test_withdraw_unknown_applicability_raises(
             reason="motivo",
             withdrawn_at=VALID_FROM,
         )
+
+
+def test_withdraw_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
+) -> None:
+    service = ApplicabilityService(
+        repository=InMemoryApplicabilityRepository(), recorder=recorder, event_reader=event_log
+    )
+    applicability = _assert(service, context)
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.withdraw_applicability(
+            context,
+            applicability.applicability_id,
+            reason="Correção fictícia.",
+            withdrawn_at=datetime(2026, 6, 1, tzinfo=UTC),
+            expected_version=applicability.version + 1,
+        )
+
+    assert service.get_applicability(applicability.applicability_id) == applicability
+    assert event_log.of_type(APPLICABILITY_WITHDRAWN) == []

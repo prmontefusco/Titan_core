@@ -14,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from apps.api.asset.dependencies import (
     ConnectionDependency,
     require_applicability_assert,
+    require_applicability_withdraw,
     require_part_add_revision,
     require_part_edit_interchange,
     require_part_register,
@@ -41,7 +42,11 @@ from apps.api.asset.queries import (
     get_contract_context_query_service,
 )
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
-from packages.asset_application.applicability_service import ApplicabilityService
+from packages.asset_application.applicability_service import (
+    ApplicabilityNaoEncontrada,
+    ApplicabilityService,
+    AssercaoOriginalNaoEncontrada,
+)
 from packages.asset_application.contract_context_query import (
     ContractContextAmbiguo,
     ContractContextNaoEncontrado,
@@ -159,6 +164,8 @@ CHANGE_INTERCHANGEABILITY_GROUP_PURPOSE = "ASSET_PART_CHANGE_INTERCHANGEABILITY_
 CHANGE_INTERCHANGEABILITY_GROUP_OPERATION = "asset.part.change_interchangeability_group"
 ASSERT_PART_APPLICABILITY_PURPOSE = "ASSET_APPLICABILITY_ASSERT"
 ASSERT_PART_APPLICABILITY_OPERATION = "asset.applicability.assert"
+WITHDRAW_PART_APPLICABILITY_PURPOSE = "ASSET_APPLICABILITY_WITHDRAW"
+WITHDRAW_PART_APPLICABILITY_OPERATION = "asset.applicability.withdraw"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -404,6 +411,11 @@ class ApplicabilityResponse(BaseModel):
     version: int
 
 
+class WithdrawPartApplicabilityRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -468,6 +480,7 @@ def get_applicability_service(connection: ConnectionDependency) -> Applicability
     return ApplicabilityService(
         repository=TransactionalApplicabilityRepository(connection=connection),
         recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+        event_reader=event_log,
     )
 
 
@@ -992,6 +1005,100 @@ def afirmar_aplicabilidade_part(
         execution = idempotency_service.execute(request, _handler)
     except IntegrityError as exc:
         raise _domain_conflict("Part ou revisão não existe na Organization informada.") from exc
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return ApplicabilityResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/part-applicability/{applicability_id}/withdraw",
+    response_model=ApplicabilityResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Retirar aplicabilidade de Part",
+    responses=RESPOSTAS_PADRAO,
+)
+def retirar_aplicabilidade_part(
+    applicability_id: str,
+    body: WithdrawPartApplicabilityRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_applicability_withdraw)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[ApplicabilityService, Depends(get_applicability_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> ApplicabilityResponse:
+    parsed_id = _typed_id_or_problem(
+        applicability_id, entity_type="applicability", campo="applicability_id"
+    )
+    withdrawn_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=WITHDRAW_PART_APPLICABILITY_OPERATION,
+        purpose=WITHDRAW_PART_APPLICABILITY_PURPOSE,
+        requested_at=withdrawn_at,
+        extra_intent={"applicability_id": applicability_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            applicability = service.withdraw_applicability(
+                operation_context,
+                parsed_id,
+                reason=body.reason,
+                withdrawn_at=withdrawn_at,
+                expected_version=body.expected_version,
+            )
+        except ApplicabilityNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except AssercaoOriginalNaoEncontrada as exc:
+            raise DomainProblem(
+                status_code=409,
+                reason_code="ASSERCAO_ORIGINAL_NAO_ENCONTRADA",
+                title="Histórico de aplicabilidade incompleto",
+                detail=str(exc),
+            ) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise DomainProblem(
+                status_code=409,
+                reason_code=OptimisticConcurrencyConflict.code,
+                title="Versão de agregado conflitante",
+                detail="A versão informada não corresponde à versão atual da Applicability.",
+            ) from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _applicability_response(applicability)
+        return CanonicalPayload(
+            schema="asset.withdraw_part_applicability.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
     except ValueError as exc:
         raise DomainProblem(
             status_code=422,

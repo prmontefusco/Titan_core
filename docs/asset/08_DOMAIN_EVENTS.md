@@ -38,7 +38,7 @@ vertical; sub‑namespaces `asset.inventory.*` e `asset.sustainment.*`. Enquanto
 | `asset.part.lifecycle_state_changed` | ativa→superseded/obsolete/alternate | `part_id`, `from_state`, `to_state` | I‑PRT‑1 |
 | `asset.part.interchangeability_group_changed` | membro entra/sai do grupo | `group_id`, `part_revision_ref`, `change` (`ADDED`/`REMOVED`) | I‑PRT‑2 |
 | `asset.applicability.asserted` | aplicabilidade afirmada | `applicability_id`, `part_ref`, `part_revision_ref`, `target`, `evidence_ref` | I‑APP‑1 |
-| `asset.applicability.withdrawn` | aplicabilidade revogada | `applicability_id`, `reason`, `correction_ref` | I‑APP‑2 |
+| `asset.applicability.withdrawn` | aplicabilidade revogada; correção específica ligada por `causation_id` à asserção original | `applicability_id`, `reason` | I‑APP‑2, ADR-0082 |
 
 ### Inventory
 | `asset.inventory.stock_position_opened` | primeira quantidade numa `(part, location, purpose)` | `stock_position_id`, `part_ref`, `location_ref`, `purpose`, `ownership` | I‑INV‑0 |

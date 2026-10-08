@@ -14,15 +14,17 @@ import apps.api.main as main_module
 from apps.api.asset import commands as asset_commands
 from apps.api.authentication import require_authenticated_principal
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER, request_connection
-from packages.asset_application.authorization import APPLICABILITY_ASSERT
+from packages.asset_application.authorization import APPLICABILITY_ASSERT, APPLICABILITY_WITHDRAW
 from packages.asset_application.event_recorder import AssetOperationContext
 from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
-from packages.core_application import IdempotencyExecution
+from packages.core_application import IdempotencyExecution, OptimisticConcurrencyConflict
 from packages.core_domain import AuthenticatedPrincipal, CanonicalPayload, OrganizationContext
 from packages.core_domain.organization_context import PrincipalType
 from packages.shared_kernel import OrganizationId, TypedId
 
 ROUTE = "/v1/asset/part-applicability/assertions"
+APPLICABILITY_ID = "00000000-0000-0000-0000-000000001005"
+WITHDRAW_ROUTE = f"/v1/asset/part-applicability/{APPLICABILITY_ID}/withdraw"
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
 PART_ID = "00000000-0000-0000-0000-000000001001"
 REVISION_ID = "00000000-0000-0000-0000-000000001002"
@@ -86,6 +88,8 @@ class _Idempotency:
 
 
 class _Service:
+    stale = False
+
     def assert_applicability(
         self,
         context: AssetOperationContext,
@@ -108,12 +112,48 @@ class _Service:
             asserted_by=asserted_by,
         )
 
+    def withdraw_applicability(
+        self,
+        context: AssetOperationContext,
+        applicability_id: TypedId,
+        *,
+        reason: str,
+        withdrawn_at: datetime,
+        expected_version: int | None,
+    ) -> Applicability:
+        if self.stale:
+            raise OptimisticConcurrencyConflict()
+        assert expected_version == 1
+        applicability = Applicability(
+            applicability_id=applicability_id,
+            organization_id=context.organization_id,
+            part_ref=TypedId.parse("part", PART_ID),
+            part_revision_ref=TypedId.parse("part_revision", REVISION_ID),
+            target=ApplicabilityTarget(
+                model_ref=TypedId.parse("vehicle_model", MODEL_ID),
+                variant_ref=None,
+                serial_from="1000",
+                serial_to="2000",
+                valid_from=NOW,
+                valid_until=None,
+            ),
+            evidence_ref=TypedId.parse("evidence", EVIDENCE_ID),
+            asserted_at=NOW,
+            asserted_by=context.actor_reference.target_id,
+        )
+        return applicability.withdraw(reason=reason, withdrawn_at=withdrawn_at)
 
-def _override(context: OrganizationContext) -> None:
+
+def _override(context: OrganizationContext, service: _Service | None = None) -> None:
     main_module.app.dependency_overrides[asset_commands.require_applicability_assert] = lambda: (
         context
     )
-    main_module.app.dependency_overrides[asset_commands.get_applicability_service] = _Service
+    main_module.app.dependency_overrides[asset_commands.require_applicability_withdraw] = lambda: (
+        context
+    )
+    main_module.app.dependency_overrides[asset_commands.get_applicability_service] = lambda: (
+        service or _Service()
+    )
     main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = _Idempotency
 
 
@@ -185,3 +225,63 @@ def test_assert_part_applicability_rejects_invalid_effectivity() -> None:
         headers={"Idempotency-Key": "applicability-effectivity"},
     )
     assert response.status_code == 409
+
+
+def test_withdraw_part_applicability_requires_authentication() -> None:
+    response = TestClient(main_module.app).post(
+        WITHDRAW_ROUTE,
+        json={"expected_version": 1, "reason": "Correção fictícia."},
+        headers={"Idempotency-Key": "applicability-withdraw-auth"},
+    )
+    assert response.status_code == 401
+
+
+def test_withdraw_part_applicability_rejects_missing_permission(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    context = _context(frozenset())
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        context.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = lambda: SimpleNamespace()
+    monkeypatch.setattr(
+        "apps.api.livestock_dependencies.resolve_organization_context",
+        lambda *_args, **_kwargs: context,
+    )
+    response = TestClient(main_module.app).post(
+        WITHDRAW_ROUTE,
+        json={"expected_version": 1, "reason": "Correção fictícia."},
+        headers={
+            ORGANIZATION_HEADER: str(context.organization_id.value),
+            "Idempotency-Key": "applicability-withdraw-permission",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_withdraw_part_applicability_returns_withdrawn_state() -> None:
+    context = _context(frozenset({APPLICABILITY_WITHDRAW}))
+    _override(context)
+    response = TestClient(main_module.app).post(
+        WITHDRAW_ROUTE,
+        json={"expected_version": 1, "reason": "Aplicabilidade lançada por engano."},
+        headers={"Idempotency-Key": "applicability-withdraw-success"},
+    )
+    assert response.status_code == 200
+    assert response.json()["state"] == "WITHDRAWN"
+    assert response.json()["version"] == 2
+
+
+def test_withdraw_part_applicability_rejects_stale_version() -> None:
+    context = _context(frozenset({APPLICABILITY_WITHDRAW}))
+    service = _Service()
+    service.stale = True
+    _override(context, service)
+    response = TestClient(main_module.app).post(
+        WITHDRAW_ROUTE,
+        json={"expected_version": 1, "reason": "Correção fictícia."},
+        headers={"Idempotency-Key": "applicability-withdraw-stale"},
+    )
+    assert response.status_code == 409
+    assert response.json()["reason_code"] == OptimisticConcurrencyConflict.code
