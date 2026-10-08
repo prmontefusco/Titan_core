@@ -32,6 +32,7 @@ from apps.api.asset.dependencies import (
     require_work_order_execute,
     require_work_order_open,
     require_work_order_record_removal,
+    require_work_order_reserve_material,
     require_work_order_tech_complete,
     require_work_order_transition,
     require_work_order_validate,
@@ -55,6 +56,10 @@ from packages.asset_application.contract_context_query import (
     ContractContextQueryService,
 )
 from packages.asset_application.customer_site_service import CustomerSiteService
+from packages.asset_application.entitlement_service import (
+    EntitlementOutcome,
+    EntitlementResolution,
+)
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.interchangeability_group_service import (
     InterchangeabilityGroupNaoEncontrado,
@@ -73,6 +78,7 @@ from packages.asset_application.work_order_service import (
 )
 from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
 from packages.asset_domain.customer_site import CustomerSite, CustomerSiteKind, SiteContact
+from packages.asset_domain.events import SUSTAINMENT_ENTITLEMENT_RESOLVED
 from packages.asset_domain.inventory import (
     StockOwnership,
     StockPosition,
@@ -127,6 +133,8 @@ ADD_WORK_ORDER_TASK_PURPOSE = "SUSTAINMENT_WO_ADD_TASK"
 ADD_WORK_ORDER_TASK_OPERATION = "asset.work_order.add_task"
 DEMAND_MATERIAL_PURPOSE = "SUSTAINMENT_WO_DEMAND_MATERIAL"
 DEMAND_MATERIAL_OPERATION = "asset.work_order.demand_material"
+RESERVE_WORK_ORDER_MATERIAL_PURPOSE = "SUSTAINMENT_WO_RESERVE_MATERIAL"
+RESERVE_WORK_ORDER_MATERIAL_OPERATION = "asset.work_order.reserve_material"
 MARK_WORK_ORDER_PLANNED_PURPOSE = "SUSTAINMENT_WO_MARK_PLANNED"
 MARK_WORK_ORDER_PLANNED_OPERATION = "asset.work_order.mark_planned"
 MARK_WORK_ORDER_READY_PURPOSE = "SUSTAINMENT_WO_MARK_READY"
@@ -204,6 +212,17 @@ class DemandMaterialRequest(BaseModel):
     part_id: str = Field(description="Part demandado pela tarefa da WorkOrder.")
     qty: Decimal = Field(gt=Decimal("0"))
     task_id: str = Field(description="Tarefa da WorkOrder que demanda o material.")
+
+
+class ReserveWorkOrderMaterialRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    stock_position_id: str
+    part_id: str
+    qty: Decimal = Field(gt=Decimal("0"))
+    priority: int = Field(ge=0)
+    entitlement_event_id: str = Field(
+        description="Evento persistido asset.sustainment.entitlement_resolved."
+    )
 
 
 class MarkWorkOrderPlannedRequest(BaseModel):
@@ -496,6 +515,10 @@ def get_idempotency_service(connection: ConnectionDependency) -> IdempotencyServ
     return IdempotencyService(IdempotencyRepository(connection))
 
 
+def get_domain_event_repository(connection: ConnectionDependency) -> DomainEventRepository:
+    return DomainEventRepository(connection=connection)
+
+
 def get_vehicle_service(connection: ConnectionDependency) -> VehicleService:
     event_log = DomainEventRepository(connection=connection)
     return VehicleService(
@@ -644,6 +667,35 @@ def _stock_position_response(position: StockPosition) -> StockPositionResponse:
         serial=position.serial,
         version=position.version,
     )
+
+
+def _entitlement_resolution_from_event(
+    event_log: DomainEventRepository,
+    entitlement_event_id: TypedId,
+) -> EntitlementResolution:
+    event = event_log.get_by_id(entitlement_event_id)
+    if event is None or event.event_type != SUSTAINMENT_ENTITLEMENT_RESOLVED:
+        raise KeyError(f"Entitlement resolvido '{entitlement_event_id.value}' não encontrado.")
+    try:
+        data = _canonical_response_data(event.payload_canonical_bytes)
+        instant_value = data["instant"]
+        if not isinstance(instant_value, str):
+            raise ValueError("instant inválido")
+        instant = datetime.fromisoformat(instant_value.replace("Z", "+00:00"))
+        require_utc(instant, field_name="instant")
+        breakdown = data["breakdown"]
+        if not isinstance(breakdown, str) or not breakdown.strip():
+            raise ValueError("breakdown inválido")
+        return EntitlementResolution(
+            vehicle_ref=TypedId.parse("vehicle", str(data["vehicle_ref"])),
+            subject_ref=TypedId.parse("part", str(data["subject_ref"])),
+            instant=instant,
+            decision_ref=TypedId.parse("decision", str(data["decision_ref"])),
+            outcome=EntitlementOutcome(str(data["outcome"])),
+            breakdown=breakdown,
+        )
+    except (KeyError, TypeError, ValueError, RuntimeError) as exc:
+        raise ValueError("Evento de entitlement persistido possui payload inválido.") from exc
 
 
 @router.post(
@@ -2012,6 +2064,106 @@ def demandar_material_work_order(
             detail=str(exc),
         ) from exc
 
+    return WorkOrderDetailResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/work-orders/{work_order_id}/material-reservations",
+    response_model=WorkOrderDetailResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Reservar material demandado por uma WorkOrder",
+    responses=RESPOSTAS_PADRAO,
+)
+def reservar_material_work_order(
+    work_order_id: str,
+    body: ReserveWorkOrderMaterialRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_work_order_reserve_material)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    event_log: Annotated[DomainEventRepository, Depends(get_domain_event_repository)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> WorkOrderDetailResponse:
+    parsed_work_order_id = _typed_id_or_problem(
+        work_order_id, entity_type="work_order", campo="work_order_id"
+    )
+    stock_position_id = _typed_id_or_problem(
+        body.stock_position_id,
+        entity_type="stock_position",
+        campo="stock_position_id",
+    )
+    part_id = _typed_id_or_problem(body.part_id, entity_type="part", campo="part_id")
+    entitlement_event_id = _typed_id_or_problem(
+        body.entitlement_event_id,
+        entity_type="event",
+        campo="entitlement_event_id",
+    )
+    occurred_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=RESERVE_WORK_ORDER_MATERIAL_OPERATION,
+        purpose=RESERVE_WORK_ORDER_MATERIAL_PURPOSE,
+        requested_at=occurred_at,
+        extra_intent={"work_order_id": work_order_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto,
+        source_id=TypedId.new("api_request"),
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            entitlement = _entitlement_resolution_from_event(event_log, entitlement_event_id)
+            work_order = service.reserve_material_for_work_order(
+                operation_context,
+                parsed_work_order_id,
+                stock_position_id=stock_position_id,
+                part_ref=part_id,
+                qty=body.qty,
+                priority=body.priority,
+                entitlement=entitlement,
+                occurred_at=occurred_at,
+                expected_version=body.expected_version,
+            )
+        except (WorkOrderNaoEncontrada, KeyError) as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _work_order_detail(work_order)
+        return CanonicalPayload(
+            schema="asset.reserve_work_order_material.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
     return WorkOrderDetailResponse.model_validate(
         _canonical_response_data(execution.result_canonical_bytes)
     )

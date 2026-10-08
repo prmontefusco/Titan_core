@@ -60,6 +60,9 @@ class InMemoryWorkOrderRepository(WorkOrderRepositoryPort):
     def get_by_id(self, work_order_id: TypedId) -> WorkOrder | None:
         return self.items.get(work_order_id.value.hex)
 
+    def get_by_id_for_update(self, work_order_id: TypedId) -> WorkOrder | None:
+        return self.get_by_id(work_order_id)
+
 
 class InMemorySLIContractRepository(SLIContractRepositoryPort):
     def save(self, contract: SLIContract) -> None: ...

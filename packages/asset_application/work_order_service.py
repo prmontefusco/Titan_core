@@ -113,6 +113,8 @@ class WorkOrderRepositoryPort(Protocol):
 
     def get_by_id(self, work_order_id: TypedId) -> WorkOrder | None: ...
 
+    def get_by_id_for_update(self, work_order_id: TypedId) -> WorkOrder | None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class WorkOrderService:
@@ -812,8 +814,13 @@ class WorkOrderService:
         priority: int,
         entitlement: EntitlementResolution,
         occurred_at: datetime,
+        expected_version: int | None = None,
     ) -> WorkOrder:
-        work_order = self._require(work_order_id)
+        work_order = self.repository.get_by_id_for_update(work_order_id)
+        if work_order is None:
+            raise WorkOrderNaoEncontrada(f"WorkOrder '{work_order_id.value}' não encontrada.")
+        if expected_version is not None and work_order.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         if entitlement.vehicle_ref != work_order.vehicle_ref:
             raise EntitlementNaoAutorizaReserva("Entitlement diverge do vehicle_ref da WorkOrder.")
         if entitlement.subject_ref != part_ref:

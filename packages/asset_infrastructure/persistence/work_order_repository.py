@@ -324,6 +324,16 @@ class TransactionalWorkOrderRepository:
             return None
         return self._map(row)
 
+    def get_by_id_for_update(self, work_order_id: TypedId) -> WorkOrder | None:
+        row = self.connection.execute(
+            select(work_orders_table)
+            .where(work_orders_table.c.work_order_id == work_order_id.value)
+            .with_for_update()
+        ).fetchone()
+        if row is None:
+            return None
+        return self._map(row)
+
     def _map(self, row: Row[Any]) -> WorkOrder:
         def _tz(value: Any) -> Any:
             if value is not None and value.tzinfo is None:

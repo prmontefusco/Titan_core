@@ -7294,3 +7294,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API, abertura de posição e superfície pública — 32 verdes. Verificação completa: `python -m uv run --locked pytest` — 2070 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro altera permanentemente a quantidade da StockPosition escolhida; usar massa fictícia dedicada. Ajuste negativo que torne qualquer bucket ou a disponibilidade inválidos é recusado pelo domínio. Reservas e demais comandos de inventário permanecem em incrementos separados.
+
+### 08/10/2026 — A5 (parcial): reserva de material para WorkOrder
+
+**Estado:** CONCLUÍDO — `ReserveMaterialForWorkOrder` exposto em `POST /v1/asset/work-orders/{work_order_id}/material-reservations`, com `SUSTAINMENT_WO.RESERVE_MATERIAL`, versão, StockPosition, Part, quantidade, prioridade, evento de entitlement persistido e `Idempotency-Key` obrigatórios.
+
+**Implementação:** a API recupera `asset.sustainment.entitlement_resolved` pelo `event_id` sob o escopo RLS da Organization, reconstrói o resultado governado e entrega-o ao caso de uso coordenado. O serviço valida WorkOrder existente, correspondência de Vehicle e Part, outcome autorizado, limite demandado e versão antes de criar `StockReservation`, atualizar a projeção da StockPosition e vincular a reserva à WorkOrder na mesma transação. WorkOrder e StockPosition são carregadas com `FOR UPDATE`.
+
+**Decisão preservada:** não foi exposto o `ReserveStock` genérico, pois a implementação atual não consegue provar a existência de `PRODUCTION_ORDER` ou `SALES_ORDER`. O endpoint concreto aceita somente demanda `WORK_ORDER` real e entitlement previamente registrado, evitando referências opacas inventadas e preservando I-SLI-4, I-WO-2 e I-INV-1/2.
+
+**Roteiro executável:** `apps/validacao/asset/reserve_work_order_material.py` descobre Organization, WorkOrder com demanda remanescente, StockPosition `SERVICE_SLI` disponível e evento `GRANTED` de entitlement compatível; mostra a requisição e a resposta e não exige copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API e superfície pública — 47 verdes. Verificação completa: `python -m uv run --locked pytest` — 2077 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria uma reserva permanente e reduz a disponibilidade da posição escolhida; usar massa fictícia dedicada. O comando não libera, aloca nem consome a reserva. Demandas de produção e venda permanecem deliberadamente fora até existirem donos e validadores concretos para essas entidades.
