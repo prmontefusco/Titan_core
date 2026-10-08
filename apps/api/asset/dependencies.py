@@ -20,6 +20,7 @@ from packages.asset_application.authorization import (
     DASHBOARD_READ,
     INVENTORY_READ,
     PART_ADD_REVISION,
+    PART_EDIT_INTERCHANGE,
     PART_REGISTER,
     PART_SUPERSEDE,
     SITE_REGISTER,
@@ -108,6 +109,12 @@ def require_part_add_revision(
     return contexto
 
 
+def require_part_edit_interchange(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PART_EDIT_INTERCHANGE))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_part_supersede(
     contexto: Annotated[OrganizationContext, Depends(require_permission(PART_SUPERSEDE))],
 ) -> OrganizationContext:
@@ -188,6 +195,7 @@ __all__ = [
     "require_inventory_read",
     "require_part_register",
     "require_part_add_revision",
+    "require_part_edit_interchange",
     "require_part_supersede",
     "require_site_register",
     "require_vehicle_read",

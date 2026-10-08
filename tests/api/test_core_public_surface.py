@@ -36,6 +36,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/customer-sites", "post"),
     ("/v1/asset/contract-sla-summary", "get"),
     ("/v1/asset/fleet-view", "get"),
+    ("/v1/asset/interchangeability-groups/{group_id}/members/change", "post"),
     ("/v1/asset/part-applicability", "get"),
     ("/v1/asset/parts", "post"),
     ("/v1/asset/parts/{part_id}/revisions", "post"),

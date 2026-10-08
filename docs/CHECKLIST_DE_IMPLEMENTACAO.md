@@ -7212,3 +7212,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API e superfície pública — 29 verdes. Verificação completa: `python -m uv run --locked pytest` — 2038 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria uma supersessão permanente e consome a predecessora escolhida; usar massa fictícia dedicada. A validação de preservação histórica permanece responsabilidade das consultas de baseline/configuração.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para alterar grupo de intercambiabilidade
+
+**Estado:** CONCLUÍDO — `ChangeInterchangeabilityGroup` exposto em `POST /v1/asset/interchangeability-groups/{group_id}/members/change`, com `ASSET_PART.EDIT_INTERCHANGE`, `expected_version`, revisão, mudança `ADDED`/`REMOVED` e `Idempotency-Key` obrigatórios.
+
+**Implementação:** `InterchangeabilityGroupService` passou a validar concorrência otimista em inclusão e remoção. A primeira inclusão cria implicitamente o grupo com `expected_version=0`; grupos existentes exigem sua versão corrente. A API acrescenta composição do serviço persistente, contratos tipados, identificadores tipados, idempotência e tradução de grupo inexistente, versão divergente e conflitos de domínio.
+
+**Decisões preservadas:** o agregado continua separado de Part e representa pertinência simétrica por construção, conforme I-PRT-2. O comando não altera `Part.interchangeability_group_ref`, não inventa evento de criação de grupo e não mistura cadastro ou supersessão de revisão.
+
+**Roteiro executável:** `apps/validacao/asset/change_interchangeability_group.py` descobre Organization e revisão, gera identificador novo de grupo, sonda `ASSET_PART.EDIT_INTERCHANGE` e adiciona o primeiro membro sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API e superfície pública — 26 verdes. Verificação completa: `python -m uv run --locked pytest` — 2045 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria um grupo permanente com uma revisão; usar massa fictícia dedicada. A remoção é coberta automaticamente, mas o roteiro manual preserva o grupo criado para inspeção humana.

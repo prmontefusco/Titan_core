@@ -22,6 +22,7 @@ from packages.asset_domain.events import (
     part_interchangeability_group_changed_payload,
 )
 from packages.asset_domain.part import InterchangeabilityGroup
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 
 
@@ -48,10 +49,13 @@ class InterchangeabilityGroupService:
         group_id: TypedId,
         *,
         revision_ref: TypedId,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> InterchangeabilityGroup:
         existing = self.repository.get_by_id(group_id)
         if existing is None:
+            if expected_version not in (None, 0):
+                raise OptimisticConcurrencyConflict()
             updated = InterchangeabilityGroup(
                 group_id=group_id,
                 organization_id=context.organization_id,
@@ -59,6 +63,8 @@ class InterchangeabilityGroupService:
             )
             self.repository.save(updated)
         else:
+            if expected_version is not None and existing.version != expected_version:
+                raise OptimisticConcurrencyConflict()
             updated = existing.add_member(revision_ref)
             self.repository.update(updated)
         self.recorder.record(
@@ -80,6 +86,7 @@ class InterchangeabilityGroupService:
         group_id: TypedId,
         *,
         revision_ref: TypedId,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> InterchangeabilityGroup:
         group = self.repository.get_by_id(group_id)
@@ -87,6 +94,8 @@ class InterchangeabilityGroupService:
             raise InterchangeabilityGroupNaoEncontrado(
                 f"InterchangeabilityGroup '{group_id.value}' não encontrado."
             )
+        if expected_version is not None and group.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         updated = group.remove_member(revision_ref)
         self.repository.update(updated)
         self.recorder.record(

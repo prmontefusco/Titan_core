@@ -4,6 +4,7 @@ import hashlib
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, status
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from apps.api.asset.dependencies import (
     ConnectionDependency,
     require_part_add_revision,
+    require_part_edit_interchange,
     require_part_register,
     require_part_supersede,
     require_site_register,
@@ -45,6 +47,10 @@ from packages.asset_application.contract_context_query import (
 )
 from packages.asset_application.customer_site_service import CustomerSiteService
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
+from packages.asset_application.interchangeability_group_service import (
+    InterchangeabilityGroupNaoEncontrado,
+    InterchangeabilityGroupService,
+)
 from packages.asset_application.inventory_service import InventoryService
 from packages.asset_application.part_service import PartNaoEncontrado, PartService
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
@@ -54,7 +60,7 @@ from packages.asset_application.work_order_service import (
     WorkOrderService,
 )
 from packages.asset_domain.customer_site import CustomerSite, CustomerSiteKind, SiteContact
-from packages.asset_domain.part import Part, PartIdentity
+from packages.asset_domain.part import InterchangeabilityGroup, Part, PartIdentity
 from packages.asset_domain.vehicle import MeterKind, VehicleLifecycleState
 from packages.asset_domain.work_order import FailureRecord
 from packages.asset_infrastructure.persistence.customer_site_repository import (
@@ -65,7 +71,10 @@ from packages.asset_infrastructure.persistence.inventory_repository import (
     TransactionalStockReservationRepository,
     TransactionalStockTransferRepository,
 )
-from packages.asset_infrastructure.persistence.part_repository import TransactionalPartRepository
+from packages.asset_infrastructure.persistence.part_repository import (
+    TransactionalInterchangeabilityGroupRepository,
+    TransactionalPartRepository,
+)
 from packages.asset_infrastructure.persistence.sustainment_contract_repository import (
     TransactionalSLIContractRepository,
 )
@@ -140,6 +149,8 @@ ADD_PART_REVISION_PURPOSE = "ASSET_PART_ADD_REVISION"
 ADD_PART_REVISION_OPERATION = "asset.part.add_revision"
 SUPERSEDE_PART_REVISION_PURPOSE = "ASSET_PART_SUPERSEDE_REVISION"
 SUPERSEDE_PART_REVISION_OPERATION = "asset.part.supersede_revision"
+CHANGE_INTERCHANGEABILITY_GROUP_PURPOSE = "ASSET_PART_CHANGE_INTERCHANGEABILITY_GROUP"
+CHANGE_INTERCHANGEABILITY_GROUP_OPERATION = "asset.part.change_interchangeability_group"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -339,6 +350,23 @@ class SupersedePartRevisionRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class InterchangeabilityChange(StrEnum):
+    ADDED = "ADDED"
+    REMOVED = "REMOVED"
+
+
+class ChangeInterchangeabilityGroupRequest(BaseModel):
+    expected_version: int = Field(ge=0)
+    revision_id: str
+    change: InterchangeabilityChange
+
+
+class InterchangeabilityGroupResponse(BaseModel):
+    group_id: str
+    member_part_revisions: list[str]
+    version: int
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -388,6 +416,16 @@ def get_part_service(connection: ConnectionDependency) -> PartService:
     )
 
 
+def get_interchangeability_group_service(
+    connection: ConnectionDependency,
+) -> InterchangeabilityGroupService:
+    event_log = DomainEventRepository(connection=connection)
+    return InterchangeabilityGroupService(
+        repository=TransactionalInterchangeabilityGroupRepository(connection=connection),
+        recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+    )
+
+
 def _customer_site_response(site: CustomerSite) -> CustomerSiteResponse:
     return CustomerSiteResponse(
         site_id=str(site.site_id.value),
@@ -432,6 +470,16 @@ def _part_response(part: Part) -> PartResponse:
         ],
         version=part.version,
         created_at=part.created_at,
+    )
+
+
+def _interchangeability_group_response(
+    group: InterchangeabilityGroup,
+) -> InterchangeabilityGroupResponse:
+    return InterchangeabilityGroupResponse(
+        group_id=str(group.group_id.value),
+        member_part_revisions=[str(member.value) for member in group.member_part_revisions],
+        version=group.version,
     )
 
 
@@ -701,6 +749,109 @@ def superseder_revisao_part(
             detail=str(exc),
         ) from exc
     return PartResponse.model_validate(_canonical_response_data(execution.result_canonical_bytes))
+
+
+@router.post(
+    "/interchangeability-groups/{group_id}/members/change",
+    response_model=InterchangeabilityGroupResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Alterar membro de grupo de intercambiabilidade",
+    responses=RESPOSTAS_PADRAO,
+)
+def alterar_grupo_intercambiabilidade(
+    group_id: str,
+    body: ChangeInterchangeabilityGroupRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_part_edit_interchange)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[
+        InterchangeabilityGroupService, Depends(get_interchangeability_group_service)
+    ],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> InterchangeabilityGroupResponse:
+    parsed_group_id = _typed_id_or_problem(
+        group_id, entity_type="interchangeability_group", campo="group_id"
+    )
+    revision_ref = _typed_id_or_problem(
+        body.revision_id, entity_type="part_revision", campo="revision_id"
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=CHANGE_INTERCHANGEABILITY_GROUP_OPERATION,
+        purpose=CHANGE_INTERCHANGEABILITY_GROUP_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"group_id": group_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            if body.change is InterchangeabilityChange.ADDED:
+                group = service.add_member(
+                    operation_context,
+                    parsed_group_id,
+                    revision_ref=revision_ref,
+                    expected_version=body.expected_version,
+                    occurred_at=datetime.now(UTC),
+                )
+            else:
+                group = service.remove_member(
+                    operation_context,
+                    parsed_group_id,
+                    revision_ref=revision_ref,
+                    expected_version=body.expected_version,
+                    occurred_at=datetime.now(UTC),
+                )
+        except InterchangeabilityGroupNaoEncontrado as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise DomainProblem(
+                status_code=409,
+                reason_code=OptimisticConcurrencyConflict.code,
+                title="Versão de agregado conflitante",
+                detail=(
+                    "A versão informada não corresponde à versão atual do grupo de "
+                    "intercambiabilidade."
+                ),
+            ) from exc
+        except (KeyError, ValueError) as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _interchangeability_group_response(group)
+        return CanonicalPayload(
+            schema="asset.change_interchangeability_group.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return InterchangeabilityGroupResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
 
 
 @router.post(

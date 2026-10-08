@@ -12,6 +12,7 @@ from packages.asset_application.interchangeability_group_service import (
 )
 from packages.asset_domain.events import PART_INTERCHANGEABILITY_GROUP_CHANGED
 from packages.asset_domain.part import InterchangeabilityGroup
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 from tests.asset_support import FakeEventLog
 
@@ -96,3 +97,32 @@ def test_remove_member_on_unknown_group_raises(
             revision_ref=TypedId.new("part_revision"),
             occurred_at=OCCURRED_AT,
         )
+
+
+def test_change_member_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
+) -> None:
+    service = InterchangeabilityGroupService(
+        repository=InMemoryInterchangeabilityGroupRepository(), recorder=recorder
+    )
+    group_id = TypedId.new("interchangeability_group")
+    revision_1 = TypedId.new("part_revision")
+    group = service.add_member(
+        context,
+        group_id,
+        revision_ref=revision_1,
+        expected_version=0,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.add_member(
+            context,
+            group_id,
+            revision_ref=TypedId.new("part_revision"),
+            expected_version=group.version + 1,
+            occurred_at=OCCURRED_AT,
+        )
+
+    assert service.get_group(group_id) == group
+    assert len(event_log.of_type(PART_INTERCHANGEABILITY_GROUP_CHANGED)) == 1
