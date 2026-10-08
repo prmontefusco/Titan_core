@@ -7226,3 +7226,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API e superfície pública — 26 verdes. Verificação completa: `python -m uv run --locked pytest` — 2045 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria um grupo permanente com uma revisão; usar massa fictícia dedicada. A remoção é coberta automaticamente, mas o roteiro manual preserva o grupo criado para inspeção humana.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para afirmar aplicabilidade de Part
+
+**Estado:** CONCLUÍDO — `AssertPartApplicability` exposto em `POST /v1/asset/part-applicability/assertions`, com `ASSET_APPLICABILITY.ASSERT`, `Idempotency-Key`, Part, revisão, alvo temporal e `evidence_id` obrigatórios.
+
+**Implementação:** a API compõe `ApplicabilityService` e seu repositório transacional, constrói `ApplicabilityTarget` com modelo, variante, faixa serial e efetividade, deriva ator e instante da asserção do contexto/servidor e retorna a asserção persistida. Identificadores são tipados, o digest idempotente cobre todo o contrato e referências persistentes inválidas são traduzidas para conflito de domínio.
+
+**Decisões preservadas:** I-APP-1 continua integral: não existe asserção booleana ou sem `Evidence`. Applicability permanece agregado próprio, separado de Part, e este comando não resolve aplicabilidade para Vehicle nem retira asserções anteriores.
+
+**Roteiro executável:** `apps/validacao/asset/assert_part_applicability.py` descobre Organization, Part/revisão, modelo/variante de Vehicle e Evidence da mesma Organization, sonda `ASSET_APPLICABILITY.ASSERT` e cria uma asserção mostrando requisição e resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API e superfície pública — 24 verdes. Verificação completa: `python -m uv run --locked pytest` — 2051 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria uma Applicability permanente; usar massa fictícia dedicada. A referência de Evidence é opaca entre verticais conforme a arquitetura vigente; retirada permanece no comando separado `WithdrawPartApplicability`.

@@ -13,6 +13,7 @@ from sqlalchemy.exc import IntegrityError
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_applicability_assert,
     require_part_add_revision,
     require_part_edit_interchange,
     require_part_register,
@@ -40,6 +41,7 @@ from apps.api.asset.queries import (
     get_contract_context_query_service,
 )
 from apps.api.problem import RESPOSTAS_PADRAO, DomainProblem
+from packages.asset_application.applicability_service import ApplicabilityService
 from packages.asset_application.contract_context_query import (
     ContractContextAmbiguo,
     ContractContextNaoEncontrado,
@@ -59,10 +61,14 @@ from packages.asset_application.work_order_service import (
     WorkOrderNaoEncontrada,
     WorkOrderService,
 )
+from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
 from packages.asset_domain.customer_site import CustomerSite, CustomerSiteKind, SiteContact
 from packages.asset_domain.part import InterchangeabilityGroup, Part, PartIdentity
 from packages.asset_domain.vehicle import MeterKind, VehicleLifecycleState
 from packages.asset_domain.work_order import FailureRecord
+from packages.asset_infrastructure.persistence.applicability_repository import (
+    TransactionalApplicabilityRepository,
+)
 from packages.asset_infrastructure.persistence.customer_site_repository import (
     TransactionalCustomerSiteRepository,
 )
@@ -151,6 +157,8 @@ SUPERSEDE_PART_REVISION_PURPOSE = "ASSET_PART_SUPERSEDE_REVISION"
 SUPERSEDE_PART_REVISION_OPERATION = "asset.part.supersede_revision"
 CHANGE_INTERCHANGEABILITY_GROUP_PURPOSE = "ASSET_PART_CHANGE_INTERCHANGEABILITY_GROUP"
 CHANGE_INTERCHANGEABILITY_GROUP_OPERATION = "asset.part.change_interchangeability_group"
+ASSERT_PART_APPLICABILITY_PURPOSE = "ASSET_APPLICABILITY_ASSERT"
+ASSERT_PART_APPLICABILITY_OPERATION = "asset.applicability.assert"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -367,6 +375,35 @@ class InterchangeabilityGroupResponse(BaseModel):
     version: int
 
 
+class AssertPartApplicabilityRequest(BaseModel):
+    part_id: str
+    part_revision_id: str
+    model_id: str
+    variant_id: str | None = None
+    serial_from: str | None = Field(default=None, max_length=100)
+    serial_to: str | None = Field(default=None, max_length=100)
+    valid_from: datetime
+    valid_until: datetime | None = None
+    evidence_id: str
+
+
+class ApplicabilityResponse(BaseModel):
+    applicability_id: str
+    part_ref: str
+    part_revision_ref: str
+    model_ref: str
+    variant_ref: str | None
+    serial_from: str | None
+    serial_to: str | None
+    valid_from: datetime
+    valid_until: datetime | None
+    evidence_ref: str
+    asserted_at: datetime
+    asserted_by: str
+    state: str
+    version: int
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -426,6 +463,14 @@ def get_interchangeability_group_service(
     )
 
 
+def get_applicability_service(connection: ConnectionDependency) -> ApplicabilityService:
+    event_log = DomainEventRepository(connection=connection)
+    return ApplicabilityService(
+        repository=TransactionalApplicabilityRepository(connection=connection),
+        recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+    )
+
+
 def _customer_site_response(site: CustomerSite) -> CustomerSiteResponse:
     return CustomerSiteResponse(
         site_id=str(site.site_id.value),
@@ -480,6 +525,26 @@ def _interchangeability_group_response(
         group_id=str(group.group_id.value),
         member_part_revisions=[str(member.value) for member in group.member_part_revisions],
         version=group.version,
+    )
+
+
+def _applicability_response(applicability: Applicability) -> ApplicabilityResponse:
+    target = applicability.target
+    return ApplicabilityResponse(
+        applicability_id=str(applicability.applicability_id.value),
+        part_ref=str(applicability.part_ref.value),
+        part_revision_ref=str(applicability.part_revision_ref.value),
+        model_ref=str(target.model_ref.value),
+        variant_ref=None if target.variant_ref is None else str(target.variant_ref.value),
+        serial_from=target.serial_from,
+        serial_to=target.serial_to,
+        valid_from=target.valid_from,
+        valid_until=target.valid_until,
+        evidence_ref=str(applicability.evidence_ref.value),
+        asserted_at=applicability.asserted_at,
+        asserted_by=str(applicability.asserted_by.value),
+        state=applicability.state.value,
+        version=applicability.version,
     )
 
 
@@ -850,6 +915,105 @@ def alterar_grupo_intercambiabilidade(
             detail=str(exc),
         ) from exc
     return InterchangeabilityGroupResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/part-applicability/assertions",
+    response_model=ApplicabilityResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Afirmar aplicabilidade de revisão de Part",
+    responses=RESPOSTAS_PADRAO,
+)
+def afirmar_aplicabilidade_part(
+    body: AssertPartApplicabilityRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_applicability_assert)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[ApplicabilityService, Depends(get_applicability_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> ApplicabilityResponse:
+    part_ref = _typed_id_or_problem(body.part_id, entity_type="part", campo="part_id")
+    revision_ref = _typed_id_or_problem(
+        body.part_revision_id, entity_type="part_revision", campo="part_revision_id"
+    )
+    model_ref = _typed_id_or_problem(body.model_id, entity_type="vehicle_model", campo="model_id")
+    variant_ref = (
+        None
+        if body.variant_id is None
+        else _typed_id_or_problem(
+            body.variant_id, entity_type="vehicle_variant", campo="variant_id"
+        )
+    )
+    evidence_ref = _typed_id_or_problem(
+        body.evidence_id, entity_type="evidence", campo="evidence_id"
+    )
+    asserted_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=ASSERT_PART_APPLICABILITY_OPERATION,
+        purpose=ASSERT_PART_APPLICABILITY_PURPOSE,
+        requested_at=asserted_at,
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            applicability = service.assert_applicability(
+                operation_context,
+                part_ref=part_ref,
+                part_revision_ref=revision_ref,
+                target=ApplicabilityTarget(
+                    model_ref=model_ref,
+                    variant_ref=variant_ref,
+                    serial_from=body.serial_from,
+                    serial_to=body.serial_to,
+                    valid_from=body.valid_from,
+                    valid_until=body.valid_until,
+                ),
+                evidence_ref=evidence_ref,
+                asserted_at=asserted_at,
+                asserted_by=contexto.actor_id,
+            )
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _applicability_response(applicability)
+        return CanonicalPayload(
+            schema="asset.assert_part_applicability.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except IntegrityError as exc:
+        raise _domain_conflict("Part ou revisão não existe na Organization informada.") from exc
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return ApplicabilityResponse.model_validate(
         _canonical_response_data(execution.result_canonical_bytes)
     )
 

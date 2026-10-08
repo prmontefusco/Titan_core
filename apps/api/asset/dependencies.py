@@ -15,6 +15,7 @@ from apps.api.livestock_dependencies import (
     typed_id_or_problem,
 )
 from packages.asset_application.authorization import (
+    APPLICABILITY_ASSERT,
     APPLICABILITY_READ,
     CONTRACT_READ,
     DASHBOARD_READ,
@@ -115,6 +116,12 @@ def require_part_edit_interchange(
     return contexto
 
 
+def require_applicability_assert(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(APPLICABILITY_ASSERT))],
+) -> OrganizationContext:
+    return contexto
+
+
 def require_part_supersede(
     contexto: Annotated[OrganizationContext, Depends(require_permission(PART_SUPERSEDE))],
 ) -> OrganizationContext:
@@ -196,6 +203,7 @@ __all__ = [
     "require_part_register",
     "require_part_add_revision",
     "require_part_edit_interchange",
+    "require_applicability_assert",
     "require_part_supersede",
     "require_site_register",
     "require_vehicle_read",
