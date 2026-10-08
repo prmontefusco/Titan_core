@@ -15,6 +15,7 @@ from apps.api.asset.dependencies import (
     ConnectionDependency,
     require_applicability_assert,
     require_applicability_withdraw,
+    require_inventory_open_position,
     require_part_add_revision,
     require_part_edit_interchange,
     require_part_register,
@@ -68,6 +69,12 @@ from packages.asset_application.work_order_service import (
 )
 from packages.asset_domain.applicability import Applicability, ApplicabilityTarget
 from packages.asset_domain.customer_site import CustomerSite, CustomerSiteKind, SiteContact
+from packages.asset_domain.inventory import (
+    StockOwnership,
+    StockPosition,
+    StockPurpose,
+    StockQuantities,
+)
 from packages.asset_domain.part import InterchangeabilityGroup, Part, PartIdentity
 from packages.asset_domain.vehicle import MeterKind, VehicleLifecycleState
 from packages.asset_domain.work_order import FailureRecord
@@ -166,6 +173,8 @@ ASSERT_PART_APPLICABILITY_PURPOSE = "ASSET_APPLICABILITY_ASSERT"
 ASSERT_PART_APPLICABILITY_OPERATION = "asset.applicability.assert"
 WITHDRAW_PART_APPLICABILITY_PURPOSE = "ASSET_APPLICABILITY_WITHDRAW"
 WITHDRAW_PART_APPLICABILITY_OPERATION = "asset.applicability.withdraw"
+OPEN_STOCK_POSITION_PURPOSE = "ASSET_INVENTORY_OPEN_POSITION"
+OPEN_STOCK_POSITION_OPERATION = "asset.inventory.open_position"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -416,6 +425,37 @@ class WithdrawPartApplicabilityRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class OpenStockPositionRequest(BaseModel):
+    part_id: str
+    location_id: str
+    purpose: StockPurpose
+    ownership: StockOwnership
+    on_hand: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
+    in_transit: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
+    quarantine: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
+    inspection: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
+    damaged: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
+    lot: str | None = Field(default=None, min_length=1, max_length=100)
+    serial: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class StockPositionResponse(BaseModel):
+    stock_position_id: str
+    part_ref: str
+    location_ref: str
+    purpose: str
+    ownership: str
+    on_hand: Decimal
+    in_transit: Decimal
+    quarantine: Decimal
+    inspection: Decimal
+    damaged: Decimal
+    available: Decimal
+    lot: str | None
+    serial: str | None
+    version: int
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -445,6 +485,16 @@ def get_vehicle_service(connection: ConnectionDependency) -> VehicleService:
     event_log = DomainEventRepository(connection=connection)
     return VehicleService(
         repository=TransactionalVehicleRepository(connection=connection),
+        recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+    )
+
+
+def get_inventory_service(connection: ConnectionDependency) -> InventoryService:
+    event_log = DomainEventRepository(connection=connection)
+    return InventoryService(
+        stock_position_repository=TransactionalStockPositionRepository(connection=connection),
+        stock_reservation_repository=TransactionalStockReservationRepository(connection=connection),
+        stock_transfer_repository=TransactionalStockTransferRepository(connection=connection),
         recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
     )
 
@@ -558,6 +608,26 @@ def _applicability_response(applicability: Applicability) -> ApplicabilityRespon
         asserted_by=str(applicability.asserted_by.value),
         state=applicability.state.value,
         version=applicability.version,
+    )
+
+
+def _stock_position_response(position: StockPosition) -> StockPositionResponse:
+    quantities = position.quantities
+    return StockPositionResponse(
+        stock_position_id=str(position.stock_position_id.value),
+        part_ref=str(position.part_ref.value),
+        location_ref=str(position.location_ref.value),
+        purpose=position.purpose.value,
+        ownership=position.ownership.value,
+        on_hand=quantities.on_hand,
+        in_transit=quantities.in_transit,
+        quarantine=quantities.quarantine,
+        inspection=quantities.inspection,
+        damaged=quantities.damaged,
+        available=position.available,
+        lot=position.lot,
+        serial=position.serial,
+        version=position.version,
     )
 
 
@@ -1121,6 +1191,98 @@ def retirar_aplicabilidade_part(
             detail=str(exc),
         ) from exc
     return ApplicabilityResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/stock-positions",
+    response_model=StockPositionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Abrir posição de estoque",
+    responses=RESPOSTAS_PADRAO,
+)
+def abrir_posicao_estoque(
+    body: OpenStockPositionRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_inventory_open_position)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[InventoryService, Depends(get_inventory_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> StockPositionResponse:
+    part_ref = _typed_id_or_problem(body.part_id, entity_type="part", campo="part_id")
+    location_ref = _typed_id_or_problem(
+        body.location_id, entity_type="stock_location", campo="location_id"
+    )
+    occurred_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=OPEN_STOCK_POSITION_OPERATION,
+        purpose=OPEN_STOCK_POSITION_PURPOSE,
+        requested_at=occurred_at,
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            position = service.open_stock_position(
+                operation_context,
+                part_ref=part_ref,
+                location_ref=location_ref,
+                purpose=body.purpose,
+                ownership=body.ownership,
+                quantities=StockQuantities(
+                    on_hand=body.on_hand,
+                    in_transit=body.in_transit,
+                    quarantine=body.quarantine,
+                    inspection=body.inspection,
+                    damaged=body.damaged,
+                ),
+                lot=body.lot,
+                serial=body.serial,
+                occurred_at=occurred_at,
+            )
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _stock_position_response(position)
+        return CanonicalPayload(
+            schema="asset.open_stock_position.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except IntegrityError as exc:
+        raise _domain_conflict(
+            "Já existe uma StockPosition para Part, StockLocation e purpose, "
+            "ou uma das referências informadas não existe."
+        ) from exc
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return StockPositionResponse.model_validate(
         _canonical_response_data(execution.result_canonical_bytes)
     )
 

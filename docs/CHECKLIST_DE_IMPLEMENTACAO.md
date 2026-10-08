@@ -7266,3 +7266,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** 11 testes focados verdes. Verificação completa: `python -m uv run --locked pytest` — 2057 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** aplicar a migration em base que já contenha posições duplicadas no mesmo escopo falhará explicitamente; o incremento não escolhe registro vencedor nem consolida quantidades, pois isso exigiria decisão operacional e trilha de correção.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para abrir StockPosition
+
+**Estado:** CONCLUÍDO — `OpenStockPosition` exposto em `POST /v1/asset/stock-positions`, com `ASSET_INVENTORY.OPEN_POSITION`, `Idempotency-Key`, Part, StockLocation, purpose, ownership e breakdown inicial de quantidades.
+
+**Implementação:** a API acrescenta composição de `InventoryService`, contrato tipado com buckets não negativos, identificadores tipados, serialização do breakdown e disponibilidade, idempotência e tradução da constraint tenant-scoped ou referências persistentes inválidas para conflito de domínio. A superfície pública declara a nova rota.
+
+**Decisões preservadas:** Part continua sem quantidade implícita (I-INV-0); todo estoque nasce em StockPosition explícita. A identidade `(Organization, Part, StockLocation, purpose)` é garantida pela migration anterior. O comando não ajusta, reserva, aloca, consome ou transfere estoque.
+
+**Roteiro executável:** `apps/validacao/asset/open_stock_position.py` descobre Organization e uma combinação inédita de Part, StockLocation e purpose, sonda `ASSET_INVENTORY.OPEN_POSITION` e abre uma posição fictícia mostrando requisição, resposta e disponibilidade calculada sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API e superfície pública — 24 verdes. Verificação completa — 2.062 verdes e 354 ignorados; Ruff check e format-check verdes; Mypy verde em 903 arquivos. Os dois `alembic check` permaneceram bloqueados apenas pela ausência de `TITAN_MIGRATION_DATABASE_URL` no ambiente.
+
+**Riscos e limites:** o roteiro cria uma StockPosition permanente e consome a combinação escolhida; usar massa fictícia dedicada. A constraint não consolida posições legadas duplicadas e nenhum comando posterior de inventário foi incluído neste incremento.
