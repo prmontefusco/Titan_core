@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_part_register,
     require_site_register,
     require_vehicle_correct_meter,
     require_vehicle_record_meter,
@@ -43,7 +44,7 @@ from packages.asset_application.contract_context_query import (
 from packages.asset_application.customer_site_service import CustomerSiteService
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import InventoryService
-from packages.asset_application.part_service import PartNaoEncontrado
+from packages.asset_application.part_service import PartNaoEncontrado, PartService
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
 from packages.asset_application.work_order_service import (
     SLIContractNaoEncontradoParaWorkOrder,
@@ -51,6 +52,7 @@ from packages.asset_application.work_order_service import (
     WorkOrderService,
 )
 from packages.asset_domain.customer_site import CustomerSite, CustomerSiteKind, SiteContact
+from packages.asset_domain.part import Part, PartIdentity
 from packages.asset_domain.vehicle import MeterKind, VehicleLifecycleState
 from packages.asset_domain.work_order import FailureRecord
 from packages.asset_infrastructure.persistence.customer_site_repository import (
@@ -130,6 +132,8 @@ CORRECT_VEHICLE_METER_PURPOSE = "ASSET_VEHICLE_CORRECT_METER"
 CORRECT_VEHICLE_METER_OPERATION = "asset.vehicle.correct_meter"
 REGISTER_CUSTOMER_SITE_PURPOSE = "ASSET_SITE_REGISTER"
 REGISTER_CUSTOMER_SITE_OPERATION = "asset.customer_site.register"
+REGISTER_PART_PURPOSE = "ASSET_PART_REGISTER"
+REGISTER_PART_OPERATION = "asset.part.register"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -283,6 +287,27 @@ class CustomerSiteResponse(BaseModel):
     version: int
 
 
+class RegisterPartRequest(BaseModel):
+    part_number: str = Field(min_length=1, max_length=100)
+    description: str = Field(min_length=1, max_length=500)
+    manufacturer: str = Field(min_length=1, max_length=200)
+    manufacturer_pn: str | None = Field(default=None, min_length=1, max_length=100)
+    nsn: str | None = Field(default=None, min_length=1, max_length=50)
+    external_classifications: list[str] = Field(default_factory=list)
+
+
+class PartResponse(BaseModel):
+    part_id: str
+    part_number: str
+    description: str
+    manufacturer: str
+    manufacturer_pn: str | None
+    nsn: str | None
+    external_classifications: list[str]
+    version: int
+    created_at: datetime
+
+
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
     event_log = DomainEventRepository(connection=connection)
     recorder = AssetEventRecorder(event_log=event_log, clock=SystemClock())
@@ -324,6 +349,14 @@ def get_customer_site_service(connection: ConnectionDependency) -> CustomerSiteS
     )
 
 
+def get_part_service(connection: ConnectionDependency) -> PartService:
+    event_log = DomainEventRepository(connection=connection)
+    return PartService(
+        repository=TransactionalPartRepository(connection=connection),
+        recorder=AssetEventRecorder(event_log=event_log, clock=SystemClock()),
+    )
+
+
 def _customer_site_response(site: CustomerSite) -> CustomerSiteResponse:
     return CustomerSiteResponse(
         site_id=str(site.site_id.value),
@@ -342,6 +375,99 @@ def _customer_site_response(site: CustomerSite) -> CustomerSiteResponse:
         ],
         version=site.version,
     )
+
+
+def _part_response(part: Part) -> PartResponse:
+    return PartResponse(
+        part_id=str(part.part_id.value),
+        part_number=part.identity.part_number,
+        description=part.identity.description,
+        manufacturer=part.identity.manufacturer,
+        manufacturer_pn=part.identity.manufacturer_pn,
+        nsn=part.identity.nsn,
+        external_classifications=list(part.identity.external_classifications),
+        version=part.version,
+        created_at=part.created_at,
+    )
+
+
+@router.post(
+    "/parts",
+    response_model=PartResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cadastrar Part",
+    responses=RESPOSTAS_PADRAO,
+)
+def cadastrar_part(
+    body: RegisterPartRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_part_register)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[PartService, Depends(get_part_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> PartResponse:
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=REGISTER_PART_OPERATION,
+        purpose=REGISTER_PART_PURPOSE,
+        requested_at=datetime.now(UTC),
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            part = service.register_part(
+                operation_context,
+                identity=PartIdentity(
+                    part_number=body.part_number,
+                    description=body.description,
+                    manufacturer=body.manufacturer,
+                    manufacturer_pn=body.manufacturer_pn,
+                    nsn=body.nsn,
+                    external_classifications=tuple(body.external_classifications),
+                ),
+                occurred_at=datetime.now(UTC),
+            )
+        except IntegrityError as exc:
+            raise _domain_conflict(
+                "Já existe Part com este part_number nesta Organization."
+            ) from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _part_response(part)
+        return CanonicalPayload(
+            schema="asset.register_part.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return PartResponse.model_validate(_canonical_response_data(execution.result_canonical_bytes))
 
 
 @router.post(

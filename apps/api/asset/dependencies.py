@@ -19,6 +19,7 @@ from packages.asset_application.authorization import (
     CONTRACT_READ,
     DASHBOARD_READ,
     INVENTORY_READ,
+    PART_REGISTER,
     SITE_REGISTER,
     VEHICLE_CORRECT_METER,
     VEHICLE_READ,
@@ -89,6 +90,12 @@ def require_inventory_read(
 
 def require_site_register(
     contexto: Annotated[OrganizationContext, Depends(require_permission(SITE_REGISTER))],
+) -> OrganizationContext:
+    return contexto
+
+
+def require_part_register(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(PART_REGISTER))],
 ) -> OrganizationContext:
     return contexto
 
@@ -165,6 +172,7 @@ __all__ = [
     "require_contract_read",
     "require_dashboard_read",
     "require_inventory_read",
+    "require_part_register",
     "require_site_register",
     "require_vehicle_read",
     "require_vehicle_correct_meter",

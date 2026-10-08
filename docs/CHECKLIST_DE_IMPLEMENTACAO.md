@@ -7172,3 +7172,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** 15 testes focados verdes. Verificação completa: `python -m uv run --locked pytest` — 2021 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** aplicar a migration em base que já contenha duplicatas legítimas dentro da mesma Organization falhará de forma explícita; não existe saneamento automático porque escolher qual registro preservar é decisão de negócio. A rota `RegisterPart` permanece para o incremento seguinte.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para cadastrar Part
+
+**Estado:** CONCLUÍDO — `RegisterPart` exposto em `POST /v1/asset/parts`, com `ASSET_PART.REGISTER`, `Idempotency-Key` obrigatório e retorno da identidade persistida.
+
+**Implementação:** a API compõe `PartService`, valida os campos da identidade, deriva Organization do contexto autenticado e traduz a constraint tenant-scoped de `part_number` para conflito de domínio. O roteiro `apps/validacao/asset/register_part.py` descobre a Organization e gera número fictício único automaticamente.
+
+**Decisões preservadas:** cadastro não cria revisão, aplicabilidade ou grupo de intercambiabilidade. A unicidade permanece garantida no banco pela migration anterior, sem consulta prévia sujeita a corrida.
+
+**Portão:** 22 testes focados verdes. Verificação completa: 2026 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria uma Part permanente na base de validação. Revisões e supersessões continuam em comandos separados.
