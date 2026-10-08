@@ -7160,3 +7160,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de API, superfície pública e Application — 21 verdes. Verificação completa: `python -m uv run --locked pytest` — 2020 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria um CustomerSite permanente; usar base de validação. O `customer_ref` continua uma referência da vertical e este incremento não cria catálogo de Customer nem amplia o Core.
+
+### 08/10/2026 — A3/A5: unicidade tenant-scoped de `Part.part_number`
+
+**Estado:** CONCLUÍDO — pré-requisito persistente de `RegisterPart` corrigido antes da exposição HTTP. `core_audit.parts` passa a garantir que `part_number` não se repete dentro da mesma RecordOwnerOrganization, preservando a possibilidade de Organizations distintas utilizarem o mesmo código.
+
+**Implementação:** a metadata de `parts_table` e a migration Asset `20261008_0010` acrescentam `uq_parts_owner_part_number(record_owner_organization_id, part_number)`. O downgrade remove somente essa constraint. Nenhuma API foi acrescentada neste incremento.
+
+**Decisões preservadas:** a garantia é transacional no PostgreSQL, não uma consulta prévia sujeita a corrida. O escopo da unicidade é a Organization responsável pelo registro, conforme `RegisterPart` e I‑INV‑0; não há catálogo global de peças.
+
+**Portão:** 15 testes focados verdes. Verificação completa: `python -m uv run --locked pytest` — 2021 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** aplicar a migration em base que já contenha duplicatas legítimas dentro da mesma Organization falhará de forma explícita; não existe saneamento automático porque escolher qual registro preservar é decisão de negócio. A rota `RegisterPart` permanece para o incremento seguinte.
