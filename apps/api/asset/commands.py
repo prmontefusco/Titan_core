@@ -14,6 +14,7 @@ from apps.api.asset.dependencies import (
     ConnectionDependency,
     require_part_add_revision,
     require_part_register,
+    require_part_supersede,
     require_site_register,
     require_vehicle_correct_meter,
     require_vehicle_record_meter,
@@ -137,6 +138,8 @@ REGISTER_PART_PURPOSE = "ASSET_PART_REGISTER"
 REGISTER_PART_OPERATION = "asset.part.register"
 ADD_PART_REVISION_PURPOSE = "ASSET_PART_ADD_REVISION"
 ADD_PART_REVISION_OPERATION = "asset.part.add_revision"
+SUPERSEDE_PART_REVISION_PURPOSE = "ASSET_PART_SUPERSEDE_REVISION"
+SUPERSEDE_PART_REVISION_OPERATION = "asset.part.supersede_revision"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -327,6 +330,13 @@ class AddPartRevisionRequest(BaseModel):
     spec_id: str | None = None
     drawing_id: str | None = None
     materials: list[str] = Field(default_factory=list)
+
+
+class SupersedePartRevisionRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    predecessor_revision_id: str
+    successor_revision_id: str
+    reason: str = Field(min_length=1, max_length=500)
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -569,6 +579,100 @@ def adicionar_revisao_part(
         response = _part_response(part)
         return CanonicalPayload(
             schema="asset.add_part_revision.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return PartResponse.model_validate(_canonical_response_data(execution.result_canonical_bytes))
+
+
+@router.post(
+    "/parts/{part_id}/revisions/supersede",
+    response_model=PartResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Superseder revisão de Part",
+    responses=RESPOSTAS_PADRAO,
+)
+def superseder_revisao_part(
+    part_id: str,
+    body: SupersedePartRevisionRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_part_supersede)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[PartService, Depends(get_part_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> PartResponse:
+    parsed_part_id = _typed_id_or_problem(part_id, entity_type="part", campo="part_id")
+    predecessor_id = _typed_id_or_problem(
+        body.predecessor_revision_id,
+        entity_type="part_revision",
+        campo="predecessor_revision_id",
+    )
+    successor_id = _typed_id_or_problem(
+        body.successor_revision_id,
+        entity_type="part_revision",
+        campo="successor_revision_id",
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=SUPERSEDE_PART_REVISION_OPERATION,
+        purpose=SUPERSEDE_PART_REVISION_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"part_id": part_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            part = service.supersede_part_revision(
+                operation_context,
+                parsed_part_id,
+                predecessor_revision_id=predecessor_id,
+                successor_revision_id=successor_id,
+                reason=body.reason,
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except PartNaoEncontrado as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise DomainProblem(
+                status_code=409,
+                reason_code=OptimisticConcurrencyConflict.code,
+                title="Versão de agregado conflitante",
+                detail="A versão informada não corresponde à versão atual da Part.",
+            ) from exc
+        except (KeyError, ValueError) as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _part_response(part)
+        return CanonicalPayload(
+            schema="asset.supersede_part_revision.response",
             version=1,
             value=response.model_dump(mode="json"),
         )

@@ -128,9 +128,12 @@ class PartService:
         predecessor_revision_id: TypedId,
         successor_revision_id: TypedId,
         reason: str,
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> Part:
         part = self._require(part_id)
+        if expected_version is not None and part.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         updated = part.supersede_revision(
             predecessor_revision_id=predecessor_revision_id,
             successor_revision_id=successor_revision_id,

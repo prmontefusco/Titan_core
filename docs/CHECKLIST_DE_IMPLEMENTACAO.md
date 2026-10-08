@@ -7198,3 +7198,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API, cadastro de Part e superfície pública — 29 verdes. Verificação completa: `python -m uv run --locked pytest` — 2033 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria uma revisão permanente na Part escolhida; usar massa fictícia dedicada. Supersessão, aplicabilidade e intercambiabilidade permanecem comandos separados.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para superseder revisão de Part
+
+**Estado:** CONCLUÍDO — `SupersedePartRevision` exposto em `POST /v1/asset/parts/{part_id}/revisions/supersede`, com `ASSET_PART.SUPERSEDE`, `expected_version`, revisões predecessora/sucessora, motivo e `Idempotency-Key` obrigatórios.
+
+**Implementação:** `PartService.supersede_part_revision` passou a validar concorrência otimista antes da mutação. A API acrescenta contrato do comando, identificadores tipados, idempotência e tradução de Part/revisão inexistente, versão divergente, ciclo e demais conflitos de domínio. A resposta mostra a predecessora `SUPERSEDED` e preserva a sucessora.
+
+**Decisões preservadas:** a API apenas expõe a invariante I-PRT-1 já existente: o grafo de supersessão permanece acíclico e nenhuma instalação histórica ou baseline é reescrita. O comando não cria revisões nem altera aplicabilidade ou intercambiabilidade.
+
+**Roteiro executável:** `apps/validacao/asset/supersede_part_revision.py` descobre Organization, Part, versão e duas revisões `ACTIVE` ainda disponíveis, sonda `ASSET_PART.SUPERSEDE` e confirma a mudança de estado sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API e superfície pública — 29 verdes. Verificação completa: `python -m uv run --locked pytest` — 2038 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria uma supersessão permanente e consome a predecessora escolhida; usar massa fictícia dedicada. A validação de preservação histórica permanece responsabilidade das consultas de baseline/configuração.

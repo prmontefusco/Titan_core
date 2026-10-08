@@ -14,7 +14,7 @@ import apps.api.main as main_module
 from apps.api.asset import commands as asset_commands
 from apps.api.authentication import require_authenticated_principal
 from apps.api.livestock_dependencies import ORGANIZATION_HEADER, request_connection
-from packages.asset_application.authorization import PART_ADD_REVISION
+from packages.asset_application.authorization import PART_ADD_REVISION, PART_SUPERSEDE
 from packages.asset_application.event_recorder import AssetOperationContext
 from packages.asset_domain.part import Part, PartIdentity, PartRevision
 from packages.core_application import IdempotencyExecution, OptimisticConcurrencyConflict
@@ -24,6 +24,7 @@ from packages.shared_kernel import OrganizationId, TypedId
 
 PART_ID = "00000000-0000-0000-0000-000000000801"
 ROUTE = f"/v1/asset/parts/{PART_ID}/revisions"
+SUPERSEDE_ROUTE = f"{ROUTE}/supersede"
 NOW = datetime(2026, 10, 8, 12, 0, tzinfo=UTC)
 
 
@@ -115,9 +116,46 @@ class _PartService:
             created_at=NOW,
         )
 
+    def supersede_part_revision(
+        self,
+        context: AssetOperationContext,
+        part_id: TypedId,
+        *,
+        predecessor_revision_id: TypedId,
+        successor_revision_id: TypedId,
+        reason: str,
+        expected_version: int | None,
+        occurred_at: datetime,
+    ) -> Part:
+        del occurred_at
+        if self.stale:
+            raise OptimisticConcurrencyConflict()
+        assert expected_version == 3
+        part = Part(
+            part_id=part_id,
+            organization_id=context.organization_id,
+            identity=PartIdentity(
+                part_number="PN-A5-001",
+                description="Filtro hidráulico fictício",
+                manufacturer="Titan Test",
+            ),
+            revisions=(
+                PartRevision(revision_id=predecessor_revision_id, revision_code="A"),
+                PartRevision(revision_id=successor_revision_id, revision_code="B"),
+            ),
+            version=3,
+            created_at=NOW,
+        )
+        return part.supersede_revision(
+            predecessor_revision_id=predecessor_revision_id,
+            successor_revision_id=successor_revision_id,
+            reason=reason,
+        )
+
 
 def _override(service: _PartService, context: OrganizationContext) -> None:
     main_module.app.dependency_overrides[asset_commands.require_part_add_revision] = lambda: context
+    main_module.app.dependency_overrides[asset_commands.require_part_supersede] = lambda: context
     main_module.app.dependency_overrides[asset_commands.get_part_service] = lambda: service
     main_module.app.dependency_overrides[asset_commands.get_idempotency_service] = _Idempotency
 
@@ -193,6 +231,79 @@ def test_add_part_revision_rejects_stale_version() -> None:
     _override(service, context)
     response = TestClient(main_module.app).post(
         ROUTE, json=_body(), headers={"Idempotency-Key": "part-revision-stale"}
+    )
+    assert response.status_code == 409
+    assert response.json()["reason_code"] == OptimisticConcurrencyConflict.code
+
+
+def _supersede_body(**overrides: object) -> dict[str, object]:
+    body: dict[str, object] = {
+        "expected_version": 3,
+        "predecessor_revision_id": "00000000-0000-0000-0000-000000000802",
+        "successor_revision_id": "00000000-0000-0000-0000-000000000803",
+        "reason": "Revisão B substitui a revisão A.",
+    }
+    body.update(overrides)
+    return body
+
+
+def test_supersede_part_revision_requires_authentication() -> None:
+    response = TestClient(main_module.app).post(
+        SUPERSEDE_ROUTE,
+        json=_supersede_body(),
+        headers={"Idempotency-Key": "part-supersede-auth"},
+    )
+    assert response.status_code == 401
+
+
+def test_supersede_part_revision_rejects_missing_permission(monkeypatch: MonkeyPatch) -> None:
+    context = _context(frozenset())
+    main_module.app.dependency_overrides[require_authenticated_principal] = lambda: (
+        context.authenticated_principal
+    )
+    main_module.app.dependency_overrides[request_connection] = lambda: SimpleNamespace()
+    monkeypatch.setattr(
+        "apps.api.livestock_dependencies.resolve_organization_context",
+        lambda *_args, **_kwargs: context,
+    )
+    response = TestClient(main_module.app).post(
+        SUPERSEDE_ROUTE,
+        json=_supersede_body(),
+        headers={
+            ORGANIZATION_HEADER: str(context.organization_id.value),
+            "Idempotency-Key": "part-supersede-permission",
+        },
+    )
+    assert response.status_code == 403
+    assert response.json()["reason_code"] == "PERMISSAO_AUSENTE"
+
+
+def test_supersede_part_revision_returns_updated_part() -> None:
+    context = _context(frozenset({PART_SUPERSEDE}))
+    _override(_PartService(), context)
+    response = TestClient(main_module.app).post(
+        SUPERSEDE_ROUTE,
+        json=_supersede_body(),
+        headers={"Idempotency-Key": "part-supersede-success"},
+    )
+    assert response.status_code == 200
+    assert response.json()["version"] == 4
+    states = {
+        revision["revision_code"]: revision["lifecycle_state"]
+        for revision in response.json()["revisions"]
+    }
+    assert states == {"A": "SUPERSEDED", "B": "ACTIVE"}
+
+
+def test_supersede_part_revision_rejects_stale_version() -> None:
+    context = _context(frozenset({PART_SUPERSEDE}))
+    service = _PartService()
+    service.stale = True
+    _override(service, context)
+    response = TestClient(main_module.app).post(
+        SUPERSEDE_ROUTE,
+        json=_supersede_body(),
+        headers={"Idempotency-Key": "part-supersede-stale"},
     )
     assert response.status_code == 409
     assert response.json()["reason_code"] == OptimisticConcurrencyConflict.code

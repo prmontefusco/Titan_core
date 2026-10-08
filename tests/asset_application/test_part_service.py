@@ -106,3 +106,30 @@ def test_add_revision_rejects_stale_expected_version(
 
     assert service.get_part(part.part_id) == part
     assert event_log.of_type(PART_REVISION_ADDED) == []
+
+
+def test_supersede_revision_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
+) -> None:
+    service = PartService(repository=InMemoryPartRepository(), recorder=recorder)
+    part = _register(service, context)
+    part = service.add_part_revision(
+        context, part.part_id, revision_code="A", occurred_at=OCCURRED_AT
+    )
+    part = service.add_part_revision(
+        context, part.part_id, revision_code="B", occurred_at=OCCURRED_AT
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.supersede_part_revision(
+            context,
+            part.part_id,
+            predecessor_revision_id=part.revisions[0].revision_id,
+            successor_revision_id=part.revisions[1].revision_id,
+            reason="Substituição fictícia.",
+            expected_version=part.version + 1,
+            occurred_at=OCCURRED_AT,
+        )
+
+    assert service.get_part(part.part_id) == part
+    assert event_log.of_type(PART_REVISION_SUPERSEDED) == []
