@@ -7280,3 +7280,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API e superfície pública — 24 verdes. Verificação completa — 2.062 verdes e 354 ignorados; Ruff check e format-check verdes; Mypy verde em 903 arquivos. Os dois `alembic check` permaneceram bloqueados apenas pela ausência de `TITAN_MIGRATION_DATABASE_URL` no ambiente.
 
 **Riscos e limites:** o roteiro cria uma StockPosition permanente e consome a combinação escolhida; usar massa fictícia dedicada. A constraint não consolida posições legadas duplicadas e nenhum comando posterior de inventário foi incluído neste incremento.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para ajustar StockPosition
+
+**Estado:** CONCLUÍDO — `AdjustStock` exposto em `POST /v1/asset/stock-positions/{stock_position_id}/adjustments`, com `ASSET_INVENTORY.ADJUST`, `expected_version`, `reason`, `delta_by_status` e `Idempotency-Key` obrigatórios.
+
+**Implementação:** a API aceita somente os buckets explícitos `on_hand`, `in_transit`, `quarantine`, `inspection` e `damaged`, deriva o ator do `OrganizationContext`, preserva o digest idempotente por posição e retorna o breakdown recalculado. `InventoryService.adjust_stock` valida concorrência otimista antes da mutação, e o repositório carrega a StockPosition com `FOR UPDATE` para serializar ajustes concorrentes.
+
+**Decisões preservadas:** o ajuste nunca é genérico: cada delta nomeia seu bucket, cada quantidade resultante permanece não negativa e `available` continua calculado, nunca armazenado (I-INV-1/I-INV-3). O comando não abre posição, reserva, aloca, consome ou transfere estoque.
+
+**Roteiro executável:** `apps/validacao/asset/adjust_stock.py` descobre Organization, StockPosition e versão corrente, sonda `ASSET_INVENTORY.ADJUST` e acrescenta uma unidade fictícia a `on_hand`, mostrando requisição e resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API, abertura de posição e superfície pública — 32 verdes. Verificação completa: `python -m uv run --locked pytest` — 2070 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro altera permanentemente a quantidade da StockPosition escolhida; usar massa fictícia dedicada. Ajuste negativo que torne qualquer bucket ou a disponibilidade inválidos é recusado pelo domínio. Reservas e demais comandos de inventário permanecem em incrementos separados.

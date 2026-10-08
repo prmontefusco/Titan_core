@@ -54,6 +54,7 @@ from packages.asset_domain.inventory import (
     StockTransfer,
     TransferState,
 )
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 
 
@@ -173,10 +174,13 @@ class InventoryService:
         reason: str,
         actor_ref: TypedId,
         occurred_at: datetime,
+        expected_version: int | None = None,
     ) -> StockPosition:
         if not reason or not reason.strip():
             raise ValueError("reason é obrigatório para ajustar estoque (I-INV-3).")
         position = self._require_position(stock_position_id)
+        if expected_version is not None and position.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         updated = position.adjust_quantities(**deltas)
         self.stock_position_repository.update(updated)
         self.recorder.record(

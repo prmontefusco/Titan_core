@@ -20,6 +20,7 @@ from packages.asset_application.authorization import (
     APPLICABILITY_WITHDRAW,
     CONTRACT_READ,
     DASHBOARD_READ,
+    INVENTORY_ADJUST,
     INVENTORY_OPEN_POSITION,
     INVENTORY_READ,
     PART_ADD_REVISION,
@@ -96,6 +97,12 @@ def require_inventory_read(
 
 def require_inventory_open_position(
     contexto: Annotated[OrganizationContext, Depends(require_permission(INVENTORY_OPEN_POSITION))],
+) -> OrganizationContext:
+    return contexto
+
+
+def require_inventory_adjust(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(INVENTORY_ADJUST))],
 ) -> OrganizationContext:
     return contexto
 
@@ -214,6 +221,7 @@ __all__ = [
     "require_contract_read",
     "require_dashboard_read",
     "require_inventory_read",
+    "require_inventory_adjust",
     "require_inventory_open_position",
     "require_part_register",
     "require_part_add_revision",

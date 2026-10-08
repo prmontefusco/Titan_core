@@ -3,6 +3,8 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import (
     InventoryService,
@@ -33,6 +35,7 @@ from packages.asset_domain.inventory import (
     StockTransfer,
     TransferState,
 )
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 from tests.asset_support import FakeEventLog
 
@@ -116,6 +119,32 @@ def test_open_stock_position_and_adjust(
     )
     assert adjusted.available == Decimal(15)
     event_log.only(INVENTORY_STOCK_ADJUSTED)
+
+
+def test_adjust_stock_rejects_stale_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    service = _service(recorder)
+    position = service.open_stock_position(
+        context,
+        part_ref=TypedId.new("part"),
+        location_ref=TypedId.new("stock_location"),
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(on_hand=Decimal(10)),
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.adjust_stock(
+            context,
+            position.stock_position_id,
+            deltas={"on_hand": Decimal(1)},
+            reason="Contagem física.",
+            actor_ref=TypedId.new("user"),
+            occurred_at=OCCURRED_AT,
+            expected_version=2,
+        )
 
 
 def test_reserve_release_allocate_and_consume(

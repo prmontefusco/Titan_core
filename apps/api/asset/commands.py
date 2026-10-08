@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, status
 from pydantic import BaseModel, Field
@@ -15,6 +15,7 @@ from apps.api.asset.dependencies import (
     ConnectionDependency,
     require_applicability_assert,
     require_applicability_withdraw,
+    require_inventory_adjust,
     require_inventory_open_position,
     require_part_add_revision,
     require_part_edit_interchange,
@@ -59,7 +60,10 @@ from packages.asset_application.interchangeability_group_service import (
     InterchangeabilityGroupNaoEncontrado,
     InterchangeabilityGroupService,
 )
-from packages.asset_application.inventory_service import InventoryService
+from packages.asset_application.inventory_service import (
+    InventoryService,
+    StockPositionNaoEncontrada,
+)
 from packages.asset_application.part_service import PartNaoEncontrado, PartService
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
 from packages.asset_application.work_order_service import (
@@ -175,6 +179,8 @@ WITHDRAW_PART_APPLICABILITY_PURPOSE = "ASSET_APPLICABILITY_WITHDRAW"
 WITHDRAW_PART_APPLICABILITY_OPERATION = "asset.applicability.withdraw"
 OPEN_STOCK_POSITION_PURPOSE = "ASSET_INVENTORY_OPEN_POSITION"
 OPEN_STOCK_POSITION_OPERATION = "asset.inventory.open_position"
+ADJUST_STOCK_PURPOSE = "ASSET_INVENTORY_ADJUST"
+ADJUST_STOCK_OPERATION = "asset.inventory.adjust"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -437,6 +443,15 @@ class OpenStockPositionRequest(BaseModel):
     damaged: Decimal = Field(default=Decimal("0"), ge=Decimal("0"))
     lot: str | None = Field(default=None, min_length=1, max_length=100)
     serial: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+StockQuantityBucket = Literal["on_hand", "in_transit", "quarantine", "inspection", "damaged"]
+
+
+class AdjustStockRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    delta_by_status: dict[StockQuantityBucket, Decimal] = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=500)
 
 
 class StockPositionResponse(BaseModel):
@@ -1278,6 +1293,93 @@ def abrir_posicao_estoque(
     except IdempotencyResultUnknown as exc:
         raise DomainProblem(
             status_code=409,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return StockPositionResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/stock-positions/{stock_position_id}/adjustments",
+    response_model=StockPositionResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Ajustar quantidades de uma posição de estoque",
+    responses=RESPOSTAS_PADRAO,
+)
+def ajustar_posicao_estoque(
+    stock_position_id: str,
+    body: AdjustStockRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_inventory_adjust)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[InventoryService, Depends(get_inventory_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> StockPositionResponse:
+    parsed_position_id = _typed_id_or_problem(
+        stock_position_id,
+        entity_type="stock_position",
+        campo="stock_position_id",
+    )
+    occurred_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=ADJUST_STOCK_OPERATION,
+        purpose=ADJUST_STOCK_PURPOSE,
+        requested_at=occurred_at,
+        extra_intent={"stock_position_id": stock_position_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            deltas = {str(bucket): delta for bucket, delta in body.delta_by_status.items()}
+            position = service.adjust_stock(
+                operation_context,
+                parsed_position_id,
+                deltas=deltas,
+                reason=body.reason,
+                actor_ref=contexto.actor_id,
+                occurred_at=occurred_at,
+                expected_version=body.expected_version,
+            )
+        except StockPositionNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _stock_position_response(position)
+        return CanonicalPayload(
+            schema="asset.adjust_stock.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
             reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
             title="Resultado idempotente desconhecido",
             detail=str(exc),
@@ -3259,7 +3361,7 @@ def _version_conflict() -> DomainProblem:
         status_code=status.HTTP_409_CONFLICT,
         reason_code=OptimisticConcurrencyConflict.code,
         title="Versão de agregado conflitante",
-        detail="A versão informada não corresponde à versão atual da WorkOrder.",
+        detail="A versão informada não corresponde à versão atual do agregado.",
     )
 
 
