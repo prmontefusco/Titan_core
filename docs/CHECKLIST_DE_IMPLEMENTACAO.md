@@ -7254,3 +7254,15 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de eventos, Application, API e superfície pública — 39 verdes. Verificação completa: `python -m uv run --locked pytest` — 2056 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos após estreitar a porta de leitura aos campos efetivamente usados. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro retira permanentemente a Applicability escolhida; usar massa fictícia dedicada. A navegação causal depende da preservação do evento original; fluxo legado sem `applicability.asserted` é recusado explicitamente, não corrigido às cegas.
+
+### 08/10/2026 — A3/A5: unicidade tenant-scoped de StockPosition
+
+**Estado:** CONCLUÍDO — pré-requisito persistente de `OpenStockPosition` corrigido antes da exposição HTTP. `core_audit.stock_positions` passa a garantir uma única posição por `(RecordOwnerOrganization, Part, StockLocation, purpose)`.
+
+**Implementação:** a metadata de `stock_positions_table` e a migration Asset `20261008_0011` acrescentam `uq_stock_positions_owner_part_location_purpose`. O downgrade remove somente essa constraint. Nenhuma API foi acrescentada neste incremento.
+
+**Decisões preservadas:** a garantia é transacional no PostgreSQL, não uma consulta prévia sujeita a corrida. `lot`, `serial` e `ownership` não participam da chave porque o command model define explicitamente a identidade da posição por Part, Location e purpose dentro da Organization.
+
+**Portão:** 11 testes focados verdes. Verificação completa: `python -m uv run --locked pytest` — 2057 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** aplicar a migration em base que já contenha posições duplicadas no mesmo escopo falhará explicitamente; o incremento não escolhe registro vencedor nem consolida quantidades, pois isso exigiria decisão operacional e trilha de correção.
