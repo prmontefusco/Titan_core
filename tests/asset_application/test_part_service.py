@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime
 
+import pytest
+
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.part_service import PartRepositoryPort, PartService
 from packages.asset_domain.events import (
@@ -11,6 +13,7 @@ from packages.asset_domain.events import (
     PART_REVISION_SUPERSEDED,
 )
 from packages.asset_domain.part import Part, PartIdentity, PartLifecycleState
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 from tests.asset_support import FakeEventLog
 
@@ -84,3 +87,22 @@ def test_add_revision_and_supersede(
     event_log.only(PART_REVISION_SUPERSEDED)
     lifecycle_event = event_log.only(PART_LIFECYCLE_STATE_CHANGED)
     assert lifecycle_event.aggregate_version == 5
+
+
+def test_add_revision_rejects_stale_expected_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
+) -> None:
+    service = PartService(repository=InMemoryPartRepository(), recorder=recorder)
+    part = _register(service, context)
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.add_part_revision(
+            context,
+            part.part_id,
+            revision_code="A",
+            expected_version=part.version + 1,
+            occurred_at=OCCURRED_AT,
+        )
+
+    assert service.get_part(part.part_id) == part
+    assert event_log.of_type(PART_REVISION_ADDED) == []

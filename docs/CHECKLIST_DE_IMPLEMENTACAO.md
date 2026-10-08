@@ -7184,3 +7184,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** 22 testes focados verdes. Verificação completa: 2026 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria uma Part permanente na base de validação. Revisões e supersessões continuam em comandos separados.
+
+### 08/10/2026 — A5 (parcial): comando HTTP para adicionar revisão de Part
+
+**Estado:** CONCLUÍDO — `AddPartRevision` exposto em `POST /v1/asset/parts/{part_id}/revisions`, com `ASSET_PART.ADD_REVISION`, `expected_version` e `Idempotency-Key` obrigatórios e retorno da Part com seu histórico de revisões.
+
+**Implementação:** `PartService.add_part_revision` passou a validar concorrência otimista antes da mutação. A API acrescenta contrato tipado de revisão, referências opcionais de especificação e desenho, materiais, identificador tipado de Part, idempotência e tradução de Part inexistente, versão divergente e conflito de domínio. A superfície pública declara a nova rota.
+
+**Decisões preservadas:** a revisão permanece entidade interna do agregado Part e nasce `ACTIVE`; o comando não cria aplicabilidade, supersessão ou grupo de intercambiabilidade. O código da revisão continua único dentro da Part por invariante de domínio. As referências opcionais mantêm os tipos persistentes `spec` e `drawing`.
+
+**Roteiro executável:** `apps/validacao/asset/add_part_revision.py` descobre Organization, Part e versão atual, gera código fictício único, sonda `ASSET_PART.ADD_REVISION` e confirma que a revisão foi anexada com versão incrementada, mostrando requisição e resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API, cadastro de Part e superfície pública — 29 verdes. Verificação completa: `python -m uv run --locked pytest` — 2033 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro cria uma revisão permanente na Part escolhida; usar massa fictícia dedicada. Supersessão, aplicabilidade e intercambiabilidade permanecem comandos separados.

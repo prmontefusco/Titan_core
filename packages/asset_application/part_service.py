@@ -25,6 +25,7 @@ from packages.asset_domain.events import (
     part_revision_superseded_payload,
 )
 from packages.asset_domain.part import Part, PartIdentity, PartLifecycleState, PartRevision
+from packages.core_application import OptimisticConcurrencyConflict
 from packages.shared_kernel import TypedId
 
 
@@ -89,9 +90,12 @@ class PartService:
         spec_ref: TypedId | None = None,
         drawing_ref: TypedId | None = None,
         materials: tuple[str, ...] = (),
+        expected_version: int | None = None,
         occurred_at: datetime,
     ) -> Part:
         part = self._require(part_id)
+        if expected_version is not None and part.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         revision = PartRevision(
             revision_id=TypedId.new("part_revision"),
             revision_code=revision_code,

@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from apps.api.asset.dependencies import (
     ConnectionDependency,
+    require_part_add_revision,
     require_part_register,
     require_site_register,
     require_vehicle_correct_meter,
@@ -134,6 +135,8 @@ REGISTER_CUSTOMER_SITE_PURPOSE = "ASSET_SITE_REGISTER"
 REGISTER_CUSTOMER_SITE_OPERATION = "asset.customer_site.register"
 REGISTER_PART_PURPOSE = "ASSET_PART_REGISTER"
 REGISTER_PART_OPERATION = "asset.part.register"
+ADD_PART_REVISION_PURPOSE = "ASSET_PART_ADD_REVISION"
+ADD_PART_REVISION_OPERATION = "asset.part.add_revision"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -296,6 +299,15 @@ class RegisterPartRequest(BaseModel):
     external_classifications: list[str] = Field(default_factory=list)
 
 
+class PartRevisionResponse(BaseModel):
+    revision_id: str
+    revision_code: str
+    lifecycle_state: str
+    spec_ref: str | None
+    drawing_ref: str | None
+    materials: list[str]
+
+
 class PartResponse(BaseModel):
     part_id: str
     part_number: str
@@ -304,8 +316,17 @@ class PartResponse(BaseModel):
     manufacturer_pn: str | None
     nsn: str | None
     external_classifications: list[str]
+    revisions: list[PartRevisionResponse]
     version: int
     created_at: datetime
+
+
+class AddPartRevisionRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    revision_code: str = Field(min_length=1, max_length=50)
+    spec_id: str | None = None
+    drawing_id: str | None = None
+    materials: list[str] = Field(default_factory=list)
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -386,6 +407,19 @@ def _part_response(part: Part) -> PartResponse:
         manufacturer_pn=part.identity.manufacturer_pn,
         nsn=part.identity.nsn,
         external_classifications=list(part.identity.external_classifications),
+        revisions=[
+            PartRevisionResponse(
+                revision_id=str(revision.revision_id.value),
+                revision_code=revision.revision_code,
+                lifecycle_state=revision.lifecycle_state.value,
+                spec_ref=None if revision.spec_ref is None else str(revision.spec_ref.value),
+                drawing_ref=(
+                    None if revision.drawing_ref is None else str(revision.drawing_ref.value)
+                ),
+                materials=list(revision.materials),
+            )
+            for revision in part.revisions
+        ],
         version=part.version,
         created_at=part.created_at,
     )
@@ -463,6 +497,101 @@ def cadastrar_part(
     except IdempotencyResultUnknown as exc:
         raise DomainProblem(
             status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return PartResponse.model_validate(_canonical_response_data(execution.result_canonical_bytes))
+
+
+@router.post(
+    "/parts/{part_id}/revisions",
+    response_model=PartResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Adicionar revisão a Part",
+    responses=RESPOSTAS_PADRAO,
+)
+def adicionar_revisao_part(
+    part_id: str,
+    body: AddPartRevisionRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_part_add_revision)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[PartService, Depends(get_part_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> PartResponse:
+    parsed_part_id = _typed_id_or_problem(part_id, entity_type="part", campo="part_id")
+    spec_ref = (
+        None
+        if body.spec_id is None
+        else _typed_id_or_problem(body.spec_id, entity_type="spec", campo="spec_id")
+    )
+    drawing_ref = (
+        None
+        if body.drawing_id is None
+        else _typed_id_or_problem(body.drawing_id, entity_type="drawing", campo="drawing_id")
+    )
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=ADD_PART_REVISION_OPERATION,
+        purpose=ADD_PART_REVISION_PURPOSE,
+        requested_at=datetime.now(UTC),
+        extra_intent={"part_id": part_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            part = service.add_part_revision(
+                operation_context,
+                parsed_part_id,
+                revision_code=body.revision_code,
+                spec_ref=spec_ref,
+                drawing_ref=drawing_ref,
+                materials=tuple(body.materials),
+                expected_version=body.expected_version,
+                occurred_at=datetime.now(UTC),
+            )
+        except PartNaoEncontrado as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise DomainProblem(
+                status_code=409,
+                reason_code=OptimisticConcurrencyConflict.code,
+                title="Versão de agregado conflitante",
+                detail="A versão informada não corresponde à versão atual da Part.",
+            ) from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _part_response(part)
+        return CanonicalPayload(
+            schema="asset.add_part_revision.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=422,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=409,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=409,
             reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
             title="Resultado idempotente desconhecido",
             detail=str(exc),
