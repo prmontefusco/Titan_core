@@ -16,6 +16,7 @@ from apps.api.asset.dependencies import (
     require_applicability_assert,
     require_applicability_withdraw,
     require_inventory_adjust,
+    require_inventory_allocate,
     require_inventory_open_position,
     require_inventory_release,
     require_part_add_revision,
@@ -194,6 +195,8 @@ ADJUST_STOCK_PURPOSE = "ASSET_INVENTORY_ADJUST"
 ADJUST_STOCK_OPERATION = "asset.inventory.adjust"
 RELEASE_STOCK_RESERVATION_PURPOSE = "ASSET_INVENTORY_RELEASE"
 RELEASE_STOCK_RESERVATION_OPERATION = "asset.inventory.release_reservation"
+ALLOCATE_STOCK_RESERVATION_PURPOSE = "ASSET_INVENTORY_ALLOCATE"
+ALLOCATE_STOCK_RESERVATION_OPERATION = "asset.inventory.allocate_reservation"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -481,6 +484,10 @@ class AdjustStockRequest(BaseModel):
 class ReleaseStockReservationRequest(BaseModel):
     expected_version: int = Field(ge=1)
     reason: str = Field(min_length=1, max_length=500)
+
+
+class AllocateStockReservationRequest(BaseModel):
+    expected_version: int = Field(ge=1)
 
 
 class StockPositionResponse(BaseModel):
@@ -1567,6 +1574,89 @@ def liberar_reserva_estoque(
             detail=str(exc),
         ) from exc
     return ReleaseStockReservationResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/stock-reservations/{reservation_id}/allocate",
+    response_model=StockReservationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Alocar reserva de estoque",
+    responses=RESPOSTAS_PADRAO,
+)
+def alocar_reserva_estoque(
+    reservation_id: str,
+    body: AllocateStockReservationRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_inventory_allocate)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[InventoryService, Depends(get_inventory_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> StockReservationResponse:
+    parsed_reservation_id = _typed_id_or_problem(
+        reservation_id,
+        entity_type="stock_reservation",
+        campo="reservation_id",
+    )
+    occurred_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=ALLOCATE_STOCK_RESERVATION_OPERATION,
+        purpose=ALLOCATE_STOCK_RESERVATION_PURPOSE,
+        requested_at=occurred_at,
+        extra_intent={"reservation_id": reservation_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            reservation = service.allocate_reservation(
+                operation_context,
+                parsed_reservation_id,
+                occurred_at=occurred_at,
+                expected_version=body.expected_version,
+            )
+        except StockReservationNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _stock_reservation_response(reservation)
+        return CanonicalPayload(
+            schema="asset.allocate_stock_reservation.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return StockReservationResponse.model_validate(
         _canonical_response_data(execution.result_canonical_bytes)
     )
 

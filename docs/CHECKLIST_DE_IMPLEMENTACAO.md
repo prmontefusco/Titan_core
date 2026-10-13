@@ -7322,3 +7322,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Inventory, coordenação de WorkOrder, API e superfície pública — 56 verdes. Verificação completa: `python -m uv run --locked pytest` — 2083 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro libera permanentemente uma reserva real do ambiente de validação; usar massa fictícia dedicada. A liberação de uma reserva ligada a WorkOrder pode retirar sua prontidão material. Alocação e consumo permanecem em comandos separados.
+
+### 13/10/2026 — A5 (parcial): alocação de StockReservation
+
+**Estado:** CONCLUÍDO — `AllocateStockReservation` exposto em `POST /v1/asset/stock-reservations/{reservation_id}/allocate`, com `ASSET_INVENTORY.ALLOCATE`, `expected_version` e `Idempotency-Key` obrigatórios.
+
+**Implementação:** `InventoryService.allocate_reservation` carrega a StockReservation com `FOR UPDATE` e valida concorrência otimista antes da transição. A API aceita somente o identificador da reserva e sua versão esperada, deriva Organization e ator do contexto autenticado e retorna a reserva em `ALLOCATED`, traduzindo ausência, versão divergente e estado inválido para problemas HTTP explícitos.
+
+**Decisões preservadas:** somente reservas `HELD` podem ser alocadas; a operação não altera quantidades da StockPosition, demanda da WorkOrder, entitlement ou consumo. A transição mantém a reserva ativa e preserva I-INV-1/I-INV-2, enquanto o evento `asset.inventory.stock_reservation_allocated` registra o fato auditável.
+
+**Roteiro executável:** `apps/validacao/asset/allocate_stock_reservation.py` descobre Organization, uma reserva `HELD` e sua versão corrente, sonda `ASSET_INVENTORY.ALLOCATE` e executa a alocação mostrando requisição e resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Inventory, API e superfície pública — 26 verdes. Verificação completa: `python -m uv run --locked pytest` — 2089 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro altera permanentemente uma reserva `HELD` do ambiente de validação; usar massa fictícia dedicada. A alocação não reduz novamente a disponibilidade, pois a quantidade já permanece reservada. Consumo e transferência continuam em comandos separados.

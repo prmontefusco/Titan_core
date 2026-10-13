@@ -287,8 +287,15 @@ class InventoryService:
         reservation_id: TypedId,
         *,
         occurred_at: datetime,
+        expected_version: int | None = None,
     ) -> StockReservation:
-        reservation = self._require_reservation(reservation_id)
+        reservation = self.stock_reservation_repository.get_by_id_for_update(reservation_id)
+        if reservation is None:
+            raise StockReservationNaoEncontrada(
+                f"StockReservation '{reservation_id.value}' não encontrada."
+            )
+        if expected_version is not None and reservation.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         updated = reservation.allocate()
         self.stock_reservation_repository.update(updated)
         self.recorder.record(

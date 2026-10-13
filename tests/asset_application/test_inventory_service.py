@@ -177,8 +177,19 @@ def test_reserve_release_allocate_and_consume(
     assert reservation.state is ReservationState.HELD
     event_log.only(INVENTORY_STOCK_RESERVED)
 
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.allocate_reservation(
+            context,
+            reservation.reservation_id,
+            occurred_at=OCCURRED_AT,
+            expected_version=2,
+        )
+
     allocated = service.allocate_reservation(
-        context, reservation.reservation_id, occurred_at=OCCURRED_AT
+        context,
+        reservation.reservation_id,
+        occurred_at=OCCURRED_AT,
+        expected_version=1,
     )
     assert allocated.state is ReservationState.ALLOCATED
     event_log.only(INVENTORY_STOCK_RESERVATION_ALLOCATED)
