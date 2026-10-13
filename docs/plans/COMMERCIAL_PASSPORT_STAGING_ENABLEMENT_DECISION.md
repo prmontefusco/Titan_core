@@ -1,7 +1,7 @@
 # Commercial Passport — decisão de habilitação controlada em staging
 
 **Data:** 2026-10-13  
-**Estado:** PROPOSTA — DECISION RED, aguardando decisão humana explícita  
+**Estado:** OPÇÃO B APROVADA EM 13/10/2026; execução DEFERIDA pelo Product Owner até concluir a próxima implementação
 **Escopo:** habilitação temporária e controlada da consulta dinâmica em ambiente `HOMOLOGACAO`  
 **Não autoriza:** publicação, alteração de configuração, emissão formal ou uso de dados reais
 
@@ -138,4 +138,5 @@ O Product Owner deve aprovar ou rejeitar explicitamente a **Opção B** e nomear
 - o responsável operacional;
 - o responsável de produto.
 
-Sem esses três elementos, as flags permanecem desligadas e nenhuma publicação é executada.
+Sem esses três elementos, e enquanto a implementação anterior à homologação não for concluída, as flags
+permanecem desligadas e nenhuma publicação é executada.
