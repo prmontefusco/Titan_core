@@ -2,7 +2,7 @@
 
 **Atualizado em:** 13 de outubro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
-**Próximo passo do Livestock:** após a reconciliação da lane histórica em 13 de outubro de 2026, escolher uma única frente por decisão de produto: aprofundar o snapshot/rastreabilidade do Commercial Passport ou definir qual `MarketProfile` consome os fatos territoriais e sanitários já disponíveis. Market Supply com consumidor real, SISBOV oficial, MapBiomas e bases normativas de mercados reais permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
+**Próximo passo do Livestock:** DECISION RED sobre a habilitação controlada do Commercial Passport em ambiente compartilhado/staging, conforme `docs/livestock/COMMERCIAL_PASSPORT_IMPLEMENTATION_PLAN.md`. A consulta dinâmica, a emissão formal, o snapshot populacional temporal e sua rastreabilidade já foram implementados e permanecem release-gated; nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita sobre ambiente, responsáveis, dados fictícios, observabilidade e rollback. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
 
 ### 13/10/2026 — Retomada Livestock: lane histórica reconciliada
 
