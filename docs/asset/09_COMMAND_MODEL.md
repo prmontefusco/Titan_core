@@ -43,7 +43,7 @@ Legenda de colunas: **Autz** = permissão exigida (`<MODULE>.<AÇÃO>`, nunca po
 | `AllocateStockReservation` | `ASSET_INVENTORY.ALLOCATE` | ✔ | ✔ | `StockReservation` | reserva `HELD` | `inventory.stock_reservation_allocated` |
 | `ConsumeStock` | `ASSET_INVENTORY.CONSUME` | ✔ | ✔ | `WorkOrder` + `StockReservation` + `StockPosition` (FOR UPDATE) | reserva `ALLOCATED`; `qty = reservado` (consumo integral no slice atual); reserva vinculada à WO; WO em execução | `inventory.stock_consumed` (I‑WO‑2) |
 | `RequestStockTransfer` | `ASSET_INVENTORY.TRANSFER_REQUEST` | ✔ | ✔ | `StockTransfer` | posições de origem e destino existem para a mesma peça+propósito; origem tem `available ≥ qty` | `inventory.transfer_requested` (I‑INV‑2/4) |
-| `DispatchStockTransfer` | `ASSET_INVENTORY.TRANSFER_DISPATCH` | ✔ | ✔ | `StockTransfer` + `StockPosition` origem (FOR UPDATE) | qty ≤ `on_hand` origem | `inventory.transfer_dispatched` |
+| `DispatchStockTransfer` | `ASSET_INVENTORY.TRANSFER_DISPATCH` | ✔ | ✔ | `StockTransfer` + `StockPosition` origem (FOR UPDATE) | qty ≤ `available` origem | `inventory.transfer_dispatched` |
 | `ReceiveStockTransfer` | `ASSET_INVENTORY.TRANSFER_RECEIVE` | ✔ | ✔ | `StockTransfer` + `StockPosition` destino (FOR UPDATE) | `Σ recebido ≤ despachado` | `inventory.transfer_received` (I‑INV‑4) |
 
 ### CustomerSite

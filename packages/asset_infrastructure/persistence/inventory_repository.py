@@ -464,6 +464,16 @@ class TransactionalStockTransferRepository:
             return None
         return self._map(row)
 
+    def get_by_id_for_update(self, transfer_id: TypedId) -> StockTransfer | None:
+        row = self.connection.execute(
+            select(stock_transfers_table)
+            .where(stock_transfers_table.c.transfer_id == transfer_id.value)
+            .with_for_update()
+        ).fetchone()
+        if row is None:
+            return None
+        return self._map(row)
+
     def _map(self, row: Row[Any]) -> StockTransfer:
         return StockTransfer(
             transfer_id=TypedId(entity_type="stock_transfer", value=row.transfer_id),

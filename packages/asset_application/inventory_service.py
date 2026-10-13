@@ -106,6 +106,8 @@ class StockTransferRepositoryPort(Protocol):
 
     def get_by_id(self, transfer_id: TypedId) -> StockTransfer | None: ...
 
+    def get_by_id_for_update(self, transfer_id: TypedId) -> StockTransfer | None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class InventoryService:
@@ -439,22 +441,49 @@ class InventoryService:
         transfer_id: TypedId,
         *,
         occurred_at: datetime,
-    ) -> StockTransfer:
-        transfer = self._require_transfer(transfer_id)
-        updated = transfer.dispatch()
-        self.stock_transfer_repository.update(updated)
+        expected_version: int | None = None,
+    ) -> tuple[StockPosition, StockTransfer]:
+        transfer = self.stock_transfer_repository.get_by_id_for_update(transfer_id)
+        if transfer is None:
+            raise StockTransferNaoEncontrado(f"StockTransfer '{transfer_id.value}' não encontrada.")
+        if expected_version is not None and transfer.version != expected_version:
+            raise OptimisticConcurrencyConflict()
+        source_positions = self.stock_position_repository.list_by_part_location_purpose(
+            part_ref=transfer.part_ref,
+            location_ref=transfer.from_location_ref,
+            purpose=transfer.purpose,
+        )
+        if len(source_positions) != 1:
+            raise StockPositionNaoEncontrada(
+                "StockPosition de origem única não encontrada para peça, localização e propósito."
+            )
+        source = self.stock_position_repository.get_by_id_for_update(
+            source_positions[0].stock_position_id
+        )
+        if source is None:
+            raise StockPositionNaoEncontrada(
+                f"StockPosition '{source_positions[0].stock_position_id.value}' não encontrada."
+            )
+        if source.available < transfer.qty:
+            raise ValueError(
+                f"Disponibilidade na origem ({source.available}) inferior a {transfer.qty}."
+            )
+        updated_transfer = transfer.dispatch()
+        updated_source = source.adjust_quantities(on_hand=-transfer.qty)
+        self.stock_position_repository.update(updated_source)
+        self.stock_transfer_repository.update(updated_transfer)
         self.recorder.record(
             context=context,
             aggregate_id=transfer_id,
             event_type=INVENTORY_TRANSFER_DISPATCHED,
             payload=inventory_transfer_dispatched_payload(
                 transfer_id=transfer_id,
-                qty=updated.qty,
-                from_location_ref=updated.from_location_ref,
+                qty=updated_transfer.qty,
+                from_location_ref=updated_transfer.from_location_ref,
             ),
             occurred_at=occurred_at,
         )
-        return updated
+        return updated_source, updated_transfer
 
     def receive_transfer(
         self,

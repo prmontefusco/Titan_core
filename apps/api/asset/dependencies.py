@@ -26,6 +26,7 @@ from packages.asset_application.authorization import (
     INVENTORY_OPEN_POSITION,
     INVENTORY_READ,
     INVENTORY_RELEASE,
+    INVENTORY_TRANSFER_DISPATCH,
     INVENTORY_TRANSFER_REQUEST,
     PART_ADD_REVISION,
     PART_EDIT_INTERCHANGE,
@@ -133,6 +134,14 @@ def require_inventory_release(
 def require_inventory_transfer_request(
     contexto: Annotated[
         OrganizationContext, Depends(require_permission(INVENTORY_TRANSFER_REQUEST))
+    ],
+) -> OrganizationContext:
+    return contexto
+
+
+def require_inventory_transfer_dispatch(
+    contexto: Annotated[
+        OrganizationContext, Depends(require_permission(INVENTORY_TRANSFER_DISPATCH))
     ],
 ) -> OrganizationContext:
     return contexto
@@ -263,6 +272,7 @@ __all__ = [
     "require_inventory_consume",
     "require_inventory_open_position",
     "require_inventory_release",
+    "require_inventory_transfer_dispatch",
     "require_inventory_transfer_request",
     "require_part_register",
     "require_part_add_revision",

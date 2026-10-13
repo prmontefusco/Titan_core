@@ -105,6 +105,9 @@ class InMemoryStockTransferRepository(StockTransferRepositoryPort):
     def get_by_id(self, transfer_id: TypedId) -> StockTransfer | None:
         return self.transfers.get(transfer_id.value.hex)
 
+    def get_by_id_for_update(self, transfer_id: TypedId) -> StockTransfer | None:
+        return self.get_by_id(transfer_id)
+
 
 def _service(recorder: AssetEventRecorder) -> InventoryService:
     return InventoryService(
@@ -308,8 +311,14 @@ def test_transfer_request_dispatch_and_receive(
     )
     event_log.only(INVENTORY_TRANSFER_REQUESTED)
 
-    dispatched = service.dispatch_transfer(context, transfer.transfer_id, occurred_at=OCCURRED_AT)
+    source, dispatched = service.dispatch_transfer(
+        context,
+        transfer.transfer_id,
+        occurred_at=OCCURRED_AT,
+        expected_version=1,
+    )
     assert dispatched.state is TransferState.IN_TRANSIT
+    assert source.quantities.on_hand == Decimal(0)
     event_log.only(INVENTORY_TRANSFER_DISPATCHED)
 
     received = service.receive_transfer(
@@ -318,6 +327,67 @@ def test_transfer_request_dispatch_and_receive(
     assert received.state is TransferState.RECEIVED
     assert service.get_transfer(transfer.transfer_id) == received
     event_log.only(INVENTORY_TRANSFER_RECEIVED)
+
+
+def test_dispatch_transfer_revalidates_available_stock_and_version(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    service = _service(recorder)
+    part_ref = TypedId.new("part")
+    from_location_ref = TypedId.new("stock_location")
+    to_location_ref = TypedId.new("stock_location")
+    source = service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=from_location_ref,
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(on_hand=Decimal(5)),
+        occurred_at=OCCURRED_AT,
+    )
+    service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=to_location_ref,
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(),
+        occurred_at=OCCURRED_AT,
+    )
+    transfer = service.request_transfer(
+        context,
+        part_ref=part_ref,
+        from_location_ref=from_location_ref,
+        to_location_ref=to_location_ref,
+        qty=Decimal(5),
+        purpose=StockPurpose.SERVICE_SLI,
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.dispatch_transfer(
+            context,
+            transfer.transfer_id,
+            occurred_at=OCCURRED_AT,
+            expected_version=2,
+        )
+
+    service.reserve_stock(
+        context,
+        source.stock_position_id,
+        demand=DemandRef(kind=DemandKind.WORK_ORDER, ref=TypedId.new("work_order")),
+        qty=Decimal(1),
+        purpose=StockPurpose.SERVICE_SLI,
+        priority=1,
+        occurred_at=OCCURRED_AT,
+    )
+    with pytest.raises(ValueError, match="Disponibilidade"):
+        service.dispatch_transfer(
+            context,
+            transfer.transfer_id,
+            occurred_at=OCCURRED_AT,
+            expected_version=1,
+        )
 
 
 def test_transfer_request_requires_compatible_destination_and_available_origin(

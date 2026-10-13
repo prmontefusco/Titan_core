@@ -199,6 +199,9 @@ class InMemoryStockTransferRepository(StockTransferRepositoryPort):
     def get_by_id(self, transfer_id: TypedId) -> StockTransfer | None:
         return self.items.get(transfer_id.value.hex)
 
+    def get_by_id_for_update(self, transfer_id: TypedId) -> StockTransfer | None:
+        return self.get_by_id(transfer_id)
+
 
 def _build_service(recorder: AssetEventRecorder) -> tuple[WorkOrderService, VehicleService]:
     vehicle_service = VehicleService(repository=InMemoryVehicleRepository(), recorder=recorder)

@@ -7364,3 +7364,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de domínio, Inventory, WorkOrder, recalculador, API e superfície pública — 85 verdes. Verificação completa: `python -m uv run --locked pytest` — 2101 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. `alembic heads` confirmou `20261013_0012` como único head Asset. A aplicação da migration, o teste PostgreSQL e os dois `alembic check` ficaram bloqueados porque o Docker Desktop não está em execução e `TITAN_MIGRATION_DATABASE_URL` não está disponível sem a stack.
 
 **Riscos e limites:** solicitar não movimenta quantidade nem a reserva; disponibilidade é revalidada novamente no despacho. O roteiro cria uma transferência permanente em `REQUESTED`. `DispatchStockTransfer` e `ReceiveStockTransfer` permanecem em incrementos separados.
+
+### 13/10/2026 — A5: despacho de StockTransfer
+
+**Estado:** CONCLUÍDO — `DispatchStockTransfer` exposto em `POST /v1/asset/stock-transfers/{transfer_id}/dispatch`, com `ASSET_INVENTORY.TRANSFER_DISPATCH`, `expected_version` e `Idempotency-Key` obrigatórios.
+
+**Implementação:** a operação bloqueia a `StockTransfer` e a `StockPosition` de origem com `FOR UPDATE`, valida a versão esperada, resolve a posição pela mesma peça, localização e propósito preservados na solicitação e revalida a disponibilidade antes da movimentação. O despacho reduz integralmente o `on_hand` da origem, transiciona a transferência de `REQUESTED` para `IN_TRANSIT` e emite `asset.inventory.transfer_dispatched` na mesma transação.
+
+**Correção normativa aprovada:** `docs/asset/09_COMMAND_MODEL.md` passou de `qty ≤ on_hand` para `qty ≤ available`. Unidades reservadas, em quarentena, inspeção ou danificadas não podem ser apropriadas por uma transferência posterior; a regra corrigida preserva I-INV-1, I-INV-3 e I-INV-4.
+
+**Roteiro executável:** `apps/validacao/asset/dispatch_stock_transfer.py` descobre Organization, uma transferência `REQUESTED` atendível, versão e saldo da origem; sonda `ASSET_INVENTORY.TRANSFER_DISPATCH` e mostra a requisição e a resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Application, API e superfície pública — 26 verdes. Verificação completa: `python -m uv run --locked pytest` — 2106 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque o Docker Desktop não está em execução e `TITAN_MIGRATION_DATABASE_URL` não está disponível sem a stack.
+
+**Riscos e limites:** o roteiro reduz permanentemente o saldo da origem e deixa a transferência em trânsito; usar massa fictícia dedicada. O saldo em trânsito é representado pela própria `StockTransfer`, e o recebimento no destino permanece em incremento separado.
