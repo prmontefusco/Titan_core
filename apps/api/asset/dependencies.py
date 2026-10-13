@@ -22,6 +22,7 @@ from packages.asset_application.authorization import (
     DASHBOARD_READ,
     INVENTORY_ADJUST,
     INVENTORY_ALLOCATE,
+    INVENTORY_CONSUME,
     INVENTORY_OPEN_POSITION,
     INVENTORY_READ,
     INVENTORY_RELEASE,
@@ -112,6 +113,12 @@ def require_inventory_adjust(
 
 def require_inventory_allocate(
     contexto: Annotated[OrganizationContext, Depends(require_permission(INVENTORY_ALLOCATE))],
+) -> OrganizationContext:
+    return contexto
+
+
+def require_inventory_consume(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(INVENTORY_CONSUME))],
 ) -> OrganizationContext:
     return contexto
 
@@ -244,6 +251,7 @@ __all__ = [
     "require_inventory_read",
     "require_inventory_adjust",
     "require_inventory_allocate",
+    "require_inventory_consume",
     "require_inventory_open_position",
     "require_inventory_release",
     "require_part_register",

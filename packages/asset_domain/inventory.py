@@ -290,19 +290,19 @@ class StockPosition:
         )
         if line is None:
             raise KeyError(f"Reserva '{reservation_id.value}' não encontrada nesta posição.")
-        if qty > line.qty:
+        if qty != line.qty:
             raise ValueError(
-                f"Consumo de {qty} excede a quantidade reservada nesta linha ({line.qty})."
+                f"Consumo deve usar integralmente a quantidade reservada nesta linha ({line.qty}); "
+                f"recebido {qty}."
             )
-        remaining = tuple(
-            existing for existing in self.reservations if existing.reservation_id != reservation_id
-        )
-        if qty < line.qty:
-            remaining = remaining + (replace(line, qty=line.qty - qty),)
         return replace(
             self,
             quantities=self.quantities.adjust(on_hand=-qty),
-            reservations=remaining,
+            reservations=tuple(
+                existing
+                for existing in self.reservations
+                if existing.reservation_id != reservation_id
+            ),
             version=self.version + 1,
         )
 

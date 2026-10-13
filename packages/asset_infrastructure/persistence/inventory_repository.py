@@ -255,6 +255,16 @@ class TransactionalStockPositionRepository:
             return None
         return self._map(row)
 
+    def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None:
+        row = self.connection.execute(
+            select(stock_positions_table)
+            .where(stock_positions_table.c.stock_position_id == stock_position_id.value)
+            .with_for_update()
+        ).fetchone()
+        if row is None:
+            return None
+        return self._map(row)
+
     def list_by_part_location_purpose(
         self,
         *,

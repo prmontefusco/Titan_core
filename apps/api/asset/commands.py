@@ -17,6 +17,7 @@ from apps.api.asset.dependencies import (
     require_applicability_withdraw,
     require_inventory_adjust,
     require_inventory_allocate,
+    require_inventory_consume,
     require_inventory_open_position,
     require_inventory_release,
     require_part_add_revision,
@@ -197,6 +198,8 @@ RELEASE_STOCK_RESERVATION_PURPOSE = "ASSET_INVENTORY_RELEASE"
 RELEASE_STOCK_RESERVATION_OPERATION = "asset.inventory.release_reservation"
 ALLOCATE_STOCK_RESERVATION_PURPOSE = "ASSET_INVENTORY_ALLOCATE"
 ALLOCATE_STOCK_RESERVATION_OPERATION = "asset.inventory.allocate_reservation"
+CONSUME_STOCK_PURPOSE = "ASSET_INVENTORY_CONSUME"
+CONSUME_STOCK_OPERATION = "asset.inventory.consume_stock"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -490,6 +493,12 @@ class AllocateStockReservationRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class ConsumeStockRequest(BaseModel):
+    work_order_id: str
+    qty: Decimal = Field(gt=Decimal("0"))
+    expected_version: int = Field(ge=1)
+
+
 class StockPositionResponse(BaseModel):
     stock_position_id: str
     part_ref: str
@@ -521,6 +530,11 @@ class StockReservationResponse(BaseModel):
 
 
 class ReleaseStockReservationResponse(BaseModel):
+    reservation: StockReservationResponse
+    stock_position: StockPositionResponse
+
+
+class ConsumeStockResponse(BaseModel):
     reservation: StockReservationResponse
     stock_position: StockPositionResponse
 
@@ -1657,6 +1671,103 @@ def alocar_reserva_estoque(
             detail=str(exc),
         ) from exc
     return StockReservationResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/stock-reservations/{reservation_id}/consume",
+    response_model=ConsumeStockResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Consumir reserva de estoque",
+    responses=RESPOSTAS_PADRAO,
+)
+def consumir_reserva_estoque(
+    reservation_id: str,
+    body: ConsumeStockRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_inventory_consume)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[WorkOrderService, Depends(get_open_work_order_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> ConsumeStockResponse:
+    parsed_reservation_id = _typed_id_or_problem(
+        reservation_id,
+        entity_type="stock_reservation",
+        campo="reservation_id",
+    )
+    work_order_id = _typed_id_or_problem(
+        body.work_order_id,
+        entity_type="work_order",
+        campo="work_order_id",
+    )
+    occurred_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=CONSUME_STOCK_OPERATION,
+        purpose=CONSUME_STOCK_PURPOSE,
+        requested_at=occurred_at,
+        extra_intent={"reservation_id": reservation_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            position, reservation = service.consume_material_for_work_order(
+                operation_context,
+                work_order_id,
+                reservation_id=parsed_reservation_id,
+                qty=body.qty,
+                occurred_at=occurred_at,
+                expected_reservation_version=body.expected_version,
+            )
+        except (
+            WorkOrderNaoEncontrada,
+            StockPositionNaoEncontrada,
+            StockReservationNaoEncontrada,
+        ) as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except (KeyError, ValueError) as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = ConsumeStockResponse(
+            reservation=_stock_reservation_response(reservation),
+            stock_position=_stock_position_response(position),
+        )
+        return CanonicalPayload(
+            schema="asset.consume_stock.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return ConsumeStockResponse.model_validate(
         _canonical_response_data(execution.result_canonical_bytes)
     )
 

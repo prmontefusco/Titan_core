@@ -45,6 +45,7 @@ from packages.asset_domain.events import (
     inventory_transfer_requested_payload,
 )
 from packages.asset_domain.inventory import (
+    DemandKind,
     DemandRef,
     StockOwnership,
     StockPosition,
@@ -76,6 +77,8 @@ class StockPositionRepositoryPort(Protocol):
     def update(self, position: StockPosition) -> None: ...
 
     def get_by_id(self, stock_position_id: TypedId) -> StockPosition | None: ...
+
+    def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None: ...
 
 
 class StockReservationRepositoryPort(Protocol):
@@ -315,9 +318,30 @@ class InventoryService:
         work_order_ref: TypedId,
         qty: Decimal,
         occurred_at: datetime,
+        expected_version: int | None = None,
     ) -> tuple[StockPosition, StockReservation]:
-        reservation = self._require_reservation(reservation_id)
-        position = self._require_position(reservation.stock_position_ref)
+        reservation = self.stock_reservation_repository.get_by_id_for_update(reservation_id)
+        if reservation is None:
+            raise StockReservationNaoEncontrada(
+                f"StockReservation '{reservation_id.value}' não encontrada."
+            )
+        if expected_version is not None and reservation.version != expected_version:
+            raise OptimisticConcurrencyConflict()
+        if reservation.demand.kind is not DemandKind.WORK_ORDER:
+            raise ValueError("ConsumeStock deste slice exige demanda WORK_ORDER.")
+        if reservation.demand.ref != work_order_ref:
+            raise ValueError("StockReservation não pertence à WorkOrder informada.")
+        if qty != reservation.qty:
+            raise ValueError(
+                f"Consumo deve ser integral: reservado {reservation.qty}, recebido {qty}."
+            )
+        position = self.stock_position_repository.get_by_id_for_update(
+            reservation.stock_position_ref
+        )
+        if position is None:
+            raise StockPositionNaoEncontrada(
+                f"StockPosition '{reservation.stock_position_ref.value}' não encontrada."
+            )
         updated_reservation = reservation.consume()
         updated_position = position.consume(reservation_id, qty)
         self.stock_reservation_repository.update(updated_reservation)

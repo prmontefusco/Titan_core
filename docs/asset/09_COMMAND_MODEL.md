@@ -41,7 +41,7 @@ Legenda de colunas: **Autz** = permissão exigida (`<MODULE>.<AÇÃO>`, nunca po
 | `ReserveStock` | `ASSET_INVENTORY.RESERVE` | ✔ | ✔ | `StockPosition` (FOR UPDATE) + `StockReservation` | `available(purpose) ≥ qty`; propósito compatível **ou** `Decision` de disputa; demanda existe | `inventory.stock_reserved` (+ `allocation_decided` se disputa) (I‑INV‑1/2) |
 | `ReleaseStockReservation` | `ASSET_INVENTORY.RELEASE` | ✔ | ✔ | `StockReservation` + `StockPosition` | reserva em `HELD`/`ALLOCATED` | `inventory.stock_reservation_released` |
 | `AllocateStockReservation` | `ASSET_INVENTORY.ALLOCATE` | ✔ | ✔ | `StockReservation` | reserva `HELD` | `inventory.stock_reservation_allocated` |
-| `ConsumeStock` | `ASSET_INVENTORY.CONSUME` | ✔ | ✔ | `StockReservation` + `StockPosition` (FOR UPDATE) | reserva `ALLOCATED`; `qty ≤ reservado`; WO em execução | `inventory.stock_consumed` (I‑WO‑2) |
+| `ConsumeStock` | `ASSET_INVENTORY.CONSUME` | ✔ | ✔ | `WorkOrder` + `StockReservation` + `StockPosition` (FOR UPDATE) | reserva `ALLOCATED`; `qty = reservado` (consumo integral no slice atual); reserva vinculada à WO; WO em execução | `inventory.stock_consumed` (I‑WO‑2) |
 | `RequestStockTransfer` | `ASSET_INVENTORY.TRANSFER_REQUEST` | ✔ | ✔ | `StockTransfer` | origem tem `available`; destino existe | `inventory.transfer_requested` (I‑INV‑4) |
 | `DispatchStockTransfer` | `ASSET_INVENTORY.TRANSFER_DISPATCH` | ✔ | ✔ | `StockTransfer` + `StockPosition` origem (FOR UPDATE) | qty ≤ `on_hand` origem | `inventory.transfer_dispatched` |
 | `ReceiveStockTransfer` | `ASSET_INVENTORY.TRANSFER_RECEIVE` | ✔ | ✔ | `StockTransfer` + `StockPosition` destino (FOR UPDATE) | `Σ recebido ≤ despachado` | `inventory.transfer_received` (I‑INV‑4) |

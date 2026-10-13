@@ -55,6 +55,9 @@ class InMemoryStockPositionRepository(StockPositionRepositoryPort):
     def get_by_id(self, stock_position_id: TypedId) -> StockPosition | None:
         return self.positions.get(stock_position_id.value.hex)
 
+    def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None:
+        return self.get_by_id(stock_position_id)
+
 
 class InMemoryStockReservationRepository(StockReservationRepositoryPort):
     def __init__(self) -> None:
@@ -164,10 +167,11 @@ def test_reserve_release_allocate_and_consume(
         occurred_at=OCCURRED_AT,
     )
 
+    work_order_ref = TypedId.new("work_order")
     updated_position, reservation = service.reserve_stock(
         context,
         position.stock_position_id,
-        demand=DemandRef(kind=DemandKind.WORK_ORDER, ref=TypedId.new("work_order")),
+        demand=DemandRef(kind=DemandKind.WORK_ORDER, ref=work_order_ref),
         qty=Decimal(4),
         purpose=StockPurpose.SERVICE_SLI,
         priority=1,
@@ -197,9 +201,10 @@ def test_reserve_release_allocate_and_consume(
     consumed_position, consumed_reservation = service.consume_stock(
         context,
         reservation.reservation_id,
-        work_order_ref=TypedId.new("work_order"),
+        work_order_ref=work_order_ref,
         qty=Decimal(4),
         occurred_at=OCCURRED_AT,
+        expected_version=2,
     )
     assert consumed_reservation.state is ReservationState.CONSUMED
     assert consumed_position.quantities.on_hand == Decimal(6)

@@ -75,7 +75,14 @@ from packages.asset_domain.events import (
     sustainment_work_order_task_added_payload,
     sustainment_work_order_technically_complete_payload,
 )
-from packages.asset_domain.inventory import DemandKind, DemandRef, ReservationState, StockPurpose
+from packages.asset_domain.inventory import (
+    DemandKind,
+    DemandRef,
+    ReservationState,
+    StockPosition,
+    StockPurpose,
+    StockReservation,
+)
 from packages.asset_domain.work_order import (
     ContractContext,
     FailureRecord,
@@ -863,6 +870,35 @@ class WorkOrderService:
             occurred_at=occurred_at,
         )
         return updated
+
+    def consume_material_for_work_order(
+        self,
+        context: AssetOperationContext,
+        work_order_id: TypedId,
+        *,
+        reservation_id: TypedId,
+        qty: Decimal,
+        occurred_at: datetime,
+        expected_reservation_version: int | None = None,
+    ) -> tuple[StockPosition, StockReservation]:
+        work_order = self.repository.get_by_id_for_update(work_order_id)
+        if work_order is None:
+            raise WorkOrderNaoEncontrada(f"WorkOrder '{work_order_id.value}' não encontrada.")
+        if work_order.state is not WorkOrderState.IN_PROGRESS:
+            raise ValueError(
+                "Consumo de estoque exige WorkOrder em IN_PROGRESS; "
+                f"estado atual '{work_order.state.value}'."
+            )
+        if reservation_id not in work_order.material_reservations:
+            raise ValueError("StockReservation não está vinculada à WorkOrder informada.")
+        return self.inventory_service.consume_stock(
+            context,
+            reservation_id,
+            work_order_ref=work_order_id,
+            qty=qty,
+            occurred_at=occurred_at,
+            expected_version=expected_reservation_version,
+        )
 
     def get_work_order(self, work_order_id: TypedId) -> WorkOrder | None:
         return self.repository.get_by_id(work_order_id)

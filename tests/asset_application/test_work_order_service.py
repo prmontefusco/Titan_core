@@ -150,6 +150,9 @@ class InMemoryStockPositionRepository(StockPositionRepositoryPort):
     def get_by_id(self, stock_position_id: TypedId) -> StockPosition | None:
         return self.items.get(stock_position_id.value.hex)
 
+    def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None:
+        return self.get_by_id(stock_position_id)
+
 
 class InMemoryStockReservationRepository(StockReservationRepositoryPort):
     def __init__(self) -> None:
@@ -309,6 +312,22 @@ def test_full_lifecycle_open_to_close(
     )
     assert len(with_reservation.material_reservations) == 1
     event_log.only(SUSTAINMENT_MATERIAL_RESERVED)
+    reservation_id = with_reservation.material_reservations[0]
+    allocated = work_order_service.inventory_service.allocate_reservation(
+        context,
+        reservation_id,
+        expected_version=1,
+        occurred_at=OCCURRED_AT,
+    )
+    with pytest.raises(ValueError, match="IN_PROGRESS"):
+        work_order_service.consume_material_for_work_order(
+            context,
+            work_order.work_order_id,
+            reservation_id=reservation_id,
+            qty=Decimal(2),
+            expected_reservation_version=allocated.version,
+            occurred_at=OCCURRED_AT,
+        )
 
     planned = work_order_service.mark_planned(
         context, work_order.work_order_id, occurred_at=OCCURRED_AT
@@ -326,6 +345,18 @@ def test_full_lifecycle_open_to_close(
         context, scheduled.work_order_id, vehicle_in_maintenance=True, occurred_at=OCCURRED_AT
     )
     assert in_progress.state is WorkOrderState.IN_PROGRESS
+
+    consumed_position, consumed_reservation = work_order_service.consume_material_for_work_order(
+        context,
+        in_progress.work_order_id,
+        reservation_id=reservation_id,
+        qty=Decimal(2),
+        expected_reservation_version=allocated.version,
+        occurred_at=OCCURRED_AT,
+    )
+    assert consumed_reservation.state is ReservationState.CONSUMED
+    assert consumed_position.quantities.on_hand == Decimal(8)
+    assert consumed_position.reservations == ()
 
     started = work_order_service.start_task(
         context, in_progress.work_order_id, task_id=task_id, occurred_at=OCCURRED_AT

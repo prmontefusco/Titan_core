@@ -7336,3 +7336,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Inventory, API e superfície pública — 26 verdes. Verificação completa: `python -m uv run --locked pytest` — 2089 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro altera permanentemente uma reserva `HELD` do ambiente de validação; usar massa fictícia dedicada. A alocação não reduz novamente a disponibilidade, pois a quantidade já permanece reservada. Consumo e transferência continuam em comandos separados.
+
+### 13/10/2026 — A5: consumo integral de StockReservation por WorkOrder
+
+**Estado:** CONCLUÍDO — `ConsumeStock` exposto em `POST /v1/asset/stock-reservations/{reservation_id}/consume`, com `ASSET_INVENTORY.CONSUME`, WorkOrder, quantidade, `expected_version` e `Idempotency-Key` obrigatórios.
+
+**Implementação:** a operação coordenada bloqueia primeiro a WorkOrder e exige estado `IN_PROGRESS`; depois bloqueia a StockReservation e a StockPosition, valida concorrência otimista, demanda `WORK_ORDER`, vínculo da reserva com a ordem e igualdade entre quantidade consumida e reservada. A baixa remove integralmente a linha ativa, reduz `on_hand`, transiciona a reserva para `CONSUMED` e emite `asset.inventory.stock_consumed` na mesma transação.
+
+**Correção normativa aprovada:** `docs/asset/09_COMMAND_MODEL.md` passou de `qty ≤ reservado` para `qty = reservado` no slice atual. O modelo possui apenas a transição `ALLOCATED → CONSUMED`; permitir consumo parcial deixava saldo reservado sem transição válida para novo consumo ou liberação. Materiais fracionáveis exigirão decisão de domínio própria antes de introduzir consumo parcial.
+
+**Roteiro executável:** `apps/validacao/asset/consume_stock.py` descobre Organization, WorkOrder `IN_PROGRESS`, reserva `ALLOCATED`, quantidade e versão; sonda `ASSET_INVENTORY.CONSUME` e mostra requisição e resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de domínio, Inventory, WorkOrder, API e superfície pública — 81 verdes. Verificação completa: `python -m uv run --locked pytest` — 2095 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro realiza baixa física permanente na massa de validação; usar dados fictícios dedicados. Consumo parcial permanece deliberadamente proibido e transferências continuam em comandos separados.

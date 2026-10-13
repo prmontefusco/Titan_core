@@ -104,6 +104,9 @@ class InMemoryStockPositionRepository(StockPositionRepositoryPort):
     def get_by_id(self, stock_position_id: TypedId) -> StockPosition | None:
         return self.items.get(stock_position_id.value.hex)
 
+    def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None:
+        return self.get_by_id(stock_position_id)
+
 
 class InMemoryStockReservationRepository(StockReservationRepositoryPort):
     def __init__(self) -> None:

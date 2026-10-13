@@ -194,19 +194,17 @@ def test_consume_reduces_on_hand_and_reservation() -> None:
     assert consumed.reservations == ()
 
 
-def test_partial_consume_leaves_remaining_reservation() -> None:
+def test_partial_consume_is_rejected() -> None:
     line = _line("5")
     position = _position(quantities=StockQuantities(on_hand=Decimal(10))).hold(line)
-    consumed = position.consume(line.reservation_id, Decimal(2))
-    remaining_line = consumed.reservations[0]
-    assert remaining_line.qty == Decimal(3)
-    assert consumed.quantities.on_hand == Decimal(8)
+    with pytest.raises(ValueError, match="integralmente"):
+        position.consume(line.reservation_id, Decimal(2))
 
 
 def test_consume_rejects_qty_above_reserved() -> None:
     line = _line("2")
     position = _position(quantities=StockQuantities(on_hand=Decimal(10))).hold(line)
-    with pytest.raises(ValueError, match="excede a quantidade reservada"):
+    with pytest.raises(ValueError, match="integralmente"):
         position.consume(line.reservation_id, Decimal(3))
 
 
