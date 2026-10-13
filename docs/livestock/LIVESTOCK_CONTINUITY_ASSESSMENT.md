@@ -1,5 +1,7 @@
 # Livestock Continuity Assessment
 
+> **Registro histórico:** este assessment retrata o repositório em 14/09/2026. GTA, Commercial Passport e outros incrementos posteriores já foram entregues. Para estado operacional e próximo passo, consulte `docs/CHECKLIST_DE_IMPLEMENTACAO.md`; não use as prioridades abaixo como backlog atual sem nova decisão de produto.
+
 **Data:** 2026-09-14
 **Tipo:** Reconhecimento e diagnóstico (fase 0 de uma nova frente). **Não é SPEC, não é PLAN, não autoriza BUILD.**
 **Autor:** sessão de assistência, a pedido do responsável.

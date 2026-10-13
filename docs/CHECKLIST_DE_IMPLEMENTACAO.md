@@ -4,6 +4,14 @@
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
 **Próximo passo do Livestock:** após a reconciliação da lane histórica em 13 de outubro de 2026, escolher uma única frente por decisão de produto: aprofundar o snapshot/rastreabilidade do Commercial Passport ou definir qual `MarketProfile` consome os fatos territoriais e sanitários já disponíveis. Market Supply com consumidor real, SISBOV oficial, MapBiomas e bases normativas de mercados reais permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
 
+### 13/10/2026 — Retomada Livestock: lane histórica reconciliada
+
+**Estado:** CONCLUÍDO — os oito commits exclusivos de `lane/livestock` foram revisados contra a `main` atual. Seis incrementos funcionais foram reaplicados e testados na branch de reconciliação. A atualização antiga de `package-lock.json` foi descartada porque o lockfile atual já evoluiu; o registro de QA territorial não foi duplicado porque a validação real já consta na entrada de 10/09/2026. Um merge de reconciliação preserva a ancestralidade da lane sem substituir arquivos atuais por versões antigas.
+
+**Evidência:** Home operacional, `AnimalFlowContext`, retornos seguros da governança e da explicação comercial e tratamento fail-closed de `coverage=not_loaded` para FUNAI estão novamente presentes na árvore atual. A `main` anterior à reconciliação foi publicada em `origin/main` no commit `54dbf71` antes de qualquer integração.
+
+**Portão:** frontend com 123 testes, build e lint verdes; suíte focada Livestock/API com 1191 testes verdes e 1 skip; suíte completa sem banco com `2107 passed, 354 skipped` e um aviso preexistente de depreciação Starlette; Ruff, format check e Mypy verdes. Docker Desktop estava indisponível, portanto a stack não subiu e os dois `alembic check` ficaram bloqueados pela ausência de `TITAN_MIGRATION_DATABASE_URL`, sem chegar à comparação de metadata. A lane antiga não deve voltar a receber desenvolvimento; o trabalho Livestock prossegue a partir da `main` após integração deste conjunto.
+
 ### 13/10/2026 — Retomada Livestock: home operacional reconciliada
 
 **Estado:** CONCLUÍDO — o primeiro incremento exclusivo da antiga `lane/livestock` foi reaplicado sobre a `main` atual. A rota autenticada `/` passa a abrir a `LivestockHome`, contextualizada pela Organization ativa e pelo tipo aprovado do usuário, enquanto a fila administrativa permanece em `/admin`.
