@@ -69,6 +69,9 @@ class InMemoryStockReservationRepository(StockReservationRepositoryPort):
     def get_by_id(self, reservation_id: TypedId) -> StockReservation | None:
         return self.reservations.get(reservation_id.value.hex)
 
+    def get_by_id_for_update(self, reservation_id: TypedId) -> StockReservation | None:
+        return self.get_by_id(reservation_id)
+
 
 class InMemoryStockTransferRepository(StockTransferRepositoryPort):
     def __init__(self) -> None:
@@ -216,8 +219,21 @@ def test_reserve_and_release(
         occurred_at=OCCURRED_AT,
     )
 
+    with pytest.raises(OptimisticConcurrencyConflict):
+        service.release_reservation(
+            context,
+            reservation.reservation_id,
+            reason="Work Order cancelada.",
+            occurred_at=OCCURRED_AT,
+            expected_version=2,
+        )
+
     released_position, released_reservation = service.release_reservation(
-        context, reservation.reservation_id, reason="Work Order cancelada.", occurred_at=OCCURRED_AT
+        context,
+        reservation.reservation_id,
+        reason="Work Order cancelada.",
+        occurred_at=OCCURRED_AT,
+        expected_version=1,
     )
     assert released_reservation.state is ReservationState.RELEASED
     assert released_position.available == Decimal(10)

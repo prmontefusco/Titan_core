@@ -17,6 +17,7 @@ from apps.api.asset.dependencies import (
     require_applicability_withdraw,
     require_inventory_adjust,
     require_inventory_open_position,
+    require_inventory_release,
     require_part_add_revision,
     require_part_edit_interchange,
     require_part_register,
@@ -68,6 +69,7 @@ from packages.asset_application.interchangeability_group_service import (
 from packages.asset_application.inventory_service import (
     InventoryService,
     StockPositionNaoEncontrada,
+    StockReservationNaoEncontrada,
 )
 from packages.asset_application.part_service import PartNaoEncontrado, PartService
 from packages.asset_application.vehicle_service import VehicleNaoEncontrado, VehicleService
@@ -84,6 +86,7 @@ from packages.asset_domain.inventory import (
     StockPosition,
     StockPurpose,
     StockQuantities,
+    StockReservation,
 )
 from packages.asset_domain.part import InterchangeabilityGroup, Part, PartIdentity
 from packages.asset_domain.vehicle import MeterKind, VehicleLifecycleState
@@ -189,6 +192,8 @@ OPEN_STOCK_POSITION_PURPOSE = "ASSET_INVENTORY_OPEN_POSITION"
 OPEN_STOCK_POSITION_OPERATION = "asset.inventory.open_position"
 ADJUST_STOCK_PURPOSE = "ASSET_INVENTORY_ADJUST"
 ADJUST_STOCK_OPERATION = "asset.inventory.adjust"
+RELEASE_STOCK_RESERVATION_PURPOSE = "ASSET_INVENTORY_RELEASE"
+RELEASE_STOCK_RESERVATION_OPERATION = "asset.inventory.release_reservation"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -473,6 +478,11 @@ class AdjustStockRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
 
 
+class ReleaseStockReservationRequest(BaseModel):
+    expected_version: int = Field(ge=1)
+    reason: str = Field(min_length=1, max_length=500)
+
+
 class StockPositionResponse(BaseModel):
     stock_position_id: str
     part_ref: str
@@ -488,6 +498,24 @@ class StockPositionResponse(BaseModel):
     lot: str | None
     serial: str | None
     version: int
+
+
+class StockReservationResponse(BaseModel):
+    reservation_id: str
+    stock_position_ref: str
+    demand_kind: str
+    demand_ref: str
+    qty: Decimal
+    purpose: str
+    priority: int
+    state: str
+    decision_ref: str | None
+    version: int
+
+
+class ReleaseStockReservationResponse(BaseModel):
+    reservation: StockReservationResponse
+    stock_position: StockPositionResponse
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -666,6 +694,21 @@ def _stock_position_response(position: StockPosition) -> StockPositionResponse:
         lot=position.lot,
         serial=position.serial,
         version=position.version,
+    )
+
+
+def _stock_reservation_response(reservation: StockReservation) -> StockReservationResponse:
+    return StockReservationResponse(
+        reservation_id=str(reservation.reservation_id.value),
+        stock_position_ref=str(reservation.stock_position_ref.value),
+        demand_kind=reservation.demand.kind.value,
+        demand_ref=str(reservation.demand.ref.value),
+        qty=reservation.qty,
+        purpose=reservation.purpose.value,
+        priority=reservation.priority,
+        state=reservation.state.value,
+        decision_ref=(str(reservation.decision_ref.value) if reservation.decision_ref else None),
+        version=reservation.version,
     )
 
 
@@ -1437,6 +1480,93 @@ def ajustar_posicao_estoque(
             detail=str(exc),
         ) from exc
     return StockPositionResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/stock-reservations/{reservation_id}/release",
+    response_model=ReleaseStockReservationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Liberar reserva de estoque",
+    responses=RESPOSTAS_PADRAO,
+)
+def liberar_reserva_estoque(
+    reservation_id: str,
+    body: ReleaseStockReservationRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_inventory_release)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[InventoryService, Depends(get_inventory_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> ReleaseStockReservationResponse:
+    parsed_reservation_id = _typed_id_or_problem(
+        reservation_id,
+        entity_type="stock_reservation",
+        campo="reservation_id",
+    )
+    occurred_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=RELEASE_STOCK_RESERVATION_OPERATION,
+        purpose=RELEASE_STOCK_RESERVATION_PURPOSE,
+        requested_at=occurred_at,
+        extra_intent={"reservation_id": reservation_id},
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            position, reservation = service.release_reservation(
+                operation_context,
+                parsed_reservation_id,
+                reason=body.reason,
+                occurred_at=occurred_at,
+                expected_version=body.expected_version,
+            )
+        except (StockPositionNaoEncontrada, StockReservationNaoEncontrada) as exc:
+            raise _not_found(str(exc)) from exc
+        except OptimisticConcurrencyConflict as exc:
+            raise _version_conflict() from exc
+        except (KeyError, ValueError) as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = ReleaseStockReservationResponse(
+            reservation=_stock_reservation_response(reservation),
+            stock_position=_stock_position_response(position),
+        )
+        return CanonicalPayload(
+            schema="asset.release_stock_reservation.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return ReleaseStockReservationResponse.model_validate(
         _canonical_response_data(execution.result_canonical_bytes)
     )
 

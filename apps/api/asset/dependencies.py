@@ -23,6 +23,7 @@ from packages.asset_application.authorization import (
     INVENTORY_ADJUST,
     INVENTORY_OPEN_POSITION,
     INVENTORY_READ,
+    INVENTORY_RELEASE,
     PART_ADD_REVISION,
     PART_EDIT_INTERCHANGE,
     PART_REGISTER,
@@ -104,6 +105,12 @@ def require_inventory_open_position(
 
 def require_inventory_adjust(
     contexto: Annotated[OrganizationContext, Depends(require_permission(INVENTORY_ADJUST))],
+) -> OrganizationContext:
+    return contexto
+
+
+def require_inventory_release(
+    contexto: Annotated[OrganizationContext, Depends(require_permission(INVENTORY_RELEASE))],
 ) -> OrganizationContext:
     return contexto
 
@@ -230,6 +237,7 @@ __all__ = [
     "require_inventory_read",
     "require_inventory_adjust",
     "require_inventory_open_position",
+    "require_inventory_release",
     "require_part_register",
     "require_part_add_revision",
     "require_part_edit_interchange",

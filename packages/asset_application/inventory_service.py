@@ -85,6 +85,8 @@ class StockReservationRepositoryPort(Protocol):
 
     def get_by_id(self, reservation_id: TypedId) -> StockReservation | None: ...
 
+    def get_by_id_for_update(self, reservation_id: TypedId) -> StockReservation | None: ...
+
 
 class StockTransferRepositoryPort(Protocol):
     def save(self, transfer: StockTransfer) -> None: ...
@@ -252,8 +254,17 @@ class InventoryService:
         *,
         reason: str,
         occurred_at: datetime,
+        expected_version: int | None = None,
     ) -> tuple[StockPosition, StockReservation]:
-        reservation = self._require_reservation(reservation_id)
+        if not reason or not reason.strip():
+            raise ValueError("reason é obrigatório para liberar reserva de estoque.")
+        reservation = self.stock_reservation_repository.get_by_id_for_update(reservation_id)
+        if reservation is None:
+            raise StockReservationNaoEncontrada(
+                f"StockReservation '{reservation_id.value}' não encontrada."
+            )
+        if expected_version is not None and reservation.version != expected_version:
+            raise OptimisticConcurrencyConflict()
         position = self._require_position(reservation.stock_position_ref)
         updated_reservation = reservation.release()
         updated_position = position.release(reservation_id)

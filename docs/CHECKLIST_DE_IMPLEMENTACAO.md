@@ -7308,3 +7308,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de Application, API e superfície pública — 47 verdes. Verificação completa: `python -m uv run --locked pytest` — 2077 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro cria uma reserva permanente e reduz a disponibilidade da posição escolhida; usar massa fictícia dedicada. O comando não libera, aloca nem consome a reserva. Demandas de produção e venda permanecem deliberadamente fora até existirem donos e validadores concretos para essas entidades.
+
+### 13/10/2026 — A5 (parcial): liberação de StockReservation
+
+**Estado:** CONCLUÍDO — `ReleaseStockReservation` exposto em `POST /v1/asset/stock-reservations/{reservation_id}/release`, com `ASSET_INVENTORY.RELEASE`, `expected_version`, motivo e `Idempotency-Key` obrigatórios.
+
+**Implementação:** `InventoryService.release_reservation` passou a exigir motivo, carregar a StockReservation com `FOR UPDATE` e validar concorrência otimista antes da transição. A StockPosition vinculada também é bloqueada, perde a linha da reserva e recupera a disponibilidade na mesma transação. A API retorna a reserva `RELEASED` e o breakdown atualizado da posição, traduzindo ausência, versão divergente, estado inválido e conflitos de domínio.
+
+**Decisões preservadas:** somente reservas `HELD` ou `ALLOCATED` podem ser liberadas; a operação não apaga histórico, não remove a referência da WorkOrder e não altera demanda. Consultas de prontidão já ignoram reservas `RELEASED`, enquanto o evento `asset.inventory.stock_reservation_released` preserva o motivo auditável.
+
+**Roteiro executável:** `apps/validacao/asset/release_stock_reservation.py` descobre Organization, uma reserva ativa, StockPosition e versão corrente, sonda `ASSET_INVENTORY.RELEASE` e executa a liberação mostrando requisição e resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de Inventory, coordenação de WorkOrder, API e superfície pública — 56 verdes. Verificação completa: `python -m uv run --locked pytest` — 2083 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
+
+**Riscos e limites:** o roteiro libera permanentemente uma reserva real do ambiente de validação; usar massa fictícia dedicada. A liberação de uma reserva ligada a WorkOrder pode retirar sua prontidão material. Alocação e consumo permanecem em comandos separados.

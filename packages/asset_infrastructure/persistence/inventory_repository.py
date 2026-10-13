@@ -367,6 +367,16 @@ class TransactionalStockReservationRepository:
             return None
         return self._map(row)
 
+    def get_by_id_for_update(self, reservation_id: TypedId) -> StockReservation | None:
+        row = self.connection.execute(
+            select(stock_reservations_table)
+            .where(stock_reservations_table.c.reservation_id == reservation_id.value)
+            .with_for_update()
+        ).fetchone()
+        if row is None:
+            return None
+        return self._map(row)
+
     def _map(self, row: Row[Any]) -> StockReservation:
         return StockReservation(
             reservation_id=TypedId(entity_type="stock_reservation", value=row.reservation_id),
