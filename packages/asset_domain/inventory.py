@@ -394,6 +394,7 @@ class StockTransfer:
     transfer_id: TypedId
     organization_id: OrganizationId
     part_ref: TypedId
+    purpose: StockPurpose
     from_location_ref: TypedId
     to_location_ref: TypedId
     qty: Decimal

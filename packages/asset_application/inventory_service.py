@@ -80,6 +80,14 @@ class StockPositionRepositoryPort(Protocol):
 
     def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None: ...
 
+    def list_by_part_location_purpose(
+        self,
+        *,
+        part_ref: TypedId,
+        location_ref: TypedId,
+        purpose: StockPurpose,
+    ) -> tuple[StockPosition, ...]: ...
+
 
 class StockReservationRepositoryPort(Protocol):
     def save(self, reservation: StockReservation) -> None: ...
@@ -371,13 +379,37 @@ class InventoryService:
         from_location_ref: TypedId,
         to_location_ref: TypedId,
         qty: Decimal,
+        purpose: StockPurpose,
         linked_reservation_ref: TypedId | None = None,
         occurred_at: datetime,
     ) -> StockTransfer:
+        source_positions = self.stock_position_repository.list_by_part_location_purpose(
+            part_ref=part_ref,
+            location_ref=from_location_ref,
+            purpose=purpose,
+        )
+        if len(source_positions) != 1:
+            raise StockPositionNaoEncontrada(
+                "StockPosition de origem única não encontrada para peça, localização e propósito."
+            )
+        destination_positions = self.stock_position_repository.list_by_part_location_purpose(
+            part_ref=part_ref,
+            location_ref=to_location_ref,
+            purpose=purpose,
+        )
+        if len(destination_positions) != 1:
+            raise StockPositionNaoEncontrada(
+                "StockPosition de destino única não encontrada para peça, localização e propósito."
+            )
+        if source_positions[0].available < qty:
+            raise ValueError(
+                f"Disponibilidade na origem ({source_positions[0].available}) inferior a {qty}."
+            )
         transfer = StockTransfer(
             transfer_id=TypedId.new("stock_transfer"),
             organization_id=context.organization_id,
             part_ref=part_ref,
+            purpose=purpose,
             from_location_ref=from_location_ref,
             to_location_ref=to_location_ref,
             qty=qty,
@@ -391,6 +423,7 @@ class InventoryService:
             payload=inventory_transfer_requested_payload(
                 transfer_id=transfer.transfer_id,
                 part_ref=part_ref,
+                purpose=purpose.value,
                 from_location_ref=from_location_ref,
                 to_location_ref=to_location_ref,
                 qty=qty,

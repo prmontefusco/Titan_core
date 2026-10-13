@@ -132,6 +132,7 @@ stock_transfers_table = Table(
     Column("transfer_id", PG_UUID(as_uuid=True), primary_key=True),
     Column("record_owner_organization_id", PG_UUID(as_uuid=True), nullable=False),
     Column("part_id", PG_UUID(as_uuid=True), nullable=False),
+    Column("purpose", String(30), nullable=False),
     Column("from_location_id", PG_UUID(as_uuid=True), nullable=False),
     Column("to_location_id", PG_UUID(as_uuid=True), nullable=False),
     Column("qty", Numeric, nullable=False),
@@ -433,6 +434,7 @@ class TransactionalStockTransferRepository:
         values: dict[str, Any] = {
             "record_owner_organization_id": transfer.organization_id.value,
             "part_id": transfer.part_ref.value,
+            "purpose": transfer.purpose.value,
             "from_location_id": transfer.from_location_ref.value,
             "to_location_id": transfer.to_location_ref.value,
             "qty": transfer.qty,
@@ -467,6 +469,7 @@ class TransactionalStockTransferRepository:
             transfer_id=TypedId(entity_type="stock_transfer", value=row.transfer_id),
             organization_id=OrganizationId(row.record_owner_organization_id),
             part_ref=TypedId(entity_type="part", value=row.part_id),
+            purpose=StockPurpose(row.purpose),
             from_location_ref=TypedId(entity_type="stock_location", value=row.from_location_id),
             to_location_ref=TypedId(entity_type="stock_location", value=row.to_location_id),
             qty=row.qty,

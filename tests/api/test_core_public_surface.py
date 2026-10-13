@@ -48,6 +48,7 @@ SUPERFICIE_ESPERADA = {
     ("/v1/asset/stock-reservations/{reservation_id}/release", "post"),
     ("/v1/asset/stock-reservations/{reservation_id}/allocate", "post"),
     ("/v1/asset/stock-reservations/{reservation_id}/consume", "post"),
+    ("/v1/asset/stock-transfers", "post"),
     ("/v1/asset/vehicles/{vehicle_id}", "get"),
     ("/v1/asset/vehicles/{vehicle_id}/meter-readings", "post"),
     ("/v1/asset/vehicles/{vehicle_id}/meter-readings/{reading_id}/corrections", "post"),

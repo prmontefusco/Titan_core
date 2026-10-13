@@ -267,6 +267,7 @@ def _transfer(**overrides: object) -> StockTransfer:
         transfer_id=TypedId.new("stock_transfer"),
         organization_id=OrganizationId(uuid4()),
         part_ref=TypedId.new("part"),
+        purpose=StockPurpose.SERVICE_SLI,
         from_location_ref=TypedId.new("stock_location"),
         to_location_ref=TypedId.new("stock_location"),
         qty=Decimal(5),

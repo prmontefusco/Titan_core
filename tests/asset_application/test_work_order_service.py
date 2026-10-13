@@ -153,6 +153,21 @@ class InMemoryStockPositionRepository(StockPositionRepositoryPort):
     def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None:
         return self.get_by_id(stock_position_id)
 
+    def list_by_part_location_purpose(
+        self,
+        *,
+        part_ref: TypedId,
+        location_ref: TypedId,
+        purpose: StockPurpose,
+    ) -> tuple[StockPosition, ...]:
+        return tuple(
+            position
+            for position in self.items.values()
+            if position.part_ref == part_ref
+            and position.location_ref == location_ref
+            and position.purpose is purpose
+        )
+
 
 class InMemoryStockReservationRepository(StockReservationRepositoryPort):
     def __init__(self) -> None:

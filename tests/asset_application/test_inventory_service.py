@@ -8,6 +8,7 @@ import pytest
 from packages.asset_application.event_recorder import AssetEventRecorder, AssetOperationContext
 from packages.asset_application.inventory_service import (
     InventoryService,
+    StockPositionNaoEncontrada,
     StockPositionRepositoryPort,
     StockReservationRepositoryPort,
     StockTransferRepositoryPort,
@@ -57,6 +58,21 @@ class InMemoryStockPositionRepository(StockPositionRepositoryPort):
 
     def get_by_id_for_update(self, stock_position_id: TypedId) -> StockPosition | None:
         return self.get_by_id(stock_position_id)
+
+    def list_by_part_location_purpose(
+        self,
+        *,
+        part_ref: TypedId,
+        location_ref: TypedId,
+        purpose: StockPurpose,
+    ) -> tuple[StockPosition, ...]:
+        return tuple(
+            position
+            for position in self.positions.values()
+            if position.part_ref == part_ref
+            and position.location_ref == location_ref
+            and position.purpose is purpose
+        )
 
 
 class InMemoryStockReservationRepository(StockReservationRepositoryPort):
@@ -260,12 +276,34 @@ def test_transfer_request_dispatch_and_receive(
     recorder: AssetEventRecorder, context: AssetOperationContext, event_log: FakeEventLog
 ) -> None:
     service = _service(recorder)
+    part_ref = TypedId.new("part")
+    from_location_ref = TypedId.new("stock_location")
+    to_location_ref = TypedId.new("stock_location")
+    service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=from_location_ref,
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(on_hand=Decimal(10)),
+        occurred_at=OCCURRED_AT,
+    )
+    service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=to_location_ref,
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(),
+        occurred_at=OCCURRED_AT,
+    )
     transfer = service.request_transfer(
         context,
-        part_ref=TypedId.new("part"),
-        from_location_ref=TypedId.new("stock_location"),
-        to_location_ref=TypedId.new("stock_location"),
+        part_ref=part_ref,
+        from_location_ref=from_location_ref,
+        to_location_ref=to_location_ref,
         qty=Decimal(10),
+        purpose=StockPurpose.SERVICE_SLI,
         occurred_at=OCCURRED_AT,
     )
     event_log.only(INVENTORY_TRANSFER_REQUESTED)
@@ -280,3 +318,52 @@ def test_transfer_request_dispatch_and_receive(
     assert received.state is TransferState.RECEIVED
     assert service.get_transfer(transfer.transfer_id) == received
     event_log.only(INVENTORY_TRANSFER_RECEIVED)
+
+
+def test_transfer_request_requires_compatible_destination_and_available_origin(
+    recorder: AssetEventRecorder, context: AssetOperationContext
+) -> None:
+    service = _service(recorder)
+    part_ref = TypedId.new("part")
+    from_location_ref = TypedId.new("stock_location")
+    to_location_ref = TypedId.new("stock_location")
+    service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=from_location_ref,
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(on_hand=Decimal(2)),
+        occurred_at=OCCURRED_AT,
+    )
+
+    with pytest.raises(StockPositionNaoEncontrada, match="destino"):
+        service.request_transfer(
+            context,
+            part_ref=part_ref,
+            from_location_ref=from_location_ref,
+            to_location_ref=to_location_ref,
+            qty=Decimal(1),
+            purpose=StockPurpose.SERVICE_SLI,
+            occurred_at=OCCURRED_AT,
+        )
+
+    service.open_stock_position(
+        context,
+        part_ref=part_ref,
+        location_ref=to_location_ref,
+        purpose=StockPurpose.SERVICE_SLI,
+        ownership=StockOwnership.COMPANY_OWNED,
+        quantities=StockQuantities(),
+        occurred_at=OCCURRED_AT,
+    )
+    with pytest.raises(ValueError, match="Disponibilidade"):
+        service.request_transfer(
+            context,
+            part_ref=part_ref,
+            from_location_ref=from_location_ref,
+            to_location_ref=to_location_ref,
+            qty=Decimal(3),
+            purpose=StockPurpose.SERVICE_SLI,
+            occurred_at=OCCURRED_AT,
+        )

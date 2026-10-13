@@ -7350,3 +7350,17 @@ Expande compartilhamento bilateral com mecanismo de proposta/revisão (`SharedDe
 **Portão:** testes focados de domínio, Inventory, WorkOrder, API e superfície pública — 81 verdes. Verificação completa: `python -m uv run --locked pytest` — 2095 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. Os dois `alembic check` não chegaram à comparação porque `TITAN_MIGRATION_DATABASE_URL` não está definida no ambiente.
 
 **Riscos e limites:** o roteiro realiza baixa física permanente na massa de validação; usar dados fictícios dedicados. Consumo parcial permanece deliberadamente proibido e transferências continuam em comandos separados.
+
+### 13/10/2026 — A3/A5: solicitação de StockTransfer por propósito
+
+**Estado:** CONCLUÍDO — `RequestStockTransfer` exposto em `POST /v1/asset/stock-transfers`, com `ASSET_INVENTORY.TRANSFER_REQUEST`, peça, origem, destino, propósito, quantidade e `Idempotency-Key` obrigatórios.
+
+**Implementação:** `StockTransfer` passa a preservar `purpose`; a migration Asset `20261013_0012` adiciona a coluna obrigatória e só migra registros legados quando existe um único propósito comum inferível nas posições de origem e destino, falhando explicitamente em vez de atribuir propósito arbitrário. O caso de uso exige uma StockPosition única em cada ponta para a mesma peça+propósito e disponibilidade suficiente na origem antes de persistir a transferência `REQUESTED` e emitir `asset.inventory.transfer_requested` com o propósito auditável.
+
+**Correção normativa aprovada:** `docs/asset/05_DOMAIN_MODEL.md`, `08_DOMAIN_EVENTS.md` e `09_COMMAND_MODEL.md` agora tornam o propósito parte explícita da transferência. Localização+peça não identificavam uma StockPosition, pois estoques protegidos de propósitos diferentes podem coexistir; a seleção anterior seria ambígua e poderia violar I-INV-2/I-INV-4.
+
+**Roteiro executável:** `apps/validacao/asset/request_stock_transfer.py` descobre Organization e um par de StockPositions da mesma peça+propósito em localizações distintas, calcula uma quantidade atendível, sonda a permissão e mostra requisição e resposta sem copiar identificadores manualmente.
+
+**Portão:** testes focados de domínio, Inventory, WorkOrder, recalculador, API e superfície pública — 85 verdes. Verificação completa: `python -m uv run --locked pytest` — 2101 passed, 354 skipped e 1 warning preexistente de Starlette; `ruff check`, `ruff format --check` e `mypy` limpos. `alembic heads` confirmou `20261013_0012` como único head Asset. A aplicação da migration, o teste PostgreSQL e os dois `alembic check` ficaram bloqueados porque o Docker Desktop não está em execução e `TITAN_MIGRATION_DATABASE_URL` não está disponível sem a stack.
+
+**Riscos e limites:** solicitar não movimenta quantidade nem a reserva; disponibilidade é revalidada novamente no despacho. O roteiro cria uma transferência permanente em `REQUESTED`. `DispatchStockTransfer` e `ReceiveStockTransfer` permanecem em incrementos separados.

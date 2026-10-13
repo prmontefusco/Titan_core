@@ -237,6 +237,7 @@ def test_stock_transfer_dispatch_and_partial_receive(db_connection: Connection) 
         transfer_id=TypedId.new("stock_transfer"),
         organization_id=org,
         part_ref=part_id,
+        purpose=StockPurpose.SERVICE_SLI,
         from_location_ref=from_location_id,
         to_location_ref=to_location_id,
         qty=Decimal(10),

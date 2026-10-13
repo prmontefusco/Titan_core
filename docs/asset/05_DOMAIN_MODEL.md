@@ -123,9 +123,11 @@ armazenado como booleano (I‑INV‑1). `AvailabilityBreakdown` (VO) é a respos
 | `version` | `int` | — |
 
 ### 1.10 StockTransfer *(E, raiz de agregado)* — cenário B
-`transfer_id`, `organization_id`, `part_ref`, `from_location_ref`, `to_location_ref`, `qty`, `state`
+`transfer_id`, `organization_id`, `part_ref`, `purpose`, `from_location_ref`, `to_location_ref`, `qty`, `state`
 (`REQUESTED`/`DISPATCHED`/`IN_TRANSIT`/`PARTIALLY_RECEIVED`/`RECEIVED`), `linked_reservation_ref` →id \|
-null (a reserva que a transferência serve). Custódia em trânsito referencia `core_domain.provenance`.
+null (a reserva que a transferência serve). Origem e destino possuem `StockPosition` da mesma peça e
+propósito, eliminando seleção ambígua entre estoques protegidos. Custódia em trânsito referencia
+`core_domain.provenance`.
 
 ### 1.11 CustomerSite *(E)* — OM/Site (decisão G)
 `site_id`, `organization_id`, `customer_ref`, `code`, `display_name`, `kind` (`OM`/`CIVIL_FLEET_SITE`/…),

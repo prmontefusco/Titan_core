@@ -20,6 +20,7 @@ from apps.api.asset.dependencies import (
     require_inventory_consume,
     require_inventory_open_position,
     require_inventory_release,
+    require_inventory_transfer_request,
     require_part_add_revision,
     require_part_edit_interchange,
     require_part_register,
@@ -89,6 +90,7 @@ from packages.asset_domain.inventory import (
     StockPurpose,
     StockQuantities,
     StockReservation,
+    StockTransfer,
 )
 from packages.asset_domain.part import InterchangeabilityGroup, Part, PartIdentity
 from packages.asset_domain.vehicle import MeterKind, VehicleLifecycleState
@@ -200,6 +202,8 @@ ALLOCATE_STOCK_RESERVATION_PURPOSE = "ASSET_INVENTORY_ALLOCATE"
 ALLOCATE_STOCK_RESERVATION_OPERATION = "asset.inventory.allocate_reservation"
 CONSUME_STOCK_PURPOSE = "ASSET_INVENTORY_CONSUME"
 CONSUME_STOCK_OPERATION = "asset.inventory.consume_stock"
+REQUEST_STOCK_TRANSFER_PURPOSE = "ASSET_INVENTORY_TRANSFER_REQUEST"
+REQUEST_STOCK_TRANSFER_OPERATION = "asset.inventory.request_transfer"
 
 router = APIRouter(prefix="/v1/asset", tags=["asset"])
 
@@ -499,6 +503,15 @@ class ConsumeStockRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class RequestStockTransferRequest(BaseModel):
+    part_id: str
+    from_location_id: str
+    to_location_id: str
+    purpose: StockPurpose
+    qty: Decimal = Field(gt=Decimal("0"))
+    linked_reservation_id: str | None = None
+
+
 class StockPositionResponse(BaseModel):
     stock_position_id: str
     part_ref: str
@@ -537,6 +550,19 @@ class ReleaseStockReservationResponse(BaseModel):
 class ConsumeStockResponse(BaseModel):
     reservation: StockReservationResponse
     stock_position: StockPositionResponse
+
+
+class StockTransferResponse(BaseModel):
+    transfer_id: str
+    part_ref: str
+    purpose: str
+    from_location_ref: str
+    to_location_ref: str
+    qty: Decimal
+    state: str
+    qty_received: Decimal
+    linked_reservation_ref: str | None
+    version: int
 
 
 def get_open_work_order_service(connection: ConnectionDependency) -> WorkOrderService:
@@ -730,6 +756,25 @@ def _stock_reservation_response(reservation: StockReservation) -> StockReservati
         state=reservation.state.value,
         decision_ref=(str(reservation.decision_ref.value) if reservation.decision_ref else None),
         version=reservation.version,
+    )
+
+
+def _stock_transfer_response(transfer: StockTransfer) -> StockTransferResponse:
+    return StockTransferResponse(
+        transfer_id=str(transfer.transfer_id.value),
+        part_ref=str(transfer.part_ref.value),
+        purpose=transfer.purpose.value,
+        from_location_ref=str(transfer.from_location_ref.value),
+        to_location_ref=str(transfer.to_location_ref.value),
+        qty=transfer.qty,
+        state=transfer.state.value,
+        qty_received=transfer.qty_received,
+        linked_reservation_ref=(
+            str(transfer.linked_reservation_ref.value)
+            if transfer.linked_reservation_ref is not None
+            else None
+        ),
+        version=transfer.version,
     )
 
 
@@ -1768,6 +1813,104 @@ def consumir_reserva_estoque(
             detail=str(exc),
         ) from exc
     return ConsumeStockResponse.model_validate(
+        _canonical_response_data(execution.result_canonical_bytes)
+    )
+
+
+@router.post(
+    "/stock-transfers",
+    response_model=StockTransferResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Solicitar transferência de estoque",
+    responses=RESPOSTAS_PADRAO,
+)
+def solicitar_transferencia_estoque(
+    body: RequestStockTransferRequest,
+    contexto: Annotated[OrganizationContext, Depends(require_inventory_transfer_request)],
+    idempotency_key: Annotated[str, Header(alias=IDEMPOTENCY_HEADER, min_length=1)],
+    service: Annotated[InventoryService, Depends(get_inventory_service)],
+    idempotency_service: Annotated[IdempotencyService, Depends(get_idempotency_service)],
+) -> StockTransferResponse:
+    part_ref = _typed_id_or_problem(body.part_id, entity_type="part", campo="part_id")
+    from_location_ref = _typed_id_or_problem(
+        body.from_location_id,
+        entity_type="stock_location",
+        campo="from_location_id",
+    )
+    to_location_ref = _typed_id_or_problem(
+        body.to_location_id,
+        entity_type="stock_location",
+        campo="to_location_id",
+    )
+    linked_reservation_ref = (
+        _typed_id_or_problem(
+            body.linked_reservation_id,
+            entity_type="stock_reservation",
+            campo="linked_reservation_id",
+        )
+        if body.linked_reservation_id is not None
+        else None
+    )
+    occurred_at = datetime.now(UTC)
+    request = _idempotency_request(
+        body=body,
+        contexto=contexto,
+        idempotency_key=idempotency_key,
+        operation=REQUEST_STOCK_TRANSFER_OPERATION,
+        purpose=REQUEST_STOCK_TRANSFER_PURPOSE,
+        requested_at=occurred_at,
+    )
+    operation_context = AssetOperationContext.from_organization_context(
+        contexto, source_id=TypedId.new("api_request")
+    )
+
+    def _handler() -> CanonicalPayload:
+        try:
+            transfer = service.request_transfer(
+                operation_context,
+                part_ref=part_ref,
+                from_location_ref=from_location_ref,
+                to_location_ref=to_location_ref,
+                qty=body.qty,
+                purpose=body.purpose,
+                linked_reservation_ref=linked_reservation_ref,
+                occurred_at=occurred_at,
+            )
+        except StockPositionNaoEncontrada as exc:
+            raise _not_found(str(exc)) from exc
+        except ValueError as exc:
+            raise _domain_conflict(str(exc)) from exc
+        response = _stock_transfer_response(transfer)
+        return CanonicalPayload(
+            schema="asset.request_stock_transfer.response",
+            version=1,
+            value=response.model_dump(mode="json"),
+        )
+
+    try:
+        execution = idempotency_service.execute(request, _handler)
+    except ValueError as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            reason_code="IDEMPOTENCY_KEY_INVALIDA",
+            title="Idempotency-Key inválida",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyConflict as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="IDEMPOTENCY_KEY_COM_INTENCAO_DIVERGENTE",
+            title="Conflito de idempotência",
+            detail=str(exc),
+        ) from exc
+    except IdempotencyResultUnknown as exc:
+        raise DomainProblem(
+            status_code=status.HTTP_409_CONFLICT,
+            reason_code="RESULTADO_IDEMPOTENTE_DESCONHECIDO",
+            title="Resultado idempotente desconhecido",
+            detail=str(exc),
+        ) from exc
+    return StockTransferResponse.model_validate(
         _canonical_response_data(execution.result_canonical_bytes)
     )
 

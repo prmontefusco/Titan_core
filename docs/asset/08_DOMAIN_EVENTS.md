@@ -48,7 +48,7 @@ vertical; sub‑namespaces `asset.inventory.*` e `asset.sustainment.*`. Enquanto
 | `asset.inventory.stock_reservation_released` | reserva liberada | `reservation_id`, `reason` | I‑INV‑1 |
 | `asset.inventory.stock_consumed` | ALLOCATED→CONSUMED (peça usada na WO) | `reservation_id`, `work_order_ref`, `qty`, `lot?`, `serial?` | I‑WO‑2 |
 | `asset.inventory.allocation_decided` | disputa resolvida | `part_ref`, `location_ref`, `winning_demand`, `losing_demands`, `decision_ref` | I‑INV‑2 |
-| `asset.inventory.transfer_requested` | transferência pedida | `transfer_id`, `part_ref`, `from_location_ref`, `to_location_ref`, `qty`, `linked_reservation_ref?` | I‑INV‑4 |
+| `asset.inventory.transfer_requested` | transferência pedida | `transfer_id`, `part_ref`, `purpose`, `from_location_ref`, `to_location_ref`, `qty`, `linked_reservation_ref?` | I‑INV‑2/4 |
 | `asset.inventory.transfer_dispatched` | saiu da origem | `transfer_id`, `qty`, `from_location_ref` | I‑INV‑4 |
 | `asset.inventory.transfer_received` | chegou (total ou parcial) | `transfer_id`, `qty_received`, `to_location_ref`, `partial` (bool) | I‑INV‑4 |
 
