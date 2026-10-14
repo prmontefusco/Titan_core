@@ -2,7 +2,22 @@
 
 **Atualizado em:** 14 de outubro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
-**Próximo passo do Livestock:** abrir DISCOVERY para o próximo incremento de produto que não dependa de fazenda, integração externa ou homologação. A habilitação controlada do Commercial Passport em staging permanece adiada; nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita sobre ambiente, responsáveis, dados fictícios, observabilidade e rollback. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
+**Próximo passo do Livestock:** decidir a ADR-0083 sobre persistência inicial do VerificationBundle. A recomendação é PostgreSQL/JSONB para o perfil interno limitado; BUILD só começa após aprovação. A habilitação controlada do Commercial Passport em staging permanece adiada; nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita sobre ambiente, responsáveis, dados fictícios, observabilidade e rollback. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
+
+### 14/10/2026 — Discovery: entrega recuperável de VerificationBundle
+
+**Estado:** PROCEED — ADR-0083 proposta, aguardando decisão humana. A investigação confirmou que regenerar
+o pacote somente a partir do Dossier não reproduz o artefato emitido: cada build cria novo `bundle_id`, que
+integra o manifesto e altera seu digest, e interpretadores podem evoluir. Como não há object storage no Titan,
+a recomendação inicial é persistir a exportação completa e imutável em PostgreSQL/JSONB, com limite de tamanho,
+RLS e vínculo owner-scoped ao Dossier, na mesma transação da emissão.
+
+**Evidência:** `docs/plans/VERIFICATION_BUNDLE_DELIVERY_DISCOVERY.md`, ADR proposta
+`docs/adr/0083-persistencia-inicial-de-verification-bundle.md`, ADR-0010 e os contratos atuais de
+`VerificationBundleService`. Nenhuma migration, rota ou feature flag foi criada ou habilitada.
+
+**Decisão necessária:** aprovar ou rejeitar a Opção B antes de BUILD. Publication pública, VerificationCode,
+object storage, assinatura produtiva, UI, dados reais e homologação permanecem fora do corte.
 
 ### 14/10/2026 — Commercial Passport: composição da emissão formal interna
 
