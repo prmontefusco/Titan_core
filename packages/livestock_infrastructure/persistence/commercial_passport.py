@@ -6,17 +6,24 @@ persist reports, issue Dossiers or authorize external disclosure.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import Connection, and_, exists, or_, select
 from sqlalchemy.sql.elements import ColumnElement
 
+from packages.core_application import DossierService, VerificationBundleService
 from packages.core_infrastructure.persistence.decision import TransactionalDecisionRepository
+from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
+from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.livestock_application.commercial_passport import (
     CommercialOpportunity,
     CommercialPassport,
     CommercialPassportContext,
+    CommercialPassportFormalIssuance,
+    CommercialPassportFormalIssuanceService,
     CommercialPassportMarketReadinessSource,
+    PropertyCommercialPassportIssuancePort,
     PropertyCommercialPassportMarketReadinessPipeline,
     PropertyCommercialPassportProjectionPort,
 )
@@ -24,6 +31,9 @@ from packages.livestock_application.market_readiness import (
     MarketReadinessContext,
     MarketReadinessPopulationReader,
     MarketReadinessService,
+)
+from packages.livestock_application.verification_bundle_interpreter import (
+    LivestockVerificationBundleInterpreter,
 )
 from packages.livestock_domain.animal import BirthOutcome
 from packages.livestock_infrastructure.persistence.animal_repository import animals_table
@@ -154,4 +164,92 @@ class TransactionalPropertyCommercialPassportReadinessPipeline(
                     animal_exits_table.c.occurred_at <= context.reference_time,
                 ),
             ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class TransactionalPropertyCommercialPassportIssuancePipeline(
+    PropertyCommercialPassportIssuancePort,
+):
+    """Issue one formal snapshot from one exact, owner-scoped authoritative triad."""
+
+    connection: Connection
+    opportunity: CommercialOpportunity
+
+    def issue_property_passport(
+        self,
+        *,
+        context: CommercialPassportContext,
+        audience: str,
+        issued_at: datetime,
+    ) -> CommercialPassportFormalIssuance:
+        decisions = TransactionalDecisionRepository(self.connection).list_by_subject(
+            context.organization_id,
+            context.property_id,
+        )
+        candidates = []
+        evaluation_repository = None
+        for decision in decisions:
+            if (
+                decision.purpose != self.opportunity.purpose
+                or decision.policy_id != self.opportunity.policy_id
+                or decision.policy_version != self.opportunity.policy_version
+            ):
+                continue
+            if evaluation_repository is None:
+                evaluation_repository = TransactionalEvaluationRepository(self.connection)
+            evaluation = evaluation_repository.get_by_id(decision.evaluation_id)
+            if evaluation is not None and self._matches_exact_context(
+                context=context,
+                decision=decision,
+                evaluation=evaluation,
+            ):
+                candidates.append((decision, evaluation))
+        if len(candidates) != 1:
+            qualifier = "ausente" if not candidates else "ambígua"
+            raise ValueError(f"Decision autoritativa exata {qualifier} para a emissão formal.")
+
+        decision, evaluation = candidates[0]
+        policy = TransactionalPolicyRepository(self.connection).get_by_id(decision.policy_id)
+        if (
+            policy is None
+            or policy.organization_id != context.organization_id
+            or policy.policy_id != evaluation.policy_id
+            or policy.version != decision.policy_version
+            or evaluation.policy_version != decision.policy_version
+        ):
+            raise ValueError("Policy autoritativa diverge da Decision/Evaluation.")
+
+        passport = TransactionalPropertyCommercialPassportReadinessPipeline(
+            connection=self.connection,
+            opportunity=self.opportunity,
+        ).build_property_passport(context=context)
+        return CommercialPassportFormalIssuanceService(
+            dossier_service=DossierService(TransactionalDossierRepository(self.connection)),
+            verification_bundle_service=VerificationBundleService(
+                dossier_interpreters=(LivestockVerificationBundleInterpreter(),),
+            ),
+        ).issue(
+            passport=passport,
+            decision=decision,
+            evaluation=evaluation,
+            policy=policy,
+            audience=audience,
+            issued_at=issued_at,
+        )
+
+    def _matches_exact_context(self, *, context, decision, evaluation) -> bool:  # type: ignore[no-untyped-def]
+        normative = evaluation.normative_basis_snapshot
+        return (
+            decision.organization_id == context.organization_id
+            and decision.subject_id == context.property_id
+            and evaluation.organization_id == context.organization_id
+            and evaluation.subject_id == context.property_id
+            and evaluation.purpose == self.opportunity.purpose
+            and evaluation.policy_id == self.opportunity.policy_id
+            and evaluation.policy_version == self.opportunity.policy_version
+            and decision.evaluation_hash == evaluation.evaluation_hash
+            and normative is not None
+            and normative.reference_time == context.reference_time
+            and normative.knowledge_cutoff == context.knowledge_cutoff
         )

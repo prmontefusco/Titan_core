@@ -100,11 +100,13 @@ def _request(
     method: str,
     path: str,
     body: dict[str, Any] | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> HttpResponse:
     data = None if body is None else json.dumps(body).encode("utf-8")
     headers = {"Accept": "application/json"}
     if data is not None:
         headers["Content-Type"] = "application/json"
+    headers.update(extra_headers or {})
     request = urllib.request.Request(
         f"{base_url.rstrip('/')}{path}",
         data=data,
@@ -157,6 +159,10 @@ def _issue_body() -> dict[str, Any]:
         "knowledge_cutoff": "2026-09-11T00:00:00Z",
         "audience": "internal-audit",
     }
+
+
+def _issuance_headers(suffix: str) -> dict[str, str]:
+    return {"Idempotency-Key": f"commercial-passport-{suffix}"}
 
 
 def _missing_knowledge_cutoff_issue_body() -> dict[str, Any]:
@@ -627,7 +633,11 @@ def _authenticated_validation(
     roteiro.passo(
         "12",
         "Auditor solicita emissão formal com property_id malformado sem disclosure",
-        lambda: auditor.post(malformed_property_issue_route, _issue_body()),
+        lambda: auditor.post(
+            malformed_property_issue_route,
+            _issue_body(),
+            headers=_issuance_headers("malformed-property"),
+        ),
         422,
         conferir=_fail_closed_problem_contract("IDENTIFICADOR_INVALIDO"),
         porque=(
@@ -639,7 +649,11 @@ def _authenticated_validation(
     roteiro.passo(
         "13",
         "Auditor solicita emissão formal sem knowledge_cutoff",
-        lambda: auditor.post(issue_route, _missing_knowledge_cutoff_issue_body()),
+        lambda: auditor.post(
+            issue_route,
+            _missing_knowledge_cutoff_issue_body(),
+            headers=_issuance_headers("missing-cutoff"),
+        ),
         422,
         conferir=_fail_closed_problem_contract("ENTRADA_INVALIDA"),
         porque=(
@@ -651,7 +665,11 @@ def _authenticated_validation(
     roteiro.passo(
         "14",
         "Auditor solicita emissão formal com reference_time fora de UTC",
-        lambda: auditor.post(issue_route, _non_utc_issue_body()),
+        lambda: auditor.post(
+            issue_route,
+            _non_utc_issue_body(),
+            headers=_issuance_headers("non-utc"),
+        ),
         422,
         conferir=_fail_closed_problem_contract("TEMPO_NAO_UTC"),
         porque=(
@@ -663,7 +681,11 @@ def _authenticated_validation(
     roteiro.passo(
         "15",
         "Auditor solicita emissão formal com janela temporal inválida",
-        lambda: auditor.post(issue_route, _invalid_temporal_issue_body()),
+        lambda: auditor.post(
+            issue_route,
+            _invalid_temporal_issue_body(),
+            headers=_issuance_headers("invalid-temporal"),
+        ),
         422,
         conferir=_fail_closed_problem_contract("COMMERCIAL_PASSPORT_REQUEST_INVALIDA"),
         porque=(
@@ -676,7 +698,11 @@ def _authenticated_validation(
     roteiro.passo(
         "16",
         "Operador sem permissão de Dossier não emite snapshot formal",
-        lambda: operador.post(issue_route, _issue_body()),
+        lambda: operador.post(
+            issue_route,
+            _issue_body(),
+            headers=_issuance_headers("operator"),
+        ),
         403,
         conferir=_fail_closed_problem_contract("PERMISSAO_AUSENTE"),
         porque=(
@@ -688,7 +714,11 @@ def _authenticated_validation(
     roteiro.passo(
         "17",
         "Auditor solicita emissão formal com permissão de Dossier",
-        lambda: auditor.post(issue_route, _issue_body()),
+        lambda: auditor.post(
+            issue_route,
+            _issue_body(),
+            headers=_issuance_headers("auditor"),
+        ),
         503,
         conferir=_fail_closed_problem_contract("COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA"),
         porque=(
@@ -786,6 +816,7 @@ def main() -> int:
         method="POST",
         path=ISSUE_ROUTE,
         body=_issue_body(),
+        extra_headers=_issuance_headers("anonymous"),
     )
     print(f"  {CINZA}<-{FIM} {NEGRITO}{issue_response.status}{FIM}")
     _print_body(issue_response.body)

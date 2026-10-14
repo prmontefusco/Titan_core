@@ -117,6 +117,27 @@ def _valid_issue_body() -> dict[str, object]:
     }
 
 
+def _issue_headers() -> dict[str, str]:
+    return {"Idempotency-Key": "passport-test-key"}
+
+
+class _ImmediateIdempotencyService:
+    def execute(self, _request: object, handler: object) -> object:
+        result = handler()  # type: ignore[operator]
+        return SimpleNamespace(result_canonical_bytes=result.canonical_bytes, replayed=False)
+
+
+def _override_issue_services(
+    pipeline: PropertyCommercialPassportIssuancePort | None = None,
+) -> None:
+    main_module.app.dependency_overrides[
+        commercial_passport_api.get_commercial_passport_issuance_pipeline
+    ] = lambda: pipeline
+    main_module.app.dependency_overrides[
+        commercial_passport_api.get_commercial_passport_idempotency_service
+    ] = _ImmediateIdempotencyService
+
+
 def _fake_connection() -> object:
     return object()
 
@@ -324,7 +345,7 @@ def test_commercial_passport_routes_are_absent_by_default(monkeypatch: MonkeyPat
     client = TestClient(main_module.app)
     for response in (
         client.get(GET_ROUTE, params=_valid_query()),
-        client.post(ISSUE_ROUTE, json=_valid_issue_body()),
+        client.post(ISSUE_ROUTE, json=_valid_issue_body(), headers=_issue_headers()),
     ):
         assert response.status_code == 404
         assert response.headers["cache-control"] == "no-store"
@@ -357,7 +378,9 @@ def test_commercial_passport_issue_route_does_not_disclose_without_authenticatio
     monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
     importlib.reload(main_module)
 
-    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=_valid_issue_body())
+    response = TestClient(main_module.app).post(
+        ISSUE_ROUTE, json=_valid_issue_body(), headers=_issue_headers()
+    )
 
     assert response.status_code == 401
     assert response.headers["cache-control"] == "no-store"
@@ -385,7 +408,7 @@ def test_commercial_passport_routes_do_not_disclose_without_permission(
         client = TestClient(main_module.app)
         for response in (
             client.get(GET_ROUTE, params=_valid_query()),
-            client.post(ISSUE_ROUTE, json=_valid_issue_body()),
+            client.post(ISSUE_ROUTE, json=_valid_issue_body(), headers=_issue_headers()),
         ):
             assert response.status_code == 403
             assert response.headers["cache-control"] == "no-store"
@@ -410,7 +433,7 @@ def test_commercial_passport_routes_require_organization_context_without_cache(
     client = TestClient(main_module.app)
     for response in (
         client.get(GET_ROUTE, params=_valid_query()),
-        client.post(ISSUE_ROUTE, json=_valid_issue_body()),
+        client.post(ISSUE_ROUTE, json=_valid_issue_body(), headers=_issue_headers()),
     ):
         assert response.status_code == 400
         assert response.headers["cache-control"] == "no-store"
@@ -432,7 +455,7 @@ def test_commercial_passport_routes_reject_malformed_organization_context_withou
     )
     main_module.app.dependency_overrides[request_connection] = _fake_connection
 
-    headers = {ORGANIZATION_HEADER: "nao-e-uuid"}
+    headers = {ORGANIZATION_HEADER: "nao-e-uuid", **_issue_headers()}
     client = TestClient(main_module.app)
     for response in (
         client.get(GET_ROUTE, params=_valid_query(), headers=headers),
@@ -458,7 +481,7 @@ def test_commercial_passport_routes_do_not_disclose_denied_organization_context(
     )
     main_module.app.dependency_overrides[request_connection] = _fake_transactional_connection
 
-    headers = {ORGANIZATION_HEADER: str(contexto.organization_id.value)}
+    headers = {ORGANIZATION_HEADER: str(contexto.organization_id.value), **_issue_headers()}
     with (
         patch(
             "apps.api.livestock_dependencies.operator_organization_id",
@@ -493,11 +516,16 @@ def test_commercial_passport_routes_reject_malformed_property_id_without_cache(
     main_module.app.dependency_overrides[
         commercial_passport_api.require_commercial_passport_issue
     ] = lambda: _context()
+    _override_issue_services()
 
     client = TestClient(main_module.app)
     for response in (
         client.get(MALFORMED_PROPERTY_GET_ROUTE, params=_valid_query()),
-        client.post(MALFORMED_PROPERTY_ISSUE_ROUTE, json=_valid_issue_body()),
+        client.post(
+            MALFORMED_PROPERTY_ISSUE_ROUTE,
+            json=_valid_issue_body(),
+            headers=_issue_headers(),
+        ),
     ):
         assert response.status_code == 422
         assert response.headers["cache-control"] == "no-store"
@@ -679,13 +707,29 @@ def test_issue_commercial_passport_route_fails_closed_until_issuance_is_enabled(
     main_module.app.dependency_overrides[
         commercial_passport_api.require_commercial_passport_issue
     ] = lambda: _context()
+    _override_issue_services()
 
-    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=_valid_issue_body())
+    response = TestClient(main_module.app).post(
+        ISSUE_ROUTE, json=_valid_issue_body(), headers=_issue_headers()
+    )
 
     assert response.status_code == 503
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["pragma"] == "no-cache"
     assert response.json()["reason_code"] == "COMMERCIAL_PASSPORT_ISSUANCE_NAO_HABILITADA"
+
+
+def test_issue_commercial_passport_requires_idempotency_key(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_issue
+    ] = lambda: _context()
+    _override_issue_services(_IssuancePipelineStub())
+
+    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=_valid_issue_body())
+
+    assert response.status_code == 422
 
 
 def test_issue_commercial_passport_route_returns_formal_issuance_envelope(
@@ -698,11 +742,11 @@ def test_issue_commercial_passport_route_returns_formal_issuance_envelope(
     main_module.app.dependency_overrides[
         commercial_passport_api.require_commercial_passport_issue
     ] = lambda: contexto
-    main_module.app.dependency_overrides[
-        commercial_passport_api.get_commercial_passport_issuance_pipeline
-    ] = lambda: pipeline
+    _override_issue_services(pipeline)
 
-    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=_valid_issue_body())
+    response = TestClient(main_module.app).post(
+        ISSUE_ROUTE, json=_valid_issue_body(), headers=_issue_headers()
+    )
 
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
@@ -751,7 +795,8 @@ def test_commercial_passport_routes_reject_knowledge_cutoff_before_reference_tim
     body["reference_time"] = "2026-09-11T10:00:00Z"
     body["knowledge_cutoff"] = "2026-09-11T08:00:00Z"
 
-    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=body)
+    _override_issue_services()
+    response = TestClient(main_module.app).post(ISSUE_ROUTE, json=body, headers=_issue_headers())
 
     assert response.status_code == 422
     assert response.headers["cache-control"] == "no-store"

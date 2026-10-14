@@ -1,8 +1,32 @@
 # Checklist de Implementação — Titan
 
-**Atualizado em:** 13 de outubro de 2026
+**Atualizado em:** 14 de outubro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
-**Próximo passo do Livestock:** DECISION RED sobre a habilitação controlada do Commercial Passport em ambiente compartilhado/staging, conforme `docs/livestock/COMMERCIAL_PASSPORT_IMPLEMENTATION_PLAN.md`. A consulta dinâmica, a emissão formal, o snapshot populacional temporal e sua rastreabilidade já foram implementados e permanecem release-gated; nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita sobre ambiente, responsáveis, dados fictícios, observabilidade e rollback. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
+**Próximo passo do Livestock:** abrir DISCOVERY para o próximo incremento de produto que não dependa de fazenda, integração externa ou homologação. A habilitação controlada do Commercial Passport em staging permanece adiada; nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita sobre ambiente, responsáveis, dados fictícios, observabilidade e rollback. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
+
+### 14/10/2026 — Commercial Passport: composição da emissão formal interna
+
+**Estado:** ACEITO PARA CONTINUIDADE — validação manual adiada por decisão de produto em 14/10/2026. A emissão formal passa a possuir composição produtiva
+opt-in para uma única oportunidade `INTERNAL_SYNTHETIC`, usando a transação e o contexto RLS da requisição.
+A tríade `Decision`/`Evaluation`/`Policy` é resolvida por identidade, purpose, versão e coordenadas temporais
+exatas; ausência, divergência ou multiplicidade falham fechado, sem escolha heurística pelo registro mais
+recente. O POST agora exige `Idempotency-Key`, preserva a resposta formal completa para replay e mantém
+Dossier, construção do VerificationBundle e registro idempotente no mesmo limite transacional.
+
+**Evidência de implementação:** `packages/livestock_infrastructure/persistence/commercial_passport.py`,
+`apps/api/livestock_commercial_passport.py`, SPEC aprovada
+`docs/specs/approved/2026-10-14-commercial-passport-formal-issuance.md`, testes de API/adapter e roteiro
+`apps/validacao/commercial_passport_api.py`. O gate independente
+`TITAN_COMMERCIAL_PASSPORT_ISSUANCE_ENABLED` permanece desligado por default e exige o perfil explícito;
+nenhuma flag de ambiente foi habilitada.
+
+**Portão de verificação:** testes focados cobrem default 503, header idempotente obrigatório, envelope formal,
+ausência e ambiguidade da Decision exata. Ruff, format, Mypy e os dois Alembic checks passaram em 14/10/2026.
+A suíte completa aprovou 2.463 de 2.464 testes; a única falha, reproduzida isoladamente, foi o teste preexistente
+`test_market_supply_aggregate_route_releases_real_single_owner_pipeline`, que recebeu `NOT_RELEASED` em vez
+de `RELEASED` no banco local acumulado e não toca este incremento. Por orientação explícita de produto, testes
+em fazendas, validação manual autenticada e homologação foram adiados para acelerar a continuidade; isso não
+equivale a habilitar a feature nem a validar comportamento com dados reais.
 
 ### 13/10/2026 — Retomada Livestock: lane histórica reconciliada
 
