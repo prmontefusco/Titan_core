@@ -1,7 +1,7 @@
 # DISCOVERY — Entrega recuperável de VerificationBundle
 
-**Estado:** PROCEED — decisão arquitetural pendente  
-**Data:** 2026-10-14  
+**Estado:** PROCEED — ADR-0083 aceita com reforços
+**Data:** 2026-10-14
 **Origem:** continuidade da emissão formal interna do Commercial Passport
 
 ## Contexto
@@ -97,7 +97,8 @@ Discovery para object storage; não fazer migração antecipada agora.
 - dados reais, fazenda ou homologação;
 - múltiplas versões físicas do mesmo bundle.
 
-## Decisão necessária
+## Decisão
 
-Aprovar ou rejeitar a Opção B e o corte proposto. A migration e o endpoint não
-devem iniciar antes dessa decisão.
+Opção B aprovada com preservação dos bytes canônicos em `bytea`, digest próprio,
+tamanho, content type, versão de serialização, integridade em toda leitura e
+imutabilidade defensiva no banco. JSONB não é a fonte do artefato emitido.

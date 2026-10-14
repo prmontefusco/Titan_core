@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Table,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -44,6 +45,11 @@ dossiers_table = Table(
         ["record_owner_organization_id"],
         ["core_identity.organizations.organization_id"],
         name="fk_dossiers_organization",
+    ),
+    UniqueConstraint(
+        "record_owner_organization_id",
+        "dossier_id",
+        name="uq_dossiers_owner_dossier",
     ),
     ForeignKeyConstraint(
         ["decision_id"], ["core_audit.decisions.decision_id"], name="fk_dossiers_decision"

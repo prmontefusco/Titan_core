@@ -51,8 +51,10 @@ from packages.shared_kernel import TypedId
 PROPERTY_ID = "00000000-0000-0000-0000-000000000001"
 GET_ROUTE_TEMPLATE = "/v1/livestock/properties/{property_id}/commercial-passport"
 ISSUE_ROUTE_TEMPLATE = "/v1/livestock/properties/{property_id}/commercial-passport/issue"
+BUNDLE_ROUTE_TEMPLATE = "/v1/livestock/commercial-passport/verification-bundles/{bundle_id}"
 GET_ROUTE = GET_ROUTE_TEMPLATE.format(property_id=PROPERTY_ID)
 ISSUE_ROUTE = ISSUE_ROUTE_TEMPLATE.format(property_id=PROPERTY_ID)
+BUNDLE_ROUTE = BUNDLE_ROUTE_TEMPLATE.format(bundle_id="20000000-0000-0000-0000-000000000001")
 _POPULATION_TRACE_FORBIDDEN_KEYS = frozenset(
     {
         "animal_id",
@@ -771,9 +773,13 @@ def main() -> int:
     openapi = openapi_response.body
     get_published = _route_is_published(openapi, GET_ROUTE_TEMPLATE)
     issue_published = _route_is_published(openapi, ISSUE_ROUTE_TEMPLATE)
-    if get_published != issue_published:
-        print(f"{VERMELHO}FALHOU{FIM} — consulta e emissão divergiram no release gate.")
-        print(f"{CINZA}GET publicado: {get_published}; ISSUE publicado: {issue_published}{FIM}")
+    bundle_published = _route_is_published(openapi, BUNDLE_ROUTE_TEMPLATE)
+    if len({get_published, issue_published, bundle_published}) != 1:
+        print(f"{VERMELHO}FALHOU{FIM} — rotas divergiram no release gate.")
+        print(
+            f"{CINZA}GET: {get_published}; ISSUE: {issue_published}; "
+            f"BUNDLE: {bundle_published}{FIM}"
+        )
         return 1
     print(
         f"{VERDE}OK{FIM} — rotas "
@@ -829,6 +835,23 @@ def main() -> int:
     issue_problem = _unauthenticated_boundary(issue_response)
     if issue_problem is not None:
         print(f"{VERMELHO}FALHOU{FIM} — {issue_problem}.")
+        return 1
+
+    print(f"\n{NEGRITO}[4] Tentar recuperar bundle sem autenticação{FIM}")
+    print(
+        f"{CINZA}  Por que: conhecer um bundle_id não concede acesso aos bytes "
+        f"imutáveis do artefato.{FIM}"
+    )
+    print(f"  {CINZA}->{FIM} {NEGRITO}GET{FIM} {BUNDLE_ROUTE}")
+    bundle_response = _request(base_url=base_url, method="GET", path=BUNDLE_ROUTE)
+    print(f"  {CINZA}<-{FIM} {NEGRITO}{bundle_response.status}{FIM}")
+    _print_body(bundle_response.body)
+    if bundle_response.status != expected:
+        print(f"{VERMELHO}FALHOU{FIM} — esperava {expected} no download protegido.")
+        return 1
+    bundle_problem = _unauthenticated_boundary(bundle_response)
+    if bundle_problem is not None:
+        print(f"{VERMELHO}FALHOU{FIM} — {bundle_problem}.")
         return 1
 
     print(

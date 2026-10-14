@@ -16,6 +16,9 @@ from packages.core_infrastructure.persistence.decision import TransactionalDecis
 from packages.core_infrastructure.persistence.dossier import TransactionalDossierRepository
 from packages.core_infrastructure.persistence.evaluation import TransactionalEvaluationRepository
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
+from packages.core_infrastructure.persistence.verification_bundle import (
+    TransactionalVerificationBundleRepository,
+)
 from packages.livestock_application.commercial_passport import (
     CommercialOpportunity,
     CommercialPassport,
@@ -224,7 +227,7 @@ class TransactionalPropertyCommercialPassportIssuancePipeline(
             connection=self.connection,
             opportunity=self.opportunity,
         ).build_property_passport(context=context)
-        return CommercialPassportFormalIssuanceService(
+        issuance = CommercialPassportFormalIssuanceService(
             dossier_service=DossierService(TransactionalDossierRepository(self.connection)),
             verification_bundle_service=VerificationBundleService(
                 dossier_interpreters=(LivestockVerificationBundleInterpreter(),),
@@ -237,6 +240,11 @@ class TransactionalPropertyCommercialPassportIssuancePipeline(
             audience=audience,
             issued_at=issued_at,
         )
+        TransactionalVerificationBundleRepository(self.connection).save(
+            bundle=issuance.verification_bundle,
+            dossier=issuance.dossier,
+        )
+        return issuance
 
     def _matches_exact_context(self, *, context, decision, evaluation) -> bool:  # type: ignore[no-untyped-def]
         normative = evaluation.normative_basis_snapshot

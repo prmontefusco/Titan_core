@@ -12,6 +12,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import Connection, create_engine, text
+from sqlalchemy.exc import DBAPIError
 
 from packages.core_application.decision_service import DecisionService
 from packages.core_application.dossier_service import DossierService
@@ -21,6 +22,7 @@ from packages.core_application.evaluation_service import (
 )
 from packages.core_application.policy_service import PolicyService
 from packages.core_application.rule_service import RuleService
+from packages.core_application.verification_service import VerificationBundleService
 from packages.core_domain.decision_authority import DecisionEmissionMethod
 from packages.core_domain.decision_governance import DecisionAuthorityProfile
 from packages.core_domain.dossier import compute_dossier_hash
@@ -36,6 +38,9 @@ from packages.core_infrastructure.persistence.evaluation import (
 )
 from packages.core_infrastructure.persistence.policy import TransactionalPolicyRepository
 from packages.core_infrastructure.persistence.rule import TransactionalRuleRepository
+from packages.core_infrastructure.persistence.verification_bundle import (
+    TransactionalVerificationBundleRepository,
+)
 from packages.shared_kernel import OrganizationId, TypedId, UniversalReference
 
 
@@ -163,6 +168,30 @@ def test_dossier_survives_roundtrip_and_verifies_offline(db_connection: Connecti
     assert exportado["decision"]["reasons"][0]["corrective_action"]
     assert exportado["policy"]["version"] == policy.version
 
+    bundle = VerificationBundleService().build_from_dossier(
+        dossier=dossier,
+        audience="internal-synthetic",
+        created_at=t0,
+    )
+    bundle_repo = TransactionalVerificationBundleRepository(db_connection)
+    stored = bundle_repo.save(bundle=bundle, dossier=dossier)
+    loaded = bundle_repo.get_by_id(org_id_1, bundle.manifest.bundle_id)
+    assert loaded is not None
+    assert loaded.payload_bytes == stored.payload_bytes
+    assert loaded.bundle == bundle
+
+    with (
+        pytest.raises(DBAPIError, match="VERIFICATION_BUNDLE_IMUTAVEL"),
+        db_connection.begin_nested(),
+    ):
+        db_connection.execute(
+            text(
+                "UPDATE core_audit.verification_bundles "
+                "SET audience = 'alterada' WHERE bundle_id = :bundle_id"
+            ),
+            {"bundle_id": bundle.manifest.bundle_id.value},
+        )
+
     # Adulterar qualquer parte do documento quebra a verificação.
     adulterado = json.loads(json.dumps(exportado))
     adulterado["decision"]["result"] = "aprovada"
@@ -179,6 +208,7 @@ def test_dossier_survives_roundtrip_and_verifies_offline(db_connection: Connecti
     )
     db_connection.execute(text(f"GRANT USAGE ON SCHEMA core_audit TO {quoted_role}"))
     db_connection.execute(text(f"GRANT SELECT ON core_audit.dossiers TO {quoted_role}"))
+    db_connection.execute(text(f"GRANT SELECT ON core_audit.verification_bundles TO {quoted_role}"))
     db_connection.execute(text(f"SET LOCAL ROLE {quoted_role}"))
     db_connection.execute(
         text("SELECT set_config('titan.organization_id', :org_id, true)"),
@@ -188,6 +218,7 @@ def test_dossier_survives_roundtrip_and_verifies_offline(db_connection: Connecti
     repo_2 = TransactionalDossierRepository(connection=db_connection)
     assert repo_2.get_by_id(dossier.dossier_id) is None
     assert repo_2.list_by_subject(org_id_2, subject_id) == []
+    assert bundle_repo.get_by_id(org_id_2, bundle.manifest.bundle_id) is None
 
     db_connection.execute(text("RESET ROLE"))
     db_connection.execute(text(f"DROP OWNED BY {quoted_role}"))

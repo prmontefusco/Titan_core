@@ -2,22 +2,42 @@
 
 **Atualizado em:** 14 de outubro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
-**Próximo passo do Livestock:** decidir a ADR-0083 sobre persistência inicial do VerificationBundle. A recomendação é PostgreSQL/JSONB para o perfil interno limitado; BUILD só começa após aprovação. A habilitação controlada do Commercial Passport em staging permanece adiada; nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita sobre ambiente, responsáveis, dados fictícios, observabilidade e rollback. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados nas entradas correspondentes deste ledger.
+**Próximo passo do Livestock:** selecionar em DISCOVERY o próximo incremento independente de fazenda, integração externa e homologação. A persistência e recuperação byte-idêntica do VerificationBundle está verificada automaticamente; validação manual permanece adiada. Nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados neste ledger.
+
+### 14/10/2026 — VerificationBundle: persistência e recuperação byte-idêntica
+
+**Estado:** VERIFICADO AUTOMATICAMENTE — validação manual adiada. A ADR-0083 foi aceita com os reforços de
+preservação dos bytes UTF-8 originais, SHA-256 independente do `manifest_digest`, tamanho, content type e
+versão de serialização. A emissão formal persiste o bundle na mesma transação do Dossier e da idempotência;
+a recuperação autenticada devolve diretamente os bytes armazenados, sem reserialização.
+
+**Evidência:** migration `20261014_0088`, repositório Core append-only com RLS, FK composta sem cascade,
+unicidade, triggers contra UPDATE/DELETE/TRUNCATE e validação em toda leitura; endpoint interno
+`GET /v1/livestock/commercial-passport/verification-bundles/{bundle_id}` protegido por `DOSSIER_LER`;
+SPEC e plano técnico de 14/10/2026. Publication, VerificationCode, object storage, assinatura produtiva, UI,
+dados reais e homologação não foram introduzidos.
+
+**Portão:** round-trip PostgreSQL, recuperação byte-idêntica, verificação offline, RLS e trigger defensiva
+passaram. Ruff, format, Mypy e os dois Alembic checks passaram. A suíte completa aprovou 2.458 testes e
+pulou 1; seis falhas eram exclusivamente ausência de `TITAN_MIGRATION_DATABASE_URL` no processo e passaram
+em rerun com a variável administrativa. A única falha material remanescente é a preexistente de Market Supply,
+que recebeu `NOT_RELEASED` em vez de `RELEASED` no banco local acumulado e não toca este incremento.
 
 ### 14/10/2026 — Discovery: entrega recuperável de VerificationBundle
 
-**Estado:** PROCEED — ADR-0083 proposta, aguardando decisão humana. A investigação confirmou que regenerar
+**Estado:** CONCLUÍDO — ADR-0083 aceita com reforços. A investigação confirmou que regenerar
 o pacote somente a partir do Dossier não reproduz o artefato emitido: cada build cria novo `bundle_id`, que
 integra o manifesto e altera seu digest, e interpretadores podem evoluir. Como não há object storage no Titan,
-a recomendação inicial é persistir a exportação completa e imutável em PostgreSQL/JSONB, com limite de tamanho,
+a recomendação aprovada é persistir a exportação completa e imutável em bytes canônicos no PostgreSQL, com limite de tamanho,
 RLS e vínculo owner-scoped ao Dossier, na mesma transação da emissão.
 
 **Evidência:** `docs/plans/VERIFICATION_BUNDLE_DELIVERY_DISCOVERY.md`, ADR proposta
 `docs/adr/0083-persistencia-inicial-de-verification-bundle.md`, ADR-0010 e os contratos atuais de
 `VerificationBundleService`. Nenhuma migration, rota ou feature flag foi criada ou habilitada.
 
-**Decisão necessária:** aprovar ou rejeitar a Opção B antes de BUILD. Publication pública, VerificationCode,
-object storage, assinatura produtiva, UI, dados reais e homologação permanecem fora do corte.
+**Decisão:** Opção B aprovada com bytes canônicos em `bytea`, digest e tamanho próprios; JSONB não é a fonte
+autoritativa. Publication pública, VerificationCode, object storage, assinatura produtiva, UI, dados reais e
+homologação permanecem fora do corte.
 
 ### 14/10/2026 — Commercial Passport: composição da emissão formal interna
 

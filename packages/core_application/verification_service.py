@@ -191,6 +191,24 @@ class VerificationBundleService:
             ),
         }
 
+    def export_bytes(self, bundle: VerificationBundle) -> bytes:
+        """Preserve the exact UTF-8 JSON representation delivered to a consumer."""
+        return _canonical_bytes(self.export(bundle))
+
+    @staticmethod
+    def load_bytes(exported: bytes) -> VerificationBundle:
+        if not isinstance(exported, bytes) or not exported:
+            raise ValueError("VerificationBundle serializado deve possuir bytes.")
+        try:
+            payload = json.loads(exported.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError(
+                "VerificationBundle serializado não contém JSON UTF-8 válido."
+            ) from error
+        if not isinstance(payload, Mapping):
+            raise ValueError("VerificationBundle serializado deve conter objeto JSON.")
+        return VerificationBundleService.load(payload)
+
     @staticmethod
     def load(exported: Mapping[str, Any]) -> VerificationBundle:
         """Reconstrói o pacote a partir da forma transportável, sem o Titan."""

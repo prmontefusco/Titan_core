@@ -38,6 +38,8 @@ from packages.shared_kernel import OrganizationId, TypedId
 PROPERTY_ID = "00000000-0000-0000-0000-000000000001"
 GET_ROUTE = f"/v1/livestock/properties/{PROPERTY_ID}/commercial-passport"
 ISSUE_ROUTE = f"/v1/livestock/properties/{PROPERTY_ID}/commercial-passport/issue"
+BUNDLE_ID = "20000000-0000-0000-0000-000000000001"
+BUNDLE_ROUTE = f"/v1/livestock/commercial-passport/verification-bundles/{BUNDLE_ID}"
 MALFORMED_PROPERTY_GET_ROUTE = "/v1/livestock/properties/nao-e-uuid/commercial-passport"
 MALFORMED_PROPERTY_ISSUE_ROUTE = "/v1/livestock/properties/nao-e-uuid/commercial-passport/issue"
 FORBIDDEN_POPULATION_TRACE_KEYS = frozenset(
@@ -760,6 +762,37 @@ def test_issue_commercial_passport_route_returns_formal_issuance_envelope(
     assert pipeline.seen_context is not None
     assert pipeline.seen_context.organization_id == contexto.organization_id
     assert pipeline.seen_audience == "internal-audit"
+
+
+def test_commercial_passport_bundle_route_returns_persisted_bytes(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("TITAN_COMMERCIAL_PASSPORT_API_ENABLED", "true")
+    importlib.reload(main_module)
+    payload = b'{"manifest":{"bundle_id":"preserved"},"payloads":{}}'
+    main_module.app.dependency_overrides[
+        commercial_passport_api.require_commercial_passport_bundle_read
+    ] = lambda: _context()
+    main_module.app.dependency_overrides[request_connection] = _fake_connection
+
+    class _Repository:
+        def __init__(self, _connection: object) -> None:
+            pass
+
+        def get_by_id(self, *_args: object) -> object:
+            return SimpleNamespace(payload_bytes=payload, content_type="application/json")
+
+    monkeypatch.setattr(
+        commercial_passport_api,
+        "TransactionalVerificationBundleRepository",
+        _Repository,
+    )
+
+    response = TestClient(main_module.app).get(BUNDLE_ROUTE)
+
+    assert response.status_code == 200
+    assert response.content == payload
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_commercial_passport_routes_require_utc_temporal_coordinates(

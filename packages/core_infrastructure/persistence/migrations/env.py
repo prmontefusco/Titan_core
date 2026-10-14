@@ -71,6 +71,7 @@ from packages.core_infrastructure.persistence.synchronization import (
     synchronization_results_table,
 )
 from packages.core_infrastructure.persistence.timestamping import timestamp_attempts_table
+from packages.core_infrastructure.persistence.verification_bundle import verification_bundles_table
 from packages.livestock_infrastructure.persistence import (
     animal_exits_table,
     animal_identifiers_table,
@@ -118,6 +119,7 @@ assert outbox_messages_table.metadata is target_metadata
 assert outbox_publication_attempts_table.metadata is target_metadata
 assert outbox_publication_state_table.metadata is target_metadata
 assert timestamp_attempts_table.metadata is target_metadata
+assert verification_bundles_table.metadata is target_metadata
 assert evidences_table.metadata is target_metadata
 assert evidence_verifications_table.metadata is target_metadata
 assert evidence_signatures_table.metadata is target_metadata

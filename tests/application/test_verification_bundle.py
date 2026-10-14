@@ -235,6 +235,17 @@ def test_bundle_travels_and_is_verified_without_titan() -> None:
     assert relatorio.status is VerificationStatus.VALIDA
 
 
+def test_export_bytes_preserva_representacao_json_byte_identica() -> None:
+    service = VerificationBundleService()
+    bundle = _pacote_completo()
+
+    exported = service.export_bytes(bundle)
+
+    assert exported == service.export_bytes(bundle)
+    assert service.load_bytes(exported) == bundle
+    assert exported.startswith(b'{"manifest":')
+
+
 def test_tampered_component_is_invalid_with_exact_failure_point() -> None:
     bundle = _pacote_completo()
     adulterado = dict(bundle.payloads)

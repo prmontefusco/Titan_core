@@ -14,7 +14,7 @@ from os import environ
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, Header, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from apps.api.livestock_dependencies import (
@@ -33,6 +33,9 @@ from packages.core_application import (
 from packages.core_domain import CanonicalPayload, OrganizationContext
 from packages.core_infrastructure.persistence.idempotency import IdempotencyRepository
 from packages.core_infrastructure.persistence.organizations import set_local_organization_context
+from packages.core_infrastructure.persistence.verification_bundle import (
+    TransactionalVerificationBundleRepository,
+)
 from packages.livestock_application.authorization import DOSSIER_LER, PROPERTY_LER
 from packages.livestock_application.commercial_passport import (
     CommercialOpportunity,
@@ -53,6 +56,7 @@ from packages.shared_kernel.temporal import require_utc
 
 require_commercial_passport_read = require_permission(PROPERTY_LER)
 require_commercial_passport_issue = require_permission(DOSSIER_LER)
+require_commercial_passport_bundle_read = require_permission(DOSSIER_LER)
 
 router = APIRouter(prefix="/v1/livestock", tags=["livestock"])
 
@@ -317,6 +321,56 @@ def issue_property_commercial_passport(
         status_code=status.HTTP_200_OK,
         headers=dict(MARKET_SUPPLY_NO_STORE_HEADERS),
         content=content,
+    )
+
+
+@router.get(
+    "/commercial-passport/verification-bundles/{bundle_id}",
+    summary="Recuperar VerificationBundle emitido pelo Commercial Passport",
+    responses={
+        200: {"description": "Bytes JSON byte-idênticos ao bundle emitido"},
+        401: {"description": "Acesso não autenticado"},
+        403: {"description": "Sem permissão na organização"},
+        404: {"description": "Bundle não encontrado na Organization ativa"},
+    },
+)
+def get_commercial_passport_verification_bundle(
+    bundle_id: str,
+    context: Annotated[
+        OrganizationContext,
+        Depends(require_commercial_passport_bundle_read),
+    ],
+    connection: ConnectionDependency,
+) -> Response:
+    bundle_ref = typed_id_or_problem(
+        bundle_id,
+        entity_type="verification_bundle",
+        campo="bundle_id",
+    )
+    try:
+        stored = TransactionalVerificationBundleRepository(connection).get_by_id(
+            context.organization_id,
+            bundle_ref,
+        )
+    except RuntimeError as error:
+        raise _commercial_passport_problem(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            reason_code="VERIFICATION_BUNDLE_INTEGRO_NAO_RECUPERAVEL",
+            title="VerificationBundle indisponível",
+            detail="O artefato persistido não passou nas verificações de integridade.",
+        ) from error
+    if stored is None:
+        raise _commercial_passport_problem(
+            status_code=status.HTTP_404_NOT_FOUND,
+            reason_code="VERIFICATION_BUNDLE_NAO_ENCONTRADO",
+            title="VerificationBundle não encontrado",
+            detail="O bundle não existe ou não pertence à Organization ativa.",
+        )
+    return Response(
+        content=stored.payload_bytes,
+        status_code=status.HTTP_200_OK,
+        media_type=stored.content_type,
+        headers=dict(MARKET_SUPPLY_NO_STORE_HEADERS),
     )
 
 
