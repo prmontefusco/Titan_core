@@ -1,7 +1,9 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import {
   CommercialPassportApiError,
+  downloadVerificationBundle,
   fetchPropertyCommercialPassport,
+  issuePropertyCommercialPassport,
   type CommercialPassportEvidenceNeed,
   type CommercialPassportGap,
   type CommercialPassportOpportunityAssessment,
@@ -32,6 +34,8 @@ export function CommercialPassport(options: Options) {
   const [passport, setPassport] = useState<CommercialPassportResponse | null>(null)
   const [executando, setExecutando] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [emissao, setEmissao] = useState<string | null>(null)
+  const [emitindo, setEmitindo] = useState(false)
 
   const consultar = async (evento: FormEvent) => {
     evento.preventDefault()
@@ -61,6 +65,43 @@ export function CommercialPassport(options: Options) {
       }
     } finally {
       setExecutando(false)
+    }
+  }
+
+  const emitirEBaixar = async () => {
+    setEmitindo(true)
+    setErro(null)
+    setEmissao(null)
+    const idempotencyKey = crypto.randomUUID()
+    try {
+      const issued = await issuePropertyCommercialPassport(options, {
+        propertyId: propertyId.trim(),
+        referenceTime: toUtcIso(referenceTime),
+        knowledgeCutoff: toUtcIso(knowledgeCutoff),
+        idempotencyKey,
+      })
+      const bundle = await downloadVerificationBundle(options, issued.verification_bundle_id)
+      const url = URL.createObjectURL(
+        new Blob([bundle.bytes.buffer as ArrayBuffer], { type: bundle.contentType }),
+      )
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `commercial-passport-${issued.verification_bundle_id}.json`
+      link.click()
+      URL.revokeObjectURL(url)
+      setEmissao(`Bundle ${issued.verification_bundle_id} emitido e baixado.`)
+    } catch (error) {
+      if (error instanceof CommercialPassportApiError && error.status === 503) {
+        setErro('A emissão formal ainda não está habilitada neste ambiente.')
+      } else if (error instanceof CommercialPassportApiError && error.status === 403) {
+        setErro('A Organization atual não possui permissão para emitir ou recuperar este bundle.')
+      } else if (error instanceof CommercialPassportApiError && error.status === 409) {
+        setErro('A emissão não pôde ser concluída porque o material autoritativo está em conflito.')
+      } else {
+        setErro(error instanceof Error ? error.message : 'Falha ao emitir o Commercial Passport.')
+      }
+    } finally {
+      setEmitindo(false)
     }
   }
 
@@ -118,10 +159,14 @@ export function CommercialPassport(options: Options) {
           <button type="submit" disabled={executando}>
             {executando ? 'Consultando...' : 'Consultar passaporte'}
           </button>
+          <button type="button" disabled={executando || emitindo || !propertyId.trim()} onClick={emitirEBaixar}>
+            {emitindo ? 'Emitindo...' : 'Emitir e baixar bundle'}
+          </button>
         </div>
       </form>
 
       {erro && <ErrorState tone="compact" message={erro} />}
+      {emissao && <p role="status">{emissao}</p>}
 
       {passport && <CommercialPassportProjection passport={passport} />}
     </section>

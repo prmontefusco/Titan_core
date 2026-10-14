@@ -2,7 +2,15 @@
 
 **Atualizado em:** 14 de outubro de 2026
 **Fonte dos passos e do estado operacional:** este documento é a única fonte — `docs/PLANO_DE_IMPLEMENTACAO_VALIDADO.md` foi consolidado aqui e removido em 6 de agosto de 2026 (ver nota abaixo).
-**Próximo passo do Livestock:** selecionar em DISCOVERY o próximo incremento independente de fazenda, integração externa e homologação. A persistência e recuperação byte-idêntica do VerificationBundle está verificada automaticamente; validação manual permanece adiada. Nenhuma feature flag, publicação ou configuração de ambiente compartilhado deve ser alterada sem decisão humana explícita. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados neste ledger.
+**Próximo passo do Livestock:** validação manual adiada da ação de emissão/download no frontend. A persistência e recuperação byte-idêntica do VerificationBundle está verificada automaticamente; nenhuma feature flag foi habilitada. Market Supply com consumidor real, SISBOV oficial, MapBiomas, bases normativas de mercados reais e vínculos de fatos a `MarketProfile` permanecem condicionados aos gatilhos documentados neste ledger.
+
+### 14/10/2026 — UI interna: emitir e baixar Commercial Passport
+
+**Estado:** IMPLEMENTADO — validação manual e homologação adiadas. A tela existente de Commercial Passport agora oferece uma ação explícita para emitir o snapshot formal interno e baixar os bytes do VerificationBundle persistido. A ação não dispara no carregamento nem na consulta dinâmica; usa chave de idempotência por tentativa e exibe confirmação somente após o download.
+
+**Evidência:** `apps/web/src/pages/CommercialPassport.tsx`, `apps/web/src/api/commercialPassport.ts`, `apps/web/src/api/client.ts` e testes de cliente/tela. O fluxo trata respostas de capacidade indisponível, autorização e conflito sem expor detalhes operacionais. Nenhuma flag de emissão foi habilitada e nenhum contrato de domínio foi alterado.
+
+**Portão:** seis testes web focados passaram e o build TypeScript/Vite passou. Validação manual autenticada permanece adiada por decisão de produto; o download usa diretamente os bytes retornados pela API, sem parse ou reserialização.
 
 ### 14/10/2026 — VerificationBundle: persistência e recuperação byte-idêntica
 

@@ -279,4 +279,41 @@ describe('CommercialPassport', () => {
     expect(screen.getByText(/Evidências referenciadas: evidence-1/i)).toBeInTheDocument()
     expect(screen.getByText(/não substitui Evidence do Core/i)).toBeInTheDocument()
   })
+
+  it('emite e baixa os bytes do bundle com chave de idempotência', async () => {
+    const createObjectURL = vi.fn().mockReturnValue('blob:bundle')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            property_id: 'p1',
+            dossier_id: 'd1',
+            dossier_hash: 'hash',
+            verification_bundle_id: 'b1',
+            verification_manifest_digest: 'digest',
+            issued_at: '2026-10-14T00:00:00Z',
+            audience: 'internal',
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response('{"bundle":true}', { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderTela()
+    fireEvent.change(screen.getByLabelText(/property id/i), { target: { value: 'p1' } })
+    fireEvent.click(screen.getByRole('button', { name: /emitir e baixar bundle/i }))
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/b1 emitido e baixado/i)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][1].headers['Idempotency-Key']).toMatch(/.+/)
+    expect(fetchMock.mock.calls[1][0]).toContain('/verification-bundles/b1')
+    expect(click).toHaveBeenCalled()
+    expect(createObjectURL).toHaveBeenCalled()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:bundle')
+  })
 })

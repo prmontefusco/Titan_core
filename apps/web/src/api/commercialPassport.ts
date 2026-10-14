@@ -1,4 +1,4 @@
-import { titanRequest, type RequestOptions } from './client'
+import { titanRequest, titanRequestBytes, type RequestOptions } from './client'
 
 export class CommercialPassportApiError extends Error {
   readonly status: number
@@ -125,6 +125,21 @@ export interface CommercialPassportResponse {
   limitations: string[]
 }
 
+export interface CommercialPassportIssuanceResponse {
+  property_id: string
+  dossier_id: string
+  dossier_hash: string
+  verification_bundle_id: string
+  verification_manifest_digest: string
+  issued_at: string
+  audience: string
+}
+
+export interface VerificationBundleDownload {
+  bytes: Uint8Array
+  contentType: string
+}
+
 export function fetchPropertyCommercialPassport(
   options: RequestOptions,
   params: {
@@ -143,8 +158,52 @@ export function fetchPropertyCommercialPassport(
   )
 }
 
-async function chamar<T>(path: string, options: RequestOptions): Promise<T> {
-  return titanRequest<T>(path, options, {}, async (response) => {
+export function issuePropertyCommercialPassport(
+  options: RequestOptions,
+  params: {
+    propertyId: string
+    referenceTime: string
+    knowledgeCutoff: string
+    audience?: string
+    idempotencyKey: string
+  },
+): Promise<CommercialPassportIssuanceResponse> {
+  return chamar<CommercialPassportIssuanceResponse>(
+    `/v1/livestock/properties/${params.propertyId}/commercial-passport/issue`,
+    options,
+    {
+      method: 'POST',
+      headers: { 'Idempotency-Key': params.idempotencyKey },
+      body: JSON.stringify({
+        reference_time: params.referenceTime,
+        knowledge_cutoff: params.knowledgeCutoff,
+        audience: params.audience ?? 'internal',
+      }),
+    },
+  )
+}
+
+export async function downloadVerificationBundle(
+  options: RequestOptions,
+  bundleId: string,
+): Promise<VerificationBundleDownload> {
+  const response = await titanRequestBytes(
+    `/v1/livestock/commercial-passport/verification-bundles/${bundleId}`,
+    options,
+    {},
+    async (res) => {
+      const corpo = await res.json().catch(() => null)
+      return new CommercialPassportApiError(res.status, corpo?.reason_code ?? null, corpo?.detail)
+    },
+  )
+  return {
+    bytes: new Uint8Array(await response.arrayBuffer()),
+    contentType: response.headers.get('Content-Type') ?? 'application/json',
+  }
+}
+
+async function chamar<T>(path: string, options: RequestOptions, init: RequestInit = {}): Promise<T> {
+  return titanRequest<T>(path, options, init, async (response) => {
     const corpo = await response.json().catch(() => null)
     return new CommercialPassportApiError(
       response.status,

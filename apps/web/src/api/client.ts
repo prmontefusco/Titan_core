@@ -57,3 +57,24 @@ export async function titanRequest<T>(
 
   return (await response.json()) as T
 }
+
+export async function titanRequestBytes(
+  path: string,
+  options: RequestOptions,
+  init: RequestInit = {},
+  createError: ErrorFactory,
+): Promise<Response> {
+  let response = await fetchWithToken(path, options, options.accessToken, init)
+
+  if (response.status === 401 && options.renewAccessToken) {
+    const refreshedToken = await options.renewAccessToken().catch(() => null)
+    if (refreshedToken) {
+      response = await fetchWithToken(path, options, refreshedToken, init)
+    }
+  }
+
+  if (!response.ok) {
+    throw await createError(response)
+  }
+  return response
+}
